@@ -1,0 +1,230 @@
+<div class="flex flex-col h-full gap-2 overflow-hidden">
+
+  <%!-- Header --%>
+  <div class="flex items-center gap-3 shrink-0">
+    <h2 class="text-lg font-semibold">Screenshot Stream</h2>
+
+    <%= cond do %>
+      <% @cache_status == :stopped -> %>
+        <button phx-click="start_cache" class="btn btn-success btn-sm">Start Cache</button>
+      <% @cache_status == :starting -> %>
+        <button disabled class="btn btn-success btn-sm">
+          <span class="loading loading-spinner loading-xs"></span> Starting…
+        </button>
+      <% @cache_status == :running -> %>
+        <button phx-click="stop_cache" class="btn btn-error btn-outline btn-sm">Stop Cache</button>
+    <% end %>
+
+    <%= if @cache_status == :running do %>
+      <%= if @status == :live do %>
+        <span class="badge badge-success badge-sm">Live</span>
+        <%= if @cache_age_ms do %>
+          <span class="font-mono text-xs text-base-content/50"><%= @cache_age_ms %>ms ago</span>
+        <% end %>
+      <% else %>
+        <span class="badge badge-warning badge-sm">No frames yet</span>
+      <% end %>
+    <% end %>
+
+    <%= if @selected_id do %>
+      <button phx-click="select_latest" class="btn btn-xs btn-outline btn-primary">
+        ↩ Back to live
+      </button>
+    <% end %>
+
+    <%= if @status == :live do %>
+      <button phx-click="send_to_hook_editor" class="btn btn-secondary btn-sm">
+        Open in Hook Editor →
+      </button>
+    <% end %>
+
+    <div class="ml-auto flex items-center gap-3">
+      <span class="text-xs text-base-content/40"><%= length(@frames) %>/<%= @max_frames %></span>
+      <%= if @cache_status == :running do %>
+        <button phx-click="toggle_running"
+                class={"btn btn-sm #{if @running, do: "btn-warning btn-outline", else: "btn-ghost"}"}>
+          <%= if @running, do: "Pause", else: "Resume" %>
+        </button>
+      <% end %>
+    </div>
+  </div>
+
+  <%!-- Body: viewer column + hook selector --%>
+  <div class="flex gap-2 flex-1 min-h-0 overflow-hidden">
+
+    <%!-- Left: viewer + timeline. relative so the floating comparison panel anchors here. --%>
+    <div class="relative flex flex-col gap-2 flex-1 min-w-0 min-h-0">
+
+      <%!-- Viewer --%>
+      <div class="flex-1 min-h-0 flex items-center justify-center bg-base-200 rounded-xl overflow-hidden">
+        <%= if @current_full_b64 do %>
+          <img
+            src={"data:image/jpeg;base64,#{@current_full_b64}"}
+            class="max-w-full max-h-full object-contain"
+            alt="Screenshot" />
+        <% else %>
+          <div class="text-center text-base-content/40 text-sm select-none">
+            <%= if @cache_status == :stopped do %>
+              <p>Click <strong>Start Cache</strong> to begin capturing.</p>
+              <p class="text-xs mt-1">The portal dialog will ask you to select a window or monitor.</p>
+            <% else %>
+              <p>Waiting for first frame…</p>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+
+      <%!-- Floating comparison panel: template vs actual for the focused hook --%>
+      <%= if @focused_hook do %>
+        <% fr = focused_result(@hook_results, @focused_hook, @current_frame) %>
+        <div class="absolute right-3 top-3 z-50 w-[440px] bg-base-100/95 backdrop-blur-sm rounded-2xl shadow-2xl border border-base-300 p-3 flex flex-col gap-2">
+
+          <%!-- Panel header --%>
+          <div class="flex items-center gap-2 min-w-0">
+            <span class="text-sm font-mono font-bold text-primary truncate flex-1" title={@focused_hook}>
+              <%= @focused_hook %>
+            </span>
+            <%= if fr do %>
+              <span class={"badge badge-sm font-mono #{if fr.matched, do: "badge-success", else: "badge-ghost"}"}>
+                <%= score_label(fr) %>
+              </span>
+              <span class={"badge badge-sm #{if fr.matched, do: "badge-success badge-outline", else: "badge-ghost"}"}>
+                <%= if fr.matched, do: "matched", else: "no match" %>
+              </span>
+            <% end %>
+            <button phx-click="clear_focused_hook" class="btn btn-ghost btn-xs shrink-0 text-base-content/40">✕</button>
+          </div>
+
+          <%!-- Images side by side --%>
+          <div class="grid grid-cols-2 gap-2">
+
+            <div class="flex flex-col gap-1">
+              <div class="text-xs text-base-content/40 text-center select-none">template</div>
+              <%= if @focused_hook_template_b64 do %>
+                <img src={"data:image/jpeg;base64,#{@focused_hook_template_b64}"}
+                     class="w-full h-52 object-contain bg-base-200 rounded-xl" />
+              <% else %>
+                <div class="w-full h-52 bg-base-200 rounded-xl flex items-center justify-center text-xs text-base-content/20 select-none">—</div>
+              <% end %>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <div class="text-xs text-base-content/40 text-center select-none">actual</div>
+              <% actual_b64 = focused_actual_b64(@hook_results, @focused_hook, @current_frame) %>
+              <%= if actual_b64 do %>
+                <img src={"data:image/jpeg;base64,#{actual_b64}"}
+                     class="w-full h-52 object-contain bg-base-200 rounded-xl" />
+              <% else %>
+                <div class="w-full h-52 bg-base-200 rounded-xl flex items-center justify-center text-xs text-base-content/20 select-none">—</div>
+              <% end %>
+            </div>
+
+          </div>
+        </div>
+      <% end %>
+
+      <%!-- Timeline: all rows in one scrollable container --%>
+      <div class="shrink-0 max-h-64 overflow-auto bg-base-200 rounded-xl">
+        <div class="flex flex-col gap-1 p-1" style="min-width: max-content">
+
+          <%!-- Screenshot row --%>
+          <div class="flex items-center gap-1">
+            <div class="w-28 shrink-0"></div>
+            <%= if @frames == [] do %>
+              <div class="text-xs text-base-content/30 px-2 py-6 select-none">Timeline empty</div>
+            <% else %>
+              <%= for frame <- @frames do %>
+                <button
+                  phx-click="select_frame"
+                  phx-value-id={frame.id}
+                  class={"h-20 w-[142px] shrink-0 overflow-hidden rounded border-2 transition-colors #{if @current_frame && frame.id == @current_frame.id, do: "border-primary", else: "border-transparent hover:border-base-content/20"}"}>
+                  <img src={"data:image/jpeg;base64,#{frame.thumb_b64}"} class="w-full h-full object-cover" alt="" />
+                </button>
+              <% end %>
+            <% end %>
+          </div>
+
+          <%!-- Hook rows --%>
+          <%= for hook_name <- Enum.sort(MapSet.to_list(@selected_hooks)) do %>
+            <div class="flex items-center gap-1">
+              <div class={"w-28 shrink-0 pr-2 text-xs font-mono truncate #{if @focused_hook == hook_name, do: "text-primary font-semibold", else: "text-base-content/60"}"} title={hook_name}>
+                <%= hook_name %>
+              </div>
+
+              <%= for frame <- @frames do %>
+                <% result = hook_result_for(@hook_results, hook_name, frame.id) %>
+                <button
+                  phx-click="select_hook_cell"
+                  phx-value-id={frame.id}
+                  phx-value-hook={hook_name}
+                  title={score_label(result)}
+                  class={"relative h-14 w-[142px] shrink-0 rounded overflow-hidden bg-base-300/40 #{if @current_frame && frame.id == @current_frame.id, do: "ring-1 ring-primary", else: ""}"}>
+                  <%= if result && result.region_b64 do %>
+                    <img src={"data:image/jpeg;base64,#{result.region_b64}"}
+                         class="absolute inset-0 w-full h-full object-cover opacity-50" />
+                  <% end %>
+                  <div
+                    class={"absolute bottom-0 left-0 right-0 #{hook_bar_class(result)}"}
+                    style={"height: #{score_pct(result)}"}>
+                  </div>
+                  <%= if result do %>
+                    <div class="absolute bottom-0.5 left-0 right-0 flex justify-center z-10">
+                      <span class="text-xs font-mono bg-black/50 text-white rounded px-1 leading-tight">
+                        <%= score_label(result) %>
+                      </span>
+                    </div>
+                  <% end %>
+                </button>
+              <% end %>
+            </div>
+          <% end %>
+
+        </div>
+      </div>
+
+    </div>
+
+    <%!-- Right: hook selector panel --%>
+    <div class="w-52 shrink-0 flex flex-col gap-1 overflow-hidden bg-base-100 rounded-xl p-2">
+
+      <div class="flex items-center gap-1 mb-1 shrink-0">
+        <span class="text-xs font-semibold text-base-content/60 uppercase tracking-wide">Hooks</span>
+        <button phx-click="refresh_hooks" class="btn btn-ghost btn-xs ml-auto" title="Refresh list">⟳</button>
+      </div>
+
+      <input
+        type="text"
+        placeholder="Filter…"
+        value={@hook_filter}
+        phx-keyup="set_hook_filter"
+        phx-debounce="150"
+        class="input input-xs input-bordered w-full shrink-0 mb-1" />
+
+      <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5">
+        <%= if @all_hooks == [] do %>
+          <div class="text-xs text-base-content/30 text-center py-6 select-none">
+            No hooks saved yet
+          </div>
+        <% else %>
+          <%= for hook <- filtered_hooks(@all_hooks, @hook_filter) do %>
+            <% active = MapSet.member?(@selected_hooks, hook.name) %>
+            <label
+              phx-click="toggle_hook"
+              phx-value-name={hook.name}
+              class={"flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer select-none transition-colors #{if active, do: "bg-success/15 text-success-content", else: "hover:bg-base-200"}"}>
+              <input
+                type="checkbox"
+                checked={active}
+                class="checkbox checkbox-xs checkbox-success pointer-events-none"
+                readonly />
+              <span class="text-xs font-mono truncate"><%= hook.name %></span>
+            </label>
+          <% end %>
+        <% end %>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>

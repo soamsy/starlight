@@ -1,0 +1,115 @@
+<div class="flex flex-col h-full gap-2 overflow-hidden">
+
+  <%!-- Header --%>
+  <div class="flex items-center gap-3 shrink-0">
+    <h2 class="text-lg font-semibold">Luxcavation Runner</h2>
+
+    <span class={"#{screen_badge_class(@current_screen)} font-mono"}>
+      <%= screen_label(@current_screen) %>
+    </span>
+
+    <%= if label = phase_label(@phase) do %>
+      <span class={"flex items-center gap-1 text-sm #{if @phase == :paused, do: "text-warning", else: "text-base-content/60"}"}>
+        <%= if @phase != :paused do %>
+          <span class="loading loading-spinner loading-xs"></span>
+        <% end %>
+        <%= label %>
+      </span>
+    <% end %>
+
+    <div class="ml-auto">
+      <%= if @phase != :idle do %>
+        <button phx-click="cancel" class="btn btn-ghost btn-sm btn-error">Cancel</button>
+      <% end %>
+    </div>
+  </div>
+
+  <%!-- Body --%>
+  <div class="flex gap-2 flex-1 min-h-0 overflow-hidden">
+
+    <%!-- Left: form --%>
+    <div class="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto">
+
+      <%= if @teams == [] do %>
+        <div class="text-xs text-base-content/40 bg-base-200 rounded-xl p-3">
+          No teams with a team-select hook configured yet — set one up on the
+          <.link navigate={~p"/teams"} class="link">Teams</.link> page first.
+        </div>
+      <% end %>
+
+      <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 text-xs text-warning">
+        Keep the Limbus Company window focused during a run — losing focus
+        (alt-tab, clicking elsewhere) pauses it. Click Resume once you're
+        back on the game window to continue.
+      </div>
+
+      <form phx-submit="run" phx-change="update_form" class="flex flex-col gap-3">
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Team</span>
+          <select name="team_id" class="select select-sm select-bordered" disabled={@teams == []}>
+            <%= for team <- @teams do %>
+              <option value={team.id} selected={team.id == @team_id}><%= team.name %></option>
+            <% end %>
+          </select>
+        </label>
+
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lux Exp runs</span>
+          <input type="number" name="exp_count" min="0" value={@exp_count} class="input input-sm input-bordered" />
+        </label>
+
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lux Thread runs</span>
+          <input type="number" name="thread_count" min="0" value={@thread_count} class="input input-sm input-bordered" />
+        </label>
+
+        <%= if @phase == :paused do %>
+          <button
+            type="button"
+            phx-click="resume"
+            disabled={@countdown != nil}
+            class="btn btn-warning btn-sm">
+            Resume
+          </button>
+        <% else %>
+          <button
+            type="submit"
+            disabled={@teams == [] or @phase != :idle or @countdown != nil}
+            class="btn btn-primary btn-sm">
+            Run
+          </button>
+        <% end %>
+      </form>
+
+      <%!-- Countdown overlay --%>
+      <%= if @countdown do %>
+        <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 shrink-0 flex items-center justify-between gap-2">
+          <div>
+            <div class="text-xs text-warning font-semibold">Focus the game window now</div>
+            <div class="font-mono text-sm text-base-content/70"><%= pending_action_label(@pending_action) %></div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-2xl font-bold text-warning"><%= @countdown %></span>
+            <button phx-click="cancel_pending" class="btn btn-ghost btn-xs text-base-content/40">✕</button>
+          </div>
+        </div>
+      <% end %>
+
+    </div>
+
+    <%!-- Right: log --%>
+    <div class="flex-1 min-h-0 overflow-y-auto bg-base-200 rounded-xl p-3 font-mono text-xs flex flex-col-reverse gap-0.5">
+      <%= if @log == [] do %>
+        <div class="text-base-content/30 text-center py-4 select-none">Log empty</div>
+      <% else %>
+        <%= for entry <- @log do %>
+          <div class={"leading-snug #{log_kind_class(entry.kind)}"}>
+            <%= entry.text %>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+
+  </div>
+
+</div>

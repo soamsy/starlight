@@ -1,0 +1,53 @@
+defmodule StarlightBot.Navigation.Screen do
+  @enforce_keys [:name, :identity_hook]
+  defstruct [:name, :identity_hook, refines: nil, catch_all: false]
+
+  @type hook_spec :: atom() | [hook_spec()] | {:not, hook_spec()}
+
+  @type t :: %__MODULE__{
+    name: atom(),
+    identity_hook: hook_spec() | nil,
+    refines: atom() | nil,
+    catch_all: boolean()
+  }
+end
+
+defmodule StarlightBot.Navigation.Transition do
+  alias StarlightBot.Navigation.Screen
+
+  @enforce_keys [:from, :to, :name, :steps]
+  defstruct [:from, :to, :name, :steps]
+
+  @type step ::
+    {:click, atom()}
+    | {:move_to, atom()}
+    | {:drag, atom(), number(), number(), pos_integer() | nil}
+    | {:scroll, number(), number()}
+    | {:key, atom()}
+    | {:type, String.t()}
+    | {:await, Screen.hook_spec(), pos_integer()}
+    | {:await_any, [Screen.hook_spec()], pos_integer()}
+    | {:branch, [{Screen.hook_spec(), [step()]}], [step()]}
+    | {:sleep, pos_integer()}
+    | {:retry_until, Screen.hook_spec(), [step()], pos_integer(), pos_integer()}
+
+  @type t :: %__MODULE__{
+    from: atom(),
+    to: atom(),
+    name: atom(),
+    steps: [step()]
+  }
+end
+
+defmodule StarlightBot.Navigation.Action do
+  alias StarlightBot.Navigation.Transition
+
+  @enforce_keys [:screen, :name, :steps]
+  defstruct [:screen, :name, :steps]
+
+  @type t :: %__MODULE__{
+    screen: atom(),
+    name: atom(),
+    steps: [Transition.step()]
+  }
+end

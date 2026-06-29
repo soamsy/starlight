@@ -1,0 +1,75 @@
+<%= if msg = @flash["info"] do %>
+  <div class="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md bg-success/90 text-success-content text-xs cursor-pointer select-none"
+       role="alert"
+       phx-click="lv:clear-flash" phx-value-key="info">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+    </svg>
+    <span><%= msg %></span>
+  </div>
+<% end %>
+
+<%= if msg = @flash["error"] do %>
+  <div class="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md bg-error/90 text-error-content text-xs cursor-pointer select-none"
+       role="alert"
+       phx-click="lv:clear-flash" phx-value-key="error">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+    <span><%= msg %></span>
+  </div>
+<% end %>
+
+<div class="h-screen overflow-hidden flex">
+  <nav class="flex flex-col items-center gap-1 w-12 shrink-0 py-3 bg-base-100 border-r border-base-300">
+    <.link navigate={~p"/hooks"}
+           class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :hooks, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Hook Editor">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="22" x2="18" y1="12" y2="12" />
+        <line x1="6" x2="2" y1="12" y2="12" />
+        <line x1="12" x2="12" y1="6" y2="2" />
+        <line x1="12" x2="12" y1="22" y2="18" />
+      </svg>
+    </.link>
+    <.link navigate={~p"/screenshots"}
+           class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :screenshots, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Screenshots">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" />
+        <circle cx="12" cy="13" r="3" />
+      </svg>
+    </.link>
+    <.link navigate={~p"/transitions"}
+           class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :transitions, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Transitions">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <rect width="8" height="8" x="3" y="3" rx="2" />
+        <path d="M7 11v4a2 2 0 0 0 2 2h4" />
+        <rect width="8" height="8" x="13" y="13" rx="2" />
+      </svg>
+    </.link>
+    <.link navigate={~p"/teams"}
+           class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :teams, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Teams">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+    </.link>
+    <.link navigate={~p"/luxcavation"}
+           class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :luxcavation, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Luxcavation Runner">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <polygon points="6 3 20 12 6 21 6 3" />
+      </svg>
+    </.link>
+  </nav>
+
+  <main class="p-3 flex-1 min-w-0 overflow-hidden flex flex-col">
+    <%= @inner_content %>
+  </main>
+</div>

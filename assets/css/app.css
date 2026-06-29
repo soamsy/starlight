@@ -1,0 +1,32 @@
+@import "tailwindcss" source(none);
+
+@source "../css";
+@source "../js";
+@source "../../lib/starlight_bot_web";
+
+@font-face {
+  font-family: 'Go Mono';
+  src: url('/fonts/Go-Mono.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --font-sans: 'Go Mono', monospace;
+  --font-mono: 'Go Mono', monospace;
+}
+
+@custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
+@custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
+@custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
+
+@plugin "../vendor/daisyui.mjs" {
+  themes: all;
+}
+
+#screenshot-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}

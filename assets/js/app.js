@@ -1,0 +1,357 @@
+import "phoenix_html"
+import { Socket } from "phoenix"
+import { LiveSocket } from "phoenix_live_view"
+import TemplateEditor from "./template_editor"
+
+// --- JS error forwarding to server log ---
+// Sends browser errors/warnings to /dev/js-log so they appear in /tmp/starlight.log
+
+function postToServerLog(level, args) {
+  const message = args
+    .map(a => {
+      if (a instanceof Error) return a.stack || a.message
+      if (typeof a === "object") { try { return JSON.stringify(a) } catch { return String(a) } }
+      return String(a)
+    })
+    .join(" ")
+
+  fetch("/dev/js-log", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ level, message }),
+    keepalive: true,
+  }).catch(() => {})
+}
+
+const _origError = console.error.bind(console)
+console.error = (...args) => { _origError(...args); postToServerLog("error", args) }
+
+const _origWarn = console.warn.bind(console)
+console.warn = (...args) => { _origWarn(...args); postToServerLog("warn", args) }
+
+window.addEventListener("error", (e) => {
+  if (e.error) {
+    // JS runtime error
+    postToServerLog("error", [`Uncaught ${e.error.stack || e.message} (${e.filename}:${e.lineno}:${e.colno})`])
+  } else if (e.target && e.target !== window) {
+    // Resource load failure (CSS, img, script 404s etc.)
+    const src = e.target.src || e.target.href || "(unknown)"
+    postToServerLog("error", [`Resource load failed: ${src}`])
+  }
+}, { capture: true })
+
+window.addEventListener("unhandledrejection", (e) => {
+  postToServerLog("error", [`Unhandled promise rejection: ${e.reason?.stack || e.reason}`])
+})
+
+// --- Theme management ---
+// light = retro, dark = luxury; system preference sets default, localStorage overrides
+
+const LIGHT_THEME = 'retro'
+const DARK_THEME = 'coffee'
+
+function activeTheme() {
+  return localStorage.getItem('starlight-theme') ||
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? DARK_THEME : LIGHT_THEME)
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme)
+  const cb = document.getElementById('theme-toggle-cb')
+  if (cb) cb.checked = (theme === DARK_THEME)
+}
+
+function toggleTheme() {
+  const next = activeTheme() === DARK_THEME ? LIGHT_THEME : DARK_THEME
+  localStorage.setItem('starlight-theme', next)
+  applyTheme(next)
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  applyTheme(activeTheme())
+  const cb = document.getElementById('theme-toggle-cb')
+  if (cb) cb.addEventListener('change', toggleTheme)
+})
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+  if (!localStorage.getItem('starlight-theme')) applyTheme(e.matches ? DARK_THEME : LIGHT_THEME)
+})
+
+// --- ScreenshotCanvas hook ---
+// Renders the game screenshot on a canvas and allows the user to drag-select
+// a rectangular region. Sends "region_selected" back to the LiveView with
+// {x, y, w, h} in 1920x1080 image coordinates.
+
+// Converts 0-255 RGB to OpenCV-scale HSV (h: 0-179, s/v: 0-255) for the
+// color_detector eyedropper — OpenCV halves hue into 0-179 so it fits a byte.
+function rgbToHsvCv(r, g, b) {
+  r /= 255; g /= 255; b /= 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  const delta = max - min
+  let h = 0
+  if (delta !== 0) {
+    if (max === r) h = ((g - b) / delta) % 6
+    else if (max === g) h = (b - r) / delta + 2
+    else h = (r - g) / delta + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const s = max === 0 ? 0 : delta / max
+  const v = max
+  return { h: Math.round(h / 2), s: Math.round(s * 255), v: Math.round(v * 255) }
+}
+
+const ScreenshotCanvas = {
+  mounted() {
+    const canvas = this.el
+    const ctx = canvas.getContext("2d")
+
+    let img = null
+    let selecting = false
+    let startPos = null
+    let sel = null       // detection region {x,y,w,h}
+    let selClick = null  // click region {x,y,w,h}
+    let selScan = null   // scan region {x,y,w,h}
+    let mode = "detect"  // "detect" | "click" | "scan"
+    let precisionMode = false  // whether shift key is held for precision
+
+    canvas.width = 1920
+    canvas.height = 1080
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = "high"
+
+    const getImageCoords = (e) => {
+      const rect = canvas.getBoundingClientRect()
+      const scaleX = canvas.width / rect.width
+      const scaleY = canvas.height / rect.height
+      return {
+        x: Math.round((e.clientX - rect.left) * scaleX),
+        y: Math.round((e.clientY - rect.top) * scaleY)
+      }
+    }
+
+    const drawSelection = (s, color, label) => {
+      if (!s || s.w < 2 || s.h < 2) return
+      ctx.strokeStyle = color
+      ctx.lineWidth = 2
+      ctx.setLineDash([6, 4])
+      ctx.strokeRect(s.x, s.y, s.w, s.h)
+      ctx.setLineDash([])
+      ctx.fillStyle = color
+      ctx.font = "bold 16px monospace"
+      const text = label ? `${label} ${s.w}×${s.h}` : `${s.w}×${s.h}`
+      ctx.fillText(text, s.x + 4, s.y - 6 > 0 ? s.y - 6 : s.y + 20)
+    }
+
+    const redraw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      if (img) ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      if (sel)      drawSelection(sel,      "#f87171", null)
+      if (selClick) drawSelection(selClick, "#60a5fa", "C")
+      if (selScan)  drawSelection(selScan,  "#facc15", "S")
+
+      // Show precision mode indicator
+      if (precisionMode && selecting) {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.7)"
+        ctx.font = "bold 14px monospace"
+        ctx.fillText("PRECISION MODE (SHIFT)", 10, canvas.height - 10)
+      }
+    }
+
+    this.handleEvent("load_screenshot", ({ data }) => {
+      const newImg = new Image()
+      newImg.onload = () => { img = newImg; redraw() }
+      newImg.src = "data:image/jpeg;base64," + data
+    })
+
+    this.handleEvent("show_match", ({ rect, score }) => {
+      redraw()
+      ctx.strokeStyle = "#4ade80"
+      ctx.lineWidth = 3
+      ctx.setLineDash([])
+      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
+      ctx.fillStyle = "rgba(74, 222, 128, 0.15)"
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
+      ctx.fillStyle = "#4ade80"
+      ctx.font = "bold 18px monospace"
+      ctx.fillText(`✓ ${score.toFixed(3)}`, rect.x + 4, rect.y + 22)
+    })
+
+    this.handleEvent("set_selection", ({ x, y, w, h }) => { sel = { x, y, w, h }; redraw() })
+    this.handleEvent("clear_selection", () => { sel = null; redraw() })
+    this.handleEvent("set_click_selection", ({ x, y, w, h }) => { selClick = { x, y, w, h }; redraw() })
+    this.handleEvent("clear_click_selection", () => { selClick = null; redraw() })
+    this.handleEvent("set_scan_selection", ({ x, y, w, h }) => { selScan = { x, y, w, h }; redraw() })
+    this.handleEvent("clear_scan_selection", () => { selScan = null; redraw() })
+    this.handleEvent("set_canvas_mode", ({ mode: m }) => { mode = m })
+
+    canvas.addEventListener("mousedown", (e) => {
+      e.preventDefault()
+
+      if (mode === "color") {
+        const { x, y } = getImageCoords(e)
+        const pixel = ctx.getImageData(x, y, 1, 1).data
+        const { h, s, v } = rgbToHsvCv(pixel[0], pixel[1], pixel[2])
+        this.pushEvent("color_picked", { h, s, v })
+        return
+      }
+
+      selecting = true
+      startPos = getImageCoords(e)
+      if (mode === "click") selClick = null
+      else if (mode === "scan") selScan = null
+      else sel = null
+    })
+    
+    // Track Shift key state for precision mode
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Shift" && selecting) {
+        precisionMode = true
+        redraw()
+      }
+    })
+    
+    document.addEventListener("keyup", (e) => {
+      if (e.key === "Shift") {
+        precisionMode = false
+        redraw()
+      }
+    })
+
+    canvas.addEventListener("mousemove", (e) => {
+      if (!selecting || !startPos) return
+      let cur = getImageCoords(e)
+      
+      // Update precision mode state
+      precisionMode = e.shiftKey
+      
+      // Precision mode when Shift is held - slow down movement for fine control
+      if (e.shiftKey) {
+        const dx = cur.x - startPos.x
+        const dy = cur.y - startPos.y
+        // Scale down movement by 10x for precision
+        cur = {
+          x: Math.round(startPos.x + dx / 10),
+          y: Math.round(startPos.y + dy / 10)
+        }
+      }
+      
+      const x = Math.max(0, Math.min(startPos.x, cur.x))
+      const y = Math.max(0, Math.min(startPos.y, cur.y))
+      const w = Math.min(Math.abs(cur.x - startPos.x), canvas.width - x)
+      const h = Math.min(Math.abs(cur.y - startPos.y), canvas.height - y)
+      if (mode === "click") selClick = { x, y, w, h }
+      else if (mode === "scan") selScan = { x, y, w, h }
+      else sel = { x, y, w, h }
+      redraw()
+    })
+
+    const finishSelect = () => {
+      if (!selecting) return
+      selecting = false
+      precisionMode = false
+      const current = mode === "click" ? selClick : mode === "scan" ? selScan : sel
+      if (current && current.w >= 4 && current.h >= 4) {
+        const event = mode === "click" ? "click_region_selected" : mode === "scan" ? "scan_region_selected" : "region_selected"
+        this.pushEvent(event, current)
+      } else {
+        if (mode === "click") selClick = null
+        else if (mode === "scan") selScan = null
+        else sel = null
+        redraw()
+      }
+    }
+
+    canvas.addEventListener("mouseup", finishSelect)
+    canvas.addEventListener("mouseleave", finishSelect)
+  }
+}
+
+// --- EditableNotes hook ---
+// Double-click the notes cell to edit inline; blur (click or tab away) saves.
+// Tab/Shift+Tab from the editor jumps straight into the next/previous row's
+// notes editor when one exists, instead of leaving the table.
+
+function openNotesEditor(cell) {
+  const display = cell.querySelector(".notes-display")
+  const editor = cell.querySelector(".notes-edit")
+  if (!display || !editor) return
+  editor.value = cell.dataset.notes || ""
+  display.classList.add("hidden")
+  editor.classList.remove("hidden")
+  editor.focus()
+  editor.select()
+}
+
+const EditableNotes = {
+  mounted() {
+    const cell = this.el
+    const display = cell.querySelector(".notes-display")
+    const editor = cell.querySelector(".notes-edit")
+
+    const renderDisplay = (value) => {
+      if (value.trim() === "") {
+        display.innerHTML = '<span class="italic text-base-content/30">double-click to add</span>'
+      } else {
+        display.textContent = value
+      }
+    }
+
+    display.addEventListener("dblclick", () => openNotesEditor(cell))
+
+    editor.addEventListener("blur", () => {
+      const value = editor.value
+      cell.dataset.notes = value
+      renderDisplay(value)
+      display.classList.remove("hidden")
+      editor.classList.add("hidden")
+      this.pushEvent("save_notes", { name: cell.dataset.name, value })
+    })
+
+    editor.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault()
+        editor.blur()
+      } else if (e.key === "Escape") {
+        editor.value = cell.dataset.notes
+        editor.blur()
+      } else if (e.key === "Tab") {
+        const row = cell.closest("tr")
+        const siblingRow = e.shiftKey ? row?.previousElementSibling : row?.nextElementSibling
+        const siblingCell = siblingRow?.querySelector(".notes-edit")?.closest("td")
+        if (siblingCell) {
+          e.preventDefault()
+          editor.blur()
+          openNotesEditor(siblingCell)
+        }
+      }
+    })
+  }
+}
+
+// --- PreserveScroll hook ---
+// Keeps a scrollable container's scroll position stable across LiveView
+// patches (e.g. the hooks table re-rendering after a form save).
+
+const PreserveScroll = {
+  beforeUpdate() {
+    this.scrollTop = this.el.scrollTop
+    this.scrollLeft = this.el.scrollLeft
+  },
+  updated() {
+    this.el.scrollTop = this.scrollTop
+    this.el.scrollLeft = this.scrollLeft
+  }
+}
+
+// --- LiveSocket setup ---
+
+const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
+
+const liveSocket = new LiveSocket("/live", Socket, {
+  params: { _csrf_token: csrfToken },
+  hooks: { ScreenshotCanvas, TemplateEditor, EditableNotes, PreserveScroll }
+})
+
+liveSocket.connect()
+window.liveSocket = liveSocket

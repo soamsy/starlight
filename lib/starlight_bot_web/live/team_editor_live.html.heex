@@ -1,0 +1,204 @@
+<div class="flex flex-col h-full gap-3 overflow-hidden">
+  <div class="grid grid-cols-[38fr_62fr] grid-rows-1 gap-2 flex-1 min-h-0">
+
+    <%!-- Left: Team List --%>
+    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
+      <div class="card-body p-3 flex flex-col flex-1 min-h-0">
+        <div class="flex items-center gap-3 mb-2">
+          <h2 class="card-title text-lg">Teams</h2>
+          <span class="badge badge-neutral badge-sm"><%= length(@teams) %></span>
+          <button phx-click="new_team" class="btn btn-primary btn-sm ml-auto">+ New Team</button>
+        </div>
+
+        <div class="overflow-y-auto flex-1 min-h-0">
+          <table class="table table-xs table-pin-rows">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Hook</th>
+                <th>Sinners</th>
+                <th></th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <%= for team <- @teams do %>
+                <tr phx-click="edit_team" phx-value-id={team.id}
+                    class={"cursor-pointer hover:bg-base-200 " <> if(@editing_id == team.id, do: "bg-primary/10 border-l-2 border-primary", else: "")}>
+                  <td class="font-mono text-xs"><%= team.name %></td>
+                  <td class="text-xs text-base-content/60"><%= team.hook || "—" %></td>
+                  <td class="text-xs text-base-content/60"><%= length(team.sinner_order) %></td>
+                  <td>
+                    <%= if team.missing != [] do %>
+                      <div class="tooltip" data-tip={"Missing: " <> Enum.map_join(team.missing, ", ", &missing_label/1)}>
+                        <span class="badge badge-warning badge-xs">!</span>
+                      </div>
+                    <% end %>
+                  </td>
+                  <td>
+                    <button phx-click="delete_team" phx-value-id={team.id}
+                            data-confirm={"Delete '#{team.name}'?"}
+                            class="btn btn-xs btn-ghost text-error">Del</button>
+                  </td>
+                </tr>
+              <% end %>
+              <%= if @teams == [] do %>
+                <tr>
+                  <td colspan="5" class="text-center text-base-content/40 py-4">No teams yet — create one.</td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <%!-- Right: Team Editor --%>
+    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
+      <div class="card-body p-3 flex flex-col flex-1 min-h-0 overflow-y-auto">
+        <%= if not @active do %>
+          <div class="flex flex-col items-center justify-center flex-1 gap-2 text-center text-base-content/40">
+            <span class="text-sm">No teams yet — click <span class="font-medium">+ New Team</span> or select one from the list.</span>
+          </div>
+        <% else %>
+        <h2 class="card-title text-lg mb-2">Edit Team</h2>
+
+        <.form for={@form} phx-change="validate_team" phx-submit="save_team" class="flex flex-col">
+          <div class="form-control mb-2">
+            <label class="label py-0.5"><span class="label-text text-sm font-medium">Name</span></label>
+            <input type="text" name="team[name]" value={@form[:name].value}
+                   class={"input input-bordered input-sm " <> if(@form[:name].errors != [], do: "input-error", else: "")} />
+            <%= if err = List.first(@form[:name].errors) do %>
+              <label class="label py-0"><span class="label-text-alt text-error"><%= elem(err, 0) %></span></label>
+            <% end %>
+          </div>
+
+          <div class="form-control mb-2">
+            <label class="label py-0.5"><span class="label-text text-sm font-medium">Team-Select Hook</span></label>
+            <select name="team[hook]" class="select select-bordered select-sm">
+              <option value="">— none —</option>
+              <%= for h <- @team_hooks do %>
+                <option value={h} selected={@form[:hook].value == h}><%= h %></option>
+              <% end %>
+            </select>
+          </div>
+
+          <div class="form-control mb-2">
+            <label class="label py-0.5"><span class="label-text text-sm font-medium">Sinner Order</span></label>
+            <div class="grid grid-cols-6 gap-1">
+              <%= for sinner <- @sinners_row1 do %>
+                <button type="button" phx-click="toggle_sinner" phx-value-sinner={sinner}
+                        class={"btn btn-xs relative " <> if(sinner in @sinner_order, do: "btn-primary", else: "btn-outline")}>
+                  <%= sinner_label(sinner) %>
+                  <%= if pos = sinner_position(@sinner_order, sinner) do %>
+                    <span class="absolute -top-2 -right-2 badge badge-secondary badge-xs"><%= pos %></span>
+                  <% end %>
+                </button>
+              <% end %>
+            </div>
+            <div class="grid grid-cols-6 gap-1 mt-1">
+              <%= for sinner <- @sinners_row2 do %>
+                <button type="button" phx-click="toggle_sinner" phx-value-sinner={sinner}
+                        class={"btn btn-xs relative " <> if(sinner in @sinner_order, do: "btn-primary", else: "btn-outline")}>
+                  <%= sinner_label(sinner) %>
+                  <%= if pos = sinner_position(@sinner_order, sinner) do %>
+                    <span class="absolute -top-2 -right-2 badge badge-secondary badge-xs"><%= pos %></span>
+                  <% end %>
+                </button>
+              <% end %>
+            </div>
+            <button type="button" phx-click="clear_sinner_order" class="btn btn-xs btn-ghost mt-1 self-start">Clear</button>
+          </div>
+
+          <div class="flex gap-2 mt-1">
+            <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            <%= if @editing_id do %>
+              <button type="button" phx-click="delete_team" phx-value-id={@editing_id}
+                      data-confirm="Delete this team?" class="btn btn-error btn-sm btn-outline">Delete</button>
+            <% end %>
+          </div>
+        </.form>
+
+        <div class="divider my-2"></div>
+
+        <%!-- Gift Strategy --%>
+        <div class="form-control mb-2">
+          <label class="label py-0.5"><span class="label-text text-sm font-medium">Gift Strategy</span></label>
+          <div class="flex gap-1 items-center">
+            <select name="id" phx-change="select_strategy" phx-value-kind="gift_strategy"
+                    class="select select-bordered select-sm flex-1">
+              <option value="" selected={is_nil(@selected_ids["gift_strategy"])}>— none —</option>
+              <%= for gs <- @gift_strategies do %>
+                <option value={gs.id} selected={@selected_ids["gift_strategy"] == gs.id}>
+                  <%= gs.name %> (<%= gs.data["affinity"] %>)
+                </option>
+              <% end %>
+            </select>
+            <button type="button" phx-click="toggle_new_strategy" phx-value-kind="gift_strategy"
+                    class="btn btn-xs btn-ghost">+ New</button>
+          </div>
+          <%= if @strategy_forms["gift_strategy"] do %>
+            <form phx-submit="save_strategy" phx-value-kind="gift_strategy"
+                  class="flex gap-1 items-center mt-1 p-2 bg-base-200 rounded">
+              <input type="text" name="name" placeholder="Name" class="input input-bordered input-xs flex-1" required />
+              <select name="affinity" class="select select-bordered select-xs">
+                <%= for a <- @gift_affinities do %>
+                  <option value={a}><%= String.capitalize(a) %></option>
+                <% end %>
+              </select>
+              <button type="submit" class="btn btn-xs btn-primary">Add</button>
+            </form>
+          <% end %>
+        </div>
+
+        <%!-- Battle Strategy --%>
+        <div class="form-control mb-2">
+          <label class="label py-0.5"><span class="label-text text-sm font-medium">Battle Strategy</span></label>
+          <div class="flex gap-1 items-center">
+            <select name="id" phx-change="select_strategy" phx-value-kind="battle_strategy"
+                    class="select select-bordered select-sm flex-1">
+              <option value="" selected={is_nil(@selected_ids["battle_strategy"])}>— none —</option>
+              <%= for bs <- @battle_strategies do %>
+                <option value={bs.id} selected={@selected_ids["battle_strategy"] == bs.id}><%= bs.name %></option>
+              <% end %>
+            </select>
+            <button type="button" phx-click="toggle_new_strategy" phx-value-kind="battle_strategy"
+                    class="btn btn-xs btn-ghost">+ New</button>
+          </div>
+          <%= if @strategy_forms["battle_strategy"] do %>
+            <form phx-submit="save_strategy" phx-value-kind="battle_strategy"
+                  class="flex gap-1 items-center mt-1 p-2 bg-base-200 rounded">
+              <input type="text" name="name" placeholder="Name (type: win_rate)" class="input input-bordered input-xs flex-1" required />
+              <button type="submit" class="btn btn-xs btn-primary">Add</button>
+            </form>
+          <% end %>
+        </div>
+
+        <%!-- Theme Pack Plan --%>
+        <div class="form-control mb-2">
+          <label class="label py-0.5"><span class="label-text text-sm font-medium">Theme Pack Plan</span></label>
+          <div class="flex gap-1 items-center">
+            <select name="id" phx-change="select_strategy" phx-value-kind="theme_pack_plan"
+                    class="select select-bordered select-sm flex-1">
+              <option value="" selected={is_nil(@selected_ids["theme_pack_plan"])}>— none —</option>
+              <%= for tp <- @theme_pack_plans do %>
+                <option value={tp.id} selected={@selected_ids["theme_pack_plan"] == tp.id}><%= tp.name %></option>
+              <% end %>
+            </select>
+            <button type="button" phx-click="toggle_new_strategy" phx-value-kind="theme_pack_plan"
+                    class="btn btn-xs btn-ghost">+ New</button>
+          </div>
+          <%= if @strategy_forms["theme_pack_plan"] do %>
+            <form phx-submit="save_strategy" phx-value-kind="theme_pack_plan"
+                  class="flex gap-1 items-center mt-1 p-2 bg-base-200 rounded">
+              <input type="text" name="name" placeholder="Name (type: random)" class="input input-bordered input-xs flex-1" required />
+              <button type="submit" class="btn btn-xs btn-primary">Add</button>
+            </form>
+          <% end %>
+        </div>
+        <% end %>
+      </div>
+    </div>
+
+  </div>
+</div>
