@@ -213,20 +213,3 @@ The entire pipeline is lossless: xcap → 1920×1080 BGR `Vec<u8>` → PNG on di
 1. `source .envrc && mix compile --warnings-as-errors` — zero warnings
 2. `mix test` — all tests pass (including migration count test, which covers all migrations applying cleanly)
 3. `cargo clippy --manifest-path native/starlight_native/Cargo.toml` — no warnings
-
----
-
-## What's Not Implemented Yet
-
-- Game state machine / automation logic (stub only)
-- Screen detection and navigation system (stub only)
-- Input injection for automation (EIS NIF exists, untested without a live KDE + Limbus Company session)
-- OCR / vision pipeline (Phase 2)
-
-## What Is Implemented
-
-- Hook editor (`/hooks`): screenshot, region select, click-region select, create/edit/rename/delete hooks, test against live frame or cache frame, confidence slider
-- Screenshot viewer (`/screenshots`): live xcap stream at ~2fps, 40-frame timeline, hook overlay with match bars, "Open in Hook Editor →" handoff
-- Hook storage: PNG blobs in SQLite (`hooks` table), loaded into `HookRegistry` GenServer at startup
-- Template matching: `Evision.matchTemplate` in gray/rgb/binary_thresh modes
-- xcap polling cache: background thread, lazy window re-enumeration, cleared on stop to prevent stale reads
