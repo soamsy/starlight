@@ -4,6 +4,7 @@ defmodule StarlightBotWeb.Live.PageHook do
   @pages %{
     StarlightBotWeb.Live.HookEditorLive => :hooks,
     StarlightBotWeb.Live.ScreenshotViewerLive => :screenshots,
+    StarlightBotWeb.Live.BattleInspectorLive => :battle,
     StarlightBotWeb.Live.TransitionsLive => :transitions,
     StarlightBotWeb.Live.TeamEditorLive => :teams,
     StarlightBotWeb.Live.LuxcavationLive => :luxcavation

@@ -17,6 +17,7 @@ defmodule StarlightBotWeb.Router do
       live "/", Live.HookEditorLive
       live "/hooks", Live.HookEditorLive
       live "/screenshots", Live.ScreenshotViewerLive
+      live "/battle", Live.BattleInspectorLive
       live "/transitions", Live.TransitionsLive
       live "/teams", Live.TeamEditorLive
       live "/luxcavation", Live.LuxcavationLive

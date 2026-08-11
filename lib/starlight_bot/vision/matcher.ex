@@ -10,6 +10,9 @@ defmodule StarlightBot.Vision.Matcher do
   @thresh_binary      0  # cv_THRESH_BINARY
   @retr_external      0  # cv_RETR_EXTERNAL
   @chain_approx_simple 2 # cv_CHAIN_APPROX_SIMPLE
+  @morph_close        3  # cv_MORPH_CLOSE — bridges small gaps in a mask
+  @morph_ellipse      2  # cv_MORPH_ELLIPSE — structuring element shape
+  @border_constant    0  # cv_BORDER_CONSTANT
 
   @hsv_tolerance_max 30  # widest per-channel HSV slack, at confidence 0.0
   @hue_max 179           # OpenCV hue range is 0-179, not 0-359
@@ -182,7 +185,7 @@ defmodule StarlightBot.Vision.Matcher do
     do: Evision.matchTemplate(image, tmpl, method_const)
 
   defp extract_matches(result_mat, tmpl_mat, confidence, :first) do
-    {_, max_val, _, {cx, cy}} = Evision.minMaxLoc(result_mat)
+    {max_val, {cx, cy}} = max_loc(result_mat)
     if max_val >= confidence do
       {tw, th} = mat_wh(tmpl_mat)
       [{cx, cy, tw, th}]
@@ -260,11 +263,23 @@ defmodule StarlightBot.Vision.Matcher do
         0.0
 
       mat ->
-        {_, max_val, _, _} = Evision.minMaxLoc(mat)
+        {max_val, _} = max_loc(mat)
         max_val
     end
   rescue
     _ -> 0.0
+  end
+
+  defp max_loc(result_mat) do
+    {_rows, cols} = result_dims(result_mat)
+    raw = Evision.Mat.to_binary(result_mat, 0)
+
+    {max_val, max_idx} =
+      for(<<v::float-32-little <- raw>>, do: v)
+      |> Enum.with_index()
+      |> Enum.max_by(fn {v, _i} -> v end)
+
+    {max_val, {rem(max_idx, cols), div(max_idx, cols)}}
   end
 
   defp color_cluster_match(_image_mat, %Hook{color: nil}, _confidence, :first), do: :not_found
@@ -310,7 +325,7 @@ defmodule StarlightBot.Vision.Matcher do
     _ -> 0.0
   end
 
-  defp color_cluster_rects(image_mat, {h, s, v}, tolerance) do
+  def color_cluster_rects(image_mat, {h, s, v}, tolerance) do
     hsv = Evision.cvtColor(image_mat, @color_bgr2hsv)
     mask = color_mask(hsv, h, s, v, tolerance)
     {contours, _hierarchy} = Evision.findContours(mask, @retr_external, @chain_approx_simple)
@@ -326,8 +341,12 @@ defmodule StarlightBot.Vision.Matcher do
     v_lo = max(v - tolerance, 0)
     v_hi = min(v + tolerance, 255)
 
-    h_lo = h - tolerance
-    h_hi = h + tolerance
+    hsv_range_mask(hsv_mat, h, tolerance, s_lo, s_hi, v_lo, v_hi)
+  end
+
+  defp hsv_range_mask(hsv_mat, h, h_tolerance, s_lo, s_hi, v_lo, v_hi) do
+    h_lo = h - h_tolerance
+    h_hi = h + h_tolerance
 
     ranges =
       cond do
@@ -346,8 +365,56 @@ defmodule StarlightBot.Vision.Matcher do
     |> Enum.reduce(fn mask, acc -> Evision.Mat.bitwise_or(acc, mask) end)
   end
 
-  defp confidence_to_hsv_tolerance(confidence) do
+  def hue_range_mask(hsv_mat, hue, hue_tolerance, s_lo, s_hi, v_lo, v_hi) do
+    # NIF-backed Mat resources can't be precomputed as a module attribute (no stable
+    # literal representation across VM restarts), so the kernel is built per call.
+    kernel = Evision.getStructuringElement(@morph_ellipse, {3, 3})
+
+    hsv_mat
+    |> hsv_range_mask(hue, hue_tolerance, s_lo, s_hi, v_lo, v_hi)
+    |> Evision.morphologyEx(@morph_close, kernel)
+  end
+
+  def confidence_to_hsv_tolerance(confidence) do
     round((1.0 - confidence) * @hsv_tolerance_max)
+  end
+
+  def inner_ring_mask(mask, kernel_px \\ 3) do
+    kernel = Evision.getStructuringElement(@morph_ellipse, {kernel_px, kernel_px})
+    # OpenCV's default erode border treats pixels outside the mat as already
+    # matched, so a mask touching the crop edge wouldn't shrink there at all.
+    # Explicitly treat outside-the-crop as unmatched instead.
+    eroded = Evision.erode(mask, kernel, borderType: @border_constant, borderValue: 0)
+    Evision.Mat.subtract(mask, eroded)
+  end
+
+  def top_right_wedge_mask(w, h, bulge_pct \\ 0.0) do
+    big = (max(w, h) + 1) * 4
+    cx = div(w, 2)
+    drop = round(h * bulge_pct)
+    mask = Evision.Mat.zeros({h, w}, {:u, 8})
+    poly = point_mat([{cx, 0}, {cx, drop}, {cx + big, drop + big}, {cx + big, 0}])
+    Evision.fillPoly(mask, [poly], 255)
+  end
+
+  def top_right_corner_mask(w, h, pct) when pct <= 0, do: Evision.Mat.zeros({h, w}, {:u, 8})
+
+  def top_right_corner_mask(w, h, pct) do
+    leg = round(w * pct)
+    mask = Evision.Mat.zeros({h, w}, {:u, 8})
+    poly = point_mat([{w - leg, 0}, {w - 1, 0}, {w - 1, leg}])
+    Evision.fillPoly(mask, [poly], 255)
+  end
+
+  def fill_holes_mask(mask) do
+    {contours, _hierarchy} = Evision.findContours(mask, @retr_external, @chain_approx_simple)
+    filled = Evision.Mat.zeros(Evision.Mat.shape(mask), {:u, 8})
+    Evision.drawContours(filled, contours, -1, 255, thickness: -1)
+  end
+
+  defp point_mat(points) do
+    binary = for {x, y} <- points, into: <<>>, do: <<x::32-signed-little, y::32-signed-little>>
+    Evision.Mat.from_binary(binary, {:s, 32}, length(points), 1, 2)
   end
 
   defp scaled_min_cluster_size(%Hook{min_cluster_size: min}, _image_mat) when not is_integer(min), do: 0

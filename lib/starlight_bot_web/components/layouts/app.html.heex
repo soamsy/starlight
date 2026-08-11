@@ -41,6 +41,16 @@
         <circle cx="12" cy="13" r="3" />
       </svg>
     </.link>
+    <.link navigate={~p"/battle"}
+           class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :battle, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Battle Inspector">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <path d="M14.5 17.5 3 6V3h3l11.5 11.5" />
+        <path d="M13 19l6-6" />
+        <path d="M16 16l4 4" />
+        <path d="M19 21l2-2" />
+      </svg>
+    </.link>
     <.link navigate={~p"/transitions"}
            class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :transitions, do: "btn-primary", else: "btn-ghost text-base-content/50")}
            data-tip="Transitions">
