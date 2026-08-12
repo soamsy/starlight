@@ -6,10 +6,10 @@ Guidelines for AI agents (Claude, Codex, etc.) working in this repository.
 
 ## Commenting Strategy
 
-- **Minimal comments**: Only add comments for non-obvious logic or deliberate non-obvious choices
-- **Match existing style**: Follow the file's current comment density - if it has no comments, don't introduce them
-- **Technical reasons only**: Comments should explain "why" for non-obvious logic, not restate "what" the code does
-- **No self-documenting comments**: Avoid comments that merely restate what the code already clearly expresses
+- **Never add comments to new or changed code.** No exceptions, no judgment call, not even for a non-obvious workaround or constraint. Explain those in chat or the PR description instead. Prefer a clearer name or a restructured line over a comment.
+- **Existing comments are untouched**: don't add to them, don't remove them, don't "clean up" a comment on a line you're editing for an unrelated reason. This rule only governs comments the agent itself introduces.
+- **Self-check before finishing**: scan the diff for any comment line that wasn't there before. Delete it if found, even if it felt justified when written.
+- **Only exception**: the user explicitly asks for a comment or docstring in that turn. Write only what was asked, nothing extra.
 
 ## Retry Strategy
 
