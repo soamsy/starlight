@@ -1,10 +1,14 @@
 defmodule StarlightBotWeb.Live.BattleInspectorLive do
   use StarlightBotWeb, :live_view
+  alias StarlightBot.Automation.BattleChain
   alias StarlightBot.Vision.{Capture, HookRegistry, Matcher, SinColor, SkillTray}
 
   @tmp_jpeg "/tmp/_starlight_battle_inspector.jpg"
+  @tmp_chain_preview_jpeg "/tmp/_starlight_battle_inspector_chain_preview.jpg"
   @tmp_cell_png "/tmp/_starlight_battle_inspector_cell.png"
   @palette ["#f87171", "#60a5fa", "#facc15", "#4ade80", "#c084fc", "#fb923c", "#22d3ee"]
+  @chain_top_color "#38bdf8"
+  @chain_bottom_color "#fb7185"
 
   @tier_boundary_safe_margin 0.15
   @tier_boundary_red {239, 68, 68}
@@ -18,10 +22,16 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
      |> assign(:status, :idle)
      |> assign(:frame_b64, nil)
      |> assign(:battle_chain?, false)
+     |> assign(:gear_hook, nil)
      |> assign(:tray, nil)
      |> assign(:top_sins, nil)
      |> assign(:bottom_sins, nil)
-     |> assign(:scan_error, nil)}
+     |> assign(:bg_color, nil)
+     |> assign(:bg_strip_b64, nil)
+     |> assign(:scan_error, nil)
+     |> assign(:chain_preview_status, :idle)
+     |> assign(:chain_preview_ready?, false)
+     |> assign(:chain_preview_error, nil)}
   end
 
   @impl true
@@ -38,9 +48,12 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
              |> assign(:status, :done)
              |> assign(:frame_b64, b64)
              |> assign(:battle_chain?, scan.battle_chain?)
+             |> assign(:gear_hook, scan.gear_hook)
              |> assign(:tray, scan.tray)
              |> assign(:top_sins, scan.top_sins)
              |> assign(:bottom_sins, scan.bottom_sins)
+             |> assign(:bg_color, scan.bg_color)
+             |> assign(:bg_strip_b64, scan.bg_strip_b64)
              |> assign(:scan_error, scan.error)
              |> push_event("load_battle_frame", %{data: b64, overlays: overlays(scan)})}
 
@@ -65,43 +78,181 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
     end
   end
 
-  defp scan_battle(frame) do
-    case Matcher.find(frame, :battle_chain) do
-      :not_found ->
-        %{battle_chain?: false, gear_rect: nil, tray: nil, top_sins: nil, bottom_sins: nil, error: nil}
+  @impl true
+  def handle_event("preview_chain_drag", _, %{assigns: %{chain_preview_status: :running}} = socket) do
+    {:noreply, socket}
+  end
 
-      {:ok, gear_rect} ->
+  def handle_event("preview_chain_drag", _, socket) do
+    me = self()
+    Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn -> send(me, {:chain_preview_result, BattleChain.preview_drag()}) end)
+
+    {:noreply,
+     socket
+     |> assign(:chain_preview_status, :running)
+     |> assign(:chain_preview_error, nil)}
+  end
+
+  @impl true
+  def handle_info({:chain_preview_result, {:ok, %{frame: frame, tray: tray, picks: picks, path: path}}}, socket) do
+    case encode_jpeg(frame.mat, @tmp_chain_preview_jpeg) do
+      {:ok, jpeg} ->
+        b64 = Base.encode64(jpeg)
+
+        {:noreply,
+         socket
+         |> assign(:chain_preview_status, :done)
+         |> assign(:chain_preview_ready?, true)
+         |> assign(:chain_preview_error, nil)
+         |> push_event("load_chain_preview_frame", %{data: b64, overlays: chain_preview_overlays(tray, picks, path)})}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:chain_preview_status, :error)
+         |> assign(:chain_preview_error, "Encode failed: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_info({:chain_preview_result, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:chain_preview_status, :error)
+     |> assign(:chain_preview_error, inspect(reason))}
+  end
+
+  defp chain_preview_overlays(tray, picks, path) do
+    [
+      chain_grid_line(tray.tray_start_x, tray.tray_end_x, tray.chain_top_y, @chain_top_color, "chain_top_y"),
+      chain_grid_line(tray.tray_start_x, tray.tray_end_x, tray.chain_bottom_y, @chain_bottom_color, "chain_bottom_y")
+    ] ++ path_line_overlays(path) ++ path_endpoint_overlays(path) ++ pick_overlays(picks)
+  end
+
+  defp chain_grid_line(start_x, end_x, y, color, label) do
+    %{type: "line", x1: start_x, y1: y, x2: end_x, y2: y, color: color, dashed: true, text: label, text_x: start_x, text_y: y - 6}
+  end
+
+  @path_line_color "#facc15"
+
+  defp path_line_overlays(path) do
+    path
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.map(fn [{x1, y1}, {x2, y2}] ->
+      %{type: "line", x1: round(x1), y1: round(y1), x2: round(x2), y2: round(y2), color: @path_line_color}
+    end)
+  end
+
+  defp path_endpoint_overlays(path) do
+    [point_marker(List.first(path), "#4ade80", "mouse down"), point_marker(List.last(path), "#f87171", "release")]
+  end
+
+  @pick_marker_half_px 6
+
+  defp pick_overlays(picks) do
+    Enum.with_index(picks, fn {row_choice, x, y}, i -> point_marker({x, y}, pick_color(row_choice), "##{i} #{row_choice}") end)
+  end
+
+  defp pick_color(:top), do: @chain_top_color
+  defp pick_color(:bottom), do: @chain_bottom_color
+
+  defp point_marker({x, y}, color, label) do
+    %{
+      type: "rect",
+      x: round(x - @pick_marker_half_px),
+      y: round(y - @pick_marker_half_px),
+      w: @pick_marker_half_px * 2,
+      h: @pick_marker_half_px * 2,
+      color: color,
+      text: label,
+      text_x: round(x - @pick_marker_half_px),
+      text_y: round(y - @pick_marker_half_px) - 6
+    }
+  end
+
+  defp scan_battle(frame) do
+    case detect_gear(frame) do
+      :not_found ->
+        %{
+          battle_chain?: false,
+          gear_hook: nil,
+          gear_rect: nil,
+          tray: nil,
+          top_sins: nil,
+          bottom_sins: nil,
+          bg_region: nil,
+          bg_color: nil,
+          bg_strip_b64: nil,
+          error: nil
+        }
+
+      {:ok, gear_hook, gear_rect} ->
         case SkillTray.scan(frame) do
           {:ok, tray} ->
+            bg_region = SkillTray.background_region(tray)
+            bg_color = SinColor.background_color(frame.mat, bg_region)
+
             %{
               battle_chain?: true,
+              gear_hook: gear_hook,
               gear_rect: gear_rect,
               tray: tray,
-              top_sins: classify_row_with_previews(frame.mat, tray.top_row),
-              bottom_sins: classify_row_with_previews(frame.mat, tray.bottom_row),
+              top_sins: classify_row_with_previews(frame.mat, tray.top_row, bg_color.hue, bg_color.saturation),
+              bottom_sins:
+                classify_row_with_previews(frame.mat, tray.bottom_row, bg_color.hue, bg_color.saturation),
+              bg_region: bg_region,
+              bg_color: bg_color,
+              bg_strip_b64: encode_png_b64(Evision.Mat.roi(frame.mat, bg_region)),
               error: nil
             }
 
           :not_found ->
             %{
               battle_chain?: true,
+              gear_hook: gear_hook,
               gear_rect: gear_rect,
               tray: nil,
               top_sins: nil,
               bottom_sins: nil,
-              error: "battle_chain didn't re-match during the skill tray scan"
+              bg_region: nil,
+              bg_color: nil,
+              bg_strip_b64: nil,
+              error: "#{gear_hook} didn't re-match during the skill tray scan"
             }
 
           {:error, reason} ->
-            %{battle_chain?: true, gear_rect: gear_rect, tray: nil, top_sins: nil, bottom_sins: nil, error: inspect(reason)}
+            %{
+              battle_chain?: true,
+              gear_hook: gear_hook,
+              gear_rect: gear_rect,
+              tray: nil,
+              top_sins: nil,
+              bottom_sins: nil,
+              bg_region: nil,
+              bg_color: nil,
+              bg_strip_b64: nil,
+              error: inspect(reason)
+            }
         end
     end
   end
 
-  defp classify_row_with_previews(mat, row) do
+  defp detect_gear(frame) do
+    case Matcher.find(frame, :battle_chain) do
+      {:ok, gear_rect} ->
+        {:ok, :battle_chain, gear_rect}
+
+      :not_found ->
+        case Matcher.find(frame, :battle_focused) do
+          {:ok, gear_rect} -> {:ok, :battle_focused, gear_rect}
+          :not_found -> :not_found
+        end
+    end
+  end
+
+  defp classify_row_with_previews(mat, row, bg_hue, bg_saturation) do
     tier_columns = SkillTray.row_columns(row)
     hue_columns = SkillTray.hue_scan_columns(row)
-    results = SinColor.classify_row(mat, row)
+    results = SinColor.classify_row(mat, row, bg_hue, bg_saturation)
 
     [results, tier_columns, hue_columns]
     |> Enum.zip()
@@ -137,16 +288,42 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
 
   defp overlays(%{battle_chain?: false}), do: []
 
-  defp overlays(%{gear_rect: {x, y, w, h}, tray: nil}) do
-    [gear_overlay(x, y, w, h)]
+  defp overlays(%{gear_hook: gear_hook, gear_rect: {x, y, w, h}, tray: nil}) do
+    [gear_overlay(x, y, w, h, gear_hook)]
   end
 
-  defp overlays(%{gear_rect: {x, y, w, h}, tray: tray, top_sins: top_sins, bottom_sins: bottom_sins}) do
-    [gear_overlay(x, y, w, h) | tray_overlays(tray, top_sins, bottom_sins)]
+  defp overlays(%{
+         gear_hook: gear_hook,
+         gear_rect: {x, y, w, h},
+         tray: tray,
+         top_sins: top_sins,
+         bottom_sins: bottom_sins,
+         bg_region: bg_region,
+         bg_color: bg_color
+       }) do
+    [
+      gear_overlay(x, y, w, h, gear_hook),
+      background_overlay(bg_region, bg_color) | tray_overlays(tray, top_sins, bottom_sins)
+    ]
   end
 
-  defp gear_overlay(x, y, w, h) do
-    %{type: "rect", x: x, y: y, w: w, h: h, color: "#4ade80", text: "gear", text_x: x, text_y: y - 6}
+  defp gear_overlay(x, y, w, h, gear_hook) do
+    %{type: "rect", x: x, y: y, w: w, h: h, color: "#4ade80", text: to_string(gear_hook), text_x: x, text_y: y - 6}
+  end
+
+  defp background_overlay({x, y, w, h}, bg_color) do
+    %{
+      type: "rect",
+      x: x,
+      y: y,
+      w: w,
+      h: h,
+      color: bgr_to_hex(bg_color.bgr),
+      dashed: true,
+      text: "bg sample (hue #{bg_color.hue}, mix #{round(SinColor.effective_mix_pct(bg_color.saturation) * 100)}%)",
+      text_x: x,
+      text_y: y - 6
+    }
   end
 
   defp tray_overlays(%SkillTray{} = tray, top_sins, bottom_sins) do
@@ -327,9 +504,9 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
     end)
   end
 
-  defp encode_jpeg(mat) do
-    Evision.imwrite(@tmp_jpeg, mat)
-    File.read(@tmp_jpeg)
+  defp encode_jpeg(mat, path \\ @tmp_jpeg) do
+    Evision.imwrite(path, mat)
+    File.read(path)
   rescue
     e -> {:error, Exception.message(e)}
   end

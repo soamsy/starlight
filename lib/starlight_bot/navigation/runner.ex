@@ -184,6 +184,10 @@ defmodule StarlightBot.Navigation.Runner do
     {:ok, nil}
   end
 
+  defp execute_step({:custom, fun}, last_frame, ctx) do
+    fun.(last_frame, ctx)
+  end
+
   defp execute_step({:await, hook_atom, timeout_ms}, _last_frame, ctx) do
     Ctx.log(ctx, :info, "await #{inspect(hook_atom)} (#{timeout_ms}ms)")
     deadline = mono() + timeout_ms
@@ -393,6 +397,13 @@ defmodule StarlightBot.Navigation.Runner do
     case Capture.window_rect() do
       nil -> {:error, :no_window}
       {_wx, _wy, ww, _wh} -> {:ok, ww / 1920.0}
+    end
+  end
+
+  def to_screen_point({nx, ny}) do
+    case Capture.window_rect() do
+      nil -> {:error, :no_window}
+      {wx, wy, ww, _wh} -> {:ok, {round(wx + nx * ww / 1920.0), round(wy + ny * ww / 1920.0)}}
     end
   end
 

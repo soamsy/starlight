@@ -1,5 +1,6 @@
 defmodule StarlightBot.Navigation.Screens.Battle do
   use StarlightBot.Navigation.DSL
+  alias StarlightBot.Automation.BattleChain
 
   screen :battle, identity: :battle_settings do
     transition to: :battle_turn_or_over do
@@ -14,6 +15,9 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   end
 
   screen :battle_chain, identity: :battle_chain, refines: :battle_turn do
+    transition to: :battle_playing do
+      [custom(&BattleChain.select_and_commit/2)]
+    end
   end
 
   screen :battle_focused, identity: :battle_focused, refines: :battle_turn do

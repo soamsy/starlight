@@ -32,6 +32,36 @@ defmodule StarlightBot.Vision.SkillTrayTest do
     end
   end
 
+  describe "background_region/1" do
+    test "returns a strip spanning the tray width, above the top row" do
+      tray = SkillTray.geometry(400)
+      assert SkillTray.background_region(tray) == {495, 721, 829, 20}
+    end
+  end
+
+  describe "chain_grid/1" do
+    test "one {x, chain_top_y, chain_bottom_y} triple per skill slot, x centers increasing across the tray" do
+      tray = SkillTray.geometry(400)
+      grid = SkillTray.chain_grid(tray)
+
+      assert length(grid) == tray.skill_num
+      assert Enum.all?(grid, fn {_x, top_y, bottom_y} -> top_y == tray.chain_top_y and bottom_y == tray.chain_bottom_y end)
+
+      xs = Enum.map(grid, fn {x, _top_y, _bottom_y} -> x end)
+      assert xs == Enum.sort(xs)
+      assert Enum.min(xs) > tray.tray_start_x
+      assert Enum.max(xs) < tray.tray_end_x
+    end
+
+    test "chain_top_y/chain_bottom_y sit well below the static (pre-drag) row positions" do
+      tray = SkillTray.geometry(400)
+
+      assert tray.chain_top_y > tray.top_row.y + tray.top_row.h
+      assert tray.chain_bottom_y > tray.bottom_row.y + tray.bottom_row.h
+      assert tray.chain_bottom_y > tray.chain_top_y
+    end
+  end
+
   describe "row_columns/1" do
     test "tiles a row's own span into `columns` contiguous, increasing segments" do
       tray = SkillTray.geometry(400)

@@ -38,6 +38,11 @@ defmodule StarlightBot.Navigation.DSLTest do
       assert DSL.type("10") == {:type, "10"}
     end
 
+    test "custom/1 wraps a 2-arity function" do
+      fun = fn last_frame, _ctx -> {:ok, last_frame} end
+      assert DSL.custom(fun) == {:custom, fun}
+    end
+
     test "await/1-2 defaults to a 5s timeout and accepts atom/list/not_hook specs" do
       assert DSL.await(:foo) == {:await, :foo, 5_000}
       assert DSL.await(:foo, timeout: 100) == {:await, :foo, 100}

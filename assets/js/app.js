@@ -267,50 +267,55 @@ const ScreenshotCanvas = {
   }
 }
 
-// --- BattleInspectorCanvas hook ---
+// --- BattleInspectorCanvas / ChainPreviewCanvas hooks ---
 // Renders a screenshot with server-computed overlays (rects/lines/labels)
-// describing what the battle-screen scan found. Read-only, no drag-select.
+// describing what a battle-screen scan found. Read-only, no drag-select.
 
-const BattleInspectorCanvas = {
-  mounted() {
-    const canvas = this.el
-    const ctx = canvas.getContext("2d")
-    canvas.width = 1920
-    canvas.height = 1080
+function overlayCanvasHook(eventName) {
+  return {
+    mounted() {
+      const canvas = this.el
+      const ctx = canvas.getContext("2d")
+      canvas.width = 1920
+      canvas.height = 1080
 
-    const draw = (img, overlays) => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      if (img) ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      const draw = (img, overlays) => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        if (img) ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
 
-      for (const o of overlays || []) {
-        ctx.strokeStyle = o.color || "#f87171"
-        ctx.fillStyle = o.color || "#f87171"
-        ctx.lineWidth = 2
-        ctx.setLineDash(o.dashed ? [6, 4] : [])
+        for (const o of overlays || []) {
+          ctx.strokeStyle = o.color || "#f87171"
+          ctx.fillStyle = o.color || "#f87171"
+          ctx.lineWidth = 2
+          ctx.setLineDash(o.dashed ? [6, 4] : [])
 
-        if (o.type === "rect") {
-          ctx.strokeRect(o.x, o.y, o.w, o.h)
-        } else if (o.type === "line") {
-          ctx.beginPath()
-          ctx.moveTo(o.x1, o.y1)
-          ctx.lineTo(o.x2, o.y2)
-          ctx.stroke()
-        }
+          if (o.type === "rect") {
+            ctx.strokeRect(o.x, o.y, o.w, o.h)
+          } else if (o.type === "line") {
+            ctx.beginPath()
+            ctx.moveTo(o.x1, o.y1)
+            ctx.lineTo(o.x2, o.y2)
+            ctx.stroke()
+          }
 
-        if (o.text) {
-          ctx.font = "bold 14px monospace"
-          ctx.fillText(o.text, o.text_x, o.text_y)
+          if (o.text) {
+            ctx.font = "bold 14px monospace"
+            ctx.fillText(o.text, o.text_x, o.text_y)
+          }
         }
       }
-    }
 
-    this.handleEvent("load_battle_frame", ({ data, overlays }) => {
-      const img = new Image()
-      img.onload = () => draw(img, overlays)
-      img.src = "data:image/jpeg;base64," + data
-    })
+      this.handleEvent(eventName, ({ data, overlays }) => {
+        const img = new Image()
+        img.onload = () => draw(img, overlays)
+        img.src = "data:image/jpeg;base64," + data
+      })
+    }
   }
 }
+
+const BattleInspectorCanvas = overlayCanvasHook("load_battle_frame")
+const ChainPreviewCanvas = overlayCanvasHook("load_chain_preview_frame")
 
 // --- EditableNotes hook ---
 // Double-click the notes cell to edit inline; blur (click or tab away) saves.
@@ -395,7 +400,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TemplateEditor, EditableNotes, PreserveScroll }
 })
 
 liveSocket.connect()

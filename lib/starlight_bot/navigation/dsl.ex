@@ -97,6 +97,8 @@ defmodule StarlightBot.Navigation.DSL do
 
   def type(text) when is_binary(text), do: {:type, text}
 
+  def custom(fun) when is_function(fun, 2), do: {:custom, fun}
+
   def await(hook, opts \\ []) when is_atom(hook) or is_list(hook) or is_tuple(hook) do
     {:await, hook, Keyword.get(opts, :timeout, 5_000)}
   end

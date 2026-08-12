@@ -33,6 +33,14 @@ defmodule StarlightBot.Navigation.CatalogTest do
     test "returns :no_path for an unreachable or nonexistent screen" do
       assert Catalog.plan_path(:home, :this_screen_does_not_exist) == {:error, :no_path}
     end
+
+    test "a refinement's own transition to the same target wins over the inherited one" do
+      assert {:ok, [%Transition{from: :battle_chain, to: :battle_playing, steps: [{:custom, _fun}]}]} =
+               Catalog.plan_path(:battle_chain, :battle_playing)
+
+      assert {:ok, [%Transition{from: :battle_turn, to: :battle_playing, steps: [{:key, :p} | _]}]} =
+               Catalog.plan_path(:battle_focused, :battle_playing)
+    end
   end
 
   describe "refinements_of/1" do

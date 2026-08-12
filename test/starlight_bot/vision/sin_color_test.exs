@@ -220,6 +220,109 @@ defmodule StarlightBot.Vision.SinColorTest do
     end
   end
 
+  describe "classify_cell/7 with background hue mixing" do
+    test "recovers a sin whose true color has drifted toward a green background, once mixing compensates for the same drift" do
+      drifted_bgr = hsv_to_bgr({89, 220, 200})
+      mat = solid_mat(40, 30, drifted_bgr)
+
+      unmixed = SinColor.classify_cell(mat, {0, 40}, 0, 30)
+      assert unmixed.confidence == 0.0
+
+      mixed = SinColor.classify_cell(mat, {0, 40}, 0, 30, nil, nil, 41)
+      assert mixed.sin == :gloom
+      assert mixed.confidence > 0.0
+    end
+
+    test "an untainted background hue (nil) leaves classification unchanged" do
+      bgr = hsv_to_bgr({110, 220, 200})
+      mat = solid_mat(40, 30, bgr)
+
+      assert SinColor.classify_cell(mat, {0, 40}, 0, 30, nil, nil, nil).sin ==
+               SinColor.classify_cell(mat, {0, 40}, 0, 30).sin
+    end
+
+    test "tier/wedge matching follows the empirically detected sin color, not a separate bg_hue remix" do
+      drifted_sloth_bgr = hsv_to_bgr({29, 220, 200})
+      pure_sloth_bgr = hsv_to_bgr({23, 220, 200})
+
+      mat = solid_mat(60, 90, drifted_sloth_bgr)
+      mat = Evision.rectangle(mat, {0, 45}, {59, 74}, pure_sloth_bgr, thickness: -1)
+
+      unmixed = SinColor.classify_cell(mat, {0, 60}, 0, 30, 45)
+      assert unmixed.sin == :sloth
+      assert unmixed.tier == :skill1
+
+      mixed = SinColor.classify_cell(mat, {0, 60}, 0, 30, 45, nil, 50)
+      assert mixed.sin == :sloth
+      assert mixed.tier == :skill1
+    end
+
+    test "tier/wedge matching tracks the real detected color when the whole icon (not just the hue-scan sample) drifted together" do
+      drifted_sloth_bgr = hsv_to_bgr({29, 220, 200})
+      mat = solid_mat(60, 30, drifted_sloth_bgr)
+
+      result = SinColor.classify_cell(mat, {0, 60}, 0, 30, nil, nil, 50)
+
+      assert result.sin == :sloth
+      assert result.tier == :skill3
+    end
+  end
+
+  describe "background_color/2" do
+    test "recovers the average color and hue of a solid-colored strip" do
+      bgr = hsv_to_bgr({41, 220, 200})
+      mat = solid_mat(40, 20, bgr)
+
+      result = SinColor.background_color(mat, {0, 0, 40, 20})
+
+      assert result.hue == 41
+      assert result.bgr == bgr
+      assert_in_delta result.saturation, 220, 1
+    end
+  end
+
+  describe "effective_mix_pct/1" do
+    test "nil saturation mixes at the full bg_mix_pct" do
+      assert SinColor.effective_mix_pct(nil) == SinColor.bg_mix_pct()
+    end
+
+    test "0 saturation means no mix" do
+      assert SinColor.effective_mix_pct(0) == 0.0
+    end
+
+    test "max saturation (255) mixes at the full bg_mix_pct" do
+      assert SinColor.effective_mix_pct(255) == SinColor.bg_mix_pct()
+    end
+
+    test "half saturation mixes at half the bg_mix_pct" do
+      assert_in_delta SinColor.effective_mix_pct(128), SinColor.bg_mix_pct() * (128 / 255), 0.0001
+    end
+  end
+
+  describe "classify_cell/8 with background saturation scaling" do
+    test "a fully desaturated background (saturation 0) applies no hue mixing" do
+      drifted_bgr = hsv_to_bgr({89, 220, 200})
+      mat = solid_mat(40, 30, drifted_bgr)
+
+      unmixed = SinColor.classify_cell(mat, {0, 40}, 0, 30)
+      no_sat_mix = SinColor.classify_cell(mat, {0, 40}, 0, 30, nil, nil, 41, 0)
+
+      assert no_sat_mix.sin == unmixed.sin
+      assert no_sat_mix.confidence == unmixed.confidence
+    end
+
+    test "a fully saturated background (saturation 255) mixes identically to omitting saturation" do
+      drifted_bgr = hsv_to_bgr({89, 220, 200})
+      mat = solid_mat(40, 30, drifted_bgr)
+
+      full_mix = SinColor.classify_cell(mat, {0, 40}, 0, 30, nil, nil, 41)
+      explicit_full_sat = SinColor.classify_cell(mat, {0, 40}, 0, 30, nil, nil, 41, 255)
+
+      assert explicit_full_sat.sin == full_mix.sin
+      assert_in_delta explicit_full_sat.confidence, full_mix.confidence, 0.0001
+    end
+  end
+
   defp mid(lo, hi), do: div(lo + hi, 2)
 
   defp hsv_to_bgr({h, s, v}) do

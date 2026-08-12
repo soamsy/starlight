@@ -17,6 +17,9 @@ defmodule StarlightBot.Vision.Matcher do
   @hsv_tolerance_max 30  # widest per-channel HSV slack, at confidence 0.0
   @hue_max 179           # OpenCV hue range is 0-179, not 0-359
 
+  @fill_holes_close_kernel_px 3
+  @deep_defect_min_depth_px 6    # convexity-defect depth past which a concavity counts as an invasive line to patch, not a shape edge
+
   def find(%Frame{} = frame, hook_name, opts \\ []) when is_atom(hook_name) do
     case HookRegistry.find(hook_name) do
       {:error, :not_found} ->
@@ -406,10 +409,79 @@ defmodule StarlightBot.Vision.Matcher do
     Evision.fillPoly(mask, [poly], 255)
   end
 
-  def fill_holes_mask(mask) do
-    {contours, _hierarchy} = Evision.findContours(mask, @retr_external, @chain_approx_simple)
+  def fill_holes_mask(mask, close_kernel_px \\ @fill_holes_close_kernel_px, min_defect_depth_px \\ @deep_defect_min_depth_px) do
+    kernel = Evision.getStructuringElement(@morph_ellipse, {close_kernel_px, close_kernel_px})
+
+    closed =
+      mask
+      |> fill_deep_defects_mask(min_defect_depth_px)
+      |> Evision.morphologyEx(@morph_close, kernel)
+
+    {contours, _hierarchy} = Evision.findContours(closed, @retr_external, @chain_approx_simple)
     filled = Evision.Mat.zeros(Evision.Mat.shape(mask), {:u, 8})
     Evision.drawContours(filled, contours, -1, 255, thickness: -1)
+  end
+
+  def fill_deep_defects_mask(mask, min_defect_depth_px \\ @deep_defect_min_depth_px) do
+    {contours, _hierarchy} = Evision.findContours(mask, @retr_external, @chain_approx_simple)
+    Enum.reduce(contours, mask, &patch_deep_defects(&2, &1, min_defect_depth_px))
+  end
+
+  defp patch_deep_defects(mask, contour, min_defect_depth_px) do
+    case contour_defects(contour) do
+      {:ok, points, defects} ->
+        Enum.reduce(defects, mask, fn {start_idx, end_idx, depth_fixpt}, acc ->
+          if depth_fixpt / 256.0 >= min_defect_depth_px do
+            fill_defect(acc, points, start_idx, end_idx)
+          else
+            acc
+          end
+        end)
+
+      :error ->
+        mask
+    end
+  end
+
+  defp contour_defects(contour) do
+    hull = Evision.convexHull(contour, returnPoints: false)
+
+    case Evision.convexityDefects(contour, hull) do
+      {:error, _} ->
+        {:ok, {}, []}
+
+      defects ->
+        points =
+          contour
+          |> Evision.Mat.to_nx()
+          |> Nx.to_flat_list()
+          |> Enum.chunk_every(2)
+          |> Enum.map(fn [x, y] -> {x, y} end)
+          |> List.to_tuple()
+
+        rows =
+          defects
+          |> Evision.Mat.to_nx()
+          |> Nx.to_flat_list()
+          |> Enum.chunk_every(4)
+          |> Enum.map(fn [start_idx, end_idx, _far_idx, depth] -> {start_idx, end_idx, depth} end)
+
+        {:ok, points, rows}
+    end
+  rescue
+    _ -> :error
+  end
+
+  defp fill_defect(mask, points, start_idx, end_idx) do
+    num_points = tuple_size(points)
+
+    indices =
+      if end_idx >= start_idx,
+        do: start_idx..end_idx,
+        else: Enum.to_list(start_idx..(num_points - 1)) ++ Enum.to_list(0..end_idx)
+
+    poly = indices |> Enum.map(&elem(points, &1)) |> point_mat()
+    Evision.fillPoly(mask, [poly], 255)
   end
 
   defp point_mat(points) do

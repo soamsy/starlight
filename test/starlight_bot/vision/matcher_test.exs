@@ -40,7 +40,6 @@ defmodule StarlightBot.Vision.MatcherTest do
       assert pixel(wedge, 0, 0) == 0
       assert pixel(wedge, w - 1, 0) > 0
 
-      # at y=5 the diagonal sits at x = w/2 + 5 = 35
       assert pixel(wedge, 10, 5) == 0
       assert pixel(wedge, 50, 5) > 0
     end
@@ -131,6 +130,79 @@ defmodule StarlightBot.Vision.MatcherTest do
       filled = Matcher.fill_holes_mask(mask)
 
       assert Evision.countNonZero(filled) == Evision.countNonZero(mask)
+    end
+
+    test "bridges a narrow-necked cavity (not a true hole) into a hole and fills it" do
+      mask = solid_mask_with_hole(60, 40, {10, 10, 40, 20}, {25, 17, 10, 6})
+      mask = Evision.rectangle(mask, {29, 22}, {30, 35}, 0, thickness: -1)
+
+      filled = Matcher.fill_holes_mask(mask)
+
+      assert pixel(filled, 30, 20) > 0
+    end
+
+    test "fills a wide-open cavity too, once it's deep enough - width alone doesn't spare it" do
+      mask = solid_mask_with_hole(60, 40, {10, 10, 40, 20}, {25, 17, 10, 6})
+      mask = Evision.rectangle(mask, {20, 22}, {39, 35}, 0, thickness: -1)
+
+      filled = Matcher.fill_holes_mask(mask)
+
+      assert pixel(filled, 30, 20) > 0
+    end
+
+    test "leaves a wide, shallow notch alone - not narrow enough to close, not deep enough to patch" do
+      mask = solid_mask_with_hole(60, 40, {10, 10, 40, 20}, nil)
+      mask = Evision.rectangle(mask, {15, 27}, {34, 35}, 0, thickness: -1)
+
+      filled = Matcher.fill_holes_mask(mask)
+
+      assert pixel(filled, 24, 28) == 0
+    end
+
+    test "with both the closing kernel and the defect-depth pass disabled, the same neck stays unbridged" do
+      mask = solid_mask_with_hole(60, 40, {10, 10, 40, 20}, {25, 17, 10, 6})
+      mask = Evision.rectangle(mask, {29, 22}, {30, 35}, 0, thickness: -1)
+
+      filled = Matcher.fill_holes_mask(mask, 1, 999)
+
+      assert pixel(filled, 30, 20) == 0
+    end
+  end
+
+  describe "fill_deep_defects_mask/2" do
+    test "patches a long thin line invading toward the centroid, regardless of its width" do
+      mask = solid_mask_with_hole(60, 40, {10, 10, 40, 20}, nil)
+      mask = Evision.rectangle(mask, {28, 10}, {29, 25}, 0, thickness: -1)
+
+      patched = Matcher.fill_deep_defects_mask(mask)
+
+      assert pixel(patched, 28, 17) > 0
+    end
+
+    test "leaves a notch below the depth threshold alone" do
+      mask = solid_mask_with_hole(60, 40, {10, 10, 40, 20}, nil)
+      mask = Evision.rectangle(mask, {28, 10}, {29, 13}, 0, thickness: -1)
+
+      patched = Matcher.fill_deep_defects_mask(mask)
+
+      assert pixel(patched, 28, 11) == 0
+    end
+
+    test "a lower depth threshold picks up that same shallow notch" do
+      mask = solid_mask_with_hole(60, 40, {10, 10, 40, 20}, nil)
+      mask = Evision.rectangle(mask, {28, 10}, {29, 13}, 0, thickness: -1)
+
+      patched = Matcher.fill_deep_defects_mask(mask, 2)
+
+      assert pixel(patched, 28, 11) > 0
+    end
+
+    test "leaves a fully convex blob (no defects at all) unchanged" do
+      mask = solid_mask_with_hole(60, 40, {10, 10, 40, 20}, nil)
+
+      patched = Matcher.fill_deep_defects_mask(mask)
+
+      assert Evision.countNonZero(patched) == Evision.countNonZero(mask)
     end
   end
 
