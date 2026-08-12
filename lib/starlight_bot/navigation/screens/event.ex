@@ -1,42 +1,33 @@
 defmodule StarlightBot.Navigation.Screens.Event do
   use StarlightBot.Navigation.DSL
-
+  alias StarlightBot.Automation.EventAdvantage
 
   screen :event, identity: :event do
     transition to: :event_over do
       [
         retry_until(
-          [:event_choices, :event_advantage_check, :event_continue, not_hook(:event)],
-          [
-            branch([
-              {:event_skip, [click(:event_skip)]},
-              {:event_skip_unselectable, [click(:event_skip_unselectable)]},
-              {:default, []}
-            ])
-          ],
-          every: 500,
-          tries: 60
-        ),
-        branch([
-          {:event_advantage_check,
-           [
-             click(:event_advantage_check),
-             await(:event_advantage_go_forth),
-             click(:event_advantage_go_forth),
-             await(:event_commence),
-             click(:event_commence),
-             await(:event_result)
-           ]},
-          {:event_choices, [click(:event_choice_0), sleep(300)]},
-          {:default, []}
-        ]),
-        retry_until(
           not_hook(:event),
           [
             branch([
-              {:event_proceed, [click(:event_proceed)]},
-              {:event_continue, [click(:event_continue)]},
-              {:event_skip, [click(:event_skip)]},
+              {:event_proceed, [reclick_until_gone(:event_proceed)]},
+              {:event_continue, [reclick_until_gone(:event_continue)]},
+              {:event_skip, [reclick_until_gone(:event_skip), click(:event_skip_unselectable), sleep(20), click(:event_skip_unselectable)]},
+              {:event_commence, [reclick_until_gone(:event_commence)]},
+              {:event_advantage_none_selected,
+                [
+                  retry_until(
+                    not_hook(:event_advantage_none_selected),
+                    [custom(&EventAdvantage.select_best_sinner/2)],
+                    every: 500,
+                    tries: 20
+                  ),
+                  await(:event_commence, timeout: 1000),
+                  reclick_until_gone(:event_commence)
+                ]},
+              {:event_chicken_1, [click(:event_choice_0), sleep(300)]},
+              {:event_chicken_2, [click(:event_choice_0), sleep(300)]},
+              {:event_text_ego_gift, [click(:event_choice_0), sleep(300)]},
+              {:event_choices, [click(:event_choice_0), sleep(300)]},
               {:event_skip_unselectable, [click(:event_skip_unselectable)]},
               {:default, []}
             ])

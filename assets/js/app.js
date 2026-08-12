@@ -316,6 +316,7 @@ function overlayCanvasHook(eventName) {
 
 const BattleInspectorCanvas = overlayCanvasHook("load_battle_frame")
 const ChainPreviewCanvas = overlayCanvasHook("load_chain_preview_frame")
+const DungeonInspectorCanvas = overlayCanvasHook("load_dungeon_frame")
 
 // --- EditableNotes hook ---
 // Double-click the notes cell to edit inline; blur (click or tab away) saves.
@@ -400,7 +401,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TemplateEditor, EditableNotes, PreserveScroll }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll }
 })
 
 liveSocket.connect()

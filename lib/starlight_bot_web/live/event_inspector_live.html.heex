@@ -1,0 +1,48 @@
+<div class="flex flex-col h-full gap-3 overflow-hidden">
+  <div class="flex items-center gap-3 shrink-0">
+    <h1 class="text-lg font-bold">Event Inspector</h1>
+
+    <button phx-click="run" class="btn btn-sm btn-primary" disabled={@status in [:counting_down, :running]}>
+      ▶ Run Event
+    </button>
+
+    <span class="text-xs text-base-content/60"><%= status_label(@status) %></span>
+
+    <%= if @countdown do %>
+      <span class="flex items-center gap-1 text-sm text-warning font-semibold">
+        alt-tab into Limbus Company now… <span class="font-mono text-lg"><%= @countdown %></span>
+      </span>
+    <% end %>
+
+    <%= if @status == :running do %>
+      <span class="loading loading-spinner loading-xs"></span>
+    <% end %>
+  </div>
+
+  <div class="flex-1 min-h-0 flex gap-3">
+    <div class="flex-1 min-w-0 flex flex-col gap-2">
+      <div class="shrink-0 bg-base-200 rounded-xl overflow-hidden flex items-center justify-center" style="height: 360px;">
+        <%= if @frame_b64 do %>
+          <img src={"data:image/jpeg;base64,#{@frame_b64}"} class="max-w-full max-h-full object-contain" alt="Captured frame" />
+        <% else %>
+          <div class="text-base-content/30 text-sm select-none text-center">
+            <p>No frame yet</p>
+            <p class="text-xs mt-1">Run Event to capture the screen it acted on</p>
+          </div>
+        <% end %>
+      </div>
+
+      <div class="flex-1 min-h-0 overflow-y-auto bg-base-200 rounded-xl p-3 font-mono text-xs flex flex-col-reverse gap-0.5">
+        <%= if @log == [] do %>
+          <div class="text-base-content/30 text-center py-4 select-none">Log empty</div>
+        <% else %>
+          <%= for entry <- @log do %>
+            <div class={"leading-snug #{log_kind_class(entry.kind)}"}>
+              <%= entry.text %>
+            </div>
+          <% end %>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>

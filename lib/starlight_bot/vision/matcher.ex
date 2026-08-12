@@ -203,7 +203,7 @@ defmodule StarlightBot.Vision.Matcher do
 
     raw = Evision.Mat.to_binary(result_mat, 0)
 
-    for <<v::float-32-little <- raw>>, do: v
+    for(<<v::float-32-little <- raw>>, do: v)
     |> Enum.with_index()
     |> Enum.filter(fn {v, _} -> v >= confidence end)
     |> Enum.map(fn {v, i} -> {v, rem(i, cols), div(i, cols)} end)

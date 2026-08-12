@@ -2,13 +2,18 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
   alias StarlightBot.{Strategies, Teams}
+  alias StarlightBot.Navigation.Navigator
 
   @sinners_row1 ~w(yi_sang faust don_quixote ryoshu meursault hong_lu)
   @sinners_row2 ~w(heathcliff ishmael rodion sinclair outis gregor)
   @gift_affinities ~w(burn bleed tremor rupture sinking poise charge)
+  @countdown_secs 2
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket), do: Navigator.subscribe()
+    nav = Navigator.status()
+
     {:ok,
      socket
      |> assign(:teams, Teams.list_teams())
@@ -24,7 +29,11 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:active, false)
      |> assign(:sinner_order, [])
      |> assign(:selected_ids, blank_selected_ids())
-     |> assign(:strategy_forms, blank_strategy_forms())}
+     |> assign(:strategy_forms, blank_strategy_forms())
+     |> assign(:phase, nav.phase)
+     |> assign(:log, nav.log)
+     |> assign(:pending_action, nil)
+     |> assign(:countdown, nil)}
   end
 
   @impl true
@@ -144,7 +153,58 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     end
   end
 
+  @impl true
+  def handle_event("select_team_on_screen", %{"id" => id}, socket) do
+    id = String.to_integer(id)
+    team = Enum.find(socket.assigns.teams, &(&1.id == id))
+    {:noreply, start_countdown(socket, {:select_team_on_screen, id, team && team.name})}
+  end
+
+  @impl true
+  def handle_event("cancel_pending", _, socket) do
+    {:noreply, socket |> assign(:pending_action, nil) |> assign(:countdown, nil)}
+  end
+
+  @impl true
+  def handle_info(:countdown_tick, %{assigns: %{pending_action: nil}} = socket) do
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info(:countdown_tick, %{assigns: %{countdown: 1, pending_action: action}} = socket) do
+    run_pending_action(action)
+    {:noreply, socket |> assign(:pending_action, nil) |> assign(:countdown, nil)}
+  end
+
+  @impl true
+  def handle_info(:countdown_tick, socket) do
+    Process.send_after(self(), :countdown_tick, 1_000)
+    {:noreply, assign(socket, :countdown, socket.assigns.countdown - 1)}
+  end
+
+  @impl true
+  def handle_info({:nav_state, nav}, socket) do
+    {:noreply, socket |> assign(:phase, nav.phase) |> assign(:log, nav.log)}
+  end
+
   # --- Private ---
+
+  defp start_countdown(socket, action) do
+    Process.send_after(self(), :countdown_tick, 1_000)
+
+    socket
+    |> assign(:pending_action, action)
+    |> assign(:countdown, @countdown_secs)
+  end
+
+  defp run_pending_action({:select_team_on_screen, id, _name}), do: Navigator.select_team_on_screen(id)
+
+  def pending_action_label({:select_team_on_screen, _id, name}), do: "select on screen: #{name || "team"}"
+
+  def log_kind_class(:ok), do: "text-success"
+  def log_kind_class(:error), do: "text-error"
+  def log_kind_class(:info), do: "text-base-content/60"
+  def log_kind_class(_), do: "text-base-content/40"
 
   defp load_team(socket, id) do
     case Teams.get_team(id) do

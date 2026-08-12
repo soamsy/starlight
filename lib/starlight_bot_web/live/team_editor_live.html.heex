@@ -7,8 +7,32 @@
         <div class="flex items-center gap-3 mb-2">
           <h2 class="card-title text-lg">Teams</h2>
           <span class="badge badge-neutral badge-sm"><%= length(@teams) %></span>
+
+          <%= if @phase != :idle do %>
+            <span class="flex items-center gap-1 text-sm text-base-content/60">
+              <span class="loading loading-spinner loading-xs"></span> Running…
+            </span>
+          <% end %>
+
           <button phx-click="new_team" class="btn btn-primary btn-sm ml-auto">+ New Team</button>
         </div>
+
+        <%= if @countdown do %>
+          <div class="bg-warning/10 border border-warning/30 rounded-xl p-2 mb-2 shrink-0 flex items-center justify-between gap-2">
+            <div>
+              <div class="text-xs text-warning font-semibold">Focus the game window now</div>
+              <div class="font-mono text-xs text-base-content/70"><%= pending_action_label(@pending_action) %></div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-xl font-bold text-warning"><%= @countdown %></span>
+              <button phx-click="cancel_pending" class="btn btn-ghost btn-xs text-base-content/40">✕</button>
+            </div>
+          </div>
+        <% end %>
+
+        <%= if entry = List.first(@log) do %>
+          <div class={"text-xs font-mono mb-2 leading-snug " <> log_kind_class(entry.kind)}><%= entry.text %></div>
+        <% end %>
 
         <div class="overflow-y-auto flex-1 min-h-0">
           <table class="table table-xs table-pin-rows">
@@ -17,6 +41,7 @@
                 <th>Name</th>
                 <th>Hook</th>
                 <th>Sinners</th>
+                <th></th>
                 <th></th>
                 <th></th>
               </tr>
@@ -36,6 +61,11 @@
                     <% end %>
                   </td>
                   <td>
+                    <button phx-click="select_team_on_screen" phx-value-id={team.id}
+                            disabled={@phase != :idle or @countdown != nil}
+                            class="btn btn-xs btn-outline">Select on Screen</button>
+                  </td>
+                  <td>
                     <button phx-click="delete_team" phx-value-id={team.id}
                             data-confirm={"Delete '#{team.name}'?"}
                             class="btn btn-xs btn-ghost text-error">Del</button>
@@ -44,7 +74,7 @@
               <% end %>
               <%= if @teams == [] do %>
                 <tr>
-                  <td colspan="5" class="text-center text-base-content/40 py-4">No teams yet — create one.</td>
+                  <td colspan="6" class="text-center text-base-content/40 py-4">No teams yet — create one.</td>
                 </tr>
               <% end %>
             </tbody>

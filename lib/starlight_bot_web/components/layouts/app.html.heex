@@ -51,6 +51,23 @@
         <path d="M19 21l2-2" />
       </svg>
     </.link>
+    <.link navigate={~p"/dungeon"}
+           class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :dungeon, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Dungeon Inspector">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <line x1="6" x2="6" y1="3" y2="15" />
+        <circle cx="18" cy="6" r="3" />
+        <circle cx="6" cy="18" r="3" />
+        <path d="M18 9a9 9 0 0 1-9 9" />
+      </svg>
+    </.link>
+    <.link navigate={~p"/events"}
+           class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :events, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Event Inspector">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </svg>
+    </.link>
     <.link navigate={~p"/transitions"}
            class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :transitions, do: "btn-primary", else: "btn-ghost text-base-content/50")}
            data-tip="Transitions">

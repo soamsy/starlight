@@ -18,7 +18,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeam do
   def run(team_type, ctx) when team_type in @teams do
     case Engine.localize() do
       {:ok, :team_select} ->
-        select(team_type, ctx)
+        select_hook(team_hook(team_type), ctx)
 
       {:ok, other} ->
         Ctx.log(ctx, :error, "not on :team_select (currently #{other}) — doing nothing")
@@ -35,14 +35,13 @@ defmodule StarlightBot.Automation.Scripts.SelectTeam do
     {:error, {:invalid_team_type, team_type}}
   end
 
-  defp select(team_type, ctx) do
-    selected_hook = team_selected_hook(team_type)
+  def select_hook(hook, ctx \\ Ctx.new()) when is_atom(hook) do
+    selected_hook = :"#{hook}_selected"
 
     if Engine.check(selected_hook) do
       Ctx.log(ctx, :ok, "#{selected_hook} already selected — nothing to do")
       {:ok, selected_hook}
     else
-      hook = team_hook(team_type)
       {selector, top_team} = selector_pair()
       Ctx.log(ctx, :info, "looking for #{hook} in team selector (#{selector})")
 
@@ -59,8 +58,6 @@ defmodule StarlightBot.Automation.Scripts.SelectTeam do
   end
 
   defp team_hook(team_type), do: :"team_#{team_type}"
-
-  defp team_selected_hook(team_type), do: :"team_#{team_type}_selected"
 
   defp selector_pair do
     if Engine.check(:team_selector_tall) do

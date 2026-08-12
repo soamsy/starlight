@@ -33,6 +33,9 @@ defmodule StarlightBot.Navigation.Navigator do
   def run_luxcavation(team_id, exp_count, thread_count),
     do: GenServer.cast(__MODULE__, {:run_luxcavation, team_id, exp_count, thread_count})
 
+  def select_team_on_screen(team_id),
+    do: GenServer.cast(__MODULE__, {:select_team_on_screen, team_id})
+
   def cancel, do: GenServer.cast(__MODULE__, :cancel)
 
   def resume_luxcavation, do: GenServer.cast(__MODULE__, :resume_luxcavation)
@@ -226,6 +229,24 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
+  def handle_cast({:select_team_on_screen, team_id}, state) do
+    state = cancel_running(state)
+    state = add_log(state, :info, "Selecting team #{team_id} on screen")
+    me = self()
+
+    pid =
+      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
+        ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end)
+        result = StarlightBot.Automation.Scripts.SelectTeamOnScreen.run(team_id, ctx)
+        send(me, {:nav_result, :select_team_on_screen, result})
+      end).pid
+
+    state = %{state | phase: :running, goal: nil, task_pid: pid}
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_cast(:cancel, state) do
     state = cancel_running(state)
     state = add_log(state, :info, "Cancelled")
@@ -308,6 +329,23 @@ defmodule StarlightBot.Navigation.Navigator do
           |> Map.put(:task_pid, nil)
           |> add_log(:error, "Action failed: #{inspect(reason)}")
       end
+
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:nav_result, :select_team_on_screen, result}, state) do
+    state =
+      case result do
+        {:ok, %{team: team?, order: order?}} ->
+          add_log(state, :ok, "Applied on screen (team=#{team?}, order=#{order?})")
+
+        {:error, reason} ->
+          add_log(state, :error, "Failed: #{inspect(reason)}")
+      end
+      |> Map.put(:phase, :idle)
+      |> Map.put(:task_pid, nil)
 
     broadcast(state)
     {:noreply, state}
