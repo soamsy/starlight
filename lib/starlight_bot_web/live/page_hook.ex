@@ -10,7 +10,8 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.TransitionsLive => :transitions,
     StarlightBotWeb.Live.TeamEditorLive => :teams,
     StarlightBotWeb.Live.LuxcavationLive => :luxcavation,
-    StarlightBotWeb.Live.RewardsLive => :rewards
+    StarlightBotWeb.Live.RewardsLive => :rewards,
+    StarlightBotWeb.Live.MirrorDungeonLive => :mirror_dungeon
   }
 
   def on_mount(:default, _params, _session, socket) do

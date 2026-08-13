@@ -33,6 +33,9 @@ defmodule StarlightBot.Navigation.Navigator do
   def run_luxcavation(team_id, exp_count, thread_count, collect_xp?),
     do: GenServer.cast(__MODULE__, {:run_luxcavation, team_id, exp_count, thread_count, collect_xp?})
 
+  def run_mirror_dungeon(team_id, run_count, config),
+    do: GenServer.cast(__MODULE__, {:run_mirror_dungeon, team_id, run_count, config})
+
   def select_team_on_screen(team_id),
     do: GenServer.cast(__MODULE__, {:select_team_on_screen, team_id})
 
@@ -41,6 +44,8 @@ defmodule StarlightBot.Navigation.Navigator do
   def cancel, do: GenServer.cast(__MODULE__, :cancel)
 
   def resume_luxcavation, do: GenServer.cast(__MODULE__, :resume_luxcavation)
+
+  def resume_mirror_dungeon, do: GenServer.cast(__MODULE__, :resume_mirror_dungeon)
 
   @impl true
   def init(_opts), do: {:ok, %__MODULE__{}}
@@ -236,6 +241,40 @@ defmodule StarlightBot.Navigation.Navigator do
     broadcast(state)
     {:noreply, state}
   end
+
+  @impl true
+  def handle_cast({:run_mirror_dungeon, team_id, run_count, config}, state) do
+    state = cancel_running(state)
+    state = add_log(state, :info, "Running mirror dungeon: team=#{team_id} runs=#{run_count} config=#{inspect(config)}")
+    me = self()
+
+    pid =
+      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
+        ctx =
+          Ctx.new(
+            on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end,
+            on_pause: fn -> send(me, :nav_paused) end
+          )
+
+        result = StarlightBot.Automation.Scripts.MirrorDungeonRunner.run(team_id, run_count, config, ctx)
+        send(me, {:nav_result, :run_script, result})
+      end).pid
+
+    state = %{state | phase: :running, goal: nil, task_pid: pid}
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast(:resume_mirror_dungeon, %{phase: :paused, task_pid: pid} = state) when is_pid(pid) do
+    send(pid, :resume_mirror_dungeon)
+    state = %{state | phase: :running}
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast(:resume_mirror_dungeon, state), do: {:noreply, state}
 
   @impl true
   def handle_cast({:select_team_on_screen, team_id}, state) do

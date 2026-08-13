@@ -135,8 +135,17 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
       Ctx.log(ctx, :info, "sinner_count_0 already set — skipping clear_selection")
       []
     else
-      [click(:clear_selection), await(:clear_selection_confirm), click(:clear_selection_confirm), sleep(400)]
+      [click(:clear_selection)] ++
+      confirm_either(:clear_selection_confirm, :clear_selection_confirm_2) ++
+      [sleep(400)]
     end
+  end
+
+  defp confirm_either(hook_a, hook_b) do
+    [
+      await_any([hook_a, hook_b]),
+      branch([{hook_a, [click(hook_a)]}, {hook_b, [click(hook_b)]}])
+    ]
   end
 
   defp sinner_hook(sinner, kind), do: :"sinner_#{kind}_#{String.replace(sinner, "_", "")}"

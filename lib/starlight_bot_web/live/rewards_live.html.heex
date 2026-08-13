@@ -24,33 +24,97 @@
     <%!-- Left: form --%>
     <div class="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto">
 
-      <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 text-xs text-warning">
-        Run this from the exploration-complete screen, or straight from the
-        rewards popup after a mirror dungeon run ends or is given up on.
+      <div role="tablist" class="tabs tabs-boxed shrink-0">
+        <a role="tab" phx-click="select_reward_type" phx-value-type="mirror_dungeon"
+           class={"tab #{if @reward_type == "mirror_dungeon", do: "tab-active"}"}>
+          Mirror Dungeon
+        </a>
+        <a role="tab" phx-click="select_reward_type" phx-value-type="cabinet_reward"
+           class={"tab #{if @reward_type == "cabinet_reward", do: "tab-active"}"}>
+          Cabinet Reward
+        </a>
+        <a role="tab" phx-click="select_reward_type" phx-value-type="mounting_trials"
+           class={"tab #{if @reward_type == "mounting_trials", do: "tab-active"}"}>
+          Mounting Trials
+        </a>
+        <a role="tab" phx-click="select_reward_type" phx-value-type="encounter_reward"
+           class={"tab #{if @reward_type == "encounter_reward", do: "tab-active"}"}>
+          Encounter Reward
+        </a>
       </div>
 
-      <form phx-submit="run" phx-change="update_form" class="flex flex-col gap-3">
-        <label class="flex flex-col gap-1">
-          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Action</span>
-          <select name="action" class="select select-sm select-bordered">
-            <option value="claim" selected={@action == "claim"}>Claim rewards</option>
-            <option value="give_up" selected={@action == "give_up"}>Give up rewards</option>
-            <option value="to_window" selected={@action == "to_window"}>Go to window</option>
-            <option value="to_list" selected={@action == "to_list"}>To List</option>
-          </select>
-        </label>
+      <%= if @reward_type == "mirror_dungeon" do %>
+        <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 text-xs text-warning">
+          Run this from the exploration-complete screen, or straight from the
+          rewards popup after a mirror dungeon run ends or is given up on.
+        </div>
 
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="weekly_bonus" value="true" checked={@weekly_bonus}
-                 disabled={@action != "claim"}
-                 class="checkbox checkbox-sm" />
-          <span class="text-sm">Include weekly bonuses</span>
-        </label>
+        <form phx-submit="run" phx-change="update_form" class="flex flex-col gap-3">
+          <label class="flex flex-col gap-1">
+            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Action</span>
+            <select name="action" class="select select-sm select-bordered">
+              <option value="claim" selected={@action == "claim"}>Claim rewards</option>
+              <option value="give_up" selected={@action == "give_up"}>Give up rewards</option>
+              <option value="to_window" selected={@action == "to_window"}>Go to window</option>
+              <option value="to_list" selected={@action == "to_list"}>To List</option>
+            </select>
+          </label>
 
-        <button type="submit" disabled={@phase != :idle or @countdown != nil} class="btn btn-primary btn-sm">
-          Run
-        </button>
-      </form>
+          <label class="flex items-center gap-2">
+            <input type="checkbox" name="weekly_bonus" value="true" checked={@weekly_bonus}
+                   disabled={@action != "claim"}
+                   class="checkbox checkbox-sm" />
+            <span class="text-sm">Include weekly bonuses</span>
+          </label>
+
+          <button type="submit" disabled={@phase != :idle or @countdown != nil} class="btn btn-primary btn-sm">
+            Run
+          </button>
+        </form>
+      <% end %>
+
+      <%= if @reward_type == "cabinet_reward" do %>
+        <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 text-xs text-warning">
+          Run this from the cabinet reward screen. Selects the highest-tier
+          gift offered, confirms, and dismisses the ego gift popup.
+        </div>
+
+        <form phx-submit="run_script" class="flex flex-col gap-3">
+          <input type="hidden" name="script" value="cabinet_reward" />
+          <button type="submit" disabled={@phase != :idle or @countdown != nil} class="btn btn-primary btn-sm">
+            Run
+          </button>
+        </form>
+      <% end %>
+
+      <%= if @reward_type == "mounting_trials" do %>
+        <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 text-xs text-warning">
+          Run this from the mounting trials screen. Selects the highest-tier
+          gift(s) offered (1 or 2), confirms, and dismisses the ego gift
+          popup(s).
+        </div>
+
+        <form phx-submit="run_script" class="flex flex-col gap-3">
+          <input type="hidden" name="script" value="mounting_trials" />
+          <button type="submit" disabled={@phase != :idle or @countdown != nil} class="btn btn-primary btn-sm">
+            Run
+          </button>
+        </form>
+      <% end %>
+
+      <%= if @reward_type == "encounter_reward" do %>
+        <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 text-xs text-warning">
+          Run this from the encounter reward screen. Picks the highest-priority
+          gift offered, confirms, and dismisses the ego gift popup if it shows.
+        </div>
+
+        <form phx-submit="run_script" class="flex flex-col gap-3">
+          <input type="hidden" name="script" value="encounter_reward" />
+          <button type="submit" disabled={@phase != :idle or @countdown != nil} class="btn btn-primary btn-sm">
+            Run
+          </button>
+        </form>
+      <% end %>
 
       <%!-- Countdown overlay --%>
       <%= if @countdown do %>

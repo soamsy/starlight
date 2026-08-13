@@ -23,6 +23,7 @@ defmodule StarlightBotWeb.Router do
       live "/transitions", Live.TransitionsLive
       live "/teams", Live.TeamEditorLive
       live "/luxcavation", Live.LuxcavationLive
+      live "/mirror-dungeon", Live.MirrorDungeonLive
       live "/rewards", Live.RewardsLive
     end
   end

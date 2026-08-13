@@ -1,5 +1,6 @@
 defmodule StarlightBotWeb.Live.RewardsLive do
   use StarlightBotWeb, :live_view
+  alias StarlightBot.Automation.Scripts
   alias StarlightBot.Automation.Scripts.ClaimRewards
   alias StarlightBot.Navigation.Navigator
 
@@ -14,6 +15,7 @@ defmodule StarlightBotWeb.Live.RewardsLive do
      socket
      |> assign(:phase, nav.phase)
      |> assign(:log, nav.log)
+     |> assign(:reward_type, "cabinet_reward")
      |> assign(:action, "claim")
      |> assign(:weekly_bonus, true)
      |> assign(:pending_action, nil)
@@ -21,10 +23,20 @@ defmodule StarlightBotWeb.Live.RewardsLive do
   end
 
   @impl true
+  def handle_event("select_reward_type", %{"type" => type}, socket) do
+    {:noreply, assign(socket, :reward_type, type)}
+  end
+
+  @impl true
   def handle_event("run", %{"action" => action} = params, socket) do
     Code.ensure_loaded(ClaimRewards)
     config = %{action: String.to_existing_atom(action), weekly_bonus?: Map.get(params, "weekly_bonus") == "true"}
     {:noreply, start_countdown(socket, {:claim_rewards, config})}
+  end
+
+  @impl true
+  def handle_event("run_script", %{"script" => script}, socket) do
+    {:noreply, start_countdown(socket, {:run_script, String.to_existing_atom(script)})}
   end
 
   @impl true
@@ -77,8 +89,16 @@ defmodule StarlightBotWeb.Live.RewardsLive do
   end
 
   defp run_pending_action({:claim_rewards, config}), do: Navigator.claim_rewards(config)
+  defp run_pending_action({:run_script, name}), do: Navigator.run_script(name)
 
   def pending_action_label({:claim_rewards, %{action: action}}), do: "rewards: #{action}"
+
+  def pending_action_label({:run_script, name}) do
+    case Scripts.find(name) do
+      %{label: label} -> label
+      nil -> "#{name}"
+    end
+  end
 
   def phase_label(:idle), do: nil
   def phase_label(:localizing), do: "Localizing…"

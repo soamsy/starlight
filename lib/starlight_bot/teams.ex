@@ -41,6 +41,8 @@ defmodule StarlightBot.Teams do
   def get_team(id) when is_integer(id) do
     Repo.one(
       from t in "teams",
+        left_join: g in "gift_strategies",
+        on: g.id == t.gift_strategy_id,
         where: t.id == ^id,
         select: %{
           id: t.id,
@@ -48,11 +50,13 @@ defmodule StarlightBot.Teams do
           hook: t.hook,
           sinner_order: t.sinner_order,
           gift_strategy_id: t.gift_strategy_id,
+          gift_strategy_data: g.data,
           battle_strategy_id: t.battle_strategy_id,
           theme_pack_plan_id: t.theme_pack_plan_id
         }
     )
     |> decode_sinner_order()
+    |> decode_affinity()
   rescue
     _ -> nil
   end
@@ -139,6 +143,20 @@ defmodule StarlightBot.Teams do
       end
 
     %{team | sinner_order: order}
+  end
+
+  defp decode_affinity(nil), do: nil
+
+  defp decode_affinity(%{gift_strategy_data: json} = team) do
+    affinity =
+      case json && Jason.decode(json) do
+        {:ok, %{"affinity" => affinity}} when is_binary(affinity) -> affinity
+        _ -> nil
+      end
+
+    team
+    |> Map.put(:affinity, affinity)
+    |> Map.delete(:gift_strategy_data)
   end
 
   defp decorate(team) do

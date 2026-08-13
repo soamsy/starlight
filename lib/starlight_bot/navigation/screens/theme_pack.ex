@@ -7,7 +7,7 @@ defmodule StarlightBot.Navigation.Screens.ThemePack do
     action :to_normal, do: [branch([{:theme_pack_select_hard, [click(:theme_pack_select_hard)]}])]
     transition to: :dungeon_graph do
       [
-        drag(:theme_pack_middle, 0, 500),
+        retry_until(not_hook(:dungeon_graph), [drag(:theme_pack_middle, 0, 500)], every: 500, tries: 4),
         wait_until_arrived(every: 300, tries: 5)
       ]
     end

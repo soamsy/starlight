@@ -105,6 +105,15 @@
         <path d="M16.5 8a2.5 2.5 0 0 0 0-5C13 3 12 8 12 8" />
       </svg>
     </.link>
+    <.link navigate={~p"/mirror-dungeon"}
+           class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :mirror_dungeon, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Mirror Dungeon Runner">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <path d="M12 3a6 6 0 0 0-6 6c0 3 2 5 2 8h8c0-3 2-5 2-8a6 6 0 0 0-6-6Z" />
+        <path d="M9 21h6" />
+        <path d="M10 17h4" />
+      </svg>
+    </.link>
   </nav>
 
   <main class="p-3 flex-1 min-w-0 overflow-hidden flex flex-col">

@@ -6,7 +6,8 @@ defmodule StarlightBot.Automation.SeasonPassCollector do
 
   @xp_hook :season_pass_mission_tab_xp_available
   @alert_hook :season_pass_mission_tab_alert
-  @claim_delay_ms 2_000
+  @claim_delay_ms 1_500
+  @alert_delay_ms 1_000
   @max_alert_tries 2
 
   @spec collect(Ctx.t()) :: :ok
@@ -22,6 +23,7 @@ defmodule StarlightBot.Automation.SeasonPassCollector do
       [rect | _] ->
         Ctx.log(ctx, :info, "season_pass_collector: following alert (#{tries_left} left)")
         click_rect(rect, ctx)
+        Process.sleep(@alert_delay_ms)
         claim_visible_xp(ctx)
         follow_alerts(ctx, tries_left - 1)
 
