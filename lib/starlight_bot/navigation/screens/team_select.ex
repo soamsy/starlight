@@ -8,11 +8,11 @@ defmodule StarlightBot.Navigation.Screens.TeamSelect do
     end
   end
 
-  screen :team_select_md, identity: :team_select_md, refines: :team_select do
+  screen :team_selector_md, identity: :team_selector_md, refines: :team_select do
     transition to: :exit_team_select, do: [key(:esc)]
     transition to: :grace do
       [
-        click(:team_select_md),
+        click(:team_selector_md),
         await_any([:team_select_popup_white_enter, :connecting, :grace_available], timeout: 3_000),
         branch([
           {:grace_available, []},
