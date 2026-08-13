@@ -36,6 +36,8 @@ defmodule StarlightBot.Navigation.Navigator do
   def select_team_on_screen(team_id),
     do: GenServer.cast(__MODULE__, {:select_team_on_screen, team_id})
 
+  def claim_rewards(config), do: GenServer.cast(__MODULE__, {:claim_rewards, config})
+
   def cancel, do: GenServer.cast(__MODULE__, :cancel)
 
   def resume_luxcavation, do: GenServer.cast(__MODULE__, :resume_luxcavation)
@@ -247,6 +249,24 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
+  def handle_cast({:claim_rewards, config}, state) do
+    state = cancel_running(state)
+    state = add_log(state, :info, "Claiming rewards: #{inspect(config)}")
+    me = self()
+
+    pid =
+      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
+        ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end)
+        result = StarlightBot.Automation.Scripts.ClaimRewards.run(config, ctx)
+        send(me, {:nav_result, :claim_rewards, result})
+      end).pid
+
+    state = %{state | phase: :running, goal: nil, task_pid: pid}
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_cast(:cancel, state) do
     state = cancel_running(state)
     state = add_log(state, :info, "Cancelled")
@@ -343,6 +363,20 @@ defmodule StarlightBot.Navigation.Navigator do
 
         {:error, reason} ->
           add_log(state, :error, "Failed: #{inspect(reason)}")
+      end
+      |> Map.put(:phase, :idle)
+      |> Map.put(:task_pid, nil)
+
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:nav_result, :claim_rewards, result}, state) do
+    state =
+      case result do
+        {:ok, action} -> add_log(state, :ok, "Rewards: #{action}")
+        {:error, reason} -> add_log(state, :error, "Rewards failed: #{inspect(reason)}")
       end
       |> Map.put(:phase, :idle)
       |> Map.put(:task_pid, nil)
