@@ -42,14 +42,14 @@ defmodule StarlightBot.Navigation.Screens.Battle do
     [
       # Reflects how pause is sometimes completely hidden for special battle animations, like E.G.O skills.
       # So, wait for pause to disappear, wait for animation exit OR if pause appears again, repeat
-      retry_until([:battle_turn, :loading_stage_1, :battle_over_black_confirm], [
+      retry_until(any_of([:battle_turn, :loading_stage_1, :battle_over_black_confirm]), [
         branch([
           {:event, Event.play_out_steps()},
           {:default,
             [
               wait_until(not_hook(:battle_pause_button), timeout: 150_000),
               wait_until(
-                [:battle_turn, :loading_stage_1, :battle_over_black_confirm, :battle_pause_button, :event],
+                any_of([:battle_turn, :loading_stage_1, :battle_over_black_confirm, :battle_pause_button, :event]),
                 timeout: 15_000
               ),
             ]}

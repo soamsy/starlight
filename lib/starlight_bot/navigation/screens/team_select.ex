@@ -1,7 +1,7 @@
 defmodule StarlightBot.Navigation.Screens.TeamSelect do
   use StarlightBot.Navigation.DSL
 
-  screen :team_select, identity: [:team_selector, :team_selector_tall, :team_selector_gone] do
+  screen :team_select, identity: any_of([:team_selector, :team_selector_tall, :team_selector_gone]) do
     transition to: :exit_team_select, do: [key(:esc)]
     transition to: :battle do
       [reclick_until_gone(:to_battle)] ++ loading()

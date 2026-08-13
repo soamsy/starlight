@@ -2,7 +2,7 @@ defmodule StarlightBot.Navigation.Screen do
   @enforce_keys [:name, :identity_hook]
   defstruct [:name, :identity_hook, refines: nil, catch_all: false]
 
-  @type hook_spec :: atom() | [hook_spec()] | {:not, hook_spec()}
+  @type hook_spec :: atom() | {:not, hook_spec()} | {:all, [hook_spec()]} | {:any, [hook_spec()]}
 
   @type t :: %__MODULE__{
     name: atom(),

@@ -74,8 +74,12 @@ defmodule StarlightBot.Navigation.Runner do
 
   def hook_matches?(frame, {:not, hook_spec}), do: not hook_matches?(frame, hook_spec)
 
-  def hook_matches?(frame, hooks) when is_list(hooks) do
-    Enum.any?(hooks, &hook_matches?(frame, &1))
+  def hook_matches?(frame, {:all, hook_specs}) do
+    Enum.all?(hook_specs, &hook_matches?(frame, &1))
+  end
+
+  def hook_matches?(frame, {:any, hook_specs}) do
+    Enum.any?(hook_specs, &hook_matches?(frame, &1))
   end
 
   def hook_matches?(frame, hook), do: Matcher.check(frame, hook)

@@ -99,7 +99,7 @@ defmodule StarlightBot.Navigation.DSL do
 
   def custom(fun) when is_function(fun, 2), do: {:custom, fun}
 
-  def await(hook, opts \\ []) when is_atom(hook) or is_list(hook) or is_tuple(hook) do
+  def await(hook, opts \\ []) when is_atom(hook) or is_tuple(hook) do
     {:await, hook, Keyword.get(opts, :timeout, 5_000)}
   end
 
@@ -116,8 +116,12 @@ defmodule StarlightBot.Navigation.DSL do
 
   def not_hook(hook), do: {:not, hook}
 
+  def all_of(hooks) when is_list(hooks), do: {:all, hooks}
+
+  def any_of(hooks) when is_list(hooks), do: {:any, hooks}
+
   def await_then_gone(hook, opts \\ [])
-      when is_atom(hook) or is_list(hook) or is_tuple(hook) do
+      when is_atom(hook) or is_tuple(hook) do
     appear_timeout = Keyword.get(opts, :appear_timeout, 5_000)
     gone_timeout = Keyword.get(opts, :gone_timeout, 30_000)
 
@@ -133,7 +137,7 @@ defmodule StarlightBot.Navigation.DSL do
   end
 
   def retry_until(hook, steps, opts \\ [])
-      when (is_atom(hook) or is_list(hook) or is_tuple(hook)) and is_list(steps) do
+      when (is_atom(hook) or is_tuple(hook)) and is_list(steps) do
     timeout_ms = Keyword.get(opts, :timeout, 5_000)
     every_ms = Keyword.get(opts, :every, 500)
     tries = Keyword.get(opts, :tries)
@@ -141,12 +145,12 @@ defmodule StarlightBot.Navigation.DSL do
   end
 
   def wait_until(hook, opts \\ [])
-      when is_atom(hook) or is_list(hook) or is_tuple(hook) do
+      when is_atom(hook) or is_tuple(hook) do
     retry_until(hook, [], opts)
   end
 
   def reclick_until_gone(hook, opts \\ [])
-      when is_atom(hook) or is_list(hook) or is_tuple(hook) do
+      when is_atom(hook) or is_tuple(hook) do
     retry_until(not_hook(hook), [click(hook)], opts)
   end
 

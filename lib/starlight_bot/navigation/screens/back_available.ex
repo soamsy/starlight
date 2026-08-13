@@ -1,7 +1,7 @@
 defmodule StarlightBot.Navigation.Screens.BackAvailable do
   use StarlightBot.Navigation.DSL
 
-  screen :back_available, identity: [:back_button_thin, :back_button_thick] do
+  screen :back_available, identity: any_of([:back_button_thin, :back_button_thick]) do
     transition to: :any? do
       [key(:esc), sleep(300)]
     end

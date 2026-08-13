@@ -43,10 +43,10 @@ defmodule StarlightBot.Navigation.DSLTest do
       assert DSL.custom(fun) == {:custom, fun}
     end
 
-    test "await/1-2 defaults to a 5s timeout and accepts atom/list/not_hook specs" do
+    test "await/1-2 defaults to a 5s timeout and accepts atom/any_of/not_hook specs" do
       assert DSL.await(:foo) == {:await, :foo, 5_000}
       assert DSL.await(:foo, timeout: 100) == {:await, :foo, 100}
-      assert DSL.await([:a, :b]) == {:await, [:a, :b], 5_000}
+      assert DSL.await(DSL.any_of([:a, :b])) == {:await, {:any, [:a, :b]}, 5_000}
       assert DSL.await(DSL.not_hook(:a)) == {:await, {:not, :a}, 5_000}
     end
 
@@ -130,10 +130,10 @@ defmodule StarlightBot.Navigation.DSLTest do
                Enum.find(screens, &(&1.name == :home_unknown))
     end
 
-    test "identity_hook accepts a list for OR-matched visual variants" do
+    test "identity_hook accepts any_of/1 for OR-matched visual variants" do
       screens = StarlightBot.Navigation.Screens.BackAvailable.__nav_screens__()
       back = Enum.find(screens, &(&1.name == :back_available))
-      assert back.identity_hook == [:back_button_thin, :back_button_thick]
+      assert back.identity_hook == {:any, [:back_button_thin, :back_button_thick]}
     end
 
     test "catch_all: true with no do-block compiles as a bare landing pad" do
