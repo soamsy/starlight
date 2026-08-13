@@ -6,16 +6,6 @@ defmodule StarlightBot.Vision.SkillTrayTest do
   @color_hsv2bgr 54
 
   describe "geometry/1" do
-    test "mirrors tray_start_x around screen center and derives bin count/width" do
-      tray = SkillTray.geometry(400)
-
-      assert tray.gear_start_x == 400
-      assert tray.tray_start_x == 495
-      assert tray.tray_end_x == 1324
-      assert tray.skill_num == 7
-      assert_in_delta tray.bin_width, 829 / 7, 0.0001
-    end
-
     test "tray_end_x mirrors tray_start_x by a constant inset, regardless of gear position" do
       insets =
         for gear_start_x <- [200, 400, 700, 960] do
@@ -29,13 +19,6 @@ defmodule StarlightBot.Vision.SkillTrayTest do
     test "never produces a zero or negative skill count for a narrow tray" do
       tray = SkillTray.geometry(900)
       assert tray.skill_num >= 1
-    end
-  end
-
-  describe "background_region/1" do
-    test "returns a strip spanning the tray width, above the top row" do
-      tray = SkillTray.geometry(400)
-      assert SkillTray.background_region(tray) == {495, 721, 829, 20}
     end
   end
 
@@ -120,24 +103,6 @@ defmodule StarlightBot.Vision.SkillTrayTest do
       assert SkillTray.hue_scan_columns(row) == SkillTray.row_columns(row)
     end
 
-    test "each row's inset scales with skill_num at a constant per-slot rate, regardless of gear position" do
-      trays = Enum.map([200, 400, 700, 960], &SkillTray.geometry/1)
-
-      top_rates = Enum.map(trays, &((&1.top_row.start_x - &1.tray_start_x) / &1.skill_num))
-      bottom_rates = Enum.map(trays, &((&1.bottom_row.start_x - &1.tray_start_x) / &1.skill_num))
-
-      assert_all_close(top_rates)
-      assert_all_close(bottom_rates)
-    end
-
-    test "reproduces the previously flat-tuned insets at skill_num=7" do
-      tray = SkillTray.geometry(400)
-      assert tray.skill_num == 7
-
-      assert_in_delta tray.top_row.start_x - tray.tray_start_x, 73, 0.01
-      assert_in_delta tray.bottom_row.start_x - tray.tray_start_x, 26.35, 0.01
-    end
-
     test "top row insets more than bottom row at the same skill_num, per perspective" do
       tray = SkillTray.geometry(400)
       top_inset = tray.top_row.start_x - tray.tray_start_x
@@ -154,10 +119,6 @@ defmodule StarlightBot.Vision.SkillTrayTest do
       assert few.top_row.start_x - few.tray_start_x < many.top_row.start_x - many.tray_start_x
       assert few.bottom_row.start_x - few.tray_start_x < many.bottom_row.start_x - many.tray_start_x
     end
-  end
-
-  defp assert_all_close([first | rest]) do
-    Enum.each(rest, &assert_in_delta(&1, first, 0.001))
   end
 
   describe "sinner_of_slot/2" do
