@@ -1,6 +1,7 @@
 defmodule StarlightBot.Navigation.Screens.Battle do
   use StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.BattleChain
+  alias StarlightBot.Navigation.Screens.Event
 
   screen :battle, identity: :battle_settings do
     transition to: :battle_turn_or_over do
@@ -10,7 +11,13 @@ defmodule StarlightBot.Navigation.Screens.Battle do
 
   screen :battle_turn, identity: :battle_turn, refines: :battle do
     transition to: :battle_playing do
-      [key(:p), sleep(100), key(:enter)]
+      [
+        key(:p), sleep(100), key(:enter),
+        retry_until_arrived(
+          [click(:battle_safe_click_spot), sleep(100), key(:p), sleep(100), key(:enter)],
+          tries: 3
+        )
+      ]
     end
   end
 
@@ -36,8 +43,17 @@ defmodule StarlightBot.Navigation.Screens.Battle do
       # Reflects how pause is sometimes completely hidden for special battle animations, like E.G.O skills.
       # So, wait for pause to disappear, wait for animation exit OR if pause appears again, repeat
       retry_until([:battle_turn, :loading_stage_1, :battle_over_black_confirm], [
-        wait_until(not_hook(:battle_pause_button), timeout: 150_000),
-        wait_until([:battle_turn, :loading_stage_1, :battle_over_black_confirm, :battle_pause_button], timeout: 15_000),
+        branch([
+          {:event, Event.play_out_steps()},
+          {:default,
+            [
+              wait_until(not_hook(:battle_pause_button), timeout: 150_000),
+              wait_until(
+                [:battle_turn, :loading_stage_1, :battle_over_black_confirm, :battle_pause_button, :event],
+                timeout: 15_000
+              ),
+            ]}
+        ])
       ], tries: 15),
       branch(turn_boundary_clauses())
     ]
