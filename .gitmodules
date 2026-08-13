@@ -1,0 +1,3 @@
+[submodule "vendor/EgoGiftML"]
+	path = vendor/EgoGiftML
+	url = https://github.com/soamsy/EgoGiftML

@@ -6,6 +6,7 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.ScreenshotViewerLive => :screenshots,
     StarlightBotWeb.Live.BattleInspectorLive => :battle,
     StarlightBotWeb.Live.DungeonInspectorLive => :dungeon,
+    StarlightBotWeb.Live.GiftInspectorLive => :gift_inspector,
     StarlightBotWeb.Live.EventInspectorLive => :events,
     StarlightBotWeb.Live.TransitionsLive => :transitions,
     StarlightBotWeb.Live.TeamEditorLive => :teams,

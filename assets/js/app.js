@@ -318,6 +318,107 @@ const BattleInspectorCanvas = overlayCanvasHook("load_battle_frame")
 const ChainPreviewCanvas = overlayCanvasHook("load_chain_preview_frame")
 const DungeonInspectorCanvas = overlayCanvasHook("load_dungeon_frame")
 
+// --- GiftInspectorCanvas hook ---
+// Combines ScreenshotCanvas's drag-to-select-region with overlayCanvasHook's
+// overlay drawing: drag a region on the screenshot, send it to the server as
+// "region_selected", then draw the server's ego-gift detection overlays on top.
+
+const GiftInspectorCanvas = {
+  mounted() {
+    const canvas = this.el
+    const ctx = canvas.getContext("2d")
+    canvas.width = 1920
+    canvas.height = 1080
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = "high"
+
+    let img = null
+    let selecting = false
+    let startPos = null
+    let sel = null
+    let overlays = []
+
+    const getImageCoords = (e) => {
+      const rect = canvas.getBoundingClientRect()
+      const scaleX = canvas.width / rect.width
+      const scaleY = canvas.height / rect.height
+      return {
+        x: Math.round((e.clientX - rect.left) * scaleX),
+        y: Math.round((e.clientY - rect.top) * scaleY)
+      }
+    }
+
+    const redraw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      if (img) ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+
+      if (sel && sel.w >= 2 && sel.h >= 2) {
+        ctx.strokeStyle = "#60a5fa"
+        ctx.lineWidth = 2
+        ctx.setLineDash([6, 4])
+        ctx.strokeRect(sel.x, sel.y, sel.w, sel.h)
+        ctx.setLineDash([])
+      }
+
+      for (const o of overlays) {
+        ctx.strokeStyle = o.color || "#4ade80"
+        ctx.fillStyle = o.color || "#4ade80"
+        ctx.lineWidth = 2
+        if (o.type === "rect") ctx.strokeRect(o.x, o.y, o.w, o.h)
+        if (o.text) {
+          ctx.font = "bold 14px monospace"
+          ctx.fillText(o.text, o.text_x, o.text_y)
+        }
+      }
+    }
+
+    this.handleEvent("load_gift_inspector_frame", ({ data }) => {
+      const newImg = new Image()
+      newImg.onload = () => { img = newImg; sel = null; overlays = []; redraw() }
+      newImg.src = "data:image/jpeg;base64," + data
+    })
+
+    this.handleEvent("show_gift_overlays", ({ overlays: o }) => {
+      overlays = o || []
+      redraw()
+    })
+
+    canvas.addEventListener("mousedown", (e) => {
+      e.preventDefault()
+      selecting = true
+      startPos = getImageCoords(e)
+      sel = null
+      overlays = []
+      redraw()
+    })
+
+    canvas.addEventListener("mousemove", (e) => {
+      if (!selecting || !startPos) return
+      const cur = getImageCoords(e)
+      const x = Math.max(0, Math.min(startPos.x, cur.x))
+      const y = Math.max(0, Math.min(startPos.y, cur.y))
+      const w = Math.min(Math.abs(cur.x - startPos.x), canvas.width - x)
+      const h = Math.min(Math.abs(cur.y - startPos.y), canvas.height - y)
+      sel = { x, y, w, h }
+      redraw()
+    })
+
+    const finishSelect = () => {
+      if (!selecting) return
+      selecting = false
+      if (sel && sel.w >= 4 && sel.h >= 4) {
+        this.pushEvent("region_selected", sel)
+      } else {
+        sel = null
+        redraw()
+      }
+    }
+
+    canvas.addEventListener("mouseup", finishSelect)
+    canvas.addEventListener("mouseleave", finishSelect)
+  }
+}
+
 // --- EditableNotes hook ---
 // Double-click the notes cell to edit inline; blur (click or tab away) saves.
 // Tab/Shift+Tab from the editor jumps straight into the next/previous row's
@@ -401,7 +502,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll }
 })
 
 liveSocket.connect()

@@ -52,6 +52,7 @@ defmodule StarlightBot.MixProject do
       "db.reset": ["ecto.drop", "db.setup"],
       "db.migrate": ["ecto.migrate"],
       "test.hardware": ["test --include kde"],
+      "ego_gifts.setup": ["ego_gifts.import", "ego_gifts.fetch_model"],
       "assets.build": ["tailwind starlight_bot", "esbuild starlight_bot"],
       "assets.deploy": ["tailwind starlight_bot --minify", "esbuild starlight_bot --minify"],
     ]

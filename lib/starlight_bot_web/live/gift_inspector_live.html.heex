@@ -1,0 +1,59 @@
+<div class="flex flex-col h-full gap-3 overflow-hidden">
+  <div class="flex items-center gap-3 shrink-0">
+    <h1 class="text-lg font-bold">Gift Inspector</h1>
+    <button phx-click="take_screenshot" class="btn btn-sm btn-primary" disabled={@status == :loading}>
+      📸 Take Screenshot
+    </button>
+    <span class="text-xs text-base-content/60">Drag on the screenshot to scan a region for ego gifts</span>
+    <form phx-change="set_min_area" class="flex items-center gap-1">
+      <label for="min_area" class="text-xs text-base-content/60">min area (px²)</label>
+      <input type="number" id="min_area" name="min_area" value={@min_area} min="0" step="10"
+             class="input input-xs input-bordered w-20" />
+    </form>
+    <%= if @error do %>
+      <span class="text-xs text-error"><%= error_message(@error) %></span>
+    <% end %>
+  </div>
+
+  <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3">
+    <div class="flex items-center justify-center bg-base-200 rounded-lg border border-base-300 shrink-0" style="aspect-ratio: 16/9;">
+      <%= if @frame_b64 || @status != :idle do %>
+        <canvas id="gift-inspector-canvas" phx-hook="GiftInspectorCanvas" phx-update="ignore"
+                class="max-w-full max-h-full" style="aspect-ratio: 16/9;"></canvas>
+      <% else %>
+        <div class="text-base-content/40 text-sm">Take a screenshot to inspect ego gifts</div>
+      <% end %>
+    </div>
+
+    <%= if @results != [] do %>
+      <% shown = filtered_results(@results, @min_area) %>
+      <div class="text-xs text-base-content/60 shrink-0">
+        showing <%= length(shown) %> of <%= length(@results) %> detection(s)
+      </div>
+      <div class="overflow-x-auto shrink-0">
+        <table class="table table-xs">
+          <thead>
+            <tr>
+              <th>x</th><th>y</th><th>w</th><th>h</th><th>area</th>
+              <th>gift</th><th>detector conf</th><th>classifier conf</th>
+            </tr>
+          </thead>
+          <tbody>
+            <%= for r <- shown do %>
+              <tr>
+                <td><%= round(r.x) %></td>
+                <td><%= round(r.y) %></td>
+                <td><%= round(r.w) %></td>
+                <td><%= round(r.h) %></td>
+                <td><%= round(r.w * r.h) %></td>
+                <td class="font-mono text-xs"><%= r.gift_name || "unmatched (#{r.gift_id || "?"})" %></td>
+                <td><%= pct(r.detector_confidence) %></td>
+                <td><%= pct(r.classifier_confidence) %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% end %>
+  </div>
+</div>
