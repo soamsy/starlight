@@ -409,8 +409,6 @@ defmodule StarlightBot.Navigation.Runner do
 
   defp resolve_screen_point(hook_atom, last_frame, ctx) do
     with {:ok, hook} <- HookRegistry.find(hook_atom) do
-      Ctx.log(ctx, :ok, "hook #{inspect(hook)} found")
-
       fixed_target =
         cond do
           hook.click_region -> hook.click_region
