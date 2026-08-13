@@ -155,15 +155,16 @@
         <div class="form-control mb-2">
           <label class="label py-0.5"><span class="label-text text-sm font-medium">Gift Strategy</span></label>
           <div class="flex gap-1 items-center">
-            <select name="id" phx-change="select_strategy" phx-value-kind="gift_strategy"
-                    class="select select-bordered select-sm flex-1">
-              <option value="" selected={is_nil(@selected_ids["gift_strategy"])}>— none —</option>
-              <%= for gs <- @gift_strategies do %>
-                <option value={gs.id} selected={@selected_ids["gift_strategy"] == gs.id}>
-                  <%= gs.name %> (<%= gs.data["affinity"] %>)
-                </option>
-              <% end %>
-            </select>
+            <form phx-change="select_strategy" phx-value-kind="gift_strategy" class="flex-1">
+              <select name="id" class="select select-bordered select-sm w-full">
+                <option value="" selected={is_nil(@selected_ids["gift_strategy"])}>— none —</option>
+                <%= for gs <- @gift_strategies do %>
+                  <option value={gs.id} selected={@selected_ids["gift_strategy"] == gs.id}>
+                    <%= gs.name %> (<%= gs.data["affinity"] %>)
+                  </option>
+                <% end %>
+              </select>
+            </form>
             <button type="button" phx-click="toggle_new_strategy" phx-value-kind="gift_strategy"
                     class="btn btn-xs btn-ghost">+ New</button>
           </div>
@@ -185,13 +186,14 @@
         <div class="form-control mb-2">
           <label class="label py-0.5"><span class="label-text text-sm font-medium">Battle Strategy</span></label>
           <div class="flex gap-1 items-center">
-            <select name="id" phx-change="select_strategy" phx-value-kind="battle_strategy"
-                    class="select select-bordered select-sm flex-1">
-              <option value="" selected={is_nil(@selected_ids["battle_strategy"])}>— none —</option>
-              <%= for bs <- @battle_strategies do %>
-                <option value={bs.id} selected={@selected_ids["battle_strategy"] == bs.id}><%= bs.name %></option>
-              <% end %>
-            </select>
+            <form phx-change="select_strategy" phx-value-kind="battle_strategy" class="flex-1">
+              <select name="id" class="select select-bordered select-sm w-full">
+                <option value="" selected={is_nil(@selected_ids["battle_strategy"])}>— none —</option>
+                <%= for bs <- @battle_strategies do %>
+                  <option value={bs.id} selected={@selected_ids["battle_strategy"] == bs.id}><%= bs.name %></option>
+                <% end %>
+              </select>
+            </form>
             <button type="button" phx-click="toggle_new_strategy" phx-value-kind="battle_strategy"
                     class="btn btn-xs btn-ghost">+ New</button>
           </div>
@@ -208,13 +210,14 @@
         <div class="form-control mb-2">
           <label class="label py-0.5"><span class="label-text text-sm font-medium">Theme Pack Plan</span></label>
           <div class="flex gap-1 items-center">
-            <select name="id" phx-change="select_strategy" phx-value-kind="theme_pack_plan"
-                    class="select select-bordered select-sm flex-1">
-              <option value="" selected={is_nil(@selected_ids["theme_pack_plan"])}>— none —</option>
-              <%= for tp <- @theme_pack_plans do %>
-                <option value={tp.id} selected={@selected_ids["theme_pack_plan"] == tp.id}><%= tp.name %></option>
-              <% end %>
-            </select>
+            <form phx-change="select_strategy" phx-value-kind="theme_pack_plan" class="flex-1">
+              <select name="id" class="select select-bordered select-sm w-full">
+                <option value="" selected={is_nil(@selected_ids["theme_pack_plan"])}>— none —</option>
+                <%= for tp <- @theme_pack_plans do %>
+                  <option value={tp.id} selected={@selected_ids["theme_pack_plan"] == tp.id}><%= tp.name %></option>
+                <% end %>
+              </select>
+            </form>
             <button type="button" phx-click="toggle_new_strategy" phx-value-kind="theme_pack_plan"
                     class="btn btn-xs btn-ghost">+ New</button>
           </div>
