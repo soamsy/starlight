@@ -6,6 +6,10 @@ defmodule StarlightBot.Input.Trajectory do
   @primary_t_peak 0.42
   @momentum_carry_ms 40.0
   @momentum_carry_fraction_cap 0.25
+  @wobble_amp_scale 0.02
+  @wobble_amp_max 8.0
+  @wobble_knot_span 300.0
+  @wobble_max_interior_knots 3
 
   @type point :: {float, float}
   @type waypoint :: {float, float, float}
@@ -70,6 +74,8 @@ defmodule StarlightBot.Input.Trajectory do
     n_steps = max(2, ceil(duration_ms / 8.0))
     jitter_x = correlated_jitter(n_steps + 1, jitter_sigma, @jitter_phi)
     jitter_y = correlated_jitter(n_steps + 1, jitter_sigma, @jitter_phi)
+    {perp_x, perp_y} = perpendicular(from, to)
+    wobble = wobble_knots(dist)
 
     0..n_steps
     |> Enum.zip(Enum.zip(jitter_x, jitter_y))
@@ -77,8 +83,31 @@ defmodule StarlightBot.Input.Trajectory do
       t = i / n_steps
       ease_t = ease_asymmetric(t, t_peak)
       {x, y} = bezier_point(from, to, controls, ease_t)
-      {x + jx, y + jy, t * duration_ms}
+      w = wobble_at(wobble, ease_t)
+      {x + jx + w * perp_x, y + jy + w * perp_y, t * duration_ms}
     end)
+  end
+
+  defp wobble_knots(dist) do
+    sigma = min(dist * @wobble_amp_scale, @wobble_amp_max)
+    n_interior = 1 + min(@wobble_max_interior_knots, trunc(dist / @wobble_knot_span))
+
+    interior =
+      for i <- 1..n_interior do
+        t = i / (n_interior + 1)
+        {t, :rand.normal(0.0, sigma) * :math.sin(:math.pi() * t)}
+      end
+
+    [{0.0, 0.0}] ++ interior ++ [{1.0, 0.0}]
+  end
+
+  defp wobble_at(knots, t) do
+    [{t0, v0}, {t1, v1}] =
+      knots
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.find(fn [{a, _}, {b, _}] -> t >= a and t <= b end)
+
+    if t1 == t0, do: v0, else: v0 + (v1 - v0) * (t - t0) / (t1 - t0)
   end
 
   defp sample_duration(dist) do
@@ -100,9 +129,8 @@ defmodule StarlightBot.Input.Trajectory do
   defp correction_probability(dist), do: (dist / 600.0) |> max(0.05) |> min(0.9)
 
   defp sample_control_points({fx, fy}, {tx, ty}, vel_in, n, perp_std) do
-    chord_len = :math.sqrt((tx - fx) * (tx - fx) + (ty - fy) * (ty - fy))
-    perp_x = -(ty - fy) / chord_len
-    perp_y = (tx - fx) / chord_len
+    chord_len = distance({fx, fy}, {tx, ty})
+    {perp_x, perp_y} = perpendicular({fx, fy}, {tx, ty})
     {mx, my} = momentum_offset(vel_in, chord_len)
     bias = perp_std * @bow_bias_fraction
 
@@ -189,5 +217,10 @@ defmodule StarlightBot.Input.Trajectory do
 
   defp distance({x0, y0}, {x1, y1}) do
     :math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0))
+  end
+
+  defp perpendicular({fx, fy}, {tx, ty}) do
+    chord_len = distance({fx, fy}, {tx, ty})
+    {-(ty - fy) / chord_len, (tx - fx) / chord_len}
   end
 end
