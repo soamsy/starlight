@@ -6,17 +6,17 @@ defmodule StarlightBot.Input.Trajectory do
   @primary_t_peak 0.42
   @momentum_carry_ms 40.0
   @momentum_carry_fraction_cap 0.25
-  @wobble_amp_scale 0.02
-  @wobble_amp_max 8.0
-  @wobble_knot_span 300.0
-  @wobble_max_interior_knots 3
+  @wobble_amp_scale 2.00
+  @wobble_amp_max 150.0
+  @wobble_knot_span 40.0
+  @wobble_max_interior_knots 8
 
   @type point :: {float, float}
   @type waypoint :: {float, float, float}
 
   @spec build(point, point, point, :human | :fast) :: [waypoint]
   def build(from, to, vel_in, profile) do
-    duration_mult = if profile == :fast, do: 1.2, else: 2.4
+    duration_mult = if profile == :fast, do: 1.8, else: 3.6
     human_trajectory(from, to, vel_in, duration_mult)
   end
 
