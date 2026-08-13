@@ -30,8 +30,8 @@ defmodule StarlightBot.Navigation.Navigator do
 
   def run_script(script_name), do: GenServer.cast(__MODULE__, {:run_script, script_name})
 
-  def run_luxcavation(team_id, exp_count, thread_count),
-    do: GenServer.cast(__MODULE__, {:run_luxcavation, team_id, exp_count, thread_count})
+  def run_luxcavation(team_id, exp_count, thread_count, collect_xp?),
+    do: GenServer.cast(__MODULE__, {:run_luxcavation, team_id, exp_count, thread_count, collect_xp?})
 
   def select_team_on_screen(team_id),
     do: GenServer.cast(__MODULE__, {:select_team_on_screen, team_id})
@@ -208,9 +208,16 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
-  def handle_cast({:run_luxcavation, team_id, exp_count, thread_count}, state) do
+  def handle_cast({:run_luxcavation, team_id, exp_count, thread_count, collect_xp?}, state) do
     state = cancel_running(state)
-    state = add_log(state, :info, "Running luxcavation: team=#{team_id} exp=#{exp_count} thread=#{thread_count}")
+
+    state =
+      add_log(
+        state,
+        :info,
+        "Running luxcavation: team=#{team_id} exp=#{exp_count} thread=#{thread_count} collect_xp=#{collect_xp?}"
+      )
+
     me = self()
 
     pid =
@@ -221,7 +228,7 @@ defmodule StarlightBot.Navigation.Navigator do
             on_pause: fn -> send(me, :nav_paused) end
           )
 
-        result = StarlightBot.Automation.Scripts.LuxcavationRunner.run(team_id, exp_count, thread_count, ctx)
+        result = StarlightBot.Automation.Scripts.LuxcavationRunner.run(team_id, exp_count, thread_count, collect_xp?, ctx)
         send(me, {:nav_result, :run_script, result})
       end).pid
 

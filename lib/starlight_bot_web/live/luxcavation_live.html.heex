@@ -63,6 +63,12 @@
           <input type="number" name="thread_count" min="0" value={@thread_count} class="input input-sm input-bordered" />
         </label>
 
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="collect_xp" value="true" checked={@collect_xp}
+                 class="checkbox checkbox-sm" />
+          <span class="text-sm">Collect battle pass xp at end</span>
+        </label>
+
         <%= if @phase == :paused do %>
           <button
             type="button"

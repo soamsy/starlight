@@ -21,29 +21,36 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:team_id, default_team_id(teams))
      |> assign(:exp_count, "0")
      |> assign(:thread_count, "0")
+     |> assign(:collect_xp, false)
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)}
   end
 
   @impl true
-  def handle_event("run", %{"team_id" => team_id, "exp_count" => exp_count, "thread_count" => thread_count}, socket) do
+  def handle_event("run", %{"team_id" => team_id, "exp_count" => exp_count, "thread_count" => thread_count} = params, socket) do
     with {team_id, ""} <- Integer.parse(team_id),
          {exp_count, ""} <- Integer.parse(exp_count),
          {thread_count, ""} <- Integer.parse(thread_count),
          true <- exp_count >= 0 and thread_count >= 0 do
-      {:noreply, start_countdown(socket, {:run_luxcavation, team_id, exp_count, thread_count})}
+      collect_xp? = Map.get(params, "collect_xp") == "true"
+      {:noreply, start_countdown(socket, {:run_luxcavation, team_id, exp_count, thread_count, collect_xp?})}
     else
       _ -> {:noreply, put_flash(socket, :error, "Pick a team and enter non-negative run counts.")}
     end
   end
 
   @impl true
-  def handle_event("update_form", %{"team_id" => team_id, "exp_count" => exp_count, "thread_count" => thread_count}, socket) do
+  def handle_event(
+        "update_form",
+        %{"team_id" => team_id, "exp_count" => exp_count, "thread_count" => thread_count} = params,
+        socket
+      ) do
     {:noreply,
      socket
      |> assign(:team_id, parse_team_id(team_id, socket.assigns.team_id))
      |> assign(:exp_count, exp_count)
-     |> assign(:thread_count, thread_count)}
+     |> assign(:thread_count, thread_count)
+     |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")}
   end
 
   @impl true
@@ -106,13 +113,15 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
     |> assign(:countdown, @countdown_secs)
   end
 
-  defp run_pending_action({:run_luxcavation, team_id, exp_count, thread_count}),
-    do: Navigator.run_luxcavation(team_id, exp_count, thread_count)
+  defp run_pending_action({:run_luxcavation, team_id, exp_count, thread_count, collect_xp?}),
+    do: Navigator.run_luxcavation(team_id, exp_count, thread_count, collect_xp?)
 
   defp run_pending_action(:resume_luxcavation), do: Navigator.resume_luxcavation()
 
-  def pending_action_label({:run_luxcavation, _team_id, exp_count, thread_count}),
-    do: "luxcavation: #{exp_count} exp, #{thread_count} thread"
+  def pending_action_label({:run_luxcavation, _team_id, exp_count, thread_count, collect_xp?}) do
+    suffix = if collect_xp?, do: " + battle pass xp", else: ""
+    "luxcavation: #{exp_count} exp, #{thread_count} thread#{suffix}"
+  end
 
   def pending_action_label(:resume_luxcavation), do: "resume luxcavation"
 

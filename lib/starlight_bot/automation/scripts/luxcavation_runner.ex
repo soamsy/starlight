@@ -2,15 +2,17 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   use StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.Engine
   alias StarlightBot.Automation.Scripts.SelectTeam
+  alias StarlightBot.Automation.SeasonPassCollector
   alias StarlightBot.Ctx
   alias StarlightBot.Teams
 
   @max_consecutive 10
 
-  def run(team_id, exp_count, thread_count, ctx \\ Ctx.new())
+  def run(team_id, exp_count, thread_count, collect_xp?, ctx \\ Ctx.new())
 
-  def run(team_id, exp_count, thread_count, ctx)
-      when is_integer(exp_count) and exp_count >= 0 and is_integer(thread_count) and thread_count >= 0 do
+  def run(team_id, exp_count, thread_count, collect_xp?, ctx)
+      when is_integer(exp_count) and exp_count >= 0 and is_integer(thread_count) and thread_count >= 0 and
+             is_boolean(collect_xp?) do
     with {:ok, team_type} <- resolve_team_type(team_id, ctx),
          {:ok, start} <- localize(ctx) do
       {:ok, start}
@@ -20,12 +22,25 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
         {:ok, screen} -> Engine.goto(screen, :home, ctx)
         error -> error
       end
+      |> maybe_collect_xp(collect_xp?, ctx)
     end
   end
 
-  def run(_team_id, _exp_count, _thread_count, ctx) do
+  def run(_team_id, _exp_count, _thread_count, _collect_xp?, ctx) do
     Ctx.log(ctx, :error, "exp_count/thread_count must be non-negative integers")
     {:error, :invalid_counts}
+  end
+
+  defp maybe_collect_xp(result, false, _ctx), do: result
+  defp maybe_collect_xp({:error, _} = error, true, _ctx), do: error
+
+  defp maybe_collect_xp({:ok, screen}, true, ctx) do
+    Ctx.log(ctx, :info, "collecting battle pass xp")
+
+    with {:ok, _} <- Engine.goto(screen, :season_pass_missions_tab, ctx),
+         :ok <- SeasonPassCollector.collect(ctx) do
+      Engine.goto(:season_pass_missions_tab, :home, ctx)
+    end
   end
 
   defp localize(ctx) do

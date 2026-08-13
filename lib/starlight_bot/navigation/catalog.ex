@@ -27,6 +27,7 @@ defmodule StarlightBot.Navigation.Catalog do
     StarlightBot.Navigation.Screens.Home,
     StarlightBot.Navigation.Screens.ExplorationReward,
     StarlightBot.Navigation.Screens.Battle,
+    StarlightBot.Navigation.Screens.SeasonPass,
     StarlightBot.Navigation.Screens.MdDoor,
     StarlightBot.Navigation.Screens.Lux,
     StarlightBot.Navigation.Screens.BackAvailable,

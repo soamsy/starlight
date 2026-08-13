@@ -7,6 +7,7 @@ defmodule StarlightBot.Navigation.Screens.Home do
 
   screen :home_window, identity: :home_window_selected, refines: :home do
     transition to: :home_drive, do: [reclick_until_arrived(:home_drive_unselected)]
+    transition to: :season_pass, do: [reclick_until_arrived(:home_window_season_pass)]
   end
 
   screen :home_drive, identity: :home_drive_selected, refines: :home do
