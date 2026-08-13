@@ -7,6 +7,10 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
   @front_line_size 7
   @backup_size 5
+  @all_sinners ~w(
+    yi_sang faust don_quixote ryoshu meursault hong_lu
+    heathcliff ishmael rodion sinclair outis gregor
+  )
 
   def run(team_id, ctx \\ Ctx.new()) when is_integer(team_id) do
     with {:ok, team} <- fetch_team(team_id, ctx),
@@ -27,7 +31,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp check_selectors(ctx) do
-    checks = Engine.check_all([:team_selector, :team_selector_tall, :team_selector_gone, :clear_selection])
+    checks = Engine.check_all([:team_selector, :team_selector_tall, :team_selector_gone, :clear_selection, :sinner_count_0])
 
     if checks.team_selector or checks.team_selector_tall or checks.team_selector_gone do
       {:ok, checks}
@@ -39,7 +43,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
   defp apply_team(team, checks, ctx) do
     can_choose_team = checks.team_selector or checks.team_selector_tall
-    can_choose_order = checks.clear_selection
+    can_choose_order = checks.clear_selection or checks.sinner_count_0
 
     with :ok <- maybe_select_team(can_choose_team, team, ctx),
          :ok <- maybe_select_order(can_choose_order, team, ctx) do
@@ -79,19 +83,60 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp maybe_select_order(true, %{sinner_order: order}, ctx) do
-    case Engine.act(order_steps(order), ctx) do
-      {:ok, _} -> :ok
-      {:error, _} = err -> err
+    if order_already_set?(order) do
+      Ctx.log(ctx, :ok, "sinner order already set — nothing to do")
+      :ok
+    else
+      case Engine.act(order_steps(order, ctx), ctx) do
+        {:ok, _} -> :ok
+        {:error, _} = err -> err
+      end
     end
   end
 
-  defp order_steps(order) do
-    {front, rest} = Enum.split(order, @front_line_size)
-    backup = Enum.take(rest, @backup_size)
+  defp order_already_set?(order) do
+    {front, backup} = front_and_backup(order)
+    placed = MapSet.new(front ++ backup)
+    unplaced = Enum.reject(@all_sinners, &(&1 in placed))
 
-    [click(:clear_selection)] ++
+    checks =
+      Engine.check_all(
+        Enum.map(front, &sinner_hook(&1, :selected)) ++
+          Enum.map(backup, &sinner_hook(&1, :backup)) ++
+          Enum.map(unplaced, &sinner_hook(&1, :selected)) ++
+          Enum.map(unplaced, &sinner_hook(&1, :backup))
+      )
+
+    Enum.all?(front, &checks[sinner_hook(&1, :selected)]) and
+      Enum.all?(backup, &checks[sinner_hook(&1, :backup)]) and
+      Enum.all?(unplaced, &(not checks[sinner_hook(&1, :selected)] and not checks[sinner_hook(&1, :backup)]))
+  end
+
+  defp order_steps(order, ctx) do
+    {front, backup} = front_and_backup(order)
+
+    clear_steps(ctx) ++
       Enum.map(front, &click(sinner_hook(&1, :selected))) ++
       Enum.map(backup, &click(sinner_hook(&1, :backup)))
+  end
+
+  defp front_and_backup(order) do
+    {front, rest} = order |> alive_order() |> Enum.split(@front_line_size)
+    {front, Enum.take(rest, @backup_size)}
+  end
+
+  defp alive_order(order) do
+    dead = Engine.check_all(Enum.map(order, &sinner_hook(&1, :dead)))
+    Enum.reject(order, &dead[sinner_hook(&1, :dead)])
+  end
+
+  defp clear_steps(ctx) do
+    if Engine.check(:sinner_count_0) do
+      Ctx.log(ctx, :info, "sinner_count_0 already set — skipping clear_selection")
+      []
+    else
+      [click(:clear_selection), await(:clear_selection_confirm), click(:clear_selection_confirm), sleep(400)]
+    end
   end
 
   defp sinner_hook(sinner, kind), do: :"sinner_#{kind}_#{String.replace(sinner, "_", "")}"

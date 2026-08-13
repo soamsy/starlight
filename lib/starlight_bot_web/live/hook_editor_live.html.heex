@@ -149,41 +149,58 @@
 
           <.form for={@form} phx-submit="save_hook" phx-change="validate_hook">
 
-            <%!-- Name --%>
-            <div class="form-control mb-2">
-              <label class="label py-0.5">
-                <span class="label-text text-sm font-medium flex items-center gap-1">
-                  Name
-                  <span :if={field_dirty?(@form, @saved_params, :name)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                </span>
-              </label>
-              <input
-                type="text"
-                name="hook[name]"
-                value={@form[:name].value}
-                placeholder="e.g. winrate_button"
-                class={"input input-bordered input-sm #{if @form[:name].errors != [], do: "input-error", else: if(field_dirty?(@form, @saved_params, :name), do: "input-warning")}"}
-              />
-              <%= if err = List.first(@form[:name].errors) do %>
-                <label class="label py-0"><span class="label-text-alt text-error"><%= elem(err, 0) %></span></label>
-              <% end %>
-            </div>
+            <div class="flex gap-3 mb-2">
+              <div class="flex-1 min-w-0">
+                <%!-- Name --%>
+                <div class="form-control mb-2">
+                  <label class="label py-0.5">
+                    <span class="label-text text-sm font-medium flex items-center gap-1">
+                      Name
+                      <span :if={field_dirty?(@form, @saved_params, :name)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    name="hook[name]"
+                    value={@form[:name].value}
+                    placeholder="e.g. winrate_button"
+                    class={"input input-bordered input-sm #{if @form[:name].errors != [], do: "input-error", else: if(field_dirty?(@form, @saved_params, :name), do: "input-warning")}"}
+                  />
+                  <%= if err = List.first(@form[:name].errors) do %>
+                    <label class="label py-0"><span class="label-text-alt text-error"><%= elem(err, 0) %></span></label>
+                  <% end %>
+                </div>
 
-            <%!-- Method --%>
-            <div class="form-control mb-2">
-              <label class="label py-0.5">
-                <span class="label-text text-sm font-medium flex items-center gap-1">
-                  Match Method
-                  <span :if={field_dirty?(@form, @saved_params, :match_method)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                </span>
-              </label>
-              <select name="hook[match_method]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :match_method), do: "select-warning"}"}>
-                <%= for method <- ~w(gray rgb binary_thresh color_detector edge akaze sift) do %>
-                  <option value={method} selected={to_string(@form[:match_method].value) == method}>
-                    <%= method %>
-                  </option>
+                <%!-- Method --%>
+                <div class="form-control">
+                  <label class="label py-0.5">
+                    <span class="label-text text-sm font-medium flex items-center gap-1">
+                      Match Method
+                      <span :if={field_dirty?(@form, @saved_params, :match_method)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                    </span>
+                  </label>
+                  <select name="hook[match_method]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :match_method), do: "select-warning"}"}>
+                    <%= for method <- ~w(gray rgb binary_thresh color_detector grayscale_detector edge akaze sift) do %>
+                      <option value={method} selected={to_string(@form[:match_method].value) == method}>
+                        <%= method %>
+                      </option>
+                    <% end %>
+                  </select>
+                </div>
+              </div>
+
+              <%!-- Actions --%>
+              <div class="flex flex-row items-start gap-1 shrink-0">
+                <button type="submit" class="btn btn-primary btn-sm">💾 Save</button>
+                <%= if @editing_name do %>
+                  <button type="button" phx-click="test_hook" phx-value-name={@editing_name}
+                          class="btn btn-secondary btn-sm">🔍 Test</button>
+                  <button type="button" phx-click="test_hook_region" phx-value-name={@editing_name}
+                          class="btn btn-accent btn-sm" title="Screenshot only the hook's region (faster)">⚡ Region</button>
+                  <button type="button" phx-click="open_template_editor" phx-value-name={@editing_name}
+                          class="btn btn-warning btn-sm" title="Edit template mask">✏ Template</button>
                 <% end %>
-              </select>
+              </div>
             </div>
 
             <%!-- Confidence --%>
@@ -205,7 +222,7 @@
               <div class="flex justify-between text-xs text-base-content/40 px-1 mt-0.5">
                 <span>0.0</span><span>0.5</span><span>1.0</span>
               </div>
-              <p class="text-xs text-base-content/40 mt-0.5">For color_detector: how tight the color match is instead of a correlation threshold — 1.0 requires an exact HSV match, 0.0 allows up to 30 points of slack per channel.</p>
+              <p class="text-xs text-base-content/40 mt-0.5">For color_detector: how tight the color match is instead of a correlation threshold — 1.0 requires an exact HSV match, 0.0 allows up to 30 points of slack per channel. For grayscale_detector: how desaturated the region must be — 1.0 requires zero average saturation, 0.0 accepts any.</p>
             </div>
 
             <%!-- Region --%>
@@ -367,19 +384,6 @@
                 placeholder="Which screen is this for?"
                 class={"textarea textarea-bordered textarea-sm #{if field_dirty?(@form, @saved_params, :notes), do: "textarea-warning"}"}
               ><%= @form[:notes].value %></textarea>
-            </div>
-
-            <%!-- Actions --%>
-            <div class="flex flex-wrap gap-2">
-              <button type="submit" class="btn btn-primary btn-sm">💾 Save</button>
-              <%= if @editing_name do %>
-                <button type="button" phx-click="test_hook" phx-value-name={@editing_name}
-                        class="btn btn-secondary btn-sm">🔍 Test</button>
-                <button type="button" phx-click="test_hook_region" phx-value-name={@editing_name}
-                        class="btn btn-accent btn-sm" title="Screenshot only the hook's region (faster)">⚡ Region</button>
-                <button type="button" phx-click="open_template_editor" phx-value-name={@editing_name}
-                        class="btn btn-warning btn-sm" title="Edit template mask">✏ Template</button>
-              <% end %>
             </div>
           </.form>
 

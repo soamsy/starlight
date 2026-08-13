@@ -321,12 +321,15 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
         {:ok, %{method: :color_detector, region: nil}} ->
           {:noreply, put_flash(socket, :error, "This hook has no region defined — use full Test instead.")}
 
+        {:ok, %{method: :grayscale_detector, region: nil}} ->
+          {:noreply, put_flash(socket, :error, "This hook has no region defined — use full Test instead.")}
+
         {:ok, %{region: nil, scan_region: nil}} ->
           {:noreply, put_flash(socket, :error, "This hook has no region defined — use full Test instead.")}
 
         {:ok, hook} ->
           search_region =
-            if hook.method == :color_detector,
+            if hook.method in [:color_detector, :grayscale_detector],
               do: hook.region,
               else: hook.scan_region || hook.region
 
@@ -807,7 +810,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       |> Ecto.Changeset.cast(params, Map.keys(types))
       |> Ecto.Changeset.validate_required([:name, :match_method, :confidence])
       |> Ecto.Changeset.validate_inclusion(:match_method,
-        ~w(gray rgb edge akaze sift binary_thresh color_detector))
+        ~w(gray rgb edge akaze sift binary_thresh color_detector grayscale_detector))
       |> Ecto.Changeset.validate_number(:confidence,
         greater_than_or_equal_to: 0.0,
         less_than_or_equal_to: 1.0)

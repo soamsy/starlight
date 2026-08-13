@@ -62,6 +62,12 @@ defmodule StarlightBot.Vision.Matcher do
         match = color_cluster_match(mat, hook, confidence, :first)
         {:ok, score, match}
 
+      {:ok, %Hook{method: :grayscale_detector} = hook} ->
+        confidence = Keyword.get(opts, :confidence, hook.confidence)
+        score = grayscale_score(mat)
+        match = grayscale_match(mat, hook, confidence, :first)
+        {:ok, score, match}
+
       {:ok, hook} ->
         min_confidence = Keyword.get(opts, :confidence, hook.confidence)
         score = raw_best_score(mat, hook)
@@ -102,6 +108,19 @@ defmodule StarlightBot.Vision.Matcher do
 
         {:ok, score, result}
 
+      {:ok, %Hook{method: :grayscale_detector} = hook} ->
+        confidence = Keyword.get(opts, :confidence, hook.confidence)
+        {image_mat, offset} = crop_to_region(frame.mat, search_region(hook))
+        score = grayscale_score(image_mat)
+
+        result =
+          case grayscale_match(image_mat, hook, confidence, :first) do
+            {:ok, rect} -> {:ok, add_offset(rect, offset)}
+            :not_found -> :not_found
+          end
+
+        {:ok, score, result}
+
       {:ok, hook} ->
         min_confidence = Keyword.get(opts, :confidence, hook.confidence)
         {image_mat, offset} = crop_to_region(frame.mat, search_region(hook))
@@ -122,6 +141,7 @@ defmodule StarlightBot.Vision.Matcher do
   end
 
   defp search_region(%Hook{method: :color_detector, region: region}), do: region
+  defp search_region(%Hook{method: :grayscale_detector, region: region}), do: region
   defp search_region(%Hook{scan_region: scan}) when not is_nil(scan), do: scan
   defp search_region(%Hook{region: region}), do: region
 
@@ -133,6 +153,10 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp run_match(image_mat, %Hook{method: :color_detector} = hook, confidence, mode) do
     color_cluster_match(image_mat, hook, confidence, mode)
+  end
+
+  defp run_match(image_mat, %Hook{method: :grayscale_detector} = hook, confidence, mode) do
+    grayscale_match(image_mat, hook, confidence, mode)
   end
 
   defp run_match(image_mat, %Hook{} = hook, confidence, mode) do
@@ -324,6 +348,25 @@ defmodule StarlightBot.Vision.Matcher do
         max_area = clusters |> Enum.map(fn {area, _rect} -> area end) |> Enum.max()
         if min_area <= 0, do: 1.0, else: min(max_area / min_area, 1.0)
     end
+  rescue
+    _ -> 0.0
+  end
+
+  defp grayscale_match(image_mat, _hook, confidence, mode) do
+    found? = grayscale_score(image_mat) >= confidence
+    {h, w} = mat_hw(image_mat)
+
+    case mode do
+      :first -> if found?, do: {:ok, {0, 0, w, h}}, else: :not_found
+      :all -> if found?, do: [{0, 0, w, h}], else: []
+    end
+  end
+
+  defp grayscale_score(image_mat) do
+    hsv = Evision.cvtColor(image_mat, @color_bgr2hsv)
+    {mean, _stddev} = Evision.meanStdDev(hsv)
+    [_h, s, _v] = mean |> Evision.Mat.to_nx() |> Nx.to_flat_list()
+    1.0 - s / 255.0
   rescue
     _ -> 0.0
   end
