@@ -2,7 +2,7 @@ defmodule StarlightBot.Input.Trajectory do
   @jitter_sigma 1.5
   @corrective_jitter_sigma 0.6
   @jitter_phi 0.65
-  @bow_bias_fraction 0.28
+  @bow_bias_fraction 1.58
   @primary_t_peak 0.42
   @momentum_carry_ms 40.0
   @momentum_carry_fraction_cap 0.25
@@ -12,7 +12,7 @@ defmodule StarlightBot.Input.Trajectory do
 
   @spec build(point, point, point, :human | :fast) :: [waypoint]
   def build(from, to, vel_in, profile) do
-    duration_mult = if profile == :fast, do: 1.0, else: 2.0
+    duration_mult = if profile == :fast, do: 1.2, else: 2.4
     human_trajectory(from, to, vel_in, duration_mult)
   end
 
