@@ -32,13 +32,13 @@ defmodule StarlightBot.Vision.SinColor do
         }
 
   @tier_thresholds [
-    wrath: {0.48, 0.72},
+    wrath: {0.48, 0.65},
     gloom: {0.38, 0.59},
     sloth: {0.45, 0.68},
     lust: {0.45, 0.68},
     pride: {0.41, 0.52},
     gluttony: {0.35, 0.51},
-    envy: {0.40, 0.60}
+    envy: {0.40, 0.55}
   ]
 
   @corner_cut_pct [
