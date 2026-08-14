@@ -32,6 +32,9 @@ defmodule StarlightBot.Navigation.Catalog do
     StarlightBot.Navigation.Screens.Lux,
     StarlightBot.Navigation.Screens.BackAvailable,
     StarlightBot.Navigation.Screens.Grace,
+    StarlightBot.Navigation.Screens.CabinetReward,
+    StarlightBot.Navigation.Screens.MountingTrials,
+    StarlightBot.Navigation.Screens.EncounterReward,
   ]
 
   def all_screens(screen_modules \\ @screen_modules) do
