@@ -60,7 +60,7 @@ defmodule StarlightBot.Automation.Engine do
     end
   end
 
-  @battle_playing_screens [:battle, :battle_playing]
+  @screens_awaiting_turn_or_over [:battle, :battle_playing, :battle_over_confirm]
   @max_battle_loops 500
   @hiccup_backoff_ms 500
   @hiccup_max_attempts 5
@@ -70,7 +70,7 @@ defmodule StarlightBot.Automation.Engine do
   def play_battle(from, _ctx, 0), do: {:error, {:battle_turn_limit_exceeded, from}}
 
   def play_battle(from, ctx, loops_left) do
-    target = if from in @battle_playing_screens, do: :battle_turn_or_over, else: :battle_playing
+    target = if from in @screens_awaiting_turn_or_over, do: :battle_turn_or_over, else: :battle_playing
 
     case goto(from, target, ctx) do
       {:ok, screen} ->

@@ -38,18 +38,22 @@ defmodule StarlightBot.Navigation.Screens.Battle do
 
   screen :battle_turn_or_over, identity: nil, catch_all: true
 
+  screen :battle_over_confirm, identity: :battle_over_black_confirm do
+    transition to: :battle_turn_or_over, do: [reclick_until_gone(:battle_over_black_confirm)]
+  end
+
   defp wait_for_user_input_state do
     [
       # Reflects how pause is sometimes completely hidden for special battle animations, like E.G.O skills.
       # So, wait for pause to disappear, wait for animation exit OR if pause appears again, repeat
-      retry_until(any_of([:battle_turn, :loading_stage_1, :battle_over_black_confirm]), [
+      retry_until(any_of([:battle_turn, :loading_stage_1, :loading_stage_2, :battle_over_black_confirm]), [
         branch([
           {:event, Event.play_out_steps()},
           {:default,
             [
               wait_until(not_hook(:battle_pause_button), timeout: 150_000),
               wait_until(
-                any_of([:battle_turn, :loading_stage_1, :battle_over_black_confirm, :battle_pause_button, :event]),
+                any_of([:battle_turn, :loading_stage_1, :loading_stage_2, :battle_over_black_confirm, :battle_pause_button, :event]),
                 timeout: 15_000
               ),
             ]}
@@ -63,6 +67,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
     [
       {:battle_turn, [sleep(80), wait_until(not_hook(:turn_opener))]},
       {:loading_stage_1, loading() ++ after_loading()},
+      {:loading_stage_2, loading_2() ++ after_loading()},
       confirm_battle_clause(),
       {:default, [sleep(1_000)]}
     ]
