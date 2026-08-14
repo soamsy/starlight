@@ -93,12 +93,21 @@ defmodule StarlightBot.Vision.SkillTray do
     end
   end
 
-  @spec geometry(integer, integer) :: t()
-  def geometry(gear_start_x, tray_left_offset \\ @tray_left_offset) when is_integer(gear_start_x) do
+  defp get_tray_bounds(gear_start_x, tray_left_offset) do
     tray_start_x = gear_start_x + tray_left_offset
     tray_end_x = @screen_w - tray_start_x - @tray_end_inset
     length = tray_end_x - tray_start_x
     skill_num = max(1, round(length / @est_bin_width))
+    {tray_start_x, tray_end_x, length, skill_num}
+  end
+
+  @gear_x_correction %{12 => -5, 11 => -4, 10 => -3, 9 => -1}
+
+  @spec geometry(integer, integer) :: t()
+  def geometry(gear_start_x, tray_left_offset \\ @tray_left_offset) when is_integer(gear_start_x) do
+    {_, _, _, skill_num_guess} = get_tray_bounds(gear_start_x, tray_left_offset)
+    gear_start_x = gear_start_x - Map.get(@gear_x_correction, skill_num_guess, 0)
+    {tray_start_x, tray_end_x, length, skill_num} = get_tray_bounds(gear_start_x, tray_left_offset)
     top_row_y = @top_row_y + case skill_num  do
       6 -> -3
       5 -> -3
