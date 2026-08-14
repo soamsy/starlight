@@ -544,6 +544,15 @@
                       <button phx-click="test_hook_region" phx-value-name={hook.name}
                               class="btn btn-xs btn-outline btn-accent" title="Region-only capture">⚡</button>
                     <% end %>
+                    <button phx-click="use_hook_regions"
+                            phx-value-region-x={hook.region_x} phx-value-region-y={hook.region_y}
+                            phx-value-region-w={hook.region_w} phx-value-region-h={hook.region_h}
+                            phx-value-click-x={hook.click_x} phx-value-click-y={hook.click_y}
+                            phx-value-click-w={hook.click_w} phx-value-click-h={hook.click_h}
+                            phx-value-scan-x={hook.scan_x} phx-value-scan-y={hook.scan_y}
+                            phx-value-scan-w={hook.scan_w} phx-value-scan-h={hook.scan_h}
+                            class="btn btn-xs btn-outline btn-primary"
+                            title="Load this hook's region, click region, and scan region into the canvas + form">Regions</button>
                     <button phx-click="delete_hook" phx-value-name={hook.name}
                             data-confirm={"Delete '#{hook.name}'?"}
                             class="btn btn-xs btn-ghost text-error">Del</button>

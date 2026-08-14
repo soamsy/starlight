@@ -678,6 +678,35 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     end
   end
 
+  @impl true
+  def handle_event("use_hook_regions", params, socket) do
+    region =
+      parse_region_values(params["region-x"], params["region-y"], params["region-w"], params["region-h"])
+
+    click_region =
+      parse_region_values(params["click-x"], params["click-y"], params["click-w"], params["click-h"])
+
+    scan_region =
+      parse_region_values(params["scan-x"], params["scan-y"], params["scan-w"], params["scan-h"])
+
+    params =
+      form_params(socket)
+      |> Map.merge(region_form_params("region", region))
+      |> Map.merge(region_form_params("click", click_region))
+      |> Map.merge(region_form_params("scan", scan_region))
+
+    socket =
+      socket
+      |> assign(:region, region)
+      |> assign(:click_region, click_region)
+      |> assign(:scan_region, scan_region)
+      |> assign(:form, build_form(params))
+      |> push_region_event(region, "set_selection", "clear_selection")
+      |> push_region_event(click_region, "set_click_selection", "clear_click_selection")
+      |> push_region_event(scan_region, "set_scan_selection", "clear_scan_selection")
+
+    {:noreply, socket}
+  end
 
   @impl true
   def handle_event("open_template_editor", %{"name" => name}, socket) do
@@ -954,6 +983,29 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     end
   end
   defp parse_float(f, _) when is_float(f), do: f
+
+  defp parse_region_values(x, y, w, h) do
+    case {parse_int(x), parse_int(y), parse_int(w), parse_int(h)} do
+      {nil, _, _, _} -> nil
+      {x, y, w, h} -> %{x: x, y: y, w: w, h: h}
+    end
+  end
+
+  defp region_form_params(prefix, nil) do
+    %{"#{prefix}_x" => "", "#{prefix}_y" => "", "#{prefix}_w" => "", "#{prefix}_h" => ""}
+  end
+
+  defp region_form_params(prefix, %{x: x, y: y, w: w, h: h}) do
+    %{
+      "#{prefix}_x" => to_string(x),
+      "#{prefix}_y" => to_string(y),
+      "#{prefix}_w" => to_string(w),
+      "#{prefix}_h" => to_string(h)
+    }
+  end
+
+  defp push_region_event(socket, nil, _set_event, clear_event), do: push_event(socket, clear_event, %{})
+  defp push_region_event(socket, region, set_event, _clear_event), do: push_event(socket, set_event, region)
 
   defp mask_param(val), do: if(val in [true, "true", 1], do: "true", else: "false")
 
