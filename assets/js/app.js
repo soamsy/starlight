@@ -47,8 +47,8 @@ window.addEventListener("unhandledrejection", (e) => {
 // --- Theme management ---
 // light = retro, dark = luxury; system preference sets default, localStorage overrides
 
-const LIGHT_THEME = 'retro'
-const DARK_THEME = 'coffee'
+const LIGHT_THEME = 'valentine'
+const DARK_THEME = 'synthwave'
 
 function activeTheme() {
   return localStorage.getItem('starlight-theme') ||
@@ -496,13 +496,22 @@ const PreserveScroll = {
   }
 }
 
+const ScrollToBottom = {
+  mounted() {
+    this.el.scrollTop = this.el.scrollHeight
+  },
+  updated() {
+    this.el.scrollTop = this.el.scrollHeight
+  }
+}
+
 // --- LiveSocket setup ---
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom }
 })
 
 liveSocket.connect()
