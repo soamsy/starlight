@@ -12,7 +12,7 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
   @default_det_conf 0.25
   @default_det_iou 0.45
   @default_cls_topk 3
-  @default_cls_conf 0.0
+  @default_cls_conf 0.8
 
   def start_link(_), do: GenServer.start_link(__MODULE__, [], name: __MODULE__)
 
