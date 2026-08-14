@@ -30,6 +30,8 @@ defmodule StarlightBot.Vision.Hook do
     :confidence,     # float 0.0–1.0
     :notes,
     :source,         # :user | :master
+    :keypoints,
+    :descriptors,
   ]
 
   @color_bgr2gray 6  # cv_COLOR_BGR2GRAY
@@ -42,6 +44,9 @@ defmodule StarlightBot.Vision.Hook do
     mat = Evision.imread(tmp)
     gray_mat = Evision.cvtColor(mat, @color_bgr2gray)
     mask? = truthy?(row.mask)
+    mask_mat = if(mask?, do: build_mask(gray_mat), else: nil)
+    method = decode_match_method(row.match_method)
+    {keypoints, descriptors} = compute_keypoints_descriptors(method, gray_mat, mask_mat)
 
     %__MODULE__{
       name: String.to_atom(row.name),
@@ -51,13 +56,15 @@ defmodule StarlightBot.Vision.Hook do
       click_region: decode_click_region(row),
       scan_region: decode_scan_region(row),
       mask: mask?,
-      mask_mat: if(mask?, do: build_mask(gray_mat), else: nil),
+      mask_mat: mask_mat,
       color: decode_color(row),
       min_cluster_size: Map.get(row, :min_cluster_size),
-      method: decode_match_method(row.match_method),
+      method: method,
       confidence: row.confidence,
       notes: row.notes,
       source: :user,
+      keypoints: keypoints,
+      descriptors: descriptors,
     }
   end
 
@@ -70,6 +77,16 @@ defmodule StarlightBot.Vision.Hook do
     {_, mask} = Evision.threshold(gray_mat, @mask_black_threshold, 255, @thresh_binary)
     mask
   end
+
+  defp compute_keypoints_descriptors(:sift, gray_mat, mask_mat) do
+    Evision.SIFT.detectAndCompute(Evision.SIFT.create(), gray_mat, mask_mat || Evision.Mat.empty())
+  end
+
+  defp compute_keypoints_descriptors(:akaze, gray_mat, mask_mat) do
+    Evision.XFeatures2D.AKAZE.detectAndCompute(Evision.XFeatures2D.AKAZE.create(), gray_mat, mask_mat || Evision.Mat.empty())
+  end
+
+  defp compute_keypoints_descriptors(_method, _gray_mat, _mask_mat), do: {nil, nil}
 
   defp decode_match_method("rgb"), do: :rgb
   defp decode_match_method("gray"), do: :gray
