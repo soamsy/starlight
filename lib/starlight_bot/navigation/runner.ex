@@ -61,11 +61,9 @@ defmodule StarlightBot.Navigation.Runner do
         :unknown
 
       {:ok, frame} ->
-        screens
-        |> Enum.filter(fn %Screen{identity_hook: hook} -> hook != nil and hook_matches?(frame, hook) end)
-        |> pick_most_specific()
-        |> resolve_unknown_fallback(screens)
-        |> case do
+        {roots, children} = partition_roots(screens)
+
+        case localize_level(frame, roots, children) do
           nil -> :unknown
           screen -> {:ok, screen.name}
         end
@@ -84,14 +82,30 @@ defmodule StarlightBot.Navigation.Runner do
 
   def hook_matches?(frame, hook), do: Matcher.check(frame, hook)
 
-  defp resolve_unknown_fallback(nil, _screens), do: nil
+  defp partition_roots(screens) do
+    names = MapSet.new(screens, & &1.name)
+    Enum.split_with(screens, fn %Screen{refines: parent} -> is_nil(parent) or not MapSet.member?(names, parent) end)
+  end
+
+  defp localize_level(frame, candidates, children) do
+    candidates
+    |> Enum.find(fn %Screen{identity_hook: hook} -> hook != nil and hook_matches?(frame, hook) end)
+    |> case do
+      nil ->
+        nil
+
+      match ->
+        kids = Enum.filter(children, &(&1.refines == match.name))
+
+        case localize_level(frame, kids, children) do
+          nil -> resolve_unknown_fallback(match, children)
+          deeper -> deeper
+        end
+    end
+  end
 
   defp resolve_unknown_fallback(match, screens) do
     Enum.find(screens, match, &(&1.refines == match.name and is_nil(&1.identity_hook)))
-  end
-
-  defp pick_most_specific(matches) do
-    Enum.find(matches, fn s -> not Enum.any?(matches, &(&1.refines == s.name)) end)
   end
 
   defp resolve_refinement(screens, deadline) do
@@ -411,7 +425,7 @@ defmodule StarlightBot.Navigation.Runner do
     end
   end
 
-  defp resolve_screen_point(hook_atom, last_frame, ctx) do
+  defp resolve_screen_point(hook_atom, last_frame, _ctx) do
     with {:ok, hook} <- HookRegistry.find(hook_atom) do
       fixed_target =
         cond do
