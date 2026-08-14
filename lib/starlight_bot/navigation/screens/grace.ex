@@ -5,7 +5,7 @@ defmodule StarlightBot.Navigation.Screens.Grace do
     transition to: :grace_confirm, do: [reclick_until_arrived(:grace_enter)]
   end
 
-  screen :grace_confirm, identity: :grace_popup_confirm do
+  screen :grace_confirm, identity: :grace_popup_confirm, refines: :grace do
     transition to: :cabinet_ego_gifts, do: [reclick_until_gone(:grace_popup_confirm)]
   end
 end
