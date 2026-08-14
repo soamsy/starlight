@@ -300,13 +300,16 @@ defmodule StarlightBot.Vision.Matcher do
   defp max_loc(result_mat) do
     {_rows, cols} = result_dims(result_mat)
     raw = Evision.Mat.to_binary(result_mat, 0)
+    values = for(<<v::float-32-little <- raw>>, do: v)
 
-    {max_val, max_idx} =
-      for(<<v::float-32-little <- raw>>, do: v)
-      |> Enum.with_index()
-      |> Enum.max_by(fn {v, _i} -> v end)
+    case values do
+      [] ->
+        {0.0, {0, 0}}
 
-    {max_val, {rem(max_idx, cols), div(max_idx, cols)}}
+      _ ->
+        {max_val, max_idx} = values |> Enum.with_index() |> Enum.max_by(fn {v, _i} -> v end)
+        {max_val, {rem(max_idx, cols), div(max_idx, cols)}}
+    end
   end
 
   defp color_cluster_match(_image_mat, %Hook{color: nil}, _confidence, :first), do: :not_found
