@@ -1,11 +1,12 @@
 defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   import StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.Engine
-  alias StarlightBot.Automation.Scripts.{CabinetReward, ClaimRewards, EncounterReward, MountingTrials, SelectTeam, SelectTeamOnScreen}
+  alias StarlightBot.Automation.{Engine, RunMemory}
+  alias StarlightBot.Automation.Scripts.{ClaimRewards, SelectTeam, SelectTeamOnScreen, ShopBuyer}
   alias StarlightBot.Ctx
   alias StarlightBot.Teams
 
   @max_dispatch_iterations 2_000
+  @max_consecutive_errors 5
   @affinities ~w(bleed burn charge poise rupture sinking tremor)a
   @home_screens [:home, :home_drive, :home_window, :home_unknown]
   @door_family @home_screens ++ [:md_door, :md_door_unknown, :md_door_enter_popup, :md_door_progress]
@@ -14,13 +15,21 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   def run(team_id, run_count, %{weekly_bonus?: wb, grace_picks: picks} = config, ctx)
       when is_integer(run_count) and run_count >= 0 and is_boolean(wb) and is_list(picks) do
-    with {:ok, team} <- fetch_team(team_id, ctx),
-         {:ok, team_type} <- resolve_team_type(team, ctx),
-         {:ok, first_screen} <- localize(ctx) do
-      affinity = resolve_affinity(team)
-      run_state = %{run_started?: first_screen not in @door_family}
-      loop(run_count, run_state, 0, team_id, team_type, affinity, config, ctx)
-    end
+    {:ok, run_memory} = RunMemory.start_link()
+    ctx = %{ctx | run_memory: run_memory}
+
+    result =
+      with {:ok, team} <- fetch_team(team_id, ctx),
+           {:ok, team_type} <- resolve_team_type(team, ctx),
+           {:ok, first_screen} <- localize(ctx) do
+        affinity = resolve_affinity(team)
+        RunMemory.put_team(ctx, %{id: team_id, type: team_type, affinity: Atom.to_string(affinity)})
+        run_state = %{run_started?: first_screen not in @door_family}
+        loop(run_count, run_state, 0, 0, team_id, team_type, affinity, config, ctx)
+      end
+
+    RunMemory.stop(ctx)
+    result
   end
 
   def run(_team_id, _run_count, _config, ctx) do
@@ -72,46 +81,65 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     end
   end
 
-  defp loop(run_count, _run_state, _iterations, _team_id, _team_type, _affinity, _config, ctx) when run_count <= 0 do
+  defp loop(run_count, _run_state, _iterations, _errors, _team_id, _team_type, _affinity, _config, ctx)
+       when run_count <= 0 do
     case localize(ctx) do
       {:ok, screen} -> Engine.goto(screen, :home, ctx)
       {:error, _} = err -> err
     end
   end
 
-  defp loop(_run_count, _run_state, iterations, _team_id, _team_type, _affinity, _config, ctx)
+  defp loop(_run_count, _run_state, iterations, _errors, _team_id, _team_type, _affinity, _config, ctx)
        when iterations > @max_dispatch_iterations do
     Ctx.log(ctx, :error, "mirror dungeon runner: exceeded #{@max_dispatch_iterations} dispatch iterations without completing this run")
     {:error, :dispatch_loop_exceeded}
   end
 
-  defp loop(run_count, run_state, iterations, team_id, team_type, affinity, config, ctx) do
+  defp loop(run_count, run_state, iterations, errors, team_id, team_type, affinity, config, ctx) do
     case localize(ctx) do
       {:ok, screen} ->
         screen
         |> dispatch(run_state, team_id, team_type, affinity, config, ctx)
-        |> handle_dispatch_result(run_count, iterations, team_id, team_type, affinity, config, ctx)
+        |> handle_dispatch_result(run_count, run_state, iterations, errors, team_id, team_type, affinity, config, ctx)
 
-      {:error, _} = err ->
-        err
+      {:error, reason} ->
+        handle_loop_error(reason, run_count, run_state, iterations, errors, team_id, team_type, affinity, config, ctx)
+    end
+  rescue
+    exception ->
+      Ctx.log(ctx, :error, "mirror dungeon runner: crashed mid-dispatch: #{Exception.format(:error, exception, __STACKTRACE__)}")
+      handle_loop_error({:exception, Exception.message(exception)}, run_count, run_state, iterations, errors, team_id, team_type, affinity, config, ctx)
+  end
+
+  defp handle_dispatch_result({:continue, run_state}, run_count, _prev_state, iterations, _errors, team_id, team_type, affinity, config, ctx) do
+    loop(run_count, run_state, iterations + 1, 0, team_id, team_type, affinity, config, ctx)
+  end
+
+  defp handle_dispatch_result({:paused, run_state}, run_count, _prev_state, iterations, _errors, team_id, team_type, affinity, config, ctx) do
+    :ok = resume_after_pause(ctx)
+    loop(run_count, run_state, iterations + 1, 0, team_id, team_type, affinity, config, ctx)
+  end
+
+  defp handle_dispatch_result(:run_complete, run_count, _prev_state, _iterations, _errors, team_id, team_type, affinity, config, ctx) do
+    Ctx.log(ctx, :ok, "mirror dungeon run complete — #{run_count - 1} remaining")
+    loop(run_count - 1, %{run_started?: false}, 0, 0, team_id, team_type, affinity, config, ctx)
+  end
+
+  defp handle_dispatch_result({:error, reason}, run_count, prev_state, iterations, errors, team_id, team_type, affinity, config, ctx) do
+    handle_loop_error(reason, run_count, prev_state, iterations, errors, team_id, team_type, affinity, config, ctx)
+  end
+
+  defp handle_loop_error(reason, run_count, run_state, iterations, errors, team_id, team_type, affinity, config, ctx) do
+    errors = errors + 1
+
+    if errors >= @max_consecutive_errors do
+      Ctx.log(ctx, :error, "mirror dungeon runner: #{errors} consecutive errors, giving up (last: #{inspect(reason)})")
+      {:error, reason}
+    else
+      Ctx.log(ctx, :error, "mirror dungeon runner: error #{errors}/#{@max_consecutive_errors} (#{inspect(reason)}) — re-localizing and retrying")
+      loop(run_count, run_state, iterations + 1, errors, team_id, team_type, affinity, config, ctx)
     end
   end
-
-  defp handle_dispatch_result({:continue, run_state}, run_count, iterations, team_id, team_type, affinity, config, ctx) do
-    loop(run_count, run_state, iterations + 1, team_id, team_type, affinity, config, ctx)
-  end
-
-  defp handle_dispatch_result({:paused, run_state}, run_count, iterations, team_id, team_type, affinity, config, ctx) do
-    :ok = resume_after_pause(ctx)
-    loop(run_count, run_state, iterations + 1, team_id, team_type, affinity, config, ctx)
-  end
-
-  defp handle_dispatch_result(:run_complete, run_count, _iterations, team_id, team_type, affinity, config, ctx) do
-    Ctx.log(ctx, :ok, "mirror dungeon run complete — #{run_count - 1} remaining")
-    loop(run_count - 1, %{run_started?: false}, 0, team_id, team_type, affinity, config, ctx)
-  end
-
-  defp handle_dispatch_result({:error, _} = err, _run_count, _iterations, _team_id, _team_type, _affinity, _config, _ctx), do: err
 
   defp resume_after_pause(ctx) do
     Ctx.log(ctx, :info, "window lost focus — paused, waiting for Resume")
@@ -145,6 +173,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       screen == :md_door_forfeit ->
         Engine.goto(:md_door_forfeit, :exploration_reward, ctx) |> continue_after(run_state)
 
+      screen == :exploration_complete ->
+        Engine.goto(:exploration_complete, :exploration_reward, ctx) |> continue_after(run_state)
+
       screen == :exploration_reward ->
         handle_exploration(run_state, config, ctx)
 
@@ -153,9 +184,6 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
       screen == :grace ->
         apply_grace_picks(config, run_state, ctx)
-
-      screen == :grace_confirm ->
-        confirm_grace(run_state, ctx)
 
       screen == :cabinet_ego_gifts ->
         apply_affinity_and_select_gift(affinity, run_state, ctx)
@@ -179,16 +207,19 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         Engine.goto(:event, :event_over, ctx) |> continue_after(run_state)
 
       screen in [:shop, :shop_super] ->
-        Engine.goto(screen, :dungeon_graph, ctx) |> continue_after(run_state)
+        ShopBuyer.run(ctx) |> continue_after(run_state)
 
       screen == :cabinet_reward ->
-        CabinetReward.run(ctx) |> continue_after(run_state)
+        Engine.goto(:cabinet_reward, :cabinet_reward_over, ctx) |> continue_after(run_state)
 
       screen == :mounting_trials ->
-        MountingTrials.run(ctx) |> continue_after(run_state)
+        Engine.goto(:mounting_trials, :mounting_trials_over, ctx) |> continue_after(run_state)
 
       screen == :encounter_reward ->
-        EncounterReward.run(ctx) |> continue_after(run_state)
+        Engine.goto(:encounter_reward, :encounter_reward_over, ctx) |> continue_after(run_state)
+
+      screen == :battle_over_confirm ->
+        Engine.goto(:battle_over_confirm, :battle_turn_or_over, ctx) |> continue_after(run_state)
 
       true ->
         handle_unrecognized_screen(screen, run_state, config, ctx)
@@ -197,20 +228,12 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   defp apply_grace_picks(config, run_state, ctx) do
     steps = Enum.map(config.grace_picks, &click(:"grace_#{&1}"))
-
-    result =
-      with {:ok, _} <- Engine.act(steps, ctx) do
-        Engine.goto(:grace, :grace_confirm, ctx)
-      end
-
-    continue_after(result, run_state)
-  end
-
-  defp confirm_grace(run_state, ctx) do
     ensure_saved = [branch([{:grace_convert_starlight_checked, [click(:grace_convert_starlight_checked)]}, {:default, []}])]
 
     result =
-      with {:ok, _} <- Engine.act(ensure_saved, ctx) do
+      with {:ok, _} <- Engine.act(steps, ctx),
+           {:ok, _} <- Engine.goto(:grace, :grace_confirm, ctx),
+           {:ok, _} <- Engine.act(ensure_saved, ctx) do
         Engine.goto(:grace_confirm, :cabinet_ego_gifts, ctx)
       end
 
@@ -222,11 +245,21 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
     result =
       with {:ok, _} <- Engine.act(ensure_search_off, ctx),
-           {:ok, _} <- Engine.run_action(:cabinet_ego_gifts, :"select_#{affinity}", ctx) do
+           {:ok, _} <- Engine.run_action(:cabinet_ego_gifts, :"select_#{affinity}", ctx),
+           {:ok, _} <- select_all_available_gifts(ctx) do
         Engine.goto(:cabinet_ego_gifts, :ego_gift_get, ctx)
       end
 
     continue_after(result, run_state)
+  end
+
+  defp select_all_available_gifts(ctx) do
+    Enum.reduce_while([:select_gift_1, :select_gift_2, :select_gift_3], {:ok, nil}, fn action, {:ok, _} ->
+      case Engine.run_action(:cabinet_ego_gifts, action, ctx) do
+        {:ok, _} = ok -> {:cont, ok}
+        {:error, _} = err -> {:halt, err}
+      end
+    end)
   end
 
   defp advance_theme_pack(run_state, ctx) do
@@ -280,9 +313,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   end
 
   defp handle_unrecognized_screen(screen, run_state, config, ctx) do
-    checks = Engine.check_all([:exploration_complete, :exploration_reward])
-
-    if checks.exploration_reward or checks.exploration_complete do
+    if Engine.check(:exploration_reward) do
       handle_exploration(run_state, config, ctx)
     else
       Ctx.log(ctx, :error, "mirror dungeon runner: no handler for screen #{inspect(screen)}")

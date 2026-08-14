@@ -11,6 +11,7 @@ defmodule StarlightBot.Navigation.Navigator do
     goal: nil,             # atom | nil
     phase: :idle,          # :idle | :localizing | :running | :paused
     log: [],               # newest first
+    run_memory: %{},       # snapshot of the current mirror dungeon run's RunMemory, cleared per run
     task_pid: nil
   ]
 
@@ -245,6 +246,7 @@ defmodule StarlightBot.Navigation.Navigator do
   @impl true
   def handle_cast({:run_mirror_dungeon, team_id, run_count, config}, state) do
     state = cancel_running(state)
+    state = %{state | run_memory: %{}}
     state = add_log(state, :info, "Running mirror dungeon: team=#{team_id} runs=#{run_count} config=#{inspect(config)}")
     me = self()
 
@@ -253,7 +255,8 @@ defmodule StarlightBot.Navigation.Navigator do
         ctx =
           Ctx.new(
             on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end,
-            on_pause: fn -> send(me, :nav_paused) end
+            on_pause: fn -> send(me, :nav_paused) end,
+            on_run_memory_change: fn snapshot -> send(me, {:nav_run_memory, snapshot}) end
           )
 
         result = StarlightBot.Automation.Scripts.MirrorDungeonRunner.run(team_id, run_count, config, ctx)
@@ -315,6 +318,7 @@ defmodule StarlightBot.Navigation.Navigator do
   @impl true
   def handle_cast(:cancel, state) do
     state = cancel_running(state)
+    state = %{state | run_memory: %{}}
     state = add_log(state, :info, "Cancelled")
     broadcast(state)
     {:noreply, state}
@@ -459,6 +463,13 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
+  def handle_info({:nav_run_memory, snapshot}, state) do
+    state = %{state | run_memory: snapshot}
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_info(:nav_paused, state) do
     state = %{state | phase: :paused}
     broadcast(state)
@@ -468,6 +479,18 @@ defmodule StarlightBot.Navigation.Navigator do
   @impl true
   def handle_info({ref, _result}, state) when is_reference(ref) do
     Process.demonitor(ref, [:flush])
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:DOWN, _ref, :process, pid, reason}, %{task_pid: pid} = state) do
+    state =
+      state
+      |> Map.put(:phase, :idle)
+      |> Map.put(:task_pid, nil)
+      |> add_log(:error, "Task crashed: #{inspect(reason)}")
+
+    broadcast(state)
     {:noreply, state}
   end
 
@@ -497,7 +520,8 @@ defmodule StarlightBot.Navigation.Navigator do
       current_screen: state.current_screen,
       goal: state.goal,
       phase: state.phase,
-      log: state.log
+      log: state.log,
+      run_memory: state.run_memory
     }
   end
 end

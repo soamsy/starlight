@@ -1,9 +1,14 @@
 defmodule StarlightBot.Ctx do
-  defstruct on_log: &__MODULE__.ignore/1, on_pause: &__MODULE__.ignore/0
+  defstruct on_log: &__MODULE__.ignore/1,
+            on_pause: &__MODULE__.ignore/0,
+            on_run_memory_change: &__MODULE__.ignore/1,
+            run_memory: nil
 
   @type t :: %__MODULE__{
           on_log: ({:ok | :info | :error, String.t()} -> :ok),
-          on_pause: (-> :ok)
+          on_pause: (-> :ok),
+          on_run_memory_change: (map() -> :ok),
+          run_memory: pid() | nil
         }
 
   def new(fields \\ []), do: struct(__MODULE__, fields)
@@ -11,6 +16,9 @@ defmodule StarlightBot.Ctx do
   def log(%__MODULE__{on_log: on_log}, kind, text), do: on_log.({kind, text})
 
   def pause(%__MODULE__{on_pause: on_pause}), do: on_pause.()
+
+  def run_memory_changed(%__MODULE__{on_run_memory_change: on_run_memory_change}, snapshot),
+    do: on_run_memory_change.(snapshot)
 
   def ignore(_), do: :ok
   def ignore, do: :ok

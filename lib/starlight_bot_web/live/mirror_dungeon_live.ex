@@ -18,6 +18,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:current_screen, nav.current_screen)
      |> assign(:phase, nav.phase)
      |> assign(:log, nav.log)
+     |> assign(:run_memory, nav.run_memory)
      |> assign(:teams, teams)
      |> assign(:team_id, default_team_id(teams))
      |> assign(:run_count, "1")
@@ -88,10 +89,13 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      socket
      |> assign(:current_screen, nav.current_screen)
      |> assign(:phase, nav.phase)
-     |> assign(:log, nav.log)}
+     |> assign(:log, nav.log)
+     |> assign(:run_memory, nav.run_memory)}
   end
 
   def grace_indices, do: @grace_indices
+
+  def ego_gifts(run_memory), do: Map.get(run_memory, :ego_gifts, %{})
 
   defp default_team_id([]), do: nil
   defp default_team_id([%{id: id} | _]), do: id

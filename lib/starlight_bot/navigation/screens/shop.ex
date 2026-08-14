@@ -3,8 +3,17 @@ defmodule StarlightBot.Navigation.Screens.Shop do
 
   screen :shop, identity: :shop do
     transition to: :dungeon_graph do
-      [retry_until(not_hook(:shop), [click(:shop_leave)], every: 500, tries: 5)] ++
-        loading()
+      [
+        retry_until_arrived([click(:shop_leave), await(:shop_leave_confirm), click(:shop_leave_confirm)], every: 2000)
+      ]
+    end
+
+    action :refresh_shelf do
+      [
+        click(:shop_refresh),
+        sleep(400),
+        branch(shop_refresh_popup_are_you_sure: [click(:shop_refresh_popup_confirm)], default: [])
+      ]
     end
   end
 
