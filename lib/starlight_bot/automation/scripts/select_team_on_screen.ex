@@ -52,6 +52,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp maybe_select_team(false, _team, ctx) do
+    Process.sleep(700)
     Ctx.log(ctx, :info, "team selector not present — skipping team choice")
     :ok
   end
@@ -83,18 +84,23 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp maybe_select_order(true, %{sinner_order: order}, ctx) do
-    if order_already_set?(order) do
-      Ctx.log(ctx, :ok, "sinner order already set — nothing to do")
-      :ok
-    else
-      case Engine.act(order_steps(order, ctx), ctx) do
-        {:ok, _} -> :ok
-        {:error, _} = err -> err
-      end
+    case order_mismatches(order) do
+      [] ->
+        Ctx.log(ctx, :ok, "sinner order already set — nothing to do")
+        :ok
+
+      mismatches ->
+        Ctx.log(ctx, :info, "sinner order needs clearing + reselecting:")
+        Enum.each(mismatches, &Ctx.log(ctx, :info, "  #{&1}"))
+
+        case Engine.act(order_steps(order, ctx), ctx) do
+          {:ok, _} -> :ok
+          {:error, _} = err -> err
+        end
     end
   end
 
-  defp order_already_set?(order) do
+  defp order_mismatches(order) do
     {front, backup} = front_and_backup(order)
     placed = MapSet.new(front ++ backup)
     unplaced = Enum.reject(@all_sinners, &(&1 in placed))
@@ -107,9 +113,25 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
           Enum.map(unplaced, &sinner_hook(&1, :backup))
       )
 
-    Enum.all?(front, &checks[sinner_hook(&1, :selected)]) and
-      Enum.all?(backup, &checks[sinner_hook(&1, :backup)]) and
-      Enum.all?(unplaced, &(not checks[sinner_hook(&1, :selected)] and not checks[sinner_hook(&1, :backup)]))
+    front_mismatches =
+      front
+      |> Enum.reject(&checks[sinner_hook(&1, :selected)])
+      |> Enum.map(&"#{&1}: expected in front line, not detected as selected")
+
+    backup_mismatches =
+      backup
+      |> Enum.reject(&checks[sinner_hook(&1, :backup)])
+      |> Enum.map(&"#{&1}: expected in backup, not detected as backup")
+
+    unplaced_mismatches =
+      unplaced
+      |> Enum.filter(&(checks[sinner_hook(&1, :selected)] or checks[sinner_hook(&1, :backup)]))
+      |> Enum.map(fn sinner ->
+        where = if checks[sinner_hook(sinner, :selected)], do: "front line", else: "backup"
+        "#{sinner}: expected unplaced, detected in #{where}"
+      end)
+
+    front_mismatches ++ backup_mismatches ++ unplaced_mismatches
   end
 
   defp order_steps(order, ctx) do
