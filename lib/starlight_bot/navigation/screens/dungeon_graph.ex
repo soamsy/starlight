@@ -3,7 +3,7 @@ defmodule StarlightBot.Navigation.Screens.DungeonGraph do
   alias StarlightBot.Automation.DungeonPathPlanner
 
   screen :dungeon_graph, identity: :dungeon_graph do
-    action :reset_view, do: [key(:d), sleep(150), key(:a)]
+    action :reset_view, do: [key(:d), sleep(200), key(:a), sleep(200)]
 
     transition to: :dungeon_graph_node do
       [
