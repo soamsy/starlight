@@ -4,7 +4,24 @@ defmodule StarlightBot.Automation.Engine do
   alias StarlightBot.Navigation.{Catalog, Runner}
   alias StarlightBot.Vision.Capture
 
-  def localize, do: Runner.check_screens(Catalog.all_screens())
+  @localize_max_attempts 5
+  @localize_backoff_ms 500
+
+  def localize, do: localize(@localize_max_attempts, @localize_backoff_ms)
+
+  defp localize(attempts_left, delay_ms) do
+    case Runner.check_screens(Catalog.all_screens()) do
+      {:ok, _screen} = ok ->
+        ok
+
+      :unknown when attempts_left > 1 ->
+        Process.sleep(delay_ms)
+        localize(attempts_left - 1, delay_ms * 2)
+
+      :unknown ->
+        :unknown
+    end
+  end
 
   def goto(same, same, ctx \\ Ctx.new())
 
