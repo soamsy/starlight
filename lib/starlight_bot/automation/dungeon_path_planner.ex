@@ -68,7 +68,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
     end
   end
 
-  defp edges_from(node, edges), do: edges |> Map.values() |> Enum.filter(&(&1.from_node == node))
+  defp edges_from(node, edges), do: Enum.filter(edges, &(&1.from_node == node))
 
   defp total_cost(edge, nodes, edges), do: edge_cost(edge, nodes) + continuation_cost(edge.to_node, nodes, edges)
 
