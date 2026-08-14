@@ -7,6 +7,7 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
   @handoff_path "/tmp/_starlight_hook_handoff.jpg"
   @thumb_w 192
   @thumb_h 108
+  @selected_hooks_key {__MODULE__, :selected_hooks}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -37,7 +38,7 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
      |> assign(:focused_hook, nil)
      |> assign(:focused_hook_template_b64, nil)
      |> assign(:all_hooks, Hooks.list_hooks())
-     |> assign(:selected_hooks, MapSet.new())
+     |> assign(:selected_hooks, :persistent_term.get(@selected_hooks_key, MapSet.new()))
      |> assign(:hook_results, %{})
      |> assign(:hook_filter, "")
      |> assign(:max_frames, @max_frames)}
@@ -113,6 +114,7 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
         do: MapSet.delete(socket.assigns.selected_hooks, name),
         else: MapSet.put(socket.assigns.selected_hooks, name)
 
+    :persistent_term.put(@selected_hooks_key, selected)
     {:noreply, assign(socket, :selected_hooks, selected)}
   end
 
