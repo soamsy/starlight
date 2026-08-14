@@ -133,7 +133,14 @@ defmodule StarlightBot.Navigation.DSL do
 
   def loading(opts \\ []) do
     opts = Keyword.merge([appear_timeout: 10_000, gone_timeout: 20_000], opts)
-    await_then_gone(:loading_stage_1, opts) ++ await_then_gone(:loading_stage_2, opts) ++ [sleep(1000)] # TODO: make transitions work fine even if they have to wait for their hook to appear for a bit. Alternatively, make them re-localize on exponential backoff before claiming the navigation failed
+    # TODO: make transitions work fine even if they have to wait for their hook to appear for a bit.
+    # Alternatively, make them re-localize on exponential backoff before claiming the navigation failed
+    await_then_gone(:loading_stage_1, opts) ++ loading_2(opts)
+  end
+
+  def loading_2(opts \\ []) do
+    opts = Keyword.merge([appear_timeout: 10_000, gone_timeout: 20_000], opts)
+    await_then_gone(:loading_stage_2, opts) ++ [sleep(1000)]
   end
 
   def retry_until(hook, steps, opts \\ [])
