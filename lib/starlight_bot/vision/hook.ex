@@ -37,6 +37,7 @@ defmodule StarlightBot.Vision.Hook do
   @color_bgr2gray 6  # cv_COLOR_BGR2GRAY
   @thresh_binary  0  # cv_THRESH_BINARY
   @mask_black_threshold 10  # grayscale value below which a template pixel counts as "black"
+  @sift_contrast_threshold 0.06
 
   def from_db_row(row) do
     tmp = "/tmp/_starlight_hook_load.png"
@@ -79,14 +80,38 @@ defmodule StarlightBot.Vision.Hook do
   end
 
   defp compute_keypoints_descriptors(:sift, gray_mat, mask_mat) do
-    Evision.SIFT.detectAndCompute(Evision.SIFT.create(), gray_mat, mask_mat || Evision.Mat.empty())
+    Evision.SIFT.detectAndCompute(sift_detector(), gray_mat, mask_mat || Evision.Mat.empty())
   end
 
   defp compute_keypoints_descriptors(:akaze, gray_mat, mask_mat) do
-    Evision.XFeatures2D.AKAZE.detectAndCompute(Evision.XFeatures2D.AKAZE.create(), gray_mat, mask_mat || Evision.Mat.empty())
+    Evision.XFeatures2D.AKAZE.detectAndCompute(akaze_detector(), gray_mat, mask_mat || Evision.Mat.empty())
   end
 
   defp compute_keypoints_descriptors(_method, _gray_mat, _mask_mat), do: {nil, nil}
+
+  defp sift_detector do
+    case :persistent_term.get({__MODULE__, :sift_detector}, nil) do
+      nil ->
+        detector = Evision.SIFT.create(contrastThreshold: @sift_contrast_threshold)
+        :persistent_term.put({__MODULE__, :sift_detector}, detector)
+        detector
+
+      detector ->
+        detector
+    end
+  end
+
+  defp akaze_detector do
+    case :persistent_term.get({__MODULE__, :akaze_detector}, nil) do
+      nil ->
+        detector = Evision.XFeatures2D.AKAZE.create()
+        :persistent_term.put({__MODULE__, :akaze_detector}, detector)
+        detector
+
+      detector ->
+        detector
+    end
+  end
 
   defp decode_match_method("rgb"), do: :rgb
   defp decode_match_method("gray"), do: :gray

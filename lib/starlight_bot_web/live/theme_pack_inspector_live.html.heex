@@ -1,0 +1,113 @@
+<div class="flex flex-col h-full gap-3 overflow-hidden">
+  <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0">
+    <div class="card-body p-3 flex flex-col flex-1 min-h-0">
+
+      <div class="flex items-center gap-3 mb-2">
+        <h2 class="card-title text-lg">Theme Packs</h2>
+        <span class="badge badge-neutral badge-sm"><%= length(@theme_packs) %></span>
+
+        <button phx-click="scan_theme_packs"
+                disabled={@scan_status == :scanning}
+                class="btn btn-primary btn-sm">
+          <%= if @scan_status == :scanning do %>
+            <span class="loading loading-spinner loading-xs"></span> Scanning…
+          <% else %>
+            🔍 Scan for Theme Packs
+          <% end %>
+        </button>
+
+        <%= if @scan_matched_ids do %>
+          <span class="badge badge-success badge-sm"><%= MapSet.size(@scan_matched_ids) %> matched</span>
+          <button phx-click="clear_scan" class="btn btn-ghost btn-sm">Clear scan filter</button>
+        <% end %>
+
+        <input
+          type="text"
+          placeholder="Search theme packs…"
+          value={@filter}
+          phx-keyup="filter_theme_packs"
+          class="input input-bordered input-sm w-64 ml-auto"
+        />
+      </div>
+
+      <div class="flex-1 min-h-0 overflow-y-auto">
+        <div class="grid grid-cols-5 gap-3">
+          <%= for pack <- filtered_theme_packs(@theme_packs, @filter, @scan_matched_ids) do %>
+            <div class="flex flex-col">
+              <div class="relative aspect-square rounded-lg overflow-hidden border border-base-300 bg-base-200 group">
+                <img src={pack.image_path} alt={pack.name_en} class="w-full h-full object-cover" />
+
+                <div class="absolute inset-0 hidden group-hover:flex flex-col gap-1 p-2 bg-base-100/95 overflow-y-auto text-[11px] leading-snug">
+                  <div class="font-bold text-xs"><%= pack.name_en %></div>
+
+                  <%= if desc = strip_html(pack.description_en) do %>
+                    <div class="whitespace-pre-line text-base-content/80"><%= desc %></div>
+                  <% end %>
+
+                  <div class="flex flex-col gap-0.5 mt-auto pt-1 border-t border-base-300 text-base-content/60">
+                    <span>Normal: <%= floors_label(pack.normal_floors) %></span>
+                    <span>Hard: <%= floors_label(pack.hard_floors) %></span>
+                    <%= if pack.tip do %>
+                      <span>Tip: <%= pack.tip %></span>
+                    <% end %>
+                    <%= if pack.event_ids do %>
+                      <span>Events: <%= pack.event_ids %></span>
+                    <% end %>
+                  </div>
+                </div>
+              </div>
+
+              <div class="text-[11px] text-center truncate mt-1" title={pack.name_en}><%= pack.name_en %></div>
+            </div>
+          <% end %>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <%= if @scan_results != [] do %>
+    <div class="card bg-base-100 shadow-lg flex flex-col shrink-0">
+      <div class="card-body p-3 flex flex-col gap-1">
+        <div class="flex items-center gap-2">
+          <h3 class="card-title text-base">Scan Results</h3>
+          <span class="badge badge-neutral badge-sm"><%= length(@scan_results) %> hook(s) tested</span>
+          <%= if @scan_total_ms do %>
+            <span class="badge badge-outline badge-sm">total: <%= Float.round(@scan_total_ms, 1) %> ms</span>
+          <% end %>
+        </div>
+
+        <div class="overflow-y-auto max-h-64">
+          <table class="table table-xs table-pin-rows">
+            <thead>
+              <tr>
+                <th>Theme Pack</th>
+                <th>Hook</th>
+                <th>Matched</th>
+                <th>Score</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              <%= for r <- sorted_scan_results(@scan_results) do %>
+                <tr class={if r.matched, do: "bg-success/10"}>
+                  <td><%= r.name_en %></td>
+                  <td class="text-base-content/50"><%= r.hook_name %></td>
+                  <td>
+                    <%= if r.matched do %>
+                      <span class="badge badge-success badge-sm">matched</span>
+                    <% else %>
+                      <span class="badge badge-ghost badge-sm">no</span>
+                    <% end %>
+                  </td>
+                  <td><%= Float.round(r.score, 3) %></td>
+                  <td><%= Float.round(r.duration_ms, 1) %> ms</td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</div>
