@@ -5,6 +5,7 @@ defmodule StarlightBot.Navigation.Runner do
   @poll_interval_ms 100
   @verify_timeout_ms 1_800
   @refinement_timeout_ms 1_000
+  @target_area_fraction 0.25
 
   def run_plan([], _ctx), do: {:ok, nil}
 
@@ -411,6 +412,15 @@ defmodule StarlightBot.Navigation.Runner do
     end
   end
 
+  defp sample_target_point({x, y, w, h}) do
+    scale = :math.sqrt(@target_area_fraction)
+    tw = w * scale
+    th = h * scale
+    left = x + (w - tw) / 2
+    top = y + (h - th) / 2
+    {left + :rand.uniform() * tw, top + :rand.uniform() * th}
+  end
+
   defp window_scale do
     case Capture.window_rect() do
       nil -> {:error, :no_window}
@@ -437,14 +447,15 @@ defmodule StarlightBot.Navigation.Runner do
 
       norm_point =
         case fixed_target do
-          {cx, cy, cw, ch} -> {cx + div(cw, 2), cy + div(ch, 2)}
+          {_, _, _, _} = region ->
+            sample_target_point(region)
 
           nil ->
             frame_for_find = last_frame || elem(grab_frame(), 1)
 
             if frame_for_find do
               case Matcher.find(frame_for_find, hook_atom) do
-                {:ok, {mx, my, mw, mh}} -> {mx + div(mw, 2), my + div(mh, 2)}
+                {:ok, region} -> sample_target_point(region)
                 _ -> nil
               end
             end
