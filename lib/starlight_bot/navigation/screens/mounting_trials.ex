@@ -4,7 +4,7 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
   alias StarlightBot.Automation.RewardHelpers
 
   @pick_delay_ms 400
-  @tier_hooks [:mounting_trials_tier_3, :mounting_trials_tier_2, :mounting_trials_tier_1]
+  @tier_hooks [:mounting_trials_tier_4, :mounting_trials_tier_3, :mounting_trials_tier_2, :mounting_trials_tier_1]
 
   screen :mounting_trials, identity: :mounting_trials do
     transition to: :mounting_trials_over, do: [custom(&select_and_confirm_gifts/2)]
