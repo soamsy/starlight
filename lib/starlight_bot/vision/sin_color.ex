@@ -4,13 +4,13 @@ defmodule StarlightBot.Vision.SinColor do
   @color_bgr2hsv 40
 
   @colors [
-    wrath: {0, 4, 140, 255, 63, 245},
-    gloom: {96, 5, 100, 255, 63, 245},
-    sloth: {23, 5, 140, 255, 63, 245},
-    lust: {12, 5, 140, 255, 63, 245},
-    pride: {110, 5, 100, 255, 63, 200},
-    gluttony: {41, 5, 100, 255, 63, 252},
-    envy: {140, 6, 140, 255, 63, 245}
+    wrath: {0, 10, 70, 255, 60, 255},
+    gloom: {96, 6, 100, 255, 63, 245},
+    sloth: {23, 6, 180, 255, 63, 245},
+    lust: {12, 6, 100, 255, 63, 245},
+    pride: {110, 6, 100, 255, 63, 200},
+    gluttony: {41, 6, 100, 255, 63, 252},
+    envy: {140, 6, 100, 255, 63, 245}
   ]
 
   @type sin :: :wrath | :lust | :sloth | :gluttony | :gloom | :pride | :envy
@@ -36,9 +36,9 @@ defmodule StarlightBot.Vision.SinColor do
     gloom: {0.38, 0.59},
     sloth: {0.45, 0.68},
     lust: {0.45, 0.68},
-    pride: {0.41, 0.52},
+    pride: {0.41, 0.56},
     gluttony: {0.35, 0.51},
-    envy: {0.40, 0.55}
+    envy: {0.40, 0.60}
   ]
 
   @corner_cut_pct [
@@ -56,10 +56,10 @@ defmodule StarlightBot.Vision.SinColor do
   @ring_kernel_px 3
   @min_ring_area 8
 
-  @bg_exclusion_hue_tol 10
+  @bg_exclusion_hue_tol 20
   @bg_exclusion_sv_tol 30
-  @bg_hue_affect_range 25
-  @bg_contrast_margin 20
+  @bg_hue_affect_range 12
+  @bg_contrast_margin 30
   @bg_min_value_floor 100
 
   @spec classify_cell(
