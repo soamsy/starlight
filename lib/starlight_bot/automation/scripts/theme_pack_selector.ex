@@ -13,7 +13,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   @ready_poll_tries 3
   @mode_switch_poll_tries 6
   @max_refresh_attempts 30
-  @drag_offsets [{0, -200}, {50, -200}, {100, -200}]
+  @drag_offsets [{0, -100}, {50, -100}, {100, -100}]
   @drag_distance 500
   @drag_confirm_poll_tries 8
   @drag_confirm_poll_every_ms 250
