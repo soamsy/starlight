@@ -196,9 +196,16 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
               gear_hook: gear_hook,
               gear_rect: gear_rect,
               tray: tray,
-              top_sins: classify_row_with_previews(frame.mat, tray.top_row, bg_color.hue, bg_color.saturation),
+              top_sins:
+                classify_row_with_previews(frame.mat, tray.top_row, bg_color.hue, bg_color.saturation, bg_color.value),
               bottom_sins:
-                classify_row_with_previews(frame.mat, tray.bottom_row, bg_color.hue, bg_color.saturation),
+                classify_row_with_previews(
+                  frame.mat,
+                  tray.bottom_row,
+                  bg_color.hue,
+                  bg_color.saturation,
+                  bg_color.value
+                ),
               bg_region: bg_region,
               bg_color: bg_color,
               bg_strip_b64: encode_png_b64(Evision.Mat.roi(frame.mat, bg_region)),
@@ -249,10 +256,10 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
     end
   end
 
-  defp classify_row_with_previews(mat, row, bg_hue, bg_saturation) do
+  defp classify_row_with_previews(mat, row, bg_hue, bg_saturation, bg_value) do
     tier_columns = SkillTray.row_columns(row)
     hue_columns = SkillTray.hue_scan_columns(row)
-    results = SinColor.classify_row(mat, row, bg_hue, bg_saturation)
+    results = SinColor.classify_row(mat, row, bg_hue, bg_saturation, bg_value)
 
     [results, tier_columns, hue_columns]
     |> Enum.zip()
@@ -320,7 +327,7 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
       h: h,
       color: bgr_to_hex(bg_color.bgr),
       dashed: true,
-      text: "bg sample (hue #{bg_color.hue}, mix #{round(SinColor.effective_mix_pct(bg_color.saturation) * 100)}%)",
+      text: "bg sample (hue #{bg_color.hue}, sat #{bg_color.saturation}, val #{bg_color.value})",
       text_x: x,
       text_y: y - 6
     }

@@ -56,7 +56,11 @@ defmodule StarlightBot.Vision.SinColor do
   @ring_kernel_px 3
   @min_ring_area 8
 
-  @bg_mix_pct 0.03
+  @bg_exclusion_hue_tol 10
+  @bg_exclusion_sv_tol 30
+  @bg_hue_affect_range 25
+  @bg_contrast_margin 20
+  @bg_min_value_floor 100
 
   @spec classify_cell(
           term,
@@ -66,17 +70,19 @@ defmodule StarlightBot.Vision.SinColor do
           integer | nil,
           {integer, integer} | nil,
           0..179 | nil,
+          0..255 | nil,
           0..255 | nil
         ) :: result
-  def classify_cell(mat, {x0, x1}, y, h, hue_scan_y \\ nil, hue_x \\ nil, bg_hue \\ nil, bg_saturation \\ nil) do
+  def classify_cell(mat, {x0, x1}, y, h, hue_scan_y \\ nil, hue_x \\ nil, bg_hue \\ nil, bg_saturation \\ nil, bg_value \\ nil) do
     hue_scan_y = hue_scan_y || y
     {hx0, hx1} = hue_x || {x0, x1}
     hue_cell = Evision.Mat.roi(mat, {hx0, hue_scan_y, hx1 - hx0, h})
     hsv = Evision.cvtColor(hue_cell, @color_bgr2hsv)
+    bg_mask = background_exclusion_mask(hsv, bg_hue, bg_saturation, bg_value)
 
     scores =
       for {name, {hue, tol, s_lo, s_hi, v_lo, v_hi}} <- @colors do
-        mask = Matcher.hue_range_mask(hsv, mix_hue(hue, bg_hue, bg_saturation), tol, s_lo, s_hi, v_lo, v_hi)
+        mask = hue_window_mask(hsv, hue, tol, s_lo, s_hi, v_lo, v_hi, bg_hue, bg_saturation, bg_value, bg_mask)
         {name, Evision.countNonZero(mask), mask}
       end
 
@@ -95,7 +101,7 @@ defmodule StarlightBot.Vision.SinColor do
 
     tier_color_mask =
       mat
-      |> tier_color_mask({x0, x1}, y, h, winner, detected_hue)
+      |> tier_color_mask({x0, x1}, y, h, winner, detected_hue, bg_hue, bg_saturation, bg_value)
       |> Matcher.fill_holes_mask()
 
     wedge = wedge_mask(x1 - x0, h, winner)
@@ -121,11 +127,24 @@ defmodule StarlightBot.Vision.SinColor do
     }
   end
 
-  defp tier_color_mask(mat, {x0, x1}, y, h, winner, detected_hue) do
+  defp tier_color_mask(mat, {x0, x1}, y, h, winner, detected_hue, bg_hue, bg_saturation, bg_value) do
     tier_cell = Evision.Mat.roi(mat, {x0, y, x1 - x0, h})
     tier_hsv = Evision.cvtColor(tier_cell, @color_bgr2hsv)
-    {_hue, tol, s_lo, s_hi, v_lo, v_hi} = Keyword.fetch!(@colors, winner)
-    Matcher.hue_range_mask(tier_hsv, detected_hue, tol, s_lo, s_hi, v_lo, v_hi)
+    {canonical_hue, tol, s_lo, s_hi, v_lo, v_hi} = Keyword.fetch!(@colors, winner)
+    bg_mask = background_exclusion_mask(tier_hsv, bg_hue, bg_saturation, bg_value)
+    hue_window_mask(tier_hsv, detected_hue, tol, s_lo, s_hi, v_lo, v_hi, bg_hue, bg_saturation, bg_value, bg_mask, canonical_hue)
+  end
+
+  defp hue_window_mask(hsv, hue, tol, s_lo, s_hi, v_lo, v_hi, bg_hue, bg_saturation, bg_value, bg_mask, affect_hue \\ nil) do
+    scale = bg_hue_scale(bg_hue, affect_hue || hue)
+
+    if scale > 0.0 do
+      hsv
+      |> Matcher.hue_range_mask(hue, tol, contrast_saturation_floor(s_lo, bg_saturation, scale), s_hi, contrast_value_floor(v_lo, bg_value, scale), v_hi)
+      |> exclude_background(bg_mask)
+    else
+      Matcher.hue_range_mask(hsv, hue, tol, s_lo, s_hi, v_lo, v_hi)
+    end
   end
 
   defp wedge_mask(w, h, sin) do
@@ -150,29 +169,30 @@ defmodule StarlightBot.Vision.SinColor do
     if Evision.countNonZero(ring) >= @min_ring_area, do: ring, else: mask
   end
 
-  @spec classify_row(term, SkillTray.row(), 0..179 | nil, 0..255 | nil) :: [result]
-  def classify_row(mat, row, bg_hue \\ nil, bg_saturation \\ nil) do
+  @spec classify_row(term, SkillTray.row(), 0..179 | nil, 0..255 | nil, 0..255 | nil) :: [result]
+  def classify_row(mat, row, bg_hue \\ nil, bg_saturation \\ nil, bg_value \\ nil) do
     tier_columns = SkillTray.row_columns(row)
     hue_columns = SkillTray.hue_scan_columns(row)
 
     [tier_columns, hue_columns]
     |> Enum.zip()
     |> Enum.map(fn {{x0, x1}, hue_x} ->
-      classify_cell(mat, {x0, x1}, row.y, row.h, row.hue_scan_y, hue_x, bg_hue, bg_saturation)
+      classify_cell(mat, {x0, x1}, row.y, row.h, row.hue_scan_y, hue_x, bg_hue, bg_saturation, bg_value)
     end)
   end
 
   @spec background_color(term, {integer, integer, integer, integer}) :: %{
           bgr: {number, number, number},
           hue: 0..179,
-          saturation: 0..255
+          saturation: 0..255,
+          value: 0..255
         }
   def background_color(mat, {x, y, w, h}) do
     strip = Evision.Mat.roi(mat, {x, y, w, h})
     {mean, _stddev} = Evision.meanStdDev(strip)
     {b, g, r} = to_bgr(mean)
-    {hue, saturation} = hue_and_saturation_of_mean(mean)
-    %{bgr: {b, g, r}, hue: hue, saturation: saturation}
+    {hue, saturation, value} = hsv_of_mean(mean)
+    %{bgr: {b, g, r}, hue: hue, saturation: saturation, value: value}
   end
 
   @spec colors() :: keyword({0..179, non_neg_integer, 0..255, 0..255, 0..255, 0..255})
@@ -181,20 +201,43 @@ defmodule StarlightBot.Vision.SinColor do
   @spec tier_thresholds() :: keyword({float, float})
   def tier_thresholds, do: @tier_thresholds
 
-  @spec bg_mix_pct() :: float
-  def bg_mix_pct, do: @bg_mix_pct
+  defp bg_hue_scale(nil, _hue), do: 0.0
 
-  @spec effective_mix_pct(0..255 | nil) :: float
-  def effective_mix_pct(nil), do: @bg_mix_pct
-  def effective_mix_pct(bg_saturation), do: @bg_mix_pct * (bg_saturation / 255)
-
-  defp mix_hue(hue, nil, _bg_saturation), do: hue
-
-  defp mix_hue(hue, bg_hue, bg_saturation) do
-    sat_scale = if bg_saturation, do: bg_saturation / 255, else: 1.0
-    diff = Integer.mod(bg_hue - hue + 90, 180) - 90
-    hue |> Kernel.+(diff * @bg_mix_pct * sat_scale) |> round() |> Integer.mod(180)
+  defp bg_hue_scale(bg_hue, hue) do
+    max(0.0, 1.0 - hue_distance(hue, bg_hue) / @bg_hue_affect_range)
   end
+
+  defp hue_distance(a, b) do
+    diff = abs(a - b)
+    min(diff, 180 - diff)
+  end
+
+  defp contrast_saturation_floor(base, nil, _scale), do: base
+
+  defp contrast_saturation_floor(base, bg_saturation, scale) do
+    target = max(base, bg_saturation + @bg_contrast_margin)
+    round(base + (target - base) * scale)
+  end
+
+  defp contrast_value_floor(base, nil, _scale), do: base
+
+  defp contrast_value_floor(base, bg_value, scale) do
+    target = base |> max(bg_value + @bg_contrast_margin) |> max(@bg_min_value_floor)
+    round(base + (target - base) * scale)
+  end
+
+  defp background_exclusion_mask(_hsv, nil, _bg_saturation, _bg_value), do: nil
+
+  defp background_exclusion_mask(hsv, bg_hue, bg_saturation, bg_value) do
+    s_lo = max(bg_saturation - @bg_exclusion_sv_tol, 0)
+    s_hi = min(bg_saturation + @bg_exclusion_sv_tol, 255)
+    v_lo = max(bg_value - @bg_exclusion_sv_tol, 0)
+    v_hi = min(bg_value + @bg_exclusion_sv_tol, 255)
+    Matcher.hue_range_mask(hsv, bg_hue, @bg_exclusion_hue_tol, s_lo, s_hi, v_lo, v_hi)
+  end
+
+  defp exclude_background(mask, nil), do: mask
+  defp exclude_background(mask, bg_mask), do: Evision.Mat.bitwise_and(mask, Evision.Mat.bitwise_not(bg_mask))
 
   defp to_bgr(mat) do
     [b, g, r] = mat |> Evision.Mat.to_nx() |> Nx.to_flat_list()
@@ -212,10 +255,5 @@ defmodule StarlightBot.Vision.SinColor do
   defp hue_of_mean(mean) do
     {hue, _saturation, _value} = hsv_of_mean(mean)
     hue
-  end
-
-  defp hue_and_saturation_of_mean(mean) do
-    {hue, saturation, _value} = hsv_of_mean(mean)
-    {hue, saturation}
   end
 end

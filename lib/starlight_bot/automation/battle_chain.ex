@@ -118,8 +118,16 @@ defmodule StarlightBot.Automation.BattleChain do
 
   defp compute_picks(frame, tray) do
     bg_color = SinColor.background_color(frame.mat, SkillTray.background_region(tray))
-    top_tiers = frame.mat |> SinColor.classify_row(tray.top_row, bg_color.hue) |> Enum.map(& &1.tier)
-    bottom_tiers = frame.mat |> SinColor.classify_row(tray.bottom_row, bg_color.hue) |> Enum.map(& &1.tier)
+
+    top_tiers =
+      frame.mat
+      |> SinColor.classify_row(tray.top_row, bg_color.hue, bg_color.saturation, bg_color.value)
+      |> Enum.map(& &1.tier)
+
+    bottom_tiers =
+      frame.mat
+      |> SinColor.classify_row(tray.bottom_row, bg_color.hue, bg_color.saturation, bg_color.value)
+      |> Enum.map(& &1.tier)
     waypoints(tray, top_tiers, bottom_tiers)
   end
 
