@@ -30,6 +30,7 @@ defmodule StarlightBot.Hooks do
           color_v: h.color_v,
           min_cluster_size: h.min_cluster_size,
           match_method: h.match_method,
+          feature_channel: h.feature_channel,
           confidence: h.confidence,
           notes: h.notes,
           inserted_at: h.inserted_at
@@ -73,6 +74,7 @@ defmodule StarlightBot.Hooks do
           color_v: h.color_v,
           min_cluster_size: h.min_cluster_size,
           match_method: h.match_method,
+          feature_channel: h.feature_channel,
           confidence: h.confidence,
           notes: h.notes
         }
@@ -162,6 +164,7 @@ defmodule StarlightBot.Hooks do
           color_v: hook.color_v,
           min_cluster_size: hook.min_cluster_size,
           match_method: hook.match_method,
+          feature_channel: hook.feature_channel,
           confidence: hook.confidence,
           notes: hook.notes
         }
@@ -212,6 +215,9 @@ defmodule StarlightBot.Hooks do
   # --- Private ---
   defp bool?(val), do: val in [true, 1, "true", "on"]
 
+  defp feature_channel_value(v) when v in [nil, "", "gray"], do: nil
+  defp feature_channel_value(v), do: v
+
   defp insert_hook(attrs) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     name = attrs[:name] || attrs.name
@@ -237,6 +243,7 @@ defmodule StarlightBot.Hooks do
       color_v: attrs[:color_v],
       min_cluster_size: attrs[:min_cluster_size],
       match_method: attrs[:match_method] || attrs.match_method || "gray",
+      feature_channel: feature_channel_value(attrs[:feature_channel]),
       confidence: attrs[:confidence] || attrs.confidence || 0.85,
       notes: attrs[:notes],
       inserted_at: now,
@@ -345,6 +352,7 @@ defmodule StarlightBot.Hooks do
           color_update ++
           [
             match_method: attrs[:match_method] || attrs.match_method || "gray",
+            feature_channel: feature_channel_value(attrs[:feature_channel]),
             confidence: attrs[:confidence] || attrs.confidence || 0.85,
             mask: bool?(attrs[:mask]),
             min_cluster_size: attrs[:min_cluster_size],

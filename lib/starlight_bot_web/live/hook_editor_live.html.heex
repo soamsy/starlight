@@ -187,6 +187,23 @@
                     <% end %>
                   </select>
                 </div>
+
+                <%!-- Feature Channel --%>
+                <div class="form-control">
+                  <label class="label py-0.5">
+                    <span class="label-text text-sm font-medium flex items-center gap-1">
+                      Feature Channel
+                      <span :if={field_dirty?(@form, @saved_params, :feature_channel)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                    </span>
+                  </label>
+                  <select name="hook[feature_channel]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :feature_channel), do: "select-warning"}"}>
+                    <%= for channel <- ~w(gray saturation) do %>
+                      <option value={channel} selected={to_string(@form[:feature_channel].value) == channel}>
+                        <%= channel %>
+                      </option>
+                    <% end %>
+                  </select>
+                </div>
               </div>
 
               <%!-- Actions --%>

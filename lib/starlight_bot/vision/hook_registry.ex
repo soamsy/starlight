@@ -73,6 +73,7 @@ defmodule StarlightBot.Vision.HookRegistry do
               color_v: h.color_v,
               min_cluster_size: h.min_cluster_size,
               match_method: h.match_method,
+              feature_channel: h.feature_channel,
               confidence: h.confidence,
               notes: h.notes
             }
@@ -119,6 +120,7 @@ defmodule StarlightBot.Vision.HookRegistry do
               color_v: h.color_v,
               min_cluster_size: h.min_cluster_size,
               match_method: h.match_method,
+              feature_channel: h.feature_channel,
               confidence: h.confidence,
               notes: h.notes
             }

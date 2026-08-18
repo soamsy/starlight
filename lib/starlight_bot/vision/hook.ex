@@ -32,12 +32,16 @@ defmodule StarlightBot.Vision.Hook do
     :source,         # :user | :master
     :keypoints,
     :descriptors,
+    :feature_channel,
   ]
 
   @color_bgr2gray 6  # cv_COLOR_BGR2GRAY
+  @color_bgr2hsv 40  # cv_COLOR_BGR2HSV
   @thresh_binary  0  # cv_THRESH_BINARY
   @mask_black_threshold 10  # grayscale value below which a template pixel counts as "black"
   @sift_contrast_threshold 0.06
+  @clahe_clip_limit 1.0
+  @clahe_tile_grid_size {8, 2}
 
   def from_db_row(row) do
     tmp = "/tmp/_starlight_hook_load.png"
@@ -47,7 +51,9 @@ defmodule StarlightBot.Vision.Hook do
     mask? = truthy?(row.mask)
     mask_mat = if(mask?, do: build_mask(gray_mat), else: nil)
     method = decode_match_method(row.match_method)
-    {keypoints, descriptors} = compute_keypoints_descriptors(method, gray_mat, mask_mat)
+    feature_channel = decode_feature_channel(Map.get(row, :feature_channel))
+    feature_mat = channel_mat(mat, feature_channel)
+    {keypoints, descriptors} = compute_keypoints_descriptors(method, feature_mat, mask_mat)
 
     %__MODULE__{
       name: String.to_atom(row.name),
@@ -66,6 +72,7 @@ defmodule StarlightBot.Vision.Hook do
       source: :user,
       keypoints: keypoints,
       descriptors: descriptors,
+      feature_channel: feature_channel,
     }
   end
 
@@ -79,15 +86,32 @@ defmodule StarlightBot.Vision.Hook do
     mask
   end
 
-  defp compute_keypoints_descriptors(:sift, gray_mat, mask_mat) do
-    Evision.SIFT.detectAndCompute(sift_detector(), gray_mat, mask_mat || Evision.Mat.empty())
+  defp compute_keypoints_descriptors(:sift, feature_mat, mask_mat) do
+    Evision.SIFT.detectAndCompute(sift_detector(), clahe_apply(feature_mat), mask_mat || Evision.Mat.empty())
   end
 
-  defp compute_keypoints_descriptors(:akaze, gray_mat, mask_mat) do
-    Evision.XFeatures2D.AKAZE.detectAndCompute(akaze_detector(), gray_mat, mask_mat || Evision.Mat.empty())
+  defp compute_keypoints_descriptors(:akaze, feature_mat, mask_mat) do
+    Evision.XFeatures2D.AKAZE.detectAndCompute(akaze_detector(), clahe_apply(feature_mat), mask_mat || Evision.Mat.empty())
   end
 
-  defp compute_keypoints_descriptors(_method, _gray_mat, _mask_mat), do: {nil, nil}
+  defp compute_keypoints_descriptors(_method, _feature_mat, _mask_mat), do: {nil, nil}
+
+  defp channel_mat(bgr_mat, :saturation) do
+    hsv = Evision.cvtColor(bgr_mat, @color_bgr2hsv)
+    [_h, s, _v] = Evision.split(hsv)
+    s
+  end
+
+  defp channel_mat(bgr_mat, _gray), do: Evision.cvtColor(bgr_mat, @color_bgr2gray)
+
+  defp decode_feature_channel("saturation"), do: :saturation
+  defp decode_feature_channel(_), do: :gray
+
+  # defp clahe_apply(gray_mat), do: gray_mat
+  defp clahe_apply(gray_mat) do
+    clahe = Evision.createCLAHE(clipLimit: @clahe_clip_limit, tileGridSize: @clahe_tile_grid_size)
+    Evision.CLAHE.apply(clahe, gray_mat)
+  end
 
   defp sift_detector do
     case :persistent_term.get({__MODULE__, :sift_detector}, nil) do
