@@ -52,7 +52,6 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp maybe_select_team(false, _team, ctx) do
-    Process.sleep(700)
     Ctx.log(ctx, :info, "team selector not present — skipping team choice")
     :ok
   end
@@ -84,6 +83,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp maybe_select_order(true, %{sinner_order: order}, ctx) do
+    Engine.act([move_to(:clear_selection)], ctx)
     case order_mismatches(order) do
       [] ->
         Ctx.log(ctx, :ok, "sinner order already set — nothing to do")
