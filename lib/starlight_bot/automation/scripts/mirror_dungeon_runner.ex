@@ -1,7 +1,7 @@
 defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   import StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.{Engine, RunMemory}
-  alias StarlightBot.Automation.Scripts.{ClaimRewards, SelectTeam, SelectTeamOnScreen, ShopBuyer}
+  alias StarlightBot.Automation.Scripts.{ClaimRewards, SelectTeam, SelectTeamOnScreen, ShopBuyer, ThemePackSelector}
   alias StarlightBot.Ctx
   alias StarlightBot.Teams
 
@@ -24,7 +24,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
            {:ok, first_screen} <- localize(ctx) do
         affinity = resolve_affinity(team)
         RunMemory.put_team(ctx, %{id: team_id, type: team_type, affinity: Atom.to_string(affinity)})
-        run_state = %{run_started?: first_screen not in @door_family}
+        run_state = %{run_started?: first_screen not in @door_family, floor: 1}
         loop(run_count, run_state, 0, 0, team_id, team_type, affinity, config, ctx)
       end
 
@@ -122,7 +122,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   defp handle_dispatch_result(:run_complete, run_count, _prev_state, _iterations, _errors, team_id, team_type, affinity, config, ctx) do
     Ctx.log(ctx, :ok, "mirror dungeon run complete — #{run_count - 1} remaining")
-    loop(run_count - 1, %{run_started?: false}, 0, 0, team_id, team_type, affinity, config, ctx)
+    loop(run_count - 1, %{run_started?: false, floor: 1}, 0, 0, team_id, team_type, affinity, config, ctx)
   end
 
   defp handle_dispatch_result({:error, reason}, run_count, prev_state, iterations, errors, team_id, team_type, affinity, config, ctx) do
@@ -192,7 +192,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         Engine.goto(:ego_gift_get, :ego_gift_over, ctx) |> continue_after(run_state)
 
       screen == :theme_pack ->
-        advance_theme_pack(run_state, ctx)
+        advance_theme_pack(run_state, team_id, ctx)
 
       screen == :dungeon_graph ->
         Engine.goto(:dungeon_graph, :dungeon_graph_node, ctx) |> continue_after(run_state)
@@ -262,13 +262,12 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     end)
   end
 
-  defp advance_theme_pack(run_state, ctx) do
-    result =
-      with {:ok, _} <- Engine.run_action(:theme_pack, :to_normal, ctx) do
-        Engine.goto(:theme_pack, :dungeon_graph, ctx)
-      end
-
-    continue_after(result, run_state)
+  defp advance_theme_pack(run_state, team_id, ctx) do
+    case ThemePackSelector.run(team_id, run_state.floor, ctx) do
+      {:ok, _} -> {:continue, %{run_state | floor: run_state.floor + 1}}
+      {:error, :window_not_focused} -> {:paused, run_state}
+      {:error, _} = err -> err
+    end
   end
 
   defp reconfirm_team(screen, team_id, run_state, ctx) do

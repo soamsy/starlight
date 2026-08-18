@@ -265,7 +265,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   defp strategy_data("gift_strategy", params), do: %{version: 1, type: "predefined", affinity: params["affinity"]}
   defp strategy_data("battle_strategy", _params), do: %{version: 1, type: "win_rate"}
-  defp strategy_data("theme_pack_plan", _params), do: %{version: 1, type: "random"}
+  defp strategy_data("theme_pack_plan", _params), do: %{version: 1, mode_schedule: [], packs: %{}}
 
   defp parse_id(nil), do: nil
   defp parse_id(""), do: nil

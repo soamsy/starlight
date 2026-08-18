@@ -505,13 +505,41 @@ const ScrollToBottom = {
   }
 }
 
+// --- PriorityClipboard hook ---
+// Wraps the priority columns in the theme pack plan editor. Copy sends the
+// server-rendered JSON straight to the clipboard. Paste reads the clipboard
+// and forwards the raw text to the server, since mode/floor validation needs
+// the live plan data that only the server has.
+
+const PriorityClipboard = {
+  mounted() {
+    this.handleEvent("copy_priority_json", ({ text }) => {
+      navigator.clipboard.writeText(text).catch(err => {
+        this.pushEvent("paste_priority_failed", { message: `Couldn't copy to clipboard: ${err.message || err}` })
+      })
+    })
+
+    this.el.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-paste-priority]")
+      if (!btn) return
+      const priority = btn.dataset.pastePriority
+
+      navigator.clipboard.readText()
+        .then(text => this.pushEvent("paste_priority", { priority, text }))
+        .catch(err => {
+          this.pushEvent("paste_priority_failed", { message: `Couldn't read clipboard: ${err.message || err}` })
+        })
+    })
+  }
+}
+
 // --- LiveSocket setup ---
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard }
 })
 
 liveSocket.connect()

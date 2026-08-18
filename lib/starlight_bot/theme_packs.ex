@@ -22,4 +22,14 @@ defmodule StarlightBot.ThemePacks do
   rescue
     _ -> []
   end
+
+  @doc "Decode a normal_floors/hard_floors JSON string column into a list of floor integers."
+  def decode_floors(nil), do: []
+
+  def decode_floors(json) when is_binary(json) do
+    case Jason.decode(json) do
+      {:ok, list} when is_list(list) -> list
+      _ -> []
+    end
+  end
 end

@@ -11,6 +11,7 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.EventInspectorLive => :events,
     StarlightBotWeb.Live.TransitionsLive => :transitions,
     StarlightBotWeb.Live.TeamEditorLive => :teams,
+    StarlightBotWeb.Live.ThemePackPlanEditorLive => :theme_pack_plans,
     StarlightBotWeb.Live.LuxcavationLive => :luxcavation,
     StarlightBotWeb.Live.RewardsLive => :rewards,
     StarlightBotWeb.Live.MirrorDungeonLive => :mirror_dungeon

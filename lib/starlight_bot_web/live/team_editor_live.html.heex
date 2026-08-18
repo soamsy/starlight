@@ -218,13 +218,17 @@
                 <% end %>
               </select>
             </form>
+            <%= if @selected_ids["theme_pack_plan"] do %>
+              <.link navigate={~p"/theme-pack-plans?id=#{@selected_ids["theme_pack_plan"]}"}
+                     class="btn btn-xs btn-ghost">Edit ↗</.link>
+            <% end %>
             <button type="button" phx-click="toggle_new_strategy" phx-value-kind="theme_pack_plan"
                     class="btn btn-xs btn-ghost">+ New</button>
           </div>
           <%= if @strategy_forms["theme_pack_plan"] do %>
             <form phx-submit="save_strategy" phx-value-kind="theme_pack_plan"
                   class="flex gap-1 items-center mt-1 p-2 bg-base-200 rounded">
-              <input type="text" name="name" placeholder="Name (type: random)" class="input input-bordered input-xs flex-1" required />
+              <input type="text" name="name" placeholder="Name" class="input input-bordered input-xs flex-1" required />
               <button type="submit" class="btn btn-xs btn-primary">Add</button>
             </form>
           <% end %>
