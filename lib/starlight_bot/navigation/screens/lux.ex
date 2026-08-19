@@ -34,6 +34,7 @@ defmodule StarlightBot.Navigation.Screens.Lux do
         click(:lux_thread_enter),
         move_to(:lux_thread_confirm_popup_enter_third_hardest),
         retry_until(:lux_thread_confirm_popup_at_bottom, [scroll_down(10)], every: 500, tries: 5),
+        wait_until(:lux_thread_confirm_popup_enter_hardest, every: 300, tries: 2),
         reclick_until_gone(:lux_thread_confirm_popup_enter_hardest, every: 500, tries: 2),
         branch([
           {:lux_thread_confirm_popup_enter_hardest, [reclick_until_arrived(:lux_thread_confirm_popup_enter_second_hardest)]},
