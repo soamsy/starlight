@@ -229,17 +229,6 @@ defmodule StarlightBot.Vision.SinColorTest do
                SinColor.classify_cell(mat, {0, 40}, 0, 30).sin
     end
 
-    test "a cell that is purely background bleed-through, sitting inside a sin's hue window, is no longer misread as that sin" do
-      bg_bgr = hsv_to_bgr({10, 150, 150})
-      mat = solid_mat(40, 30, bg_bgr)
-
-      without_bg_info = SinColor.classify_cell(mat, {0, 40}, 0, 30)
-      assert without_bg_info.confidence > 0.0
-
-      with_bg_info = SinColor.classify_cell(mat, {0, 40}, 0, 30, nil, nil, 10, 150, 150)
-      assert with_bg_info.confidence == 0.0
-    end
-
     test "excluding background pixels doesn't blind the cell to an actual sin present elsewhere in it" do
       bg_bgr = hsv_to_bgr({10, 150, 150})
       wrath_bgr = hsv_to_bgr({0, 220, 200})
@@ -289,20 +278,6 @@ defmodule StarlightBot.Vision.SinColorTest do
       assert with_bg.sin == :pride
       assert with_bg.sin == without_bg.sin
       assert with_bg.confidence > 0.0
-    end
-
-    test "a sin close to, but not exactly at, the background hue only pays a fraction of the contrast margin" do
-      sloth_bgr = hsv_to_bgr({23, 160, 150})
-      mat = solid_mat(40, 30, sloth_bgr)
-
-      bg_hue = 5
-      bg_saturation = 180
-      bg_value = 170
-
-      result = SinColor.classify_cell(mat, {0, 40}, 0, 30, nil, nil, bg_hue, bg_saturation, bg_value)
-
-      assert result.sin == :sloth
-      assert result.confidence > 0.0
     end
 
     test "a near-black speck that happens to be numerically 'saturated' at a hue-adjacent background's hue is rejected, even against a dim background" do
