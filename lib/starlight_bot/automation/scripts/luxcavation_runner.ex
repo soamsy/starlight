@@ -1,10 +1,9 @@
 defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   use StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.Engine
-  alias StarlightBot.Automation.Scripts.SelectTeam
+  alias StarlightBot.Automation.Scripts.SelectTeamOnScreen
   alias StarlightBot.Automation.SeasonPassCollector
   alias StarlightBot.Ctx
-  alias StarlightBot.Teams
 
   @max_consecutive 10
 
@@ -13,11 +12,10 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   def run(team_id, exp_count, thread_count, collect_xp?, ctx)
       when is_integer(exp_count) and exp_count >= 0 and is_integer(thread_count) and thread_count >= 0 and
              is_boolean(collect_xp?) do
-    with {:ok, team_type} <- resolve_team_type(team_id, ctx),
-         {:ok, start} <- localize(ctx) do
+    with {:ok, start} <- localize(ctx) do
       {:ok, start}
-      |> run_kind(:exp, exp_count, team_type, ctx)
-      |> run_kind(:thread, thread_count, team_type, ctx)
+      |> run_kind(:exp, exp_count, team_id, ctx)
+      |> run_kind(:thread, thread_count, team_id, ctx)
       |> case do
         {:ok, screen} -> Engine.goto(screen, :home, ctx)
         error -> error
@@ -57,45 +55,25 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
     end
   end
 
-  defp resolve_team_type(team_id, ctx) do
-    case Teams.get_team(team_id) do
-      %{hook: hook} when is_binary(hook) and hook != "" ->
-        Code.ensure_loaded(SelectTeam)
-        {:ok, hook |> String.replace_prefix("team_", "") |> String.to_existing_atom()}
+  defp run_kind({:ok, screen}, _kind, 0, _team_id, _ctx), do: {:ok, screen}
 
-      %{} ->
-        Ctx.log(ctx, :error, "team #{team_id} has no team-select hook configured")
-        {:error, :team_missing_hook}
-
-      nil ->
-        Ctx.log(ctx, :error, "team #{team_id} not found")
-        {:error, :team_not_found}
-    end
-  rescue
-    ArgumentError ->
-      Ctx.log(ctx, :error, "team #{team_id} has an unrecognized hook")
-      {:error, {:unknown_team_hook, team_id}}
-  end
-
-  defp run_kind({:ok, screen}, _kind, 0, _team_type, _ctx), do: {:ok, screen}
-
-  defp run_kind({:ok, screen}, kind, count, team_type, ctx) do
+  defp run_kind({:ok, screen}, kind, count, team_id, ctx) do
     Ctx.log(ctx, :info, "starting #{count} #{kind} run(s)")
-    run_batches(screen, kind, batches(count), team_type, ctx)
+    run_batches(screen, kind, batches(count), team_id, ctx)
   end
 
-  defp run_kind(error, _kind, _count, _team_type, _ctx), do: error
+  defp run_kind(error, _kind, _count, _team_id, _ctx), do: error
 
-  defp run_batches(screen, _kind, [], _team_type, _ctx), do: {:ok, screen}
+  defp run_batches(screen, _kind, [], _team_id, _ctx), do: {:ok, screen}
 
-  defp run_batches(screen, kind, [batch | rest], team_type, ctx) do
-    case run_batch_with_resume(screen, kind, batch, team_type, ctx) do
-      {:ok, screen} -> run_batches(screen, kind, rest, team_type, ctx)
+  defp run_batches(screen, kind, [batch | rest], team_id, ctx) do
+    case run_batch_with_resume(screen, kind, batch, team_id, ctx) do
+      {:ok, screen} -> run_batches(screen, kind, rest, team_id, ctx)
       error -> error
     end
   end
 
-  defp run_batch_with_resume(screen, kind, batch, team_type, ctx) do
+  defp run_batch_with_resume(screen, kind, batch, team_id, ctx) do
     Ctx.log(ctx, :info, "#{kind}: batch of #{batch} consecutive battle(s)")
 
     result =
@@ -106,7 +84,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
         with {:ok, screen} <- Engine.goto(screen, lux_screen(kind), ctx),
              :ok <- set_consecutive(kind, batch, ctx),
              {:ok, screen} <- Engine.goto(screen, :team_select, ctx),
-             {:ok, _} <- SelectTeam.run(team_type, ctx),
+             {:ok, _} <- SelectTeamOnScreen.run(team_id, ctx),
              {:ok, screen} <- Engine.goto(screen, :battle, ctx) do
           play_battle_resumable(screen, ctx)
         end
@@ -122,11 +100,11 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
 
       {:battle_lost, resumed_screen} ->
         Ctx.log(ctx, :info, "#{kind}: #{batch} consecutive battle(s) lost while paused — redoing the batch")
-        run_batch_with_resume(resumed_screen, kind, batch, team_type, ctx)
+        run_batch_with_resume(resumed_screen, kind, batch, team_id, ctx)
 
       {:error, :window_not_focused} ->
         case resume_after_pause(ctx) do
-          {:ok, resumed_screen} -> run_batch_with_resume(resumed_screen, kind, batch, team_type, ctx)
+          {:ok, resumed_screen} -> run_batch_with_resume(resumed_screen, kind, batch, team_id, ctx)
           {:error, _} = err -> err
         end
 

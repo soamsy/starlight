@@ -1,7 +1,7 @@
 defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   import StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.{Engine, RunMemory}
-  alias StarlightBot.Automation.Scripts.{ClaimRewards, SelectTeam, SelectTeamOnScreen, ShopBuyer, ThemePackSelector}
+  alias StarlightBot.Automation.Scripts.{ClaimRewards, SelectTeamOnScreen, ShopBuyer, ThemePackSelector}
   alias StarlightBot.Ctx
   alias StarlightBot.Teams
 
@@ -153,7 +153,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     :ok
   end
 
-  defp dispatch(screen, run_state, team_id, team_type, affinity, config, ctx) do
+  defp dispatch(screen, run_state, team_id, _team_type, affinity, config, ctx) do
     run_state = sync_state(run_state, screen)
 
     cond do
@@ -180,7 +180,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         handle_exploration(run_state, config, ctx)
 
       screen == :team_selector_md ->
-        start_run(team_type, run_state, ctx)
+        start_run(team_id, run_state, ctx)
 
       screen == :grace ->
         apply_grace_picks(config, run_state, ctx)
@@ -279,11 +279,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     continue_after(result, run_state)
   end
 
-  defp start_run(team_type, run_state, ctx) do
-    hook = :"team_#{team_type}"
-
+  defp start_run(team_id, run_state, ctx) do
     result =
-      with {:ok, _} <- SelectTeam.select_hook(hook, ctx) do
+      with {:ok, _} <- SelectTeamOnScreen.run(team_id, ctx) do
         Engine.goto(:team_selector_md, :grace, ctx)
       end
 

@@ -1,7 +1,6 @@
 defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   use StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.Engine
-  alias StarlightBot.Automation.Scripts.SelectTeam
   alias StarlightBot.Ctx
   alias StarlightBot.Teams
 
@@ -11,6 +10,11 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     yi_sang faust don_quixote ryoshu meursault hong_lu
     heathcliff ishmael rodion sinclair outis gregor
   )
+
+  @max_scroll_attempts 5
+  @scroll_to_bottom_clicks 30
+  @scroll_up_clicks 8
+  @scroll_settle_ms 500
 
   def run(team_id, ctx \\ Ctx.new()) when is_integer(team_id) do
     with {:ok, team} <- fetch_team(team_id, ctx),
@@ -57,7 +61,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp maybe_select_team(true, %{hook: hook}, ctx) when is_binary(hook) and hook != "" do
-    case SelectTeam.select_hook(String.to_existing_atom(hook), ctx) do
+    case select_hook(String.to_existing_atom(hook), ctx) do
       {:ok, _} -> :ok
       {:error, _} = err -> err
     end
@@ -171,4 +175,69 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp sinner_hook(sinner, kind), do: :"sinner_#{kind}_#{String.replace(sinner, "_", "")}"
+
+  defp select_hook(hook, ctx) when is_atom(hook) do
+    selected_hook = :"#{hook}_selected"
+
+    if Engine.check(selected_hook) do
+      Ctx.log(ctx, :ok, "#{selected_hook} already selected — nothing to do")
+      {:ok, selected_hook}
+    else
+      {selector, top_team} = selector_pair()
+      Ctx.log(ctx, :info, "looking for #{hook} in team selector (#{selector})")
+
+      case Engine.act(find_and_select_steps(hook, selector), ctx) do
+        {:ok, _} ->
+          Ctx.log(ctx, :ok, "selected #{hook}")
+          {:ok, hook}
+
+        {:error, reason} ->
+          Ctx.log(ctx, :error, "#{hook} not found: #{inspect(reason)} — falling back to top team")
+          select_top_team(ctx, top_team)
+      end
+    end
+  end
+
+  defp selector_pair do
+    if Engine.check(:team_selector_tall) do
+      {:team_selector_tall, :team_selector_tall_top_team}
+    else
+      {:team_selector, :team_selector_top_team}
+    end
+  end
+
+  defp find_and_select_steps(hook, selector) do
+    [
+      branch([
+        {hook, [click(hook)]},
+        {:default,
+         [
+           move_to(selector),
+           scroll_down(@scroll_to_bottom_clicks),
+           sleep(@scroll_settle_ms),
+           retry_until(
+             hook,
+             [move_to(selector), scroll_up(@scroll_up_clicks)],
+             every: @scroll_settle_ms,
+             tries: @max_scroll_attempts
+           ),
+           click(hook),
+         ]},
+      ])
+    ]
+  end
+
+  defp select_top_team(ctx, top_team) do
+    Process.sleep(@scroll_settle_ms)
+
+    case Engine.act([click(top_team)], ctx) do
+      {:ok, _} ->
+        Ctx.log(ctx, :ok, "selected top team")
+        {:ok, top_team}
+
+      {:error, reason} = err ->
+        Ctx.log(ctx, :error, "fallback top-team click failed: #{inspect(reason)}")
+        err
+    end
+  end
 end
