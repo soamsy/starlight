@@ -1,5 +1,7 @@
 defmodule StarlightBot.Automation.RunMemory do
   alias StarlightBot.Ctx
+  alias StarlightBot.ThemePackPlans.Resolver
+  alias StarlightBot.{Strategies, Teams}
 
   def start_link, do: Agent.start_link(fn -> %{} end)
 
@@ -40,4 +42,18 @@ defmodule StarlightBot.Automation.RunMemory do
   def put_floor(ctx, floor), do: put(ctx, :floor, floor)
 
   def team_affinity(ctx), do: (team(ctx) || %{})[:affinity]
+
+  def mode(ctx), do: mode_for(team(ctx), get(ctx, :floor, 1))
+
+  def mode_for(%{id: team_id}, floor), do: Resolver.mode_for_floor(mode_schedule(team_id), floor)
+  def mode_for(_team, _floor), do: "normal"
+
+  defp mode_schedule(team_id) do
+    with %{theme_pack_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
+         %{data: %{"mode_schedule" => schedule}} when is_list(schedule) <- Strategies.get(:theme_pack_plans, id) do
+      schedule
+    else
+      _ -> []
+    end
+  end
 end

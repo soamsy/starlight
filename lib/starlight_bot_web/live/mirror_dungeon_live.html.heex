@@ -10,6 +10,8 @@
 
     <span class="badge badge-ghost font-mono">Floor <%= current_floor(@run_memory) %></span>
 
+    <span class={mode_badge_class(current_mode(@run_memory))}><%= current_mode(@run_memory) %></span>
+
     <%= if label = phase_label(@phase) do %>
       <span class={"flex items-center gap-1 text-sm #{if @phase == :paused, do: "text-warning", else: "text-base-content/60"}"}>
         <%= if @phase != :paused do %>

@@ -1,5 +1,6 @@
 defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   use StarlightBotWeb, :live_view
+  alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Navigation.Navigator
   alias StarlightBot.Teams
 
@@ -99,6 +100,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   def current_floor(run_memory), do: Map.get(run_memory, :floor, 1)
 
+  def current_mode(run_memory), do: RunMemory.mode_for(Map.get(run_memory, :team), current_floor(run_memory))
+
   defp default_team_id([]), do: nil
   defp default_team_id([%{id: id} | _]), do: id
 
@@ -140,6 +143,9 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   def screen_badge_class(nil), do: "badge badge-ghost"
   def screen_badge_class(:unknown), do: "badge badge-error"
   def screen_badge_class(_), do: "badge badge-success"
+
+  def mode_badge_class("hard"), do: "badge badge-error font-mono"
+  def mode_badge_class(_), do: "badge badge-ghost font-mono"
 
   def phase_label(:idle), do: nil
   def phase_label(:localizing), do: "Localizing…"
