@@ -51,6 +51,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
           {:event, Event.play_out_steps()},
           {:default,
             [
+              move_to(:battle_safe_click_spot),
               wait_until(not_hook(:battle_pause_button), timeout: 150_000),
               wait_until(
                 any_of([:battle_turn, :loading_stage_1, :loading_stage_2, :battle_over_black_confirm, :battle_pause_button, :event]),
