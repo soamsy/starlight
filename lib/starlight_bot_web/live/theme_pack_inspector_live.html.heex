@@ -32,7 +32,7 @@
 
       <div class="flex-1 min-h-0 overflow-y-auto">
         <div class="grid grid-cols-6 gap-3">
-          <%= for pack <- filtered_theme_packs(@theme_packs, @filter, @scan_matched_ids) do %>
+          <%= for pack <- filtered_theme_packs(@theme_packs, @filter, @scan_matched_ids, @scan_results) do %>
             <div class="flex flex-col">
               <div class="relative aspect-[6/10] rounded-lg overflow-hidden border border-base-300 bg-base-200 group">
                 <img src={pack.image_path} alt={pack.name_en} class="w-full h-full object-contain" />
@@ -84,6 +84,7 @@
                 <th>Theme Pack</th>
                 <th>Hook</th>
                 <th>Matched</th>
+                <th>Coords</th>
                 <th>Score</th>
                 <th>Time</th>
               </tr>
@@ -98,6 +99,14 @@
                       <span class="badge badge-success badge-sm">matched</span>
                     <% else %>
                       <span class="badge badge-ghost badge-sm">no</span>
+                    <% end %>
+                  </td>
+                  <td class="text-base-content/50">
+                    <%= if r.rect do %>
+                      <% {x, y, _w, _h} = r.rect %>
+                      <%= x %>, <%= y %>
+                    <% else %>
+                      —
                     <% end %>
                   </td>
                   <td><%= Float.round(r.score, 3) %></td>

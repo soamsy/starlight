@@ -104,10 +104,11 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
   defp build_scan_result(pack, results_by_hook) do
     {result, duration_us} = Map.get(results_by_hook, pack.hook_name, {{:error, :hook_not_found}, 0})
 
-    {matched, score} =
+    {matched, score, rect} =
       case result do
-        {:ok, score, match} -> {match != :not_found, score}
-        _ -> {false, 0.0}
+        {:ok, score, {:ok, rect}} -> {true, score, rect}
+        {:ok, score, :not_found} -> {false, score, nil}
+        _ -> {false, 0.0, nil}
       end
 
     %{
@@ -116,6 +117,7 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
       hook_name: pack.hook_name,
       matched: matched,
       score: score,
+      rect: rect,
       duration_ms: duration_us / 1000.0
     }
   end
@@ -126,10 +128,11 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
     _ -> nil
   end
 
-  def filtered_theme_packs(theme_packs, filter, scan_matched_ids) do
+  def filtered_theme_packs(theme_packs, filter, scan_matched_ids, scan_results \\ []) do
     theme_packs
     |> filter_by_search(filter)
     |> filter_by_scan(scan_matched_ids)
+    |> sort_by_scan(scan_matched_ids, scan_results)
   end
 
   defp filter_by_search(theme_packs, ""), do: theme_packs
@@ -144,9 +147,22 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
   defp filter_by_scan(theme_packs, matched_ids),
     do: Enum.filter(theme_packs, &MapSet.member?(matched_ids, &1.id))
 
-  def sorted_scan_results(results) do
-    Enum.sort_by(results, fn r -> {if(r.matched, do: 0, else: 1), -r.score} end)
+  defp sort_by_scan(theme_packs, nil, _scan_results), do: theme_packs
+
+  defp sort_by_scan(theme_packs, _matched_ids, scan_results) do
+    results_by_id = Map.new(scan_results, &{&1.id, &1})
+    Enum.sort_by(theme_packs, &scan_sort_key(Map.get(results_by_id, &1.id)))
   end
+
+  defp scan_sort_key(nil), do: {1, 0, 0.0}
+  defp scan_sort_key(r), do: {if(r.matched, do: 0, else: 1), scan_result_x(r), -r.score}
+
+  def sorted_scan_results(results) do
+    Enum.sort_by(results, &scan_sort_key/1)
+  end
+
+  defp scan_result_x(%{rect: {x, _, _, _}}), do: x
+  defp scan_result_x(_), do: 0
 
   def floors_label(nil), do: "—"
 
