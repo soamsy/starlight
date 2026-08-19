@@ -1,6 +1,6 @@
 defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   import StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.Engine
+  alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Ctx
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.ThemePackPlans.Resolver
@@ -21,15 +21,32 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   @scan_retry_every_ms 400
   @refresh_hover_settle_ms 300
 
-  def run(team_id, floor, ctx) do
+  @floor_hooks Enum.map(1..5, &:"theme_pack_floor_#{&1}")
+
+  def run(team_id, ctx) do
     plan_data = fetch_plan_data(team_id)
     theme_packs = ThemePacks.list_theme_packs()
-    mode = Resolver.mode_for_floor(plan_data["mode_schedule"] || [], floor)
 
-    with {:ok, frame} <- await_ready(ctx),
-         {:ok, frame} <- ensure_mode(frame, mode, ctx) do
-      select(frame, plan_data, theme_packs, mode, floor, ctx)
+    with {:ok, frame} <- await_ready(ctx) do
+      detect_and_update_floor(frame, ctx)
+      floor = RunMemory.floor(ctx)
+      mode = Resolver.mode_for_floor(plan_data["mode_schedule"] || [], floor)
+
+      with {:ok, frame} <- ensure_mode(frame, mode, ctx) do
+        select(frame, plan_data, theme_packs, mode, floor, ctx)
+      end
     end
+  end
+
+  defp detect_and_update_floor(frame, ctx) do
+    case Enum.find(@floor_hooks, &Runner.hook_matches?(frame, &1)) do
+      nil -> :ok
+      hook -> RunMemory.put_floor(ctx, floor_from_hook(hook))
+    end
+  end
+
+  defp floor_from_hook(hook) do
+    hook |> Atom.to_string() |> String.trim_leading("theme_pack_floor_") |> String.to_integer()
   end
 
   defp fetch_plan_data(team_id) do

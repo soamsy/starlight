@@ -97,6 +97,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   def ego_gifts(run_memory), do: Map.get(run_memory, :ego_gifts, %{})
 
+  def current_floor(run_memory), do: Map.get(run_memory, :floor, 1)
+
   defp default_team_id([]), do: nil
   defp default_team_id([%{id: id} | _]), do: id
 

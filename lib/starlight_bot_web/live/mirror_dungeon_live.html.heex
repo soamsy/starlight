@@ -8,6 +8,8 @@
       <%= screen_label(@current_screen) %>
     </span>
 
+    <span class="badge badge-ghost font-mono">Floor <%= current_floor(@run_memory) %></span>
+
     <%= if label = phase_label(@phase) do %>
       <span class={"flex items-center gap-1 text-sm #{if @phase == :paused, do: "text-warning", else: "text-base-content/60"}"}>
         <%= if @phase != :paused do %>

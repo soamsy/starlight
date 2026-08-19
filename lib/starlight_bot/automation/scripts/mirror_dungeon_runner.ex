@@ -10,6 +10,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   @affinities ~w(bleed burn charge poise rupture sinking tremor)a
   @home_screens [:home, :home_drive, :home_window, :home_unknown]
   @door_family @home_screens ++ [:md_door, :md_door_unknown, :md_door_enter_popup, :md_door_progress]
+  @dungeon_graph_floor_hooks Enum.map(1..5, &:"dungeon_graph_floor_#{&1}")
 
   def run(team_id, run_count, config, ctx \\ Ctx.new())
 
@@ -24,7 +25,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
            {:ok, first_screen} <- localize(ctx) do
         affinity = resolve_affinity(team)
         RunMemory.put_team(ctx, %{id: team_id, type: team_type, affinity: Atom.to_string(affinity)})
-        run_state = %{run_started?: first_screen not in @door_family, floor: 1}
+        run_state = %{run_started?: first_screen not in @door_family}
         loop(run_count, run_state, 0, 0, team_id, team_type, affinity, config, ctx)
       end
 
@@ -122,7 +123,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   defp handle_dispatch_result(:run_complete, run_count, _prev_state, _iterations, _errors, team_id, team_type, affinity, config, ctx) do
     Ctx.log(ctx, :ok, "mirror dungeon run complete — #{run_count - 1} remaining")
-    loop(run_count - 1, %{run_started?: false, floor: 1}, 0, 0, team_id, team_type, affinity, config, ctx)
+    loop(run_count - 1, %{run_started?: false}, 0, 0, team_id, team_type, affinity, config, ctx)
   end
 
   defp handle_dispatch_result({:error, reason}, run_count, prev_state, iterations, errors, team_id, team_type, affinity, config, ctx) do
@@ -195,6 +196,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         advance_theme_pack(run_state, team_id, ctx)
 
       screen == :dungeon_graph ->
+        detect_and_update_dungeon_graph_floor(ctx)
         Engine.goto(:dungeon_graph, :dungeon_graph_node, ctx) |> continue_after(run_state)
 
       screen in [:team_select, :team_selector, :team_selector_tall, :team_selector_gone] ->
@@ -263,11 +265,24 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   end
 
   defp advance_theme_pack(run_state, team_id, ctx) do
-    case ThemePackSelector.run(team_id, run_state.floor, ctx) do
-      {:ok, _} -> {:continue, %{run_state | floor: run_state.floor + 1}}
+    case ThemePackSelector.run(team_id, ctx) do
+      {:ok, _} -> {:continue, run_state}
       {:error, :window_not_focused} -> {:paused, run_state}
       {:error, _} = err -> err
     end
+  end
+
+  defp detect_and_update_dungeon_graph_floor(ctx) do
+    matches = Engine.check_all(@dungeon_graph_floor_hooks)
+
+    case Enum.find(@dungeon_graph_floor_hooks, &Map.get(matches, &1, false)) do
+      nil -> :ok
+      hook -> RunMemory.put_floor(ctx, floor_from_hook(hook))
+    end
+  end
+
+  defp floor_from_hook(hook) do
+    hook |> Atom.to_string() |> String.trim_leading("dungeon_graph_floor_") |> String.to_integer()
   end
 
   defp reconfirm_team(screen, team_id, run_state, ctx) do
