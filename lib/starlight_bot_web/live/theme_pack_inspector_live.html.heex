@@ -31,11 +31,11 @@
       </div>
 
       <div class="flex-1 min-h-0 overflow-y-auto">
-        <div class="grid grid-cols-5 gap-3">
+        <div class="grid grid-cols-6 gap-3">
           <%= for pack <- filtered_theme_packs(@theme_packs, @filter, @scan_matched_ids) do %>
             <div class="flex flex-col">
-              <div class="relative aspect-square rounded-lg overflow-hidden border border-base-300 bg-base-200 group">
-                <img src={pack.image_path} alt={pack.name_en} class="w-full h-full object-cover" />
+              <div class="relative aspect-[6/10] rounded-lg overflow-hidden border border-base-300 bg-base-200 group">
+                <img src={pack.image_path} alt={pack.name_en} class="w-full h-full object-contain" />
 
                 <div class="absolute inset-0 hidden group-hover:flex flex-col gap-1 p-2 bg-base-100/95 overflow-y-auto text-[11px] leading-snug">
                   <div class="font-bold text-xs"><%= pack.name_en %></div>
