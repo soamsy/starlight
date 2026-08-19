@@ -151,6 +151,11 @@ defmodule StarlightBot.Navigation.DSL do
     {:retry_until, hook, steps, timeout_ms, every_ms, tries}
   end
 
+  def retry_until_gone(hook, steps, opts \\ [])
+      when (is_atom(hook) or is_tuple(hook)) and is_list(steps) do
+    retry_until(not_hook(hook), steps, opts)
+  end
+
   def wait_until(hook, opts \\ [])
       when is_atom(hook) or is_tuple(hook) do
     retry_until(hook, [], opts)

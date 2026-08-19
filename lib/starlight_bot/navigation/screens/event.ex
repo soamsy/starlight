@@ -15,8 +15,8 @@ defmodule StarlightBot.Navigation.Screens.Event do
         [
           branch([
             {:event_proceed, [reclick_until_gone(:event_proceed)]},
-            {:event_continue, [reclick_until_gone(:event_continue)]},
-            {:event_skip, [reclick_until_gone(:event_skip), click(:event_skip_unselectable), sleep(20), click(:event_skip_unselectable)]},
+            {:event_continue, [retry_until_gone(:event_continue, [key(:space)])]},
+            {:event_skip, [retry_until_gone(:event_skip, [key(:space)]), key(:space), sleep(20), key(:space)]},
             {:event_commence, [reclick_until_gone(:event_commence)]},
             {:event_advantage_none_selected,
               [
@@ -34,7 +34,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
             {:event_text_ego_gift, [click(:event_choice_0), sleep(300)]},
             {:event_choices, [click(:event_choice_0), sleep(300)]},
             {:event_skip_unselectable, [click(:event_skip_unselectable)]},
-            {:default, []}
+            {:default, [key(:space), click(:event_skip)]}
           ])
         ],
         every: 500,
