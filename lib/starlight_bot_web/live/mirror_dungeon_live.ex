@@ -5,7 +5,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   alias StarlightBot.Teams
 
   @countdown_secs 2
-  @grace_indices 0..9
 
   @impl true
   def mount(_params, _session, socket) do
@@ -24,7 +23,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:team_id, default_team_id(teams))
      |> assign(:run_count, "1")
      |> assign(:weekly_bonus, true)
-     |> assign(:grace_picks, MapSet.new())
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)}
   end
@@ -34,7 +32,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     with {team_id, ""} <- Integer.parse(team_id),
          {run_count, ""} <- Integer.parse(run_count),
          true <- run_count >= 0 do
-      config = %{weekly_bonus?: Map.get(params, "weekly_bonus") == "true", grace_picks: parse_grace_picks(params)}
+      config = %{weekly_bonus?: Map.get(params, "weekly_bonus") == "true"}
       {:noreply, start_countdown(socket, {:run_mirror_dungeon, team_id, run_count, config})}
     else
       _ -> {:noreply, put_flash(socket, :error, "Pick a team and enter a non-negative run count.")}
@@ -47,8 +45,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      socket
      |> assign(:team_id, parse_team_id(team_id, socket.assigns.team_id))
      |> assign(:run_count, run_count)
-     |> assign(:weekly_bonus, Map.get(params, "weekly_bonus") == "true")
-     |> assign(:grace_picks, params |> parse_grace_picks() |> MapSet.new())}
+     |> assign(:weekly_bonus, Map.get(params, "weekly_bonus") == "true")}
   end
 
   @impl true
@@ -94,11 +91,11 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:run_memory, nav.run_memory)}
   end
 
-  def grace_indices, do: @grace_indices
-
   def ego_gifts(run_memory), do: Map.get(run_memory, :ego_gifts, %{})
 
   def current_floor(run_memory), do: Map.get(run_memory, :floor, 1)
+
+  def current_cost(run_memory), do: Map.get(run_memory, :cost, nil)
 
   def current_mode(run_memory), do: RunMemory.mode_for(Map.get(run_memory, :team), current_floor(run_memory))
 
@@ -110,10 +107,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
       {id, ""} -> id
       _ -> fallback
     end
-  end
-
-  defp parse_grace_picks(params) do
-    Enum.filter(@grace_indices, &(Map.get(params, "grace_#{&1}") == "true"))
   end
 
   defp start_countdown(socket, action) do

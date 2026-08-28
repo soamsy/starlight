@@ -14,8 +14,8 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   def run(team_id, run_count, config, ctx \\ Ctx.new())
 
-  def run(team_id, run_count, %{weekly_bonus?: wb, grace_picks: picks} = config, ctx)
-      when is_integer(run_count) and run_count >= 0 and is_boolean(wb) and is_list(picks) do
+  def run(team_id, run_count, %{weekly_bonus?: wb} = config, ctx)
+      when is_integer(run_count) and run_count >= 0 and is_boolean(wb) do
     {:ok, run_memory} = RunMemory.start_link()
     ctx = %{ctx | run_memory: run_memory}
 
@@ -24,6 +24,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
            {:ok, team_type} <- resolve_team_type(team, ctx),
            {:ok, first_screen} <- localize(ctx) do
         affinity = resolve_affinity(team)
+        config = Map.put(config, :grace_picks, resolve_grace_picks(team))
         RunMemory.put_team(ctx, %{id: team_id, type: team_type, affinity: Atom.to_string(affinity)})
         run_state = %{run_started?: first_screen not in @door_family}
         loop(run_count, run_state, 0, 0, team_id, team_type, affinity, config, ctx)
@@ -34,7 +35,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   end
 
   def run(_team_id, _run_count, _config, ctx) do
-    Ctx.log(ctx, :error, "run_count must be a non-negative integer and config must include weekly_bonus?/grace_picks")
+    Ctx.log(ctx, :error, "run_count must be a non-negative integer and config must include weekly_bonus?")
     {:error, :invalid_arguments}
   end
 
@@ -69,6 +70,16 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   end
 
   defp resolve_affinity(_team), do: :burn
+
+  defp resolve_grace_picks(%{grace_picks: picks}) when is_list(picks) do
+    Enum.map(picks, &grace_pick_index/1) |> Enum.reject(&is_nil/1)
+  end
+
+  defp resolve_grace_picks(_team), do: []
+
+  defp grace_pick_index(%{"index" => index}) when is_integer(index), do: index
+  defp grace_pick_index(index) when is_integer(index), do: index
+  defp grace_pick_index(_), do: nil
 
   defp localize(ctx) do
     case Engine.localize() do

@@ -34,7 +34,7 @@ defmodule StarlightBot.Automation.BattleChain do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, {gx, gy, gw, gh} = gear_rect} <- Matcher.find(frame, @gear_hook),
          {:ok, tray} <- SkillTray.scan(frame),
-         picks = compute_picks(frame, tray),
+         {picks, _top_results, _bottom_results} = compute_picks(frame, tray),
          path = build_path({gx + gw / 2, gy + gh / 2}, picks, release_point(tray)),
          :ok <- click_and_release(gear_rect) do
       case Capture.grab_frame() do
@@ -58,7 +58,8 @@ defmodule StarlightBot.Automation.BattleChain do
   end
 
   defp drag_chain(frame, tray, {gx, gy, gw, gh}, ctx) do
-    picks = compute_picks(frame, tray)
+    {picks, top_results, bottom_results} = compute_picks(frame, tray)
+    log_skill_tray(ctx, top_results, bottom_results)
     gear_point = {gx + gw / 2, gy + gh / 2}
     path = build_path(gear_point, picks, release_point(tray))
 
@@ -119,16 +120,38 @@ defmodule StarlightBot.Automation.BattleChain do
   defp compute_picks(frame, tray) do
     bg_color = SinColor.background_color(frame.mat, SkillTray.background_region(tray))
 
-    top_tiers =
-      frame.mat
-      |> SinColor.classify_row(tray.top_row, bg_color.hue, bg_color.saturation, bg_color.value)
-      |> Enum.map(& &1.tier)
+    top_results =
+      SinColor.classify_row(frame.mat, tray.top_row, bg_color.hue, bg_color.saturation, bg_color.value)
 
-    bottom_tiers =
-      frame.mat
-      |> SinColor.classify_row(tray.bottom_row, bg_color.hue, bg_color.saturation, bg_color.value)
-      |> Enum.map(& &1.tier)
-    waypoints(tray, top_tiers, bottom_tiers)
+    bottom_results =
+      SinColor.classify_row(frame.mat, tray.bottom_row, bg_color.hue, bg_color.saturation, bg_color.value)
+
+    top_tiers = Enum.map(top_results, & &1.tier)
+    bottom_tiers = Enum.map(bottom_results, & &1.tier)
+
+    {waypoints(tray, top_tiers, bottom_tiers), top_results, bottom_results}
+  end
+
+  defp log_skill_tray(ctx, top_results, bottom_results) do
+    text =
+      [
+        "battle_chain: skill tray read (#{length(top_results)} column(s))",
+        format_skill_row("top", top_results),
+        format_skill_row("bottom", bottom_results)
+      ]
+      |> Enum.join("\n")
+
+    Ctx.log(ctx, :info, text)
+  end
+
+  defp format_skill_row(label, results) do
+    cells =
+      results
+      |> Enum.with_index(1)
+      |> Enum.map(fn {r, i} -> "#{i}:#{r.sin}/#{r.tier}" end)
+      |> Enum.join("  ")
+
+    "  #{String.pad_trailing(label, 6)} #{cells}"
   end
 
   @spec waypoints(SkillTray.t(), [SinColor.tier()], [SinColor.tier()]) :: [{:top | :bottom, number, number}]

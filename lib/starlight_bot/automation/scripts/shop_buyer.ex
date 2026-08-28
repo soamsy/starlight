@@ -4,7 +4,7 @@ defmodule StarlightBot.Automation.Scripts.ShopBuyer do
   alias StarlightBot.Ctx
   alias StarlightBot.EgoGifts
   alias StarlightBot.Navigation.Runner
-  alias StarlightBot.Vision.{Capture, EgoGiftDetector, HookRegistry}
+  alias StarlightBot.Vision.{Capture, EgoGiftDetector, HookRegistry, NumberScanner}
 
   @max_purchases 5
   @min_item_area_px 300
@@ -13,6 +13,9 @@ defmodule StarlightBot.Automation.Scripts.ShopBuyer do
   @super_shelf_hooks [:shop_super_shelf_row_1, :shop_super_shelf_row_2]
 
   def run(ctx) do
+    detect_and_update_cost(ctx)
+    Process.sleep(1000) # TODO: remove. this is unnecessary and just for debugging
+
     case RunMemory.team_affinity(ctx) do
       nil ->
         Ctx.log(ctx, :error, "shop buyer: no team affinity in run memory — buying nothing")
@@ -175,6 +178,18 @@ defmodule StarlightBot.Automation.Scripts.ShopBuyer do
     Ctx.log(ctx, :info, "shop buyer: #{gift_name} (#{item_affinity || "unknown"}) — #{if wanted?, do: "want", else: "skip"}")
 
     wanted?
+  end
+
+  defp detect_and_update_cost(ctx) do
+    with {:ok, frame} <- Capture.grab_frame(),
+         {:ok, cost} <- NumberScanner.read(frame) do
+      Ctx.log(ctx, :info, "cost: read #{cost}")
+      RunMemory.put_cost(ctx, cost)
+    else
+      other ->
+        Ctx.log(ctx, :error, "cost: read failed (#{inspect(other)})")
+        :ok
+    end
   end
 
   defp leave(ctx) do

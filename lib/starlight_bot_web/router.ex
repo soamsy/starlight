@@ -25,6 +25,7 @@ defmodule StarlightBotWeb.Router do
       live "/transitions", Live.TransitionsLive
       live "/teams", Live.TeamEditorLive
       live "/theme-pack-plans", Live.ThemePackPlanEditorLive
+      live "/gift-plans", Live.GiftPlanEditorLive
       live "/luxcavation", Live.LuxcavationLive
       live "/mirror-dungeon", Live.MirrorDungeonLive
       live "/rewards", Live.RewardsLive

@@ -41,6 +41,10 @@ defmodule StarlightBot.Automation.RunMemory do
 
   def put_floor(ctx, floor), do: put(ctx, :floor, floor)
 
+  def cost(ctx), do: get(ctx, :cost, nil)
+
+  def put_cost(ctx, cost), do: put(ctx, :cost, cost)
+
   def team_affinity(ctx), do: (team(ctx) || %{})[:affinity]
 
   def mode(ctx), do: mode_for(team(ctx), get(ctx, :floor, 1))

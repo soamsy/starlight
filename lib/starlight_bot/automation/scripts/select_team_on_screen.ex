@@ -6,10 +6,6 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
   @front_line_size 7
   @backup_size 5
-  @all_sinners ~w(
-    yi_sang faust don_quixote ryoshu meursault hong_lu
-    heathcliff ishmael rodion sinclair outis gregor
-  )
 
   @max_scroll_attempts 5
   @scroll_to_bottom_clicks 30
@@ -107,7 +103,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   defp order_mismatches(order) do
     {front, backup} = front_and_backup(order)
     placed = MapSet.new(front ++ backup)
-    unplaced = Enum.reject(@all_sinners, &(&1 in placed))
+    unplaced = Enum.reject(Teams.all_sinners(), &(&1 in placed))
 
     checks =
       Engine.check_all(

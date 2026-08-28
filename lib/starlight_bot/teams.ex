@@ -8,6 +8,13 @@ defmodule StarlightBot.Teams do
     gluttony gloom pride envy slash pierce blunt
   )
 
+  @all_sinners ~w(
+    yi_sang faust don_quixote ryoshu meursault hong_lu
+    heathcliff ishmael rodion sinclair outis gregor
+  )
+
+  def all_sinners, do: @all_sinners
+
   @doc "List all teams, with joined-in strategy names and a `:missing` field list for incomplete configs."
   def list_teams do
     Repo.all(
@@ -148,14 +155,18 @@ defmodule StarlightBot.Teams do
   defp decode_affinity(nil), do: nil
 
   defp decode_affinity(%{gift_strategy_data: json} = team) do
-    affinity =
+    data =
       case json && Jason.decode(json) do
-        {:ok, %{"affinity" => affinity}} when is_binary(affinity) -> affinity
-        _ -> nil
+        {:ok, %{} = data} -> data
+        _ -> %{}
       end
+
+    affinity = if is_binary(data["affinity"]), do: data["affinity"], else: nil
+    grace_picks = if is_list(data["grace_picks"]), do: data["grace_picks"], else: []
 
     team
     |> Map.put(:affinity, affinity)
+    |> Map.put(:grace_picks, grace_picks)
     |> Map.delete(:gift_strategy_data)
   end
 
