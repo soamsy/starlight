@@ -14,20 +14,20 @@ defmodule StarlightBot.Navigation.Screens.Event do
         not_hook(:event),
         [
           branch([
-            {:event_proceed, [reclick_until_gone(:event_proceed)]},
-            {:event_continue, [retry_until_gone(:event_continue, [key(:space)])]},
-            {:event_skip, [retry_until_gone(:event_skip, [key(:space)]), key(:space), sleep(20), key(:space)]},
-            {:event_commence, [reclick_until_gone(:event_commence)]},
+            {:event_proceed, [reclick_until_gone(:event_proceed, every: 100)]},
+            {:event_continue, [reclick_until_gone(:event_continue, every: 100)]},
+            {:event_skip, [retry_until_gone(:event_skip, [key(:space)], every: 100), key(:space), sleep(40), key(:space)]},
+            {:event_commence, [reclick_until_gone(:event_commence, every: 100)]},
             {:event_advantage_none_selected,
               [
                 retry_until(
                   not_hook(:event_advantage_none_selected),
                   [custom(&EventAdvantage.select_best_sinner/2)],
-                  every: 500,
+                  every: 300,
                   tries: 20
                 ),
                 await(:event_commence, timeout: 1000),
-                reclick_until_gone(:event_commence)
+                reclick_until_gone(:event_commence, every: 100)
               ]},
             {:event_chicken_1, [click(:event_choice_0), sleep(300)]},
             {:event_chicken_2, [click(:event_choice_0), sleep(300)]},
@@ -37,8 +37,8 @@ defmodule StarlightBot.Navigation.Screens.Event do
             {:default, [key(:space), click(:event_skip)]}
           ])
         ],
-        every: 500,
-        tries: 60
+        every: 250,
+        timeout: 35_000
       )
     ]
   end
