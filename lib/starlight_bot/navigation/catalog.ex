@@ -15,6 +15,7 @@ defmodule StarlightBot.Navigation.Catalog do
   implies that we want to inherit all navigation from the parent screen, which isn't always the case.
   """
   @screen_modules [
+    StarlightBot.Navigation.Screens.StartScreen,
     StarlightBot.Navigation.Screens.EgoGiftGet,
     StarlightBot.Navigation.Screens.Enkephalin,
     StarlightBot.Navigation.Screens.TeamSelect,
