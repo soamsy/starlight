@@ -15,6 +15,9 @@ defmodule StarlightBot.Navigation.Screens.MdDoor do
     transition to: :md_door, do: [key(:esc)]
     transition to: :team_select, do: [reclick_until_gone(:mirror_dungeon_door_popup_white_enter)]
   end
+  screen :md_door_session_expired, identity: :mirror_dungeon_door_session_expired_confirm, refines: :md_door do
+    transition to: :exploration_reward, do: [reclick_until_gone(:mirror_dungeon_door_session_expired_confirm)]
+  end
   screen :md_door_unknown, identity: nil, refines: :md_door do
     transition to: :home_drive, do: [key(:esc)]
     transition to: :md_door_enter do
@@ -24,6 +27,7 @@ defmodule StarlightBot.Navigation.Screens.MdDoor do
           :mirror_dungeon_door_popup_white_enter,
           :mirror_dungeon_door_progress,
           :mirror_dungeon_door_forfeit,
+          :mirror_dungeon_door_session_expired_confirm,
           :exploration_reward,
         ]),
       ]

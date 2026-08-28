@@ -174,6 +174,10 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       screen == :md_door_forfeit ->
         Engine.goto(:md_door_forfeit, :exploration_reward, ctx) |> continue_after(run_state)
 
+      screen == :md_door_session_expired ->
+        Engine.goto(:md_door_session_expired, :exploration_reward, ctx)
+        |> continue_after(%{run_state | run_started?: false})
+
       screen == :exploration_complete ->
         Engine.goto(:exploration_complete, :exploration_reward, ctx) |> continue_after(run_state)
 
