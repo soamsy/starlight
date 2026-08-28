@@ -15,8 +15,8 @@ defmodule StarlightBot.Vision.SkillTray do
   @bottom_row_y 818
   @bottom_row_h 40
 
-  @top_row_inset_def [15.5, 7.65, 18]
-  @bottom_row_inset_def [24, 0.32, 0]
+  @top_row_inset_def [15.5, 7.63, 18]
+  @bottom_row_inset_def [24, 0.31, 0]
 
   @top_cell_inset_pct 0.14
   @bottom_cell_inset_pct 0.15

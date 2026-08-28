@@ -4,9 +4,9 @@ defmodule StarlightBot.Vision.SinColor do
   @color_bgr2hsv 40
 
   @colors [
-    wrath: {0, 10, 70, 255, 60, 255},
+    wrath: {0, 6, 70, 255, 60, 255},
     gloom: {96, 6, 100, 255, 63, 245},
-    sloth: {23, 6, 180, 255, 63, 245},
+    sloth: {23, 5, 145, 255, 63, 245},
     lust: {12, 6, 100, 255, 63, 245},
     pride: {110, 6, 100, 255, 63, 200},
     gluttony: {41, 6, 100, 255, 63, 252},
@@ -34,7 +34,7 @@ defmodule StarlightBot.Vision.SinColor do
   @tier_thresholds [
     wrath: {0.48, 0.65},
     gloom: {0.38, 0.59},
-    sloth: {0.45, 0.68},
+    sloth: {0.40, 0.68},
     lust: {0.45, 0.68},
     pride: {0.41, 0.56},
     gluttony: {0.35, 0.51},
@@ -51,14 +51,14 @@ defmodule StarlightBot.Vision.SinColor do
     envy: 0.05,
   ]
 
-  @wedge_bulge_pct 0.2
+  @wedge_bulge_pct 0.23
 
   @ring_kernel_px 3
   @min_ring_area 8
 
   @bg_exclusion_hue_tol 20
   @bg_exclusion_sv_tol 30
-  @bg_hue_affect_range 12
+  @bg_hue_affect_range 14
   @bg_contrast_margin 30
   @bg_min_value_floor 100
 

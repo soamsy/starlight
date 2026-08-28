@@ -697,7 +697,7 @@ defmodule StarlightBot.Vision.Matcher do
     cx = div(w, 2)
     drop = round(h * bulge_pct)
     mask = Evision.Mat.zeros({h, w}, {:u, 8})
-    poly = point_mat([{cx, 0}, {cx, drop}, {cx + big, drop + big}, {cx + big, 0}])
+    poly = point_mat([{cx, 0}, {cx, drop}, {cx + round(big * 1.20), drop + big}, {cx + big, 0}])
     Evision.fillPoly(mask, [poly], 255)
   end
 
