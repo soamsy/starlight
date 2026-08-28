@@ -2,7 +2,7 @@ defmodule StarlightBot.Navigation.Screens.ExplorationReward do
   use StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.Engine
 
-  @confirm_timeout 6_000
+  @confirm_timeout 4_000
   @second_confirm_timeout 3_000
   @acquired_timeout 4_000
   @weekly_bonus_hooks [:weekly_bonus_0_on, :weekly_bonus_1_on, :weekly_bonus_2_on]
