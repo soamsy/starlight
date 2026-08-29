@@ -57,17 +57,17 @@ defmodule StarlightBot.Automation.SeasonPassCollector do
   end
 
   defp claim_all(ctx) do
-    with {:ok, _} <- Engine.goto(:season_pass_missions_tab, :season_pass, ctx),
-         {:ok, _} <-
+    with {:ok, _} <-
            Engine.act(
              [
+               retry_until_gone(:season_pass_missions_tab, [click(:season_pass_battle_pass)]),
+               await(:season_pass_claim_all, timeout: @claim_all_confirm_timeout),
                click(:season_pass_claim_all),
                await(:season_pass_claim_all_confirm, timeout: @claim_all_confirm_timeout),
                click(:season_pass_claim_all_confirm)
              ],
              ctx
-           ),
-         {:ok, _} <- Engine.goto(:season_pass, :season_pass_missions_tab, ctx) do
+           ) do
       :ok
     else
       {:error, reason} ->

@@ -3,7 +3,7 @@ defmodule StarlightBot.Navigation.Screens.SeasonPass do
 
   screen :season_pass, identity: :season_pass_missions do
     transition to: :season_pass_missions_tab, do: [reclick_until_arrived(:season_pass_missions)]
-    transition to: :home_window, do: [key(:esc)]
+    transition to: :home_window, do: [retry_until_arrived([key(:esc)])]
   end
 
   screen :season_pass_missions_tab, identity: :season_pass_missions_tab, refines: :season_pass do
