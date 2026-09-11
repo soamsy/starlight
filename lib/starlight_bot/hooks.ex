@@ -96,7 +96,7 @@ defmodule StarlightBot.Hooks do
 
   def save_hook(_), do: {:error, :name_required}
 
-  @doc "Delete a hook from user.db and evict from registry."
+  @doc "Delete a hook from the database and evict from registry."
   def delete_hook(name) when is_binary(name) do
     {n, _} = Repo.delete_all(from h in "hooks", where: h.name == ^name)
 

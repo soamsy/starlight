@@ -14,9 +14,6 @@ erl_crash.dump
 /priv/native/
 /native/starlight_native/target/
 
-# SQLite databases — master.db IS committed (static game data), user.db is NOT
-~/.starlight/
-
 # IDE and OS
 .vscode/
 .idea/

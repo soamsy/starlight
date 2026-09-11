@@ -24,7 +24,7 @@ defmodule Mix.Tasks.StarlightBot.Check do
       check_nif_compiled(),
       check_kwin_eis(),
       check_game_window(),
-      check_user_db(),
+      check_db(),
       check_x11(),
     ]
 
@@ -99,17 +99,17 @@ defmodule Mix.Tasks.StarlightBot.Check do
     end
   end
 
-  defp check_user_db do
+  defp check_db do
     db_path = Application.get_env(:starlight_bot, StarlightBot.Repo)[:database]
 
     case File.stat(db_path) do
-      {:ok, %{type: :regular}} -> ok("user.db: #{db_path}")
+      {:ok, %{type: :regular}} -> ok("database: #{db_path}")
       _ ->
         dir = Path.dirname(db_path)
         if File.exists?(dir) do
-          warn("user.db not found — run `mix db.setup` to create it")
+          warn("database not found — run `mix db.setup` to create it")
         else
-          fail("user.db directory missing: #{dir} — run `mix db.setup`")
+          fail("database directory missing: #{dir} — run `mix db.setup`")
         end
     end
   end

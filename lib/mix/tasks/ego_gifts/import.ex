@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.EgoGifts.Import do
   @shortdoc "Import ego_gifts data + images from the vendored EgoGiftML submodule"
   @moduledoc """
-  Copies the `ego_gifts` table from vendor/EgoGiftML's data/gifts.db into user.db,
+  Copies the `ego_gifts` table from vendor/EgoGiftML's data/gifts.db into the app database,
   excluding `ui_image_path` and `trouble_rating`. Copies each gift's image from
   vendor/EgoGiftML/data/images/ into priv/static/images/ego_gifts/ and rewrites
   `image_path` to the static URL that serves it.

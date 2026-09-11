@@ -7,8 +7,6 @@ defmodule StarlightBot.Application do
     setup_file_logger()
     Logger.info("StarlightBot starting", module: __MODULE__)
 
-    ensure_user_db_dir!()
-
     children =
       [
         StarlightBot.Repo,
@@ -62,16 +60,6 @@ defmodule StarlightBot.Application do
           filesync_repeat_interval: 200
         }
       })
-    end
-  end
-
-  defp ensure_user_db_dir! do
-    db_path = Application.get_env(:starlight_bot, StarlightBot.Repo)[:database]
-    dir = Path.dirname(db_path)
-
-    unless File.exists?(dir) do
-      Logger.info("Creating user data directory: #{dir}")
-      File.mkdir_p!(dir)
     end
   end
 end

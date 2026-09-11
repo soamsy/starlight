@@ -55,14 +55,16 @@ If the Rust code has errors, `mix compile` prints them in full. Fix them in `nat
 
 ## Database
 
-User data lives at `~/.starlight/user.db`. Static game data is at `priv/repo/master.db` (committed, read-only at runtime).
+All app data (hooks, teams, run logs, ego gifts, etc.) lives in a single SQLite file, `master.db`, committed at the repo root. There is no separate user-local database — this keeps schema and seed data in version control during early dev.
 
 ```sh
-mix db.setup       # create + migrate ~/.starlight/user.db
+mix db.setup       # create + migrate master.db
 mix db.migrate     # run pending migrations
 ```
 
-**Never run `mix db.reset`** (drop + recreate) against `~/.starlight/user.db` — it destroys live hooks/teams data with no undo. Migration files are in `priv/repo/migrations/`. All 9 migrations applying cleanly from scratch is already verified safely by `mix test` (`test_helper.exs` runs every migration against an isolated `/tmp/starlight_test.db`, not the live one) — that's the check to run, not `db.reset`.
+**Never run `mix db.reset`** (drop + recreate) against `master.db` — it destroys hooks/teams data with no undo. Migration files are in `priv/repo/migrations/`. All 9 migrations applying cleanly from scratch is already verified safely by `mix test` (`test_helper.exs` runs every migration against an isolated `/tmp/starlight_test.db`, not the live one) — that's the check to run, not `db.reset`.
+
+Override the path with the `STARLIGHT_DB` env var if needed (see `config/runtime.exs`).
 
 ---
 
@@ -79,7 +81,7 @@ system (see "What's Not Implemented Yet" below), scan existing hook notes for
 relevant context rather than guessing at screen semantics from names alone:
 
 ```sh
-sqlite3 -readonly -header -column ~/.starlight/user.db \
+sqlite3 -readonly -header -column master.db \
   "SELECT name, notes FROM hooks WHERE notes IS NOT NULL AND TRIM(notes) != '' ORDER BY name;"
 ```
 
@@ -87,11 +89,11 @@ Scope to one screen/feature with a `LIKE` filter on the name prefix, e.g. all
 `battle_*` hooks:
 
 ```sh
-sqlite3 -readonly -header -column ~/.starlight/user.db \
+sqlite3 -readonly -header -column master.db \
   "SELECT name, notes FROM hooks WHERE name LIKE 'battle_%' AND notes IS NOT NULL AND TRIM(notes) != '' ORDER BY name;"
 ```
 
-Always use `-readonly` — `user.db` is typically held open by a live `mix
+Always use `-readonly` — `master.db` is typically held open by a live `mix
 phx.server` (WAL mode), and this is a read query, not a file copy.
 
 ---
@@ -150,6 +152,8 @@ cargo clippy --manifest-path native/starlight_native/Cargo.toml   # Rust lints
 
 ```
 (root = starlight_bot)
+master.db                # single SQLite db, all app data (committed)
+
 lib/starlight_bot/
   application.ex        # OTP supervisor tree
   vision/               # frame capture, OCR prep, hook matching
@@ -160,7 +164,7 @@ lib/starlight_bot/
     matcher.ex          # Evision matchTemplate (TM_CCOEFF_NORMED / TM_CCORR_NORMED)
   input/                # mouse, keyboard via EIS NIF
   automation/           # game logic, state machines (stub)
-  repo.ex               # Ecto SQLite3 repo (user.db)
+  repo.ex               # Ecto SQLite3 repo (master.db)
 
 native/starlight_native/
   src/
@@ -175,8 +179,7 @@ native/starlight_native/
     error.rs            # NativeError enum
 
 priv/repo/
-  migrations/           # 9 schema migrations for user.db
-  master.db             # static game data (committed)
+  migrations/           # 9 schema migrations for master.db
 
 config/
   config.exs            # base config
