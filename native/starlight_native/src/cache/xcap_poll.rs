@@ -25,8 +25,12 @@ pub fn start(
     })
 }
 
+const BASE_INTERVAL_MS: u64 = 33;
+const MAX_BACKOFF_MS: u64 = 2_000;
+
 fn run_loop(title_lower: &str, frame_store: &Arc<RwLock<Option<CachedFrame>>>, stop: &AtomicBool) {
     let mut cached: Option<Window> = None;
+    let mut backoff_ms = BASE_INTERVAL_MS;
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -37,16 +41,21 @@ fn run_loop(title_lower: &str, frame_store: &Arc<RwLock<Option<CachedFrame>>>, s
             cached = find_window(title_lower);
         }
 
-        if let Some(window) = cached.take() {
+        let sleep_ms = if let Some(window) = cached.take() {
+            backoff_ms = BASE_INTERVAL_MS;
             if let Ok(image) = window.capture_image() {
                 if let Ok(mut guard) = frame_store.write() {
                     *guard = Some(to_cached_frame(image));
                 }
                 cached = Some(window);
             }
-        }
+            BASE_INTERVAL_MS
+        } else {
+            backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
+            backoff_ms
+        };
 
-        std::thread::sleep(std::time::Duration::from_millis(33));
+        std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
     }
 }
 

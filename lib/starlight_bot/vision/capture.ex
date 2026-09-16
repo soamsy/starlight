@@ -4,8 +4,9 @@ defmodule StarlightBot.Vision.Capture do
   alias StarlightBot.{Native, Vision.Frame}
 
   @refresh_interval_ms 2_000
+  @max_refresh_interval_ms 30_000
 
-  defstruct [:window_title, :window_class, :window_rect]
+  defstruct [:window_title, :window_class, :window_rect, :refresh_interval_ms]
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -65,6 +66,7 @@ defmodule StarlightBot.Vision.Capture do
       window_title: window_title,
       window_class: window_class,
       window_rect: nil,
+      refresh_interval_ms: @refresh_interval_ms,
     }
 
     state = case query_window_rect(state) do
@@ -80,7 +82,7 @@ defmodule StarlightBot.Vision.Capture do
         state
     end
 
-    schedule_refresh()
+    schedule_refresh(state.refresh_interval_ms)
     {:ok, state}
   end
 
@@ -203,23 +205,25 @@ defmodule StarlightBot.Vision.Capture do
 
   @impl true
   def handle_info(:refresh_window_rect_tick, state) do
-    schedule_refresh()
-    {:noreply, do_refresh_rect(state)}
+    state = do_refresh_rect(state)
+    schedule_refresh(state.refresh_interval_ms)
+    {:noreply, state}
   end
 
-  defp schedule_refresh do
-    Process.send_after(self(), :refresh_window_rect_tick, @refresh_interval_ms)
+  defp schedule_refresh(interval_ms) do
+    Process.send_after(self(), :refresh_window_rect_tick, interval_ms)
   end
 
   defp do_refresh_rect(state) do
     case query_window_rect(state) do
       {:ok, s} ->
         Logger.debug("Window rect refreshed: #{inspect(s.window_rect)}", module: __MODULE__)
-        s
+        %{s | refresh_interval_ms: @refresh_interval_ms}
 
       {:error, reason} ->
         Logger.warning("Window rect refresh failed: #{inspect(reason)}", module: __MODULE__)
-        %{state | window_rect: nil}
+        next_interval = min(state.refresh_interval_ms * 2, @max_refresh_interval_ms)
+        %{state | window_rect: nil, refresh_interval_ms: next_interval}
     end
   end
 
