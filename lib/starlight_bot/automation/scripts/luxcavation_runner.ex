@@ -131,17 +131,22 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   end
 
   defp detect_enkephalin_spent_count(ctx) do
-    matched_indices =
+    matched_hooks =
       Engine.check_all(@enkephalin_spend_state_hooks)
       |> Enum.filter(fn {_hook, matched?} -> matched? end)
-      |> Enum.map(fn {hook, _matched?} -> Enum.find_index(@enkephalin_spend_state_hooks, &(&1 == hook)) end)
+      |> Enum.map(fn {hook, _matched?} -> hook end)
 
-    case matched_indices do
-      [spent] ->
-        {:ok, spent}
+    case matched_hooks do
+      [hook] ->
+        {:ok, Enum.find_index(@enkephalin_spend_state_hooks, &(&1 == hook))}
 
       other ->
-        Ctx.log(ctx, :info, "ambiguous lunacy spend state: #{length(other)} state(s) matched")
+        Ctx.log(
+          ctx,
+          :info,
+          "ambiguous lunacy spend state: #{length(other)} state(s) matched: #{Enum.join(other, ", ")}"
+        )
+
         :unknown
     end
   end
@@ -163,13 +168,9 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
 
   defp enkephalin_spend_steps(cost_hook) do
     [
-      retry_until(
-        not_hook(cost_hook),
-        [click(:charge_enkephalin_popup_confirm)],
-        every: 1_000,
-        tries: 2
-      ),
-      sleep(1000)
+      click(:charge_enkephalin_popup_confirm),
+      move_to(:charge_enkephalin_popup_safe_area),
+      await(not_hook(cost_hook), timeout: 3_000),
     ]
   end
 
