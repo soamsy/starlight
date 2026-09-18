@@ -48,7 +48,7 @@ window.addEventListener("unhandledrejection", (e) => {
 // light = retro, dark = luxury; system preference sets default, localStorage overrides
 
 const LIGHT_THEME = 'valentine'
-const DARK_THEME = 'synthwave'
+const DARK_THEME = 'halloween'
 
 function activeTheme() {
   return localStorage.getItem('starlight-theme') ||
