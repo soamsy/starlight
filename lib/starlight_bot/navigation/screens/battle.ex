@@ -38,7 +38,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
 
   screen :battle_turn_or_over, identity: nil, catch_all: true
 
-  screen :battle_over_confirm, identity: :battle_over_black_confirm do
+  screen :battle_over_confirm, identity: :battle_over_black_confirm, refines: :battle do
     transition to: :battle_turn_or_over, do: [reclick_until_gone(:battle_over_black_confirm)]
   end
 

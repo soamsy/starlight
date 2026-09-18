@@ -5,7 +5,8 @@ defmodule StarlightBot.Navigation.Screens.Lux do
     transition to: :home_drive, do: [key(:esc)]
   end
 
-  screen :lux_exp, identity: all_of([:lux_exp_aligned_correctly, not_hook(:lux_right_arrow)]), refines: :lux do
+  screen :lux_exp, identity: :lux_exp_aligned_correctly, refines: :lux do
+  # screen :lux_exp, identity: all_of([:lux_exp_aligned_correctly, not_hook(:lux_right_arrow)]), refines: :lux do
     transition to: :lux_thread, do: [
       retry_until(:lux_thread_time_left, [click(:lux_tab_thread)]),
       branch([
@@ -21,12 +22,14 @@ defmodule StarlightBot.Navigation.Screens.Lux do
   screen :lux_thread, identity: all_of([:lux_thread_time_left, not_hook(:lux_left_arrow)]), refines: :lux do
     transition to: :lux_exp, do: [
       retry_until(:lux_exp_aligned_correctly, [click(:lux_tab_exp)]),
-      branch([
-        {:lux_right_arrow, [
-          move_to(:lux_scroll),
-          retry_until_arrived([scroll_up(30)], every: 600, tries: 10),
-        ]}
-      ])
+      move_to(:lux_scroll),
+      retry_until_arrived([scroll_up(30)], every: 600, tries: 10)
+      # branch([
+      #   {:lux_right_arrow, [
+      #     move_to(:lux_scroll),
+      #     retry_until_arrived([scroll_up(30)], every: 600, tries: 10),
+      #   ]}
+      # ])
     ]
 
     transition to: :team_select do

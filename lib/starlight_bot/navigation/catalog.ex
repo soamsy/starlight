@@ -75,6 +75,22 @@ defmodule StarlightBot.Navigation.Catalog do
     Enum.find(transitions_from(screen_name, screen_modules), &(&1.name == transition_name))
   end
 
+  def escape_transition(screen_name, screen_modules \\ @screen_modules) do
+    transitions_from(screen_name, screen_modules)
+    |> Enum.find(&escape_only_steps?(&1.steps))
+  end
+
+  defp escape_only_steps?(steps) when is_list(steps) do
+    Enum.any?(steps, &escape_key_step?/1) and Enum.all?(steps, &escape_neutral_step?/1)
+  end
+
+  defp escape_key_step?({:key, :esc}), do: true
+  defp escape_key_step?({:retry_until, _hook, steps, _timeout_ms, _every_ms, _tries}), do: escape_only_steps?(steps)
+  defp escape_key_step?(_step), do: false
+
+  defp escape_neutral_step?({:sleep, _ms}), do: true
+  defp escape_neutral_step?(step), do: escape_key_step?(step)
+
   defp inherited_via_refines(screen_name, screen_modules, own_fun),
     do: inherited_via_refines(screen_name, MapSet.new(), screen_modules, own_fun)
 

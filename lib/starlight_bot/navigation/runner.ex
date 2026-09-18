@@ -243,10 +243,10 @@ defmodule StarlightBot.Navigation.Runner do
     run_steps(branch_steps, frame, ctx)
   end
 
-  defp execute_step({:sleep, ms}, last_frame, ctx) do
+  defp execute_step({:sleep, ms}, _last_frame, ctx) do
     Ctx.log(ctx, :info, "sleep #{ms}ms")
     Process.sleep(ms)
-    {:ok, last_frame}
+    {:ok, nil}
   end
 
   defp execute_step({:retry_until, hook, steps, timeout_ms, every_ms, tries}, last_frame, ctx) do

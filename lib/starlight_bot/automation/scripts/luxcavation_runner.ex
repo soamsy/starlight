@@ -186,7 +186,9 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
     end
   end
 
-  defp run_batch_with_resume(screen, kind, batch, team_id, ctx) do
+  defp run_batch_with_resume(screen, kind, batch, team_id, ctx, errors \\ 0)
+
+  defp run_batch_with_resume(screen, kind, batch, team_id, ctx, errors) do
     Ctx.log(ctx, :info, "#{kind}: batch of #{batch} consecutive battle(s)")
 
     result =
@@ -222,7 +224,29 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
         end
 
       error ->
-        error
+        recover_from_navigation_error(error, kind, batch, team_id, errors, ctx)
+    end
+  end
+
+  defp recover_from_navigation_error(error, _kind, _batch, _team_id, errors, ctx) when errors >= @max_navigation_retries do
+    Ctx.log(ctx, :error, "navigation error #{inspect(error)} — giving up after #{errors} relocalize attempt(s)")
+    error
+  end
+
+  defp recover_from_navigation_error(error, kind, batch, team_id, errors, ctx) do
+    Ctx.log(
+      ctx,
+      :error,
+      "navigation error #{inspect(error)} — relocalizing to find a pickoff point (attempt #{errors + 1}/#{@max_navigation_retries})"
+    )
+
+    case Engine.localize_with_recovery(ctx) do
+      {:ok, screen} ->
+        Ctx.log(ctx, :ok, "pickoff point: #{screen}")
+        run_batch_with_resume(screen, kind, batch, team_id, ctx, errors + 1)
+
+      :unknown ->
+        recover_from_navigation_error(error, kind, batch, team_id, errors + 1, ctx)
     end
   end
 
