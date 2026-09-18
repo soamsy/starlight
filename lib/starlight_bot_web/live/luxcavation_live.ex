@@ -4,6 +4,9 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   alias StarlightBot.Teams
 
   @countdown_secs 2
+  @max_consecutive 10
+  @exp_enkephalin_cost 3
+  @thread_enkephalin_cost 2
 
   @impl true
   def mount(_params, _session, socket) do
@@ -19,24 +22,39 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:log, nav.log)
      |> assign(:teams, teams)
      |> assign(:team_id, default_team_id(teams))
-     |> assign(:exp_count, "0")
-     |> assign(:thread_count, "0")
-     |> assign(:collect_xp, false)
-     |> assign(:collect_enkephalin, false)
+     |> assign(:exp_consecutive, "1")
+     |> assign(:exp_repeats, "1")
+     |> assign(:thread_consecutive, "3")
+     |> assign(:thread_repeats, "1")
+     |> assign(:collect_xp, true)
+     |> assign(:collect_enkephalin, true)
      |> assign(:enkephalin_convert_count, "0")
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)}
   end
 
   @impl true
-  def handle_event("run", %{"team_id" => team_id, "exp_count" => exp_count, "thread_count" => thread_count} = params, socket) do
+  def handle_event(
+        "run",
+        %{
+          "team_id" => team_id,
+          "exp_consecutive" => exp_consecutive,
+          "exp_repeats" => exp_repeats,
+          "thread_consecutive" => thread_consecutive,
+          "thread_repeats" => thread_repeats
+        } = params,
+        socket
+      ) do
     enkephalin_convert_count_str = Map.get(params, "enkephalin_convert_count", "0")
 
     with {team_id, ""} <- Integer.parse(team_id),
-         {exp_count, ""} <- Integer.parse(exp_count),
-         {thread_count, ""} <- Integer.parse(thread_count),
+         {exp_consecutive, ""} <- Integer.parse(exp_consecutive),
+         {exp_repeats, ""} <- Integer.parse(exp_repeats),
+         {thread_consecutive, ""} <- Integer.parse(thread_consecutive),
+         {thread_repeats, ""} <- Integer.parse(thread_repeats),
          {enkephalin_convert_count, ""} <- Integer.parse(enkephalin_convert_count_str),
-         true <- exp_count >= 0 and thread_count >= 0,
+         true <- exp_consecutive in 0..@max_consecutive and thread_consecutive in 0..@max_consecutive,
+         true <- exp_repeats >= 0 and thread_repeats >= 0,
          true <- enkephalin_convert_count in 0..4 do
       collect_xp? = Map.get(params, "collect_xp") == "true"
       collect_enkephalin? = Map.get(params, "collect_enkephalin") == "true"
@@ -44,24 +62,39 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
       {:noreply,
        start_countdown(
          socket,
-         {:run_luxcavation, team_id, exp_count, thread_count, collect_xp?, collect_enkephalin?, enkephalin_convert_count}
+         {:run_luxcavation, team_id, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
+          collect_enkephalin?, enkephalin_convert_count}
        )}
     else
-      _ -> {:noreply, put_flash(socket, :error, "Pick a team and enter non-negative run counts.")}
+      _ ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Pick a team, keep consecutive battles at 0-#{@max_consecutive}, and repeats non-negative."
+         )}
     end
   end
 
   @impl true
   def handle_event(
         "update_form",
-        %{"team_id" => team_id, "exp_count" => exp_count, "thread_count" => thread_count} = params,
+        %{
+          "team_id" => team_id,
+          "exp_consecutive" => exp_consecutive,
+          "exp_repeats" => exp_repeats,
+          "thread_consecutive" => thread_consecutive,
+          "thread_repeats" => thread_repeats
+        } = params,
         socket
       ) do
     {:noreply,
      socket
      |> assign(:team_id, parse_team_id(team_id, socket.assigns.team_id))
-     |> assign(:exp_count, exp_count)
-     |> assign(:thread_count, thread_count)
+     |> assign(:exp_consecutive, exp_consecutive)
+     |> assign(:exp_repeats, exp_repeats)
+     |> assign(:thread_consecutive, thread_consecutive)
+     |> assign(:thread_repeats, thread_repeats)
      |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
      |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
      |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))}
@@ -128,18 +161,32 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   end
 
   defp run_pending_action(
-         {:run_luxcavation, team_id, exp_count, thread_count, collect_xp?, collect_enkephalin?, enkephalin_convert_count}
+         {:run_luxcavation, team_id, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
+          collect_enkephalin?, enkephalin_convert_count}
        ),
-       do: Navigator.run_luxcavation(team_id, exp_count, thread_count, collect_xp?, collect_enkephalin?, enkephalin_convert_count)
+       do:
+         Navigator.run_luxcavation(
+           team_id,
+           exp_consecutive,
+           exp_repeats,
+           thread_consecutive,
+           thread_repeats,
+           collect_xp?,
+           collect_enkephalin?,
+           enkephalin_convert_count
+         )
 
   defp run_pending_action(:resume_luxcavation), do: Navigator.resume_luxcavation()
 
   def pending_action_label(
-        {:run_luxcavation, _team_id, exp_count, thread_count, collect_xp?, collect_enkephalin?, enkephalin_convert_count}
+        {:run_luxcavation, _team_id, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
+         collect_enkephalin?, enkephalin_convert_count}
       ) do
+    enkephalin_prefix = if collect_enkephalin?, do: "enkephalin (#{enkephalin_convert_count}x lunacy) + ", else: ""
     xp_suffix = if collect_xp?, do: " + battle pass xp", else: ""
-    enkephalin_suffix = if collect_enkephalin?, do: " + enkephalin (#{enkephalin_convert_count}x lunacy)", else: ""
-    "luxcavation: #{exp_count} exp, #{thread_count} thread#{xp_suffix}#{enkephalin_suffix}"
+
+    "luxcavation: #{enkephalin_prefix}#{exp_repeats}x#{exp_consecutive} exp (#{total_runs(exp_consecutive, exp_repeats)}), " <>
+      "#{thread_repeats}x#{thread_consecutive} thread (#{total_runs(thread_consecutive, thread_repeats)})#{xp_suffix}"
   end
 
   def pending_action_label(:resume_luxcavation), do: "resume luxcavation"
@@ -147,6 +194,21 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   @enkephalin_cumulative_costs [0, 26, 78, 156, 260]
 
   def enkephalin_cumulative_cost(count) when count in 0..4, do: Enum.at(@enkephalin_cumulative_costs, count)
+
+  def total_runs(consecutive, repeats) do
+    with {consecutive, ""} <- Integer.parse(to_string(consecutive)),
+         {repeats, ""} <- Integer.parse(to_string(repeats)) do
+      consecutive * repeats
+    else
+      _ -> 0
+    end
+  end
+
+  def max_consecutive, do: @max_consecutive
+  def exp_enkephalin_cost, do: @exp_enkephalin_cost
+  def thread_enkephalin_cost, do: @thread_enkephalin_cost
+
+  def enkephalin_modules(run_count, per_run_cost), do: run_count * per_run_cost
 
   def screen_label(nil), do: "Not localized"
   def screen_label(:unknown), do: "Unknown"

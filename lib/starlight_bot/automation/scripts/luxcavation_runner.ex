@@ -23,27 +23,65 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
     :charge_enkephalin_tab_lunacy_cost_104
   ]
 
-  def run(team_id, exp_count, thread_count, collect_xp?, collect_enkephalin?, enkephalin_convert_count, ctx \\ Ctx.new())
+  def run(
+        team_id,
+        exp_consecutive,
+        exp_repeats,
+        thread_consecutive,
+        thread_repeats,
+        collect_xp?,
+        collect_enkephalin?,
+        enkephalin_convert_count,
+        ctx \\ Ctx.new()
+      )
 
-  def run(team_id, exp_count, thread_count, collect_xp?, collect_enkephalin?, enkephalin_convert_count, ctx)
-      when is_integer(exp_count) and exp_count >= 0 and is_integer(thread_count) and thread_count >= 0 and
+  def run(
+        team_id,
+        exp_consecutive,
+        exp_repeats,
+        thread_consecutive,
+        thread_repeats,
+        collect_xp?,
+        collect_enkephalin?,
+        enkephalin_convert_count,
+        ctx
+      )
+      when is_integer(exp_consecutive) and exp_consecutive in 0..@max_consecutive and
+             is_integer(exp_repeats) and exp_repeats >= 0 and
+             is_integer(thread_consecutive) and thread_consecutive in 0..@max_consecutive and
+             is_integer(thread_repeats) and thread_repeats >= 0 and
              is_boolean(collect_xp?) and is_boolean(collect_enkephalin?) and
              is_integer(enkephalin_convert_count) and enkephalin_convert_count in 0..4 do
     with {:ok, start} <- localize(ctx) do
       {:ok, start}
-      |> run_kind(:exp, exp_count, team_id, ctx)
-      |> run_kind(:thread, thread_count, team_id, ctx)
+      |> maybe_charge_enkephalin(collect_enkephalin?, enkephalin_convert_count, ctx)
+      |> run_kind(:exp, exp_consecutive, exp_repeats, team_id, ctx)
+      |> run_kind(:thread, thread_consecutive, thread_repeats, team_id, ctx)
       |> case do
         {:ok, screen} -> Engine.goto(screen, :home, ctx)
         error -> error
       end
       |> maybe_collect_xp(collect_xp?, ctx)
-      |> maybe_charge_enkephalin(collect_enkephalin?, enkephalin_convert_count, ctx)
     end
   end
 
-  def run(_team_id, _exp_count, _thread_count, _collect_xp?, _collect_enkephalin?, _enkephalin_convert_count, ctx) do
-    Ctx.log(ctx, :error, "exp_count/thread_count must be non-negative integers, enkephalin_convert_count must be 0-4")
+  def run(
+        _team_id,
+        _exp_consecutive,
+        _exp_repeats,
+        _thread_consecutive,
+        _thread_repeats,
+        _collect_xp?,
+        _collect_enkephalin?,
+        _enkephalin_convert_count,
+        ctx
+      ) do
+    Ctx.log(
+      ctx,
+      :error,
+      "exp/thread consecutive counts must be 0-#{@max_consecutive}, repeat counts must be non-negative, enkephalin_convert_count must be 0-4"
+    )
+
     {:error, :invalid_counts}
   end
 
@@ -60,7 +98,6 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   end
 
   defp maybe_charge_enkephalin(result, false, _count, _ctx), do: result
-  defp maybe_charge_enkephalin({:error, _} = error, true, _count, _ctx), do: error
 
   defp maybe_charge_enkephalin({:ok, home}, true, count, ctx) do
     Ctx.log(ctx, :info, "charging enkephalin (up to #{count} lunacy spend(s))")
@@ -168,14 +205,14 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
     end
   end
 
-  defp run_kind({:ok, screen}, _kind, 0, _team_id, _ctx), do: {:ok, screen}
+  defp run_kind({:ok, screen}, _kind, _consecutive, 0, _team_id, _ctx), do: {:ok, screen}
 
-  defp run_kind({:ok, screen}, kind, count, team_id, ctx) do
-    Ctx.log(ctx, :info, "starting #{count} #{kind} run(s)")
-    run_batches(screen, kind, batches(count), team_id, ctx)
+  defp run_kind({:ok, screen}, kind, consecutive, repeats, team_id, ctx) do
+    Ctx.log(ctx, :info, "starting #{repeats} x #{consecutive} consecutive #{kind} run(s) (#{consecutive * repeats} total)")
+    run_batches(screen, kind, batches(consecutive, repeats), team_id, ctx)
   end
 
-  defp run_kind(error, _kind, _count, _team_id, _ctx), do: error
+  defp run_kind(error, _kind, _consecutive, _repeats, _team_id, _ctx), do: error
 
   defp run_batches(screen, _kind, [], _team_id, _ctx), do: {:ok, screen}
 
@@ -287,12 +324,8 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   defp lux_screen(:exp), do: :lux_exp
   defp lux_screen(:thread), do: :lux_thread
 
-  def batches(0), do: []
-
-  def batches(n) when n > 0 do
-    batch = min(n, @max_consecutive)
-    [batch | batches(n - batch)]
-  end
+  def batches(_consecutive, 0), do: []
+  def batches(consecutive, repeats) when repeats > 0, do: List.duplicate(consecutive, repeats)
 
   defp set_consecutive(:exp, count, ctx) do
     set_consecutive_steps(:lux_exp_consecutive_battle, :lux_exp_consecutive_minus, :lux_exp_consecutive_battle_close, count)

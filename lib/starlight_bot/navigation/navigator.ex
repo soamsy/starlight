@@ -31,12 +31,22 @@ defmodule StarlightBot.Navigation.Navigator do
 
   def run_script(script_name), do: GenServer.cast(__MODULE__, {:run_script, script_name})
 
-  def run_luxcavation(team_id, exp_count, thread_count, collect_xp?, collect_enkephalin?, enkephalin_convert_count),
-    do:
-      GenServer.cast(
-        __MODULE__,
-        {:run_luxcavation, team_id, exp_count, thread_count, collect_xp?, collect_enkephalin?, enkephalin_convert_count}
-      )
+  def run_luxcavation(
+        team_id,
+        exp_consecutive,
+        exp_repeats,
+        thread_consecutive,
+        thread_repeats,
+        collect_xp?,
+        collect_enkephalin?,
+        enkephalin_convert_count
+      ),
+      do:
+        GenServer.cast(
+          __MODULE__,
+          {:run_luxcavation, team_id, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
+           collect_enkephalin?, enkephalin_convert_count}
+        )
 
   def run_mirror_dungeon(team_id, run_count, config),
     do: GenServer.cast(__MODULE__, {:run_mirror_dungeon, team_id, run_count, config})
@@ -219,7 +229,8 @@ defmodule StarlightBot.Navigation.Navigator do
 
   @impl true
   def handle_cast(
-        {:run_luxcavation, team_id, exp_count, thread_count, collect_xp?, collect_enkephalin?, enkephalin_convert_count},
+        {:run_luxcavation, team_id, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
+         collect_enkephalin?, enkephalin_convert_count},
         state
       ) do
     state = cancel_running(state)
@@ -228,8 +239,8 @@ defmodule StarlightBot.Navigation.Navigator do
       add_log(
         state,
         :info,
-        "Running luxcavation: team=#{team_id} exp=#{exp_count} thread=#{thread_count} collect_xp=#{collect_xp?} " <>
-          "collect_enkephalin=#{collect_enkephalin?} enkephalin_convert_count=#{enkephalin_convert_count}"
+        "Running luxcavation: team=#{team_id} exp=#{exp_repeats}x#{exp_consecutive} thread=#{thread_repeats}x#{thread_consecutive} " <>
+          "collect_xp=#{collect_xp?} collect_enkephalin=#{collect_enkephalin?} enkephalin_convert_count=#{enkephalin_convert_count}"
       )
 
     me = self()
@@ -245,8 +256,10 @@ defmodule StarlightBot.Navigation.Navigator do
         result =
           StarlightBot.Automation.Scripts.LuxcavationRunner.run(
             team_id,
-            exp_count,
-            thread_count,
+            exp_consecutive,
+            exp_repeats,
+            thread_consecutive,
+            thread_repeats,
             collect_xp?,
             collect_enkephalin?,
             enkephalin_convert_count,

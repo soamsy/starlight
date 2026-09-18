@@ -53,26 +53,52 @@
           </select>
         </label>
 
-        <label class="flex flex-col gap-1">
-          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lux Exp runs</span>
-          <input type="number" name="exp_count" min="0" value={@exp_count} class="input input-sm input-bordered" />
-        </label>
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lux Exp</span>
+          <div class="flex items-end gap-2">
+            <label class="flex flex-col gap-1 flex-1">
+              <span class="text-xs text-base-content/40">Consecutive battles</span>
+              <input type="number" name="exp_consecutive" min="0" max={max_consecutive()} value={@exp_consecutive}
+                     class="input input-sm input-bordered" />
+            </label>
+            <label class="flex flex-col gap-1 flex-1">
+              <span class="text-xs text-base-content/40">Repeats</span>
+              <input type="number" name="exp_repeats" min="0" value={@exp_repeats} class="input input-sm input-bordered" />
+            </label>
+          </div>
+          <span class="text-xs text-base-content/50">
+            <%= @exp_consecutive %> x <%= @exp_repeats %> = <%= total_runs(@exp_consecutive, @exp_repeats) %> run(s)
+          </span>
+        </div>
 
-        <label class="flex flex-col gap-1">
-          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lux Thread runs</span>
-          <input type="number" name="thread_count" min="0" value={@thread_count} class="input input-sm input-bordered" />
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lux Thread</span>
+          <div class="flex items-end gap-2">
+            <label class="flex flex-col gap-1 flex-1">
+              <span class="text-xs text-base-content/40">Consecutive battles</span>
+              <input type="number" name="thread_consecutive" min="0" max={max_consecutive()} value={@thread_consecutive}
+                     class="input input-sm input-bordered" />
+            </label>
+            <label class="flex flex-col gap-1 flex-1">
+              <span class="text-xs text-base-content/40">Repeats</span>
+              <input type="number" name="thread_repeats" min="0" value={@thread_repeats} class="input input-sm input-bordered" />
+            </label>
+          </div>
+          <span class="text-xs text-base-content/50">
+            <%= @thread_consecutive %> x <%= @thread_repeats %> = <%= total_runs(@thread_consecutive, @thread_repeats) %> run(s)
+          </span>
+        </div>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="collect_enkephalin" value="true" checked={@collect_enkephalin}
+                 class="checkbox checkbox-sm" />
+          <span class="text-sm">Collect enkephalin modules at start</span>
         </label>
 
         <label class="flex items-center gap-2">
           <input type="checkbox" name="collect_xp" value="true" checked={@collect_xp}
                  class="checkbox checkbox-sm" />
           <span class="text-sm">Collect battle pass xp at end</span>
-        </label>
-
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="collect_enkephalin" value="true" checked={@collect_enkephalin}
-                 class="checkbox checkbox-sm" />
-          <span class="text-sm">Collect enkephalin modules at end</span>
         </label>
 
         <%= if @collect_enkephalin do %>
@@ -105,6 +131,26 @@
           </button>
         <% end %>
       </form>
+
+      <%!-- Enkephalin usage summary --%>
+      <div class="bg-base-200 rounded-xl p-3 text-xs flex flex-col gap-1 shrink-0">
+        <div class="font-semibold text-base-content/50 uppercase tracking-wide">Enkephalin usage</div>
+        <div class="flex justify-between">
+          <span>Exp (<%= total_runs(@exp_consecutive, @exp_repeats) %> runs x <%= exp_enkephalin_cost() %>)</span>
+          <span class="font-mono"><%= enkephalin_modules(total_runs(@exp_consecutive, @exp_repeats), exp_enkephalin_cost()) %></span>
+        </div>
+        <div class="flex justify-between">
+          <span>Thread (<%= total_runs(@thread_consecutive, @thread_repeats) %> runs x <%= thread_enkephalin_cost() %>)</span>
+          <span class="font-mono"><%= enkephalin_modules(total_runs(@thread_consecutive, @thread_repeats), thread_enkephalin_cost()) %></span>
+        </div>
+        <div class="flex justify-between border-t border-base-content/10 pt-1 font-semibold">
+          <span>Total modules</span>
+          <span class="font-mono">
+            <%= enkephalin_modules(total_runs(@exp_consecutive, @exp_repeats), exp_enkephalin_cost()) +
+                enkephalin_modules(total_runs(@thread_consecutive, @thread_repeats), thread_enkephalin_cost()) %>
+          </span>
+        </div>
+      </div>
 
       <%!-- Countdown overlay --%>
       <%= if @countdown do %>
