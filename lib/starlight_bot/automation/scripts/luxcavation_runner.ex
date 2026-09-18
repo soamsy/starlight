@@ -6,12 +6,29 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   alias StarlightBot.Ctx
 
   @max_consecutive 10
+  @max_navigation_retries 5
 
-  def run(team_id, exp_count, thread_count, collect_xp?, ctx \\ Ctx.new())
+  @enkephalin_spend_state_hooks [
+    :charge_enkephalin_tab_lunacy_0_10,
+    :charge_enkephalin_tab_lunacy_1_10,
+    :charge_enkephalin_tab_lunacy_2_10,
+    :charge_enkephalin_tab_lunacy_3_10,
+    :charge_enkephalin_tab_lunacy_4_10
+  ]
 
-  def run(team_id, exp_count, thread_count, collect_xp?, ctx)
+  @enkephalin_spend_cost_hooks [
+    :charge_enkephalin_tab_lunacy_cost_26,
+    :charge_enkephalin_tab_lunacy_cost_52,
+    :charge_enkephalin_tab_lunacy_cost_78,
+    :charge_enkephalin_tab_lunacy_cost_104
+  ]
+
+  def run(team_id, exp_count, thread_count, collect_xp?, collect_enkephalin?, enkephalin_convert_count, ctx \\ Ctx.new())
+
+  def run(team_id, exp_count, thread_count, collect_xp?, collect_enkephalin?, enkephalin_convert_count, ctx)
       when is_integer(exp_count) and exp_count >= 0 and is_integer(thread_count) and thread_count >= 0 and
-             is_boolean(collect_xp?) do
+             is_boolean(collect_xp?) and is_boolean(collect_enkephalin?) and
+             is_integer(enkephalin_convert_count) and enkephalin_convert_count in 0..4 do
     with {:ok, start} <- localize(ctx) do
       {:ok, start}
       |> run_kind(:exp, exp_count, team_id, ctx)
@@ -21,11 +38,12 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
         error -> error
       end
       |> maybe_collect_xp(collect_xp?, ctx)
+      |> maybe_charge_enkephalin(collect_enkephalin?, enkephalin_convert_count, ctx)
     end
   end
 
-  def run(_team_id, _exp_count, _thread_count, _collect_xp?, ctx) do
-    Ctx.log(ctx, :error, "exp_count/thread_count must be non-negative integers")
+  def run(_team_id, _exp_count, _thread_count, _collect_xp?, _collect_enkephalin?, _enkephalin_convert_count, ctx) do
+    Ctx.log(ctx, :error, "exp_count/thread_count must be non-negative integers, enkephalin_convert_count must be 0-4")
     {:error, :invalid_counts}
   end
 
@@ -39,6 +57,101 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
          :ok <- SeasonPassCollector.collect(ctx) do
       Engine.goto(:season_pass_missions_tab, :home, ctx)
     end
+  end
+
+  defp maybe_charge_enkephalin(result, false, _count, _ctx), do: result
+  defp maybe_charge_enkephalin({:error, _} = error, true, _count, _ctx), do: error
+
+  defp maybe_charge_enkephalin({:ok, home}, true, count, ctx) do
+    Ctx.log(ctx, :info, "charging enkephalin (up to #{count} lunacy spend(s))")
+
+    with {:ok, lunacy_tab} <- Engine.goto(home, :charge_enkephalin_lunacy_tab, ctx) do
+      spend_lunacy(count, ctx)
+
+      with {:ok, modules_tab} <- Engine.goto(lunacy_tab, :charge_enkephalin_modules_tab, ctx) do
+        make_enkephalin_modules(ctx)
+        Engine.goto(modules_tab, :home, ctx)
+      end
+    end
+  end
+
+  defp spend_lunacy(0, ctx) do
+    Ctx.log(ctx, :info, "lunacy spend not requested — skipping")
+  end
+
+  defp spend_lunacy(target, ctx) do
+    case detect_enkephalin_spent_count(ctx) do
+      {:ok, spent} when spent >= target ->
+        Ctx.log(ctx, :info, "already spent #{spent}/#{target} today — nothing to do")
+
+      {:ok, spent} ->
+        Ctx.log(ctx, :info, "spent #{spent} so far, spending up to #{target}")
+        run_enkephalin_spend_steps(spent, target, ctx)
+
+      :unknown ->
+        Ctx.log(ctx, :info, "could not determine today's lunacy spend count — skipping")
+    end
+  end
+
+  defp detect_enkephalin_spent_count(ctx) do
+    matched_indices =
+      Engine.check_all(@enkephalin_spend_state_hooks)
+      |> Enum.filter(fn {_hook, matched?} -> matched? end)
+      |> Enum.map(fn {hook, _matched?} -> Enum.find_index(@enkephalin_spend_state_hooks, &(&1 == hook)) end)
+
+    case matched_indices do
+      [spent] ->
+        {:ok, spent}
+
+      other ->
+        Ctx.log(ctx, :info, "ambiguous lunacy spend state: #{length(other)} state(s) matched")
+        :unknown
+    end
+  end
+
+  defp run_enkephalin_spend_steps(spent, target, _ctx) when spent >= target, do: :ok
+
+  defp run_enkephalin_spend_steps(spent, target, ctx) do
+    cost_hook = Enum.at(@enkephalin_spend_cost_hooks, spent)
+
+    case Engine.act(enkephalin_spend_steps(cost_hook), ctx) do
+      {:ok, _} ->
+        Ctx.log(ctx, :ok, "spent lunacy (#{spent + 1}/#{target})")
+        run_enkephalin_spend_steps(spent + 1, target, ctx)
+
+      {:error, reason} ->
+        Ctx.log(ctx, :error, "spend lunacy failed at step #{spent + 1}: #{inspect(reason)} — moving on")
+    end
+  end
+
+  defp enkephalin_spend_steps(cost_hook) do
+    [
+      retry_until(
+        not_hook(cost_hook),
+        [click(:charge_enkephalin_popup_confirm)],
+        every: 1_000,
+        tries: 2
+      ),
+      sleep(1000)
+    ]
+  end
+
+  defp make_enkephalin_modules(ctx) do
+    Ctx.log(ctx, :info, "making as many enkephalin modules as possible")
+
+    case Engine.act(make_enkephalin_modules_steps(), ctx) do
+      {:ok, _} -> Ctx.log(ctx, :ok, "modules made")
+      {:error, reason} -> Ctx.log(ctx, :error, "make modules failed: #{inspect(reason)}")
+    end
+  end
+
+  defp make_enkephalin_modules_steps do
+    [
+      click(:charge_enkephalin_tab_modules_all),
+      sleep(300),
+      click(:charge_enkephalin_popup_confirm),
+      sleep(1000)
+    ]
   end
 
   defp localize(ctx) do
