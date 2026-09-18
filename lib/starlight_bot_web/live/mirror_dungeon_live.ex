@@ -49,6 +49,15 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   end
 
   @impl true
+  def handle_event("restore_form", params, socket) do
+    {:noreply,
+     socket
+     |> assign(:team_id, restore_team_id(params, socket.assigns.team_id))
+     |> assign(:run_count, Map.get(params, "run_count", socket.assigns.run_count))
+     |> assign(:weekly_bonus, Map.get(params, "weekly_bonus") == "true")}
+  end
+
+  @impl true
   def handle_event("resume", _, socket) do
     {:noreply, start_countdown(socket, :resume_mirror_dungeon)}
   end
@@ -106,6 +115,13 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     case Integer.parse(str) do
       {id, ""} -> id
       _ -> fallback
+    end
+  end
+
+  defp restore_team_id(params, fallback) do
+    case Map.get(params, "team_id") do
+      nil -> fallback
+      str -> parse_team_id(str, fallback)
     end
   end
 

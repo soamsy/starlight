@@ -101,6 +101,20 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   end
 
   @impl true
+  def handle_event("restore_form", params, socket) do
+    {:noreply,
+     socket
+     |> assign(:team_id, restore_team_id(params, socket.assigns.team_id))
+     |> assign(:exp_consecutive, Map.get(params, "exp_consecutive", socket.assigns.exp_consecutive))
+     |> assign(:exp_repeats, Map.get(params, "exp_repeats", socket.assigns.exp_repeats))
+     |> assign(:thread_consecutive, Map.get(params, "thread_consecutive", socket.assigns.thread_consecutive))
+     |> assign(:thread_repeats, Map.get(params, "thread_repeats", socket.assigns.thread_repeats))
+     |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
+     |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
+     |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))}
+  end
+
+  @impl true
   def handle_event("resume", _, socket) do
     {:noreply, start_countdown(socket, :resume_luxcavation)}
   end
@@ -149,6 +163,13 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
     case Integer.parse(str) do
       {id, ""} -> id
       _ -> fallback
+    end
+  end
+
+  defp restore_team_id(params, fallback) do
+    case Map.get(params, "team_id") do
+      nil -> fallback
+      str -> parse_team_id(str, fallback)
     end
   end
 

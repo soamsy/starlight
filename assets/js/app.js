@@ -533,13 +533,34 @@ const PriorityClipboard = {
   }
 }
 
+const LocalStorageForm = {
+  mounted() {
+    this.key = this.el.dataset.storageKey
+    if (!this.key) return
+
+    const saved = localStorage.getItem(this.key)
+    if (saved) {
+      try {
+        this.pushEvent("restore_form", JSON.parse(saved))
+      } catch (e) {}
+    }
+
+    this.persist = () => {
+      const data = new FormData(this.el)
+      localStorage.setItem(this.key, JSON.stringify(Object.fromEntries(data.entries())))
+    }
+    this.el.addEventListener("input", this.persist)
+    this.el.addEventListener("change", this.persist)
+  }
+}
+
 // --- LiveSocket setup ---
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm }
 })
 
 liveSocket.connect()
