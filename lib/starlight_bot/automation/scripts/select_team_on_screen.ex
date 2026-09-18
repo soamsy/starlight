@@ -166,7 +166,8 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   defp confirm_either(hook_a, hook_b) do
     [
       await_any([hook_a, hook_b]),
-      branch([{hook_a, [click(hook_a)]}, {hook_b, [click(hook_b)]}])
+      sleep(300),
+      key(:enter)
     ]
   end
 
