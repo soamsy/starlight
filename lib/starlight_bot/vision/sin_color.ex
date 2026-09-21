@@ -7,7 +7,7 @@ defmodule StarlightBot.Vision.SinColor do
     wrath: {0, 6, 70, 255, 60, 255},
     gloom: {96, 6, 100, 255, 63, 245},
     sloth: {23, 5, 145, 255, 63, 245},
-    lust: {12, 6, 100, 255, 63, 245},
+    lust: {12, 5, 140, 255, 63, 245},
     pride: {110, 6, 100, 255, 63, 200},
     gluttony: {41, 6, 100, 255, 63, 252},
     envy: {140, 6, 100, 255, 63, 245}
@@ -32,13 +32,13 @@ defmodule StarlightBot.Vision.SinColor do
         }
 
   @tier_thresholds [
-    wrath: {0.48, 0.65},
+    wrath: {0.48, 0.60},
     gloom: {0.38, 0.59},
-    sloth: {0.40, 0.68},
-    lust: {0.45, 0.68},
-    pride: {0.41, 0.56},
-    gluttony: {0.35, 0.51},
-    envy: {0.40, 0.60}
+    sloth: {0.43, 0.65},
+    lust: {0.45, 0.61},
+    pride: {0.39, 0.56},
+    gluttony: {0.38, 0.51},
+    envy: {0.40, 0.59}
   ]
 
   @corner_cut_pct [
@@ -57,7 +57,8 @@ defmodule StarlightBot.Vision.SinColor do
   @min_ring_area 8
 
   @bg_exclusion_hue_tol 20
-  @bg_exclusion_sv_tol 30
+  @bg_exclusion_s_tol 30
+  @bg_exclusion_v_tol 15
   @bg_hue_affect_range 14
   @bg_contrast_margin 30
   @bg_min_value_floor 100
@@ -191,9 +192,15 @@ defmodule StarlightBot.Vision.SinColor do
     strip = Evision.Mat.roi(mat, {x, y, w, h})
     {mean, _stddev} = Evision.meanStdDev(strip)
     {b, g, r} = to_bgr(mean)
-    {hue, saturation, value} = hsv_of_mean(mean)
-    %{bgr: {b, g, r}, hue: hue, saturation: saturation, value: value}
+
+    hsv_strip = Evision.cvtColor(strip, @color_bgr2hsv)
+    {hsv_mean, _stddev} = Evision.meanStdDev(hsv_strip)
+    [hue, saturation, value] = hsv_mean |> Evision.Mat.to_nx() |> Nx.to_flat_list()
+
+    %{bgr: {b, g, r}, hue: round(hue) |> clamp(0, 179), saturation: round(saturation) |> clamp(0, 255), value: round(value) |> clamp(0, 255)}
   end
+
+  defp clamp(v, lo, hi), do: v |> max(lo) |> min(hi)
 
   @spec colors() :: keyword({0..179, non_neg_integer, 0..255, 0..255, 0..255, 0..255})
   def colors, do: @colors
@@ -229,10 +236,10 @@ defmodule StarlightBot.Vision.SinColor do
   defp background_exclusion_mask(_hsv, nil, _bg_saturation, _bg_value), do: nil
 
   defp background_exclusion_mask(hsv, bg_hue, bg_saturation, bg_value) do
-    s_lo = max(bg_saturation - @bg_exclusion_sv_tol, 0)
-    s_hi = min(bg_saturation + @bg_exclusion_sv_tol, 255)
-    v_lo = max(bg_value - @bg_exclusion_sv_tol, 0)
-    v_hi = min(bg_value + @bg_exclusion_sv_tol, 255)
+    s_lo = max(bg_saturation - @bg_exclusion_s_tol, 0)
+    s_hi = min(bg_saturation + @bg_exclusion_s_tol, 255)
+    v_lo = max(bg_value - @bg_exclusion_v_tol, 0)
+    v_hi = min(bg_value + @bg_exclusion_v_tol, 255)
     Matcher.hue_range_mask(hsv, bg_hue, @bg_exclusion_hue_tol, s_lo, s_hi, v_lo, v_hi)
   end
 

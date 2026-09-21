@@ -4,7 +4,7 @@ defmodule StarlightBot.Vision.SkillTray do
   @screen_w 1920
   @hp_hook :battle_hp_finder
 
-  @tray_left_offset 105
+  @tray_left_offset 102
   @focused_tray_left_offset 73
   @est_bin_width 121
 
@@ -16,7 +16,7 @@ defmodule StarlightBot.Vision.SkillTray do
   @bottom_row_h 40
 
   @top_row_inset_def [15.5, 7.63, 18]
-  @bottom_row_inset_def [24, 0.31, 0]
+  @bottom_row_inset_def [24, 0.31, 5]
 
   @top_cell_inset_pct 0.14
   @bottom_cell_inset_pct 0.15
@@ -27,8 +27,8 @@ defmodule StarlightBot.Vision.SkillTray do
   @top_hue_inset_x_pct 0.1
   @bottom_hue_inset_x_pct 0.07
 
-  @bg_strip_gap_above_top_row 60
-  @bg_strip_h 20
+  @bg_strip_top_margin 10
+  @bg_strip_w 20
 
   @chain_top_y_offset 100
   @chain_bottom_y_offset 200
@@ -101,7 +101,21 @@ defmodule StarlightBot.Vision.SkillTray do
     {tray_start_x, tray_end_x, length, skill_num}
   end
 
-  @gear_x_correction %{12 => -5, 11 => -4, 10 => -3, 9 => -1}
+  @gear_x_correction %{
+    12 => -2,
+    11 => -2,
+    10 => -2,
+    9 => -2,
+    8 => -2,
+    7 => -2,
+    6 => -2,
+    5 => -2,
+    4 => 0,
+    3 => 0,
+    2 => 0,
+    1 => 0,
+    0 => 0,
+  }
 
   @spec geometry(integer, integer) :: t()
   def geometry(gear_start_x, tray_left_offset \\ @tray_left_offset) when is_integer(gear_start_x) do
@@ -109,22 +123,22 @@ defmodule StarlightBot.Vision.SkillTray do
     gear_start_x = gear_start_x - Map.get(@gear_x_correction, skill_num_guess, 0)
     {tray_start_x, tray_end_x, length, skill_num} = get_tray_bounds(gear_start_x, tray_left_offset)
     top_row_y = @top_row_y + case skill_num  do
-      6 -> -3
-      5 -> -3
-      4 -> -4
-      3 -> -4
-      2 -> -6
-      1 -> -6
+      6 -> -1
+      5 -> -1
+      4 -> -1
+      3 -> -1
+      2 -> -1
+      1 -> -1
       _ -> -1
     end
 
     top_row_h = @top_row_h + case skill_num  do
-      6 -> -2
-      5 -> -2
-      4 -> -2
-      3 -> -2
-      2 -> -3
-      1 -> -3
+      6 -> 0
+      5 -> 0
+      4 -> 0
+      3 -> 0
+      2 -> 0
+      1 -> 0
       _ -> 0
     end
 
@@ -184,8 +198,10 @@ defmodule StarlightBot.Vision.SkillTray do
   end
 
   @spec background_region(t()) :: {integer, integer, integer, integer}
-  def background_region(%__MODULE__{tray_start_x: tray_start_x, tray_end_x: tray_end_x}) do
-    {tray_start_x, @top_row_y - @bg_strip_gap_above_top_row, tray_end_x - tray_start_x, @bg_strip_h}
+  def background_region(%__MODULE__{tray_start_x: tray_start_x, top_row: top_row, bottom_row: bottom_row}) do
+    y = top_row.y - @bg_strip_top_margin
+    bottom_y = bottom_row.y + bottom_row.h
+    {round(tray_start_x), y, @bg_strip_w, bottom_y - y}
   end
 
   @spec chain_grid(t()) :: [{float, integer, integer}]

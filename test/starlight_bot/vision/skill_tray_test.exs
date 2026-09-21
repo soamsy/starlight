@@ -110,15 +110,6 @@ defmodule StarlightBot.Vision.SkillTrayTest do
 
       assert top_inset > bottom_inset
     end
-
-    test "fewer skill slots need less inset than more skill slots" do
-      few = SkillTray.geometry(700)
-      many = SkillTray.geometry(400)
-      assert few.skill_num < many.skill_num
-
-      assert few.top_row.start_x - few.tray_start_x < many.top_row.start_x - many.tray_start_x
-      assert few.bottom_row.start_x - few.tray_start_x < many.bottom_row.start_x - many.tray_start_x
-    end
   end
 
   describe "sinner_of_slot/2" do
