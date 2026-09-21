@@ -264,7 +264,13 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   defp kind_table("theme_pack_plan"), do: :theme_pack_plans
 
   defp strategy_data("gift_strategy", params), do: %{version: 1, type: "predefined", affinity: params["affinity"]}
-  defp strategy_data("battle_strategy", _params), do: %{version: 1, type: "win_rate"}
+  defp strategy_data("battle_strategy", params) do
+    %{
+      version: 2,
+      mirror_dungeon: %{type: params["mirror_dungeon_type"] || "chain"},
+      luxcavation: %{type: params["luxcavation_type"] || "chain"}
+    }
+  end
   defp strategy_data("theme_pack_plan", _params), do: %{version: 1, mode_schedule: [], packs: %{}}
 
   defp parse_id(nil), do: nil

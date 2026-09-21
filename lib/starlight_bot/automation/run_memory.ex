@@ -1,4 +1,5 @@
 defmodule StarlightBot.Automation.RunMemory do
+  alias StarlightBot.BattleStrategies.Resolver, as: BattleStrategyResolver
   alias StarlightBot.Ctx
   alias StarlightBot.ThemePackPlans.Resolver
   alias StarlightBot.{Strategies, Teams}
@@ -46,6 +47,21 @@ defmodule StarlightBot.Automation.RunMemory do
   def put_cost(ctx, cost), do: put(ctx, :cost, cost)
 
   def team_affinity(ctx), do: (team(ctx) || %{})[:affinity]
+
+  def context(ctx), do: get(ctx, :context, nil)
+
+  def put_context(ctx, context), do: put(ctx, :context, context)
+
+  def battle_strategy_type(ctx) do
+    with ctx_key when not is_nil(ctx_key) <- context(ctx),
+         %{id: team_id} <- team(ctx),
+         %{battle_strategy_id: id} when is_integer(id) <- Teams.get_team(team_id),
+         %{data: data} when is_map(data) <- Strategies.get(:battle_strategies, id) do
+      BattleStrategyResolver.type_for(data, ctx_key)
+    else
+      _ -> "chain"
+    end
+  end
 
   def mode(ctx), do: mode_for(team(ctx), get(ctx, :floor, 1))
 

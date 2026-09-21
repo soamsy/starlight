@@ -1,6 +1,6 @@
 defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   use StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.Engine
+  alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Automation.Scripts.SelectTeamOnScreen
   alias StarlightBot.Automation.SeasonPassCollector
   alias StarlightBot.Ctx
@@ -52,17 +52,26 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
              is_integer(thread_repeats) and thread_repeats >= 0 and
              is_boolean(collect_xp?) and is_boolean(collect_enkephalin?) and
              is_integer(enkephalin_convert_count) and enkephalin_convert_count in 0..4 do
-    with {:ok, start} <- localize(ctx) do
-      {:ok, start}
-      |> maybe_charge_enkephalin(collect_enkephalin?, enkephalin_convert_count, ctx)
-      |> run_kind(:exp, exp_consecutive, exp_repeats, team_id, ctx)
-      |> run_kind(:thread, thread_consecutive, thread_repeats, team_id, ctx)
-      |> case do
-        {:ok, screen} -> Engine.goto(screen, :home, ctx)
-        error -> error
+    {:ok, run_memory} = RunMemory.start_link()
+    ctx = %{ctx | run_memory: run_memory}
+    RunMemory.put_team(ctx, %{id: team_id})
+    RunMemory.put_context(ctx, :luxcavation)
+
+    result =
+      with {:ok, start} <- localize(ctx) do
+        {:ok, start}
+        |> maybe_charge_enkephalin(collect_enkephalin?, enkephalin_convert_count, ctx)
+        |> run_kind(:exp, exp_consecutive, exp_repeats, team_id, ctx)
+        |> run_kind(:thread, thread_consecutive, thread_repeats, team_id, ctx)
+        |> case do
+          {:ok, screen} -> Engine.goto(screen, :home, ctx)
+          error -> error
+        end
+        |> maybe_collect_xp(collect_xp?, ctx)
       end
-      |> maybe_collect_xp(collect_xp?, ctx)
-    end
+
+    RunMemory.stop(ctx)
+    result
   end
 
   def run(
@@ -100,14 +109,19 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   defp maybe_charge_enkephalin(result, false, _count, _ctx), do: result
 
   defp maybe_charge_enkephalin({:ok, home}, true, count, ctx) do
-    Ctx.log(ctx, :info, "charging enkephalin (up to #{count} lunacy spend(s))")
+    if Engine.in_battle?(home) do
+      Ctx.log(ctx, :info, "already at #{home} — assuming enkephalin was already charged, skipping")
+      {:ok, home}
+    else
+      Ctx.log(ctx, :info, "charging enkephalin (up to #{count} lunacy spend(s))")
 
-    with {:ok, lunacy_tab} <- Engine.goto(home, :charge_enkephalin_lunacy_tab, ctx) do
-      spend_lunacy(count, ctx)
+      with {:ok, lunacy_tab} <- Engine.goto(home, :charge_enkephalin_lunacy_tab, ctx) do
+        spend_lunacy(count, ctx)
 
-      with {:ok, modules_tab} <- Engine.goto(lunacy_tab, :charge_enkephalin_modules_tab, ctx) do
-        make_enkephalin_modules(ctx)
-        Engine.goto(modules_tab, :home, ctx)
+        with {:ok, modules_tab} <- Engine.goto(lunacy_tab, :charge_enkephalin_modules_tab, ctx) do
+          make_enkephalin_modules(ctx)
+          Engine.goto(modules_tab, :home, ctx)
+        end
       end
     end
   end

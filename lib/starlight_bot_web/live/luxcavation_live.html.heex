@@ -17,11 +17,6 @@
       </span>
     <% end %>
 
-    <div class="ml-auto">
-      <%= if @phase != :idle do %>
-        <button phx-click="cancel" class="btn btn-ghost btn-sm btn-error">Cancel</button>
-      <% end %>
-    </div>
   </div>
 
   <%!-- Body --%>
@@ -135,6 +130,10 @@
             class="btn btn-primary btn-sm">
             Run
           </button>
+        <% end %>
+
+        <%= if @phase != :idle do %>
+          <button type="button" phx-click="cancel" class="btn btn-ghost btn-sm btn-error">Cancel</button>
         <% end %>
       </form>
 

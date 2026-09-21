@@ -26,6 +26,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         affinity = resolve_affinity(team)
         config = Map.put(config, :grace_picks, resolve_grace_picks(team))
         RunMemory.put_team(ctx, %{id: team_id, type: team_type, affinity: Atom.to_string(affinity)})
+        RunMemory.put_context(ctx, :mirror_dungeon)
         run_state = %{run_started?: first_screen not in @door_family}
         loop(run_count, run_state, 0, 0, team_id, team_type, affinity, config, ctx)
       end

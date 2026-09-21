@@ -1,4 +1,5 @@
 defmodule StarlightBot.Automation.BattleChain do
+  alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Ctx
   alias StarlightBot.Input.Mouse
   alias StarlightBot.Navigation.{DSL, Runner}
@@ -14,14 +15,21 @@ defmodule StarlightBot.Automation.BattleChain do
 
   @spec select_and_commit(term, Ctx.t()) :: {:ok, term} | {:error, term}
   def select_and_commit(_last_frame, ctx) do
-    with {:ok, frame} <- Capture.grab_frame(),
-         {:ok, gear_rect} <- Matcher.find(frame, @gear_hook),
-         {:ok, tray} <- SkillTray.scan(frame) do
-      drag_chain(frame, tray, gear_rect, ctx)
-    else
-      _ ->
-        Ctx.log(ctx, :info, "battle_chain: skill tray not readable — falling back to p+enter")
+    case RunMemory.battle_strategy_type(ctx) do
+      "win_rate" ->
+        Ctx.log(ctx, :info, "battle_chain: team strategy is win_rate — using p+enter instead of chaining")
         fallback(ctx)
+
+      _ ->
+        with {:ok, frame} <- Capture.grab_frame(),
+             {:ok, gear_rect} <- Matcher.find(frame, @gear_hook),
+             {:ok, tray} <- SkillTray.scan(frame) do
+          drag_chain(frame, tray, gear_rect, ctx)
+        else
+          _ ->
+            Ctx.log(ctx, :info, "battle_chain: skill tray not readable — falling back to p+enter")
+            fallback(ctx)
+        end
     end
   end
 
