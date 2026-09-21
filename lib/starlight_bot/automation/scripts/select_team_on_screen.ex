@@ -7,9 +7,9 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   @front_line_size 7
   @backup_size 5
 
-  @max_scroll_attempts 5
-  @scroll_to_bottom_clicks 30
-  @scroll_up_clicks 8
+  @max_scroll_attempts 8
+  @scroll_to_top_clicks 30
+  @scroll_down_clicks 8
   @scroll_settle_ms 500
 
   def run(team_id, ctx \\ Ctx.new()) when is_integer(team_id) do
@@ -210,11 +210,11 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
         {:default,
          [
            move_to(selector),
-           scroll_down(@scroll_to_bottom_clicks),
+           scroll_up(@scroll_to_top_clicks),
            sleep(@scroll_settle_ms),
            retry_until(
              hook,
-             [move_to(selector), scroll_up(@scroll_up_clicks)],
+             [move_to(selector), scroll_down(@scroll_down_clicks)],
              every: @scroll_settle_ms,
              tries: @max_scroll_attempts
            ),
