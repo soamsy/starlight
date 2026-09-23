@@ -68,7 +68,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
     [
       {:battle_turn, [sleep(100), wait_until(not_hook(:turn_opener)), sleep(50)]},
       {:loading_stage_1, loading() ++ after_loading()},
-      {:loading_stage_2, loading_2() ++ after_loading()},
+      {:loading_stage_2, loading() ++ after_loading()},
       confirm_battle_clause(),
       {:default, [sleep(1_000)]}
     ]
