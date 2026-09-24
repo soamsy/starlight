@@ -63,17 +63,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   @impl true
   def handle_event("save_team", %{"team" => params}, socket) do
-    sel = socket.assigns.selected_ids
-
-    attrs = %{
-      id: socket.assigns.editing_id,
-      name: String.trim(params["name"] || ""),
-      hook: params["hook"],
-      sinner_order: socket.assigns.sinner_order,
-      gift_strategy_id: sel["gift_strategy"],
-      battle_strategy_id: sel["battle_strategy"],
-      theme_pack_plan_id: sel["theme_pack_plan"]
-    }
+    attrs = team_attrs(socket, String.trim(params["name"] || ""), params["hook"])
 
     case Teams.save_team(attrs) do
       {:ok, id} ->
@@ -120,7 +110,12 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   @impl true
   def handle_event("select_strategy", %{"kind" => kind, "id" => id}, socket) do
-    {:noreply, update(socket, :selected_ids, &Map.put(&1, kind, parse_id(id)))}
+    socket =
+      socket
+      |> update(:selected_ids, &Map.put(&1, kind, parse_id(id)))
+      |> persist_selected_strategy()
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -145,6 +140,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
            |> assign(table, Strategies.list(table))
            |> update(:selected_ids, &Map.put(&1, kind, id))
            |> update(:strategy_forms, &Map.put(&1, kind, false))
+           |> persist_selected_strategy()
            |> put_flash(:info, "'#{name}' saved.")}
 
         {:error, reason} ->
@@ -205,6 +201,31 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   def log_kind_class(:error), do: "text-error"
   def log_kind_class(:info), do: "text-base-content/60"
   def log_kind_class(_), do: "text-base-content/40"
+
+  defp team_attrs(socket, name, hook) do
+    sel = socket.assigns.selected_ids
+
+    %{
+      id: socket.assigns.editing_id,
+      name: name,
+      hook: hook,
+      sinner_order: socket.assigns.sinner_order,
+      gift_strategy_id: sel["gift_strategy"],
+      battle_strategy_id: sel["battle_strategy"],
+      theme_pack_plan_id: sel["theme_pack_plan"]
+    }
+  end
+
+  defp persist_selected_strategy(%{assigns: %{editing_id: nil}} = socket), do: socket
+
+  defp persist_selected_strategy(socket) do
+    attrs = team_attrs(socket, socket.assigns.form[:name].value, socket.assigns.form[:hook].value)
+
+    case Teams.save_team(attrs) do
+      {:ok, _id} -> assign(socket, :teams, Teams.list_teams())
+      {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
+    end
+  end
 
   defp load_team(socket, id) do
     case Teams.get_team(id) do
