@@ -28,6 +28,7 @@ defmodule StarlightBotWeb.Router do
       live "/gift-plans", Live.GiftPlanEditorLive
       live "/luxcavation", Live.LuxcavationLive
       live "/mirror-dungeon", Live.MirrorDungeonLive
+      live "/shop-runner", Live.ShopRunnerLive
       live "/rewards", Live.RewardsLive
     end
   end

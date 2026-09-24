@@ -46,7 +46,19 @@ defmodule StarlightBot.Automation.RunMemory do
 
   def put_cost(ctx, cost), do: put(ctx, :cost, cost)
 
-  def team_affinity(ctx), do: (team(ctx) || %{})[:affinity]
+  def shop_plan(ctx), do: get(ctx, :shop_plan, nil)
+
+  def put_shop_plan(ctx, plan), do: put(ctx, :shop_plan, plan)
+
+  def gift_strategy(ctx) do
+    with %{id: team_id} <- team(ctx),
+         %{gift_strategy_id: id} when is_integer(id) <- Teams.get_team(team_id),
+         %{data: data} when is_map(data) <- Strategies.get(:gift_strategies, id) do
+      data
+    else
+      _ -> nil
+    end
+  end
 
   def context(ctx), do: get(ctx, :context, nil)
 

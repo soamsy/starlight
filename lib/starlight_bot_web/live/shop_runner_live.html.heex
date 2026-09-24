@@ -1,0 +1,173 @@
+<div class="flex flex-col h-full gap-2 overflow-hidden">
+
+  <%!-- Header --%>
+  <div class="flex items-center gap-3 shrink-0">
+    <h2 class="text-lg font-semibold">Shop Runner</h2>
+
+    <span class={"#{screen_badge_class(@current_screen)} font-mono"}>
+      <%= screen_label(@current_screen) %>
+    </span>
+
+    <%= if cost = current_cost(@run_memory) do %>
+      <span class="badge badge-ghost font-mono">Cost <%= cost %></span>
+    <% end %>
+
+    <%= if label = phase_label(@phase) do %>
+      <span class="flex items-center gap-1 text-sm text-base-content/60">
+        <span class="loading loading-spinner loading-xs"></span>
+        <%= label %>
+      </span>
+    <% end %>
+
+  </div>
+
+  <%!-- Body --%>
+  <div class="flex gap-2 flex-1 min-h-0 overflow-hidden">
+
+    <%!-- Left: form --%>
+    <div class="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto">
+
+      <%= if @teams == [] do %>
+        <div class="text-xs text-base-content/40 bg-base-200 rounded-xl p-3">
+          No teams with a gift strategy configured yet — set one up on the
+          <.link navigate={~p"/teams"} class="link">Teams</.link> page first.
+        </div>
+      <% end %>
+
+      <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 text-xs text-warning">
+        Dry run reads the sell inventory and shelf but never clicks buy. Full
+        run actually spends Cost — keep the Limbus Company window focused and
+        the shop screen open before starting either.
+      </div>
+
+      <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-1 shrink-0">
+        <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
+          Ego gift inventory (<%= map_size(ego_gifts(@run_memory)) %>)
+        </span>
+        <%= if map_size(ego_gifts(@run_memory)) == 0 do %>
+          <div class="text-xs text-base-content/30">None scanned yet</div>
+        <% else %>
+          <div class="flex flex-wrap gap-1">
+            <%= for {gift_id, gift_name} <- ego_gifts(@run_memory) do %>
+              <span class="badge badge-sm badge-outline" title={gift_id}><%= gift_name %></span>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+
+      <form
+        id="shop-runner-form"
+        phx-change="update_form"
+        phx-hook="LocalStorageForm"
+        data-storage-key="starlight-shop-runner-form"
+        class="flex flex-col gap-3">
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Team</span>
+          <select name="team_id" class="select select-sm select-bordered" disabled={@teams == []}>
+            <%= for team <- @teams do %>
+              <option value={team.id} selected={team.id == @team_id}><%= team.name %></option>
+            <% end %>
+          </select>
+        </label>
+
+        <button
+          type="button"
+          phx-click="dry_run"
+          disabled={@teams == [] or @phase != :idle or @countdown != nil}
+          class="btn btn-outline btn-sm">
+          Dry Run
+        </button>
+
+        <button
+          type="button"
+          phx-click="full_run"
+          disabled={@teams == [] or @phase != :idle or @countdown != nil}
+          class="btn btn-primary btn-sm">
+          Full Run
+        </button>
+
+        <%= if @phase != :idle do %>
+          <button type="button" phx-click="cancel" class="btn btn-ghost btn-sm btn-error">Cancel</button>
+        <% end %>
+      </form>
+
+      <%!-- Countdown overlay --%>
+      <%= if @countdown do %>
+        <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 shrink-0 flex items-center justify-between gap-2">
+          <div>
+            <div class="text-xs text-warning font-semibold">Focus the game window now</div>
+            <div class="font-mono text-sm text-base-content/70"><%= pending_action_label(@pending_action) %></div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-2xl font-bold text-warning"><%= @countdown %></span>
+            <button phx-click="cancel_pending" class="btn btn-ghost btn-xs text-base-content/40">✕</button>
+          </div>
+        </div>
+      <% end %>
+
+    </div>
+
+    <%!-- Right: plan + log --%>
+    <div class="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
+
+      <div class="flex-1 min-h-0 overflow-y-auto bg-base-200 rounded-xl p-3 text-xs flex flex-col gap-3">
+        <% plan = shop_plan(@run_memory) %>
+        <%= if plan do %>
+          <div class="flex gap-3 font-mono text-base-content/70 shrink-0">
+            <span>Budget <%= plan.budget %></span>
+            <span>Spend <%= plan.total_cost %></span>
+            <span>Weight <%= plan.total_weight %></span>
+            <span><%= length(plan.selected) %>/<%= plan.max_purchases %> purchase(s)</span>
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <span class="text-xs font-semibold text-success uppercase tracking-wide">Buying (<%= length(plan.selected) %>)</span>
+            <%= if plan.selected == [] do %>
+              <div class="text-base-content/30">Nothing selected</div>
+            <% else %>
+              <%= for item <- plan.selected do %>
+                <div class="flex justify-between gap-2 font-mono">
+                  <span><%= item.gift_name %></span>
+                  <span class="text-base-content/50">w<%= item.weight %> / c<%= item.cost %></span>
+                </div>
+              <% end %>
+            <% end %>
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Skipping (<%= length(plan.skipped) %>)</span>
+            <%= if plan.skipped == [] do %>
+              <div class="text-base-content/30">Nothing skipped</div>
+            <% else %>
+              <%= for item <- plan.skipped do %>
+                <div class="flex justify-between gap-2 font-mono text-base-content/50">
+                  <span><%= item.gift_name %></span>
+                  <span>w<%= item.weight %> / c<%= item.cost %></span>
+                </div>
+              <% end %>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="text-base-content/30 text-center py-4 select-none">
+            No plan yet — run a dry run or full run.
+          </div>
+        <% end %>
+      </div>
+
+      <div id="shop-runner-log" phx-hook="ScrollToBottom" class="h-40 shrink-0 overflow-y-auto bg-base-200 rounded-xl p-3 font-mono text-xs flex flex-col gap-0.5">
+        <%= if @log == [] do %>
+          <div class="text-base-content/30 text-center py-4 select-none">Log empty</div>
+        <% else %>
+          <%= for entry <- Enum.reverse(@log) do %>
+            <div class={"leading-snug #{log_kind_class(entry.kind)}"}>
+              <%= entry.text %>
+            </div>
+          <% end %>
+        <% end %>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>

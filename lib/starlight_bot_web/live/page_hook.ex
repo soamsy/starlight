@@ -15,7 +15,8 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.GiftPlanEditorLive => :gift_plans,
     StarlightBotWeb.Live.LuxcavationLive => :luxcavation,
     StarlightBotWeb.Live.RewardsLive => :rewards,
-    StarlightBotWeb.Live.MirrorDungeonLive => :mirror_dungeon
+    StarlightBotWeb.Live.MirrorDungeonLive => :mirror_dungeon,
+    StarlightBotWeb.Live.ShopRunnerLive => :shop_runner
   }
 
   def on_mount(:default, _params, _session, socket) do

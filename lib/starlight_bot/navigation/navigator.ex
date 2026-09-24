@@ -1,5 +1,7 @@
 defmodule StarlightBot.Navigation.Navigator do
   use GenServer
+  alias StarlightBot.Automation.RunMemory
+  alias StarlightBot.Automation.Scripts.ShopBuyer
   alias StarlightBot.Ctx
   alias StarlightBot.Navigation.{Catalog, Runner}
 
@@ -53,6 +55,10 @@ defmodule StarlightBot.Navigation.Navigator do
 
   def select_team_on_screen(team_id),
     do: GenServer.cast(__MODULE__, {:select_team_on_screen, team_id})
+
+  def run_shop_dry_run(team_id), do: GenServer.cast(__MODULE__, {:run_shop_dry_run, team_id})
+
+  def run_shop_buyer(team_id), do: GenServer.cast(__MODULE__, {:run_shop_buyer, team_id})
 
   def claim_rewards(config), do: GenServer.cast(__MODULE__, {:claim_rewards, config})
 
@@ -329,6 +335,42 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
+  def handle_cast({:run_shop_dry_run, team_id}, state) do
+    state = cancel_running(state)
+    state = %{state | run_memory: %{}}
+    state = add_log(state, :info, "Shop dry run: team=#{team_id}")
+    me = self()
+
+    pid =
+      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
+        result = run_shop_script(me, team_id, &ShopBuyer.dry_run/1)
+        send(me, {:nav_result, :shop_dry_run, result})
+      end).pid
+
+    state = %{state | phase: :running, goal: nil, task_pid: pid}
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast({:run_shop_buyer, team_id}, state) do
+    state = cancel_running(state)
+    state = %{state | run_memory: %{}}
+    state = add_log(state, :info, "Shop buyer (full run): team=#{team_id}")
+    me = self()
+
+    pid =
+      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
+        result = run_shop_script(me, team_id, &ShopBuyer.run/1)
+        send(me, {:nav_result, :shop_buyer, result})
+      end).pid
+
+    state = %{state | phase: :running, goal: nil, task_pid: pid}
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_cast({:claim_rewards, config}, state) do
     state = cancel_running(state)
     state = add_log(state, :info, "Claiming rewards: #{inspect(config)}")
@@ -436,6 +478,34 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
+  def handle_info({:nav_result, :shop_dry_run, result}, state) do
+    state =
+      case result do
+        {:ok, plan} -> add_log(state, :ok, "Dry run complete: would buy #{length(plan.selected)} item(s)")
+        {:error, reason} -> add_log(state, :error, "Dry run failed: #{inspect(reason)}")
+      end
+      |> Map.put(:phase, :idle)
+      |> Map.put(:task_pid, nil)
+
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info({:nav_result, :shop_buyer, result}, state) do
+    state =
+      case result do
+        {:ok, screen} -> add_log(state, :ok, "Shop buyer finished at #{screen}")
+        {:error, reason} -> add_log(state, :error, "Shop buyer failed: #{inspect(reason)}")
+      end
+      |> Map.put(:phase, :idle)
+      |> Map.put(:task_pid, nil)
+
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_info({:nav_result, :select_team_on_screen, result}, state) do
     state =
       case result do
@@ -528,6 +598,22 @@ defmodule StarlightBot.Navigation.Navigator do
   @impl true
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
     {:noreply, state}
+  end
+
+  defp run_shop_script(me, team_id, fun) do
+    {:ok, run_memory} = RunMemory.start_link()
+
+    ctx =
+      Ctx.new(
+        on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end,
+        on_run_memory_change: fn snapshot -> send(me, {:nav_run_memory, snapshot}) end,
+        run_memory: run_memory
+      )
+
+    RunMemory.put_team(ctx, %{id: team_id})
+    result = fun.(ctx)
+    RunMemory.stop(ctx)
+    result
   end
 
   defp cancel_running(%{task_pid: nil} = state), do: %{state | phase: :idle}
