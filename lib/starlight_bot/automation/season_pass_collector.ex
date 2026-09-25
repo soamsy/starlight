@@ -25,9 +25,9 @@ defmodule StarlightBot.Automation.SeasonPassCollector do
 
   defp follow_alerts(ctx, tries_left) do
     case grab_rects(@alert_hook) do
-      [rect | _] ->
+      [{x, y, w, h} | _] ->
         Ctx.log(ctx, :info, "season_pass_collector: following alert (#{tries_left} left)")
-        click_rect(rect, ctx)
+        click_rect({x-10, y+20, w, h}, ctx)
         Process.sleep(@alert_delay_ms)
         claim_visible_xp(ctx)
         follow_alerts(ctx, tries_left - 1)
