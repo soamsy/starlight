@@ -54,8 +54,10 @@
           <div class="text-xs text-base-content/30">None picked up yet</div>
         <% else %>
           <div class="flex flex-wrap gap-1">
-            <%= for {gift_id, gift_name} <- ego_gifts(@run_memory) do %>
-              <span class="badge badge-sm badge-outline" title={gift_id}><%= gift_name %></span>
+            <%= for {gift_id, gift} <- ego_gifts(@run_memory) do %>
+              <span class="badge badge-sm badge-outline" title={gift_id}>
+                <%= gift.name %><%= if gift.uptie > 0, do: " UT#{gift.uptie}" %>
+              </span>
             <% end %>
           </div>
         <% end %>

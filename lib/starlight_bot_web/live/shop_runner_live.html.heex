@@ -48,8 +48,10 @@
           <div class="text-xs text-base-content/30">None scanned yet</div>
         <% else %>
           <div class="flex flex-wrap gap-1">
-            <%= for {gift_id, gift_name} <- ego_gifts(@run_memory) do %>
-              <span class="badge badge-sm badge-outline" title={gift_id}><%= gift_name %></span>
+            <%= for {gift_id, gift} <- ego_gifts(@run_memory) do %>
+              <span class="badge badge-sm badge-outline" title={gift_id}>
+                <%= gift.name %><%= if gift.uptie > 0, do: " UT#{gift.uptie}" %>
+              </span>
             <% end %>
           </div>
         <% end %>
@@ -110,7 +112,7 @@
     <%!-- Right: plan + log --%>
     <div class="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
 
-      <div class="flex-1 min-h-0 overflow-y-auto bg-base-200 rounded-xl p-3 text-xs flex flex-col gap-3">
+      <div class="flex-[2] min-h-0 overflow-y-auto bg-base-200 rounded-xl p-3 text-xs flex flex-col gap-3">
         <% plan = shop_plan(@run_memory) %>
         <%= if plan do %>
           <div class="flex gap-3 font-mono text-base-content/70 shrink-0">
@@ -154,7 +156,7 @@
         <% end %>
       </div>
 
-      <div id="shop-runner-log" phx-hook="ScrollToBottom" class="h-40 shrink-0 overflow-y-auto bg-base-200 rounded-xl p-3 font-mono text-xs flex flex-col gap-0.5">
+      <div id="shop-runner-log" phx-hook="ScrollToBottom" class="flex-[3] min-h-0 overflow-y-auto bg-base-200 rounded-xl p-3 font-mono text-xs flex flex-col gap-0.5">
         <%= if @log == [] do %>
           <div class="text-base-content/30 text-center py-4 select-none">Log empty</div>
         <% else %>
