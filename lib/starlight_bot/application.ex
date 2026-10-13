@@ -15,6 +15,7 @@ defmodule StarlightBot.Application do
         {Task.Supervisor, name: StarlightBot.TaskSupervisor},
         {StarlightBot.Vision.HookRegistry, []},
         {StarlightBot.Vision.EgoGiftDetector, []},
+        {StarlightBot.Automation.TrayWatch, []},
       ] ++ hardware_children()
 
     opts = [strategy: :one_for_one, name: StarlightBot.Supervisor]

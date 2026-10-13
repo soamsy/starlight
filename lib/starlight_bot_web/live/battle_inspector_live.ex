@@ -1,6 +1,7 @@
 defmodule StarlightBotWeb.Live.BattleInspectorLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.Automation.BattleChain
+  alias StarlightBot.Automation.{BattleChain, TrayWatch}
+  alias StarlightBot.Navigation.Navigator
   alias StarlightBot.Vision.{Capture, HookRegistry, Matcher, SinColor, SkillTray}
 
   @tmp_jpeg "/tmp/_starlight_battle_inspector.jpg"
@@ -15,54 +16,48 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   @tier_boundary_green {34, 197, 94}
   @tier_boundary_neutral "#9ca3af"
 
+  @resume_countdown_ms 2_000
+
   @impl true
   def mount(_params, _session, socket) do
-    {:ok,
-     socket
-     |> assign(:status, :idle)
-     |> assign(:frame_b64, nil)
-     |> assign(:battle_chain?, false)
-     |> assign(:gear_hook, nil)
-     |> assign(:tray, nil)
-     |> assign(:top_sins, nil)
-     |> assign(:bottom_sins, nil)
-     |> assign(:bg_color, nil)
-     |> assign(:bg_strip_b64, nil)
-     |> assign(:scan_error, nil)
-     |> assign(:chain_preview_status, :idle)
-     |> assign(:chain_preview_ready?, false)
-     |> assign(:chain_preview_error, nil)}
+    tray_watch = TrayWatch.state()
+
+    if connected?(socket) do
+      Navigator.subscribe()
+      if tray_watch.enabled?, do: TrayWatch.subscribe()
+    end
+
+    socket =
+      socket
+      |> assign(:nav, Navigator.status())
+      |> assign(:watch_tray?, tray_watch.enabled?)
+      |> assign(:last_watched_at, nil)
+      |> assign(:resume_pending?, false)
+      |> assign(:status, :idle)
+      |> assign(:frame_b64, nil)
+      |> assign(:battle_chain?, false)
+      |> assign(:gear_hook, nil)
+      |> assign(:tray, nil)
+      |> assign(:top_sins, nil)
+      |> assign(:bottom_sins, nil)
+      |> assign(:bg_color, nil)
+      |> assign(:bg_strip_b64, nil)
+      |> assign(:scan_error, nil)
+      |> assign(:chain_preview_status, :idle)
+      |> assign(:chain_preview_ready?, false)
+      |> assign(:chain_preview_error, nil)
+
+    case {connected?(socket), tray_watch.latest} do
+      {true, {frame, at}} -> {:ok, socket |> show_frame(frame) |> assign(:last_watched_at, at)}
+      _ -> {:ok, socket}
+    end
   end
 
   @impl true
   def handle_event("take_screenshot", _, socket) do
     case Capture.grab_frame() do
       {:ok, frame} ->
-        case encode_jpeg(frame.mat) do
-          {:ok, jpeg} ->
-            b64 = Base.encode64(jpeg)
-            scan = scan_battle(frame)
-
-            {:noreply,
-             socket
-             |> assign(:status, :done)
-             |> assign(:frame_b64, b64)
-             |> assign(:battle_chain?, scan.battle_chain?)
-             |> assign(:gear_hook, scan.gear_hook)
-             |> assign(:tray, scan.tray)
-             |> assign(:top_sins, scan.top_sins)
-             |> assign(:bottom_sins, scan.bottom_sins)
-             |> assign(:bg_color, scan.bg_color)
-             |> assign(:bg_strip_b64, scan.bg_strip_b64)
-             |> assign(:scan_error, scan.error)
-             |> push_event("load_battle_frame", %{data: b64, overlays: overlays(scan)})}
-
-          {:error, reason} ->
-            {:noreply,
-             socket
-             |> assign(:status, :error)
-             |> put_flash(:error, "Encode failed: #{inspect(reason)}")}
-        end
+        {:noreply, show_frame(socket, frame)}
 
       {:error, :no_window} ->
         {:noreply,
@@ -79,6 +74,30 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   end
 
   @impl true
+  def handle_event("toggle_watch_tray", _, %{assigns: %{watch_tray?: true}} = socket) do
+    TrayWatch.set_enabled(false)
+    TrayWatch.unsubscribe()
+    {:noreply, socket |> assign(:watch_tray?, false) |> assign(:last_watched_at, nil)}
+  end
+
+  def handle_event("toggle_watch_tray", _, socket) do
+    TrayWatch.set_enabled(true)
+    TrayWatch.subscribe()
+    {:noreply, assign(socket, :watch_tray?, true)}
+  end
+
+  def handle_event("pause_run", _, socket) do
+    Navigator.pause()
+    {:noreply, socket}
+  end
+
+  def handle_event("resume_run", _, %{assigns: %{resume_pending?: true}} = socket), do: {:noreply, socket}
+
+  def handle_event("resume_run", _, socket) do
+    Process.send_after(self(), :resume_run, @resume_countdown_ms)
+    {:noreply, assign(socket, :resume_pending?, true)}
+  end
+
   def handle_event("preview_chain_drag", _, %{assigns: %{chain_preview_status: :running}} = socket) do
     {:noreply, socket}
   end
@@ -94,6 +113,24 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   end
 
   @impl true
+  def handle_info({:skill_tray_scanned, frame, at}, %{assigns: %{watch_tray?: true}} = socket) do
+    {:noreply, socket |> show_frame(frame) |> assign(:last_watched_at, at)}
+  end
+
+  def handle_info({:skill_tray_scanned, _frame, _at}, socket), do: {:noreply, socket}
+
+  def handle_info({:nav_state, nav}, socket), do: {:noreply, assign(socket, :nav, nav)}
+
+  def handle_info(:resume_run, socket) do
+    case socket.assigns.nav.run_kind do
+      :mirror_dungeon -> Navigator.resume_mirror_dungeon()
+      :luxcavation -> Navigator.resume_luxcavation()
+      nil -> :ok
+    end
+
+    {:noreply, assign(socket, :resume_pending?, false)}
+  end
+
   def handle_info({:chain_preview_result, {:ok, %{frame: frame, tray: tray, picks: picks, path: path}}}, socket) do
     case encode_jpeg(frame.mat, @tmp_chain_preview_jpeg) do
       {:ok, jpeg} ->
@@ -120,6 +157,35 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
      |> assign(:chain_preview_status, :error)
      |> assign(:chain_preview_error, inspect(reason))}
   end
+
+  defp show_frame(socket, frame) do
+    case encode_jpeg(frame.mat) do
+      {:ok, jpeg} ->
+        b64 = Base.encode64(jpeg)
+        scan = scan_battle(frame)
+
+        socket
+        |> assign(:status, :done)
+        |> assign(:frame_b64, b64)
+        |> assign(:battle_chain?, scan.battle_chain?)
+        |> assign(:gear_hook, scan.gear_hook)
+        |> assign(:tray, scan.tray)
+        |> assign(:top_sins, scan.top_sins)
+        |> assign(:bottom_sins, scan.bottom_sins)
+        |> assign(:bg_color, scan.bg_color)
+        |> assign(:bg_strip_b64, scan.bg_strip_b64)
+        |> assign(:scan_error, scan.error)
+        |> push_event("load_battle_frame", %{data: b64, overlays: overlays(scan)})
+
+      {:error, reason} ->
+        socket
+        |> assign(:status, :error)
+        |> put_flash(:error, "Encode failed: #{inspect(reason)}")
+    end
+  end
+
+  def run_label(:mirror_dungeon), do: "Mirror dungeon"
+  def run_label(:luxcavation), do: "Luxcavation"
 
   defp chain_preview_overlays(tray, picks, path) do
     [

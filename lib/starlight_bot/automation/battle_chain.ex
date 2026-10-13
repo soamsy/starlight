@@ -1,5 +1,5 @@
 defmodule StarlightBot.Automation.BattleChain do
-  alias StarlightBot.Automation.{ChainStreak, RunMemory}
+  alias StarlightBot.Automation.{ChainStreak, RunMemory, TrayWatch}
   alias StarlightBot.Ctx
   alias StarlightBot.Input.Mouse
   alias StarlightBot.Navigation.{DSL, Runner}
@@ -24,6 +24,7 @@ defmodule StarlightBot.Automation.BattleChain do
         with {:ok, frame} <- Capture.grab_frame(),
              {:ok, gear_rect} <- Matcher.find(frame, @gear_hook),
              {:ok, tray} <- SkillTray.scan(frame) do
+          TrayWatch.record(frame)
           drag_chain(frame, tray, gear_rect, ctx, strategy_type)
         else
           _ ->
@@ -140,7 +141,7 @@ defmodule StarlightBot.Automation.BattleChain do
           waypoints_by_streak(tray, Enum.map(top_results, & &1.sin), Enum.map(bottom_results, & &1.sin))
 
         _ ->
-          waypoints(tray, Enum.map(top_results, & &1.tier), Enum.map(bottom_results, & &1.tier))
+          waypoints(tray, Enum.map(top_results, &{&1.tier, &1.tier_margin}), Enum.map(bottom_results, &{&1.tier, &1.tier_margin}))
       end
 
     {picks, top_results, bottom_results}
@@ -168,21 +169,23 @@ defmodule StarlightBot.Automation.BattleChain do
     "  #{String.pad_trailing(label, 6)} #{cells}"
   end
 
-  @spec waypoints(SkillTray.t(), [SinColor.tier()], [SinColor.tier()]) :: [{:top | :bottom, number, number}]
-  def waypoints(%SkillTray{} = tray, top_tiers, bottom_tiers) do
-    top_tiers
-    |> Enum.zip(bottom_tiers)
+  @type scored_tier :: {SinColor.tier(), float}
+
+  @spec waypoints(SkillTray.t(), [scored_tier], [scored_tier]) :: [{:top | :bottom, number, number}]
+  def waypoints(%SkillTray{} = tray, top_skills, bottom_skills) do
+    top_skills
+    |> Enum.zip(bottom_skills)
     |> Enum.zip(SkillTray.chain_grid(tray))
-    |> Enum.map(fn {{top_tier, bottom_tier}, {x, top_y, bottom_y}} ->
-      row_choice = pick_row(top_tier, bottom_tier)
+    |> Enum.map(fn {{top_skill, bottom_skill}, {x, top_y, bottom_y}} ->
+      row_choice = pick_row(top_skill, bottom_skill)
       y = if row_choice == :top, do: top_y, else: bottom_y
       {row_choice, x, y}
     end)
   end
 
-  @spec pick_row(SinColor.tier(), SinColor.tier()) :: :top | :bottom
-  def pick_row(top_tier, bottom_tier) do
-    if tier_rank(top_tier) < tier_rank(bottom_tier), do: :top, else: :bottom
+  @spec pick_row(scored_tier, scored_tier) :: :top | :bottom
+  def pick_row({top_tier, top_margin}, {bottom_tier, bottom_margin}) do
+    if {tier_rank(top_tier), top_margin} < {tier_rank(bottom_tier), bottom_margin}, do: :top, else: :bottom
   end
 
   @spec waypoints_by_streak(SkillTray.t(), [SinColor.sin()], [SinColor.sin()]) :: [{:top | :bottom, number, number}]

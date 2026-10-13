@@ -7,6 +7,35 @@
     <button phx-click="preview_chain_drag" class="btn btn-sm btn-secondary" disabled={@chain_preview_status == :running}>
       🖱️ Preview Chain Drag (2s delay)
     </button>
+    <label class="flex items-center gap-2 cursor-pointer">
+      <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@watch_tray?} phx-click="toggle_watch_tray" />
+      <span class="text-sm">Watch tray</span>
+    </label>
+    <%= if @watch_tray? do %>
+      <span class="text-xs text-base-content/60">
+        <%= if @last_watched_at do %>
+          last scan <%= Calendar.strftime(@last_watched_at, "%H:%M:%S") %> UTC
+        <% else %>
+          waiting for a runner to scan the skill tray…
+        <% end %>
+      </span>
+    <% end %>
+    <%= if @nav.run_kind in [:mirror_dungeon, :luxcavation] do %>
+      <div class="flex items-center gap-2 ml-auto">
+        <span class="text-xs text-base-content/60"><%= run_label(@nav.run_kind) %>: <%= @nav.phase %></span>
+        <%= cond do %>
+          <% @nav.phase == :paused -> %>
+            <button phx-click="resume_run" class="btn btn-sm btn-warning" disabled={@resume_pending?}>
+              <%= if @resume_pending?, do: "Resuming in 2s, alt-tab in…", else: "▶ Resume" %>
+            </button>
+          <% @nav.pause_requested -> %>
+            <button class="btn btn-sm" disabled>Pausing…</button>
+          <% @nav.phase == :running -> %>
+            <button phx-click="pause_run" class="btn btn-sm btn-warning">⏸ Pause</button>
+          <% true -> %>
+        <% end %>
+      </div>
+    <% end %>
     <%= if @frame_b64 do %>
       <span class="text-xs text-base-content/60">
         <%= if @battle_chain? do %>
