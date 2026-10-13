@@ -4,13 +4,13 @@ defmodule StarlightBot.Vision.SinColor do
   @color_bgr2hsv 40
 
   @colors [
-    wrath: {0, 6, 70, 255, 60, 255},
-    gloom: {96, 6, 100, 255, 63, 245},
-    sloth: {23, 5, 145, 255, 63, 245},
-    lust: {12, 5, 140, 255, 63, 245},
-    pride: {110, 6, 100, 255, 63, 200},
-    gluttony: {41, 6, 100, 255, 63, 252},
-    envy: {140, 6, 100, 255, 63, 245}
+    wrath: {0, 6, 70, 255, 105, 255},
+    gloom: {96, 6, 100, 255, 83, 245},
+    sloth: {23, 5, 145, 255, 83, 245},
+    lust: {12, 5, 140, 255, 105, 245},
+    pride: {110, 6, 100, 255, 83, 200},
+    gluttony: {41, 6, 100, 255, 83, 252},
+    envy: {140, 6, 100, 255, 83, 245}
   ]
 
   @type sin :: :wrath | :lust | :sloth | :gluttony | :gloom | :pride | :envy
@@ -24,6 +24,7 @@ defmodule StarlightBot.Vision.SinColor do
           tier_area: non_neg_integer,
           wedge_area: non_neg_integer,
           tier_pct: float,
+          tier_margin: float,
           match_mask: term,
           reference_mask: term,
           wedge_mask: term,
@@ -38,7 +39,7 @@ defmodule StarlightBot.Vision.SinColor do
     lust: {0.45, 0.61},
     pride: {0.39, 0.56},
     gluttony: {0.38, 0.51},
-    envy: {0.40, 0.59}
+    envy: {0.40, 0.60}
   ]
 
   @corner_cut_pct [
@@ -120,6 +121,7 @@ defmodule StarlightBot.Vision.SinColor do
       tier_area: tier_area,
       wedge_area: wedge_area,
       tier_pct: tier_pct,
+      tier_margin: tier_margin(winner, tier, tier_pct),
       match_mask: mask,
       reference_mask: ref_mask,
       wedge_mask: wedge,
@@ -137,11 +139,14 @@ defmodule StarlightBot.Vision.SinColor do
   end
 
   defp hue_window_mask(hsv, hue, tol, s_lo, s_hi, v_lo, v_hi, bg_hue, bg_saturation, bg_value, bg_mask, affect_hue \\ nil) do
-    scale = bg_hue_scale(bg_hue, affect_hue || hue)
+    scale = bg_hue_scale(bg_hue, bg_saturation, bg_value, affect_hue || hue)
 
     if scale > 0.0 do
+      s_floor = min(contrast_saturation_floor(s_lo, bg_saturation, scale), s_hi)
+      v_floor = min(contrast_value_floor(v_lo, bg_value, scale), v_hi)
+
       hsv
-      |> Matcher.hue_range_mask(hue, tol, contrast_saturation_floor(s_lo, bg_saturation, scale), s_hi, contrast_value_floor(v_lo, bg_value, scale), v_hi)
+      |> Matcher.hue_range_mask(hue, tol, s_floor, s_hi, v_floor, v_hi)
       |> exclude_background(bg_mask)
     else
       Matcher.hue_range_mask(hsv, hue, tol, s_lo, s_hi, v_lo, v_hi)
@@ -162,6 +167,16 @@ defmodule StarlightBot.Vision.SinColor do
       pct >= tier3_min_pct -> :skill3
       pct >= tier2_min_pct -> :skill2
       true -> :skill1
+    end
+  end
+
+  defp tier_margin(sin, tier, pct) do
+    {tier2_min_pct, tier3_min_pct} = Keyword.fetch!(@tier_thresholds, sin)
+
+    case tier do
+      :skill3 -> pct - tier3_min_pct
+      :skill2 -> pct - tier2_min_pct
+      :skill1 -> pct
     end
   end
 
@@ -208,10 +223,12 @@ defmodule StarlightBot.Vision.SinColor do
   @spec tier_thresholds() :: keyword({float, float})
   def tier_thresholds, do: @tier_thresholds
 
-  defp bg_hue_scale(nil, _hue), do: 0.0
+  defp bg_hue_scale(nil, _bg_saturation, _bg_value, _hue), do: 0.0
 
-  defp bg_hue_scale(bg_hue, hue) do
-    max(0.0, 1.0 - hue_distance(hue, bg_hue) / @bg_hue_affect_range)
+  defp bg_hue_scale(bg_hue, bg_saturation, bg_value, hue) do
+    hue_proximity = max(0.0, 1.0 - hue_distance(hue, bg_hue) / @bg_hue_affect_range)
+    bg_chroma = bg_saturation / 255 * (bg_value / 255)
+    hue_proximity * bg_chroma
   end
 
   defp hue_distance(a, b) do

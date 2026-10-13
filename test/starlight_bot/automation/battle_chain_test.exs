@@ -5,22 +5,28 @@ defmodule StarlightBot.Automation.BattleChainTest do
   alias StarlightBot.Vision.SkillTray
 
   describe "pick_row/2" do
-    test "prefers skill2 over skill1 and skill3, regardless of position" do
-      assert BattleChain.pick_row(:skill2, :skill1) == :top
-      assert BattleChain.pick_row(:skill1, :skill2) == :bottom
-      assert BattleChain.pick_row(:skill2, :skill3) == :top
-      assert BattleChain.pick_row(:skill3, :skill2) == :bottom
+    test "prefers skill2 over skill1 and skill3, regardless of position or threshold margin" do
+      assert BattleChain.pick_row({:skill2, 0.9}, {:skill1, 0.1}) == :top
+      assert BattleChain.pick_row({:skill1, 0.1}, {:skill2, 0.9}) == :bottom
+      assert BattleChain.pick_row({:skill2, 0.9}, {:skill3, 0.1}) == :top
+      assert BattleChain.pick_row({:skill3, 0.1}, {:skill2, 0.9}) == :bottom
     end
 
     test "prefers skill1 over skill3 when skill2 isn't available" do
-      assert BattleChain.pick_row(:skill1, :skill3) == :top
-      assert BattleChain.pick_row(:skill3, :skill1) == :bottom
+      assert BattleChain.pick_row({:skill1, 0.9}, {:skill3, 0.1}) == :top
+      assert BattleChain.pick_row({:skill3, 0.1}, {:skill1, 0.9}) == :bottom
     end
 
-    test "breaks ties by choosing the bottom option" do
-      assert BattleChain.pick_row(:skill1, :skill1) == :bottom
-      assert BattleChain.pick_row(:skill2, :skill2) == :bottom
-      assert BattleChain.pick_row(:skill3, :skill3) == :bottom
+    test "breaks same-tier ties by choosing the smaller margin over the tier threshold" do
+      assert BattleChain.pick_row({:skill1, 0.30}, {:skill1, 0.40}) == :top
+      assert BattleChain.pick_row({:skill2, 0.55}, {:skill2, 0.50}) == :bottom
+      assert BattleChain.pick_row({:skill3, 0.70}, {:skill3, 0.90}) == :top
+    end
+
+    test "breaks exact ties by choosing the bottom option" do
+      assert BattleChain.pick_row({:skill1, 0.4}, {:skill1, 0.4}) == :bottom
+      assert BattleChain.pick_row({:skill2, 0.5}, {:skill2, 0.5}) == :bottom
+      assert BattleChain.pick_row({:skill3, 0.8}, {:skill3, 0.8}) == :bottom
     end
   end
 
@@ -28,8 +34,8 @@ defmodule StarlightBot.Automation.BattleChainTest do
     test "one waypoint per skill slot, each pinned to its chosen row's chain grid y and the slot's x center" do
       tray = SkillTray.geometry(400)
 
-      top_tiers = List.duplicate(:skill3, tray.skill_num)
-      bottom_tiers = List.duplicate(:skill2, tray.skill_num)
+      top_tiers = List.duplicate({:skill3, 0.8}, tray.skill_num)
+      bottom_tiers = List.duplicate({:skill2, 0.5}, tray.skill_num)
 
       picks = BattleChain.waypoints(tray, top_tiers, bottom_tiers)
 
@@ -44,13 +50,13 @@ defmodule StarlightBot.Automation.BattleChainTest do
 
     test "picks top or bottom independently per slot based on that slot's tiers" do
       tray = SkillTray.geometry(400)
-      top_tiers = [:skill2, :skill3, :skill1, :skill1, :skill3, :skill2, :skill1]
-      bottom_tiers = [:skill1, :skill1, :skill3, :skill1, :skill2, :skill2, :skill3]
+      top_tiers = [{:skill2, 0.5}, {:skill3, 0.8}, {:skill1, 0.3}, {:skill1, 0.3}, {:skill3, 0.8}, {:skill2, 0.4}, {:skill1, 0.3}]
+      bottom_tiers = [{:skill1, 0.3}, {:skill1, 0.3}, {:skill3, 0.8}, {:skill1, 0.2}, {:skill2, 0.5}, {:skill2, 0.5}, {:skill3, 0.8}]
 
       picks = BattleChain.waypoints(tray, top_tiers, bottom_tiers)
       rows = Enum.map(picks, fn {row, _x, _y} -> row end)
 
-      assert rows == [:top, :bottom, :top, :bottom, :bottom, :bottom, :top]
+      assert rows == [:top, :bottom, :top, :bottom, :bottom, :top, :top]
     end
   end
 
