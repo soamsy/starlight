@@ -18,6 +18,7 @@ defmodule StarlightBot.Navigation.Catalog do
     StarlightBot.Navigation.Screens.StartScreen,
     StarlightBot.Navigation.Screens.EgoGiftGet,
     StarlightBot.Navigation.Screens.Enkephalin,
+    StarlightBot.Navigation.Screens.DungeonProgress,
     StarlightBot.Navigation.Screens.TeamSelect,
     StarlightBot.Navigation.Screens.CabinetEgoGifts,
     StarlightBot.Navigation.Screens.GiftSearch,

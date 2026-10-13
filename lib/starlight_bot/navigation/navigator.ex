@@ -14,7 +14,9 @@ defmodule StarlightBot.Navigation.Navigator do
     phase: :idle,          # :idle | :localizing | :running | :paused
     log: [],               # newest first
     run_memory: %{},       # snapshot of the current mirror dungeon run's RunMemory, cleared per run
-    task_pid: nil
+    task_pid: nil,
+    run_kind: nil,
+    pause_flag: nil
   ]
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -63,6 +65,8 @@ defmodule StarlightBot.Navigation.Navigator do
   def claim_rewards(config), do: GenServer.cast(__MODULE__, {:claim_rewards, config})
 
   def cancel, do: GenServer.cast(__MODULE__, :cancel)
+
+  def pause, do: GenServer.cast(__MODULE__, :pause)
 
   def resume_luxcavation, do: GenServer.cast(__MODULE__, :resume_luxcavation)
 
@@ -250,13 +254,15 @@ defmodule StarlightBot.Navigation.Navigator do
       )
 
     me = self()
+    pause_flag = :atomics.new(1, [])
 
     pid =
       Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
         ctx =
           Ctx.new(
             on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end,
-            on_pause: fn -> send(me, :nav_paused) end
+            on_pause: fn -> send(me, :nav_paused) end,
+            pause_requested?: fn -> :atomics.get(pause_flag, 1) == 1 end
           )
 
         result =
@@ -275,7 +281,7 @@ defmodule StarlightBot.Navigation.Navigator do
         send(me, {:nav_result, :run_script, result})
       end).pid
 
-    state = %{state | phase: :running, goal: nil, task_pid: pid}
+    state = %{state | phase: :running, goal: nil, task_pid: pid, run_kind: :luxcavation, pause_flag: pause_flag}
     broadcast(state)
     {:noreply, state}
   end
@@ -286,6 +292,7 @@ defmodule StarlightBot.Navigation.Navigator do
     state = %{state | run_memory: %{}}
     state = add_log(state, :info, "Running mirror dungeon: team=#{team_id} runs=#{run_count} config=#{inspect(config)}")
     me = self()
+    pause_flag = :atomics.new(1, [])
 
     pid =
       Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
@@ -293,6 +300,7 @@ defmodule StarlightBot.Navigation.Navigator do
           Ctx.new(
             on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end,
             on_pause: fn -> send(me, :nav_paused) end,
+            pause_requested?: fn -> :atomics.get(pause_flag, 1) == 1 end,
             on_run_memory_change: fn snapshot -> send(me, {:nav_run_memory, snapshot}) end
           )
 
@@ -300,13 +308,14 @@ defmodule StarlightBot.Navigation.Navigator do
         send(me, {:nav_result, :run_script, result})
       end).pid
 
-    state = %{state | phase: :running, goal: nil, task_pid: pid}
+    state = %{state | phase: :running, goal: nil, task_pid: pid, run_kind: :mirror_dungeon, pause_flag: pause_flag}
     broadcast(state)
     {:noreply, state}
   end
 
   @impl true
   def handle_cast(:resume_mirror_dungeon, %{phase: :paused, task_pid: pid} = state) when is_pid(pid) do
+    clear_pause_request(state)
     send(pid, :resume_mirror_dungeon)
     state = %{state | phase: :running}
     broadcast(state)
@@ -399,6 +408,7 @@ defmodule StarlightBot.Navigation.Navigator do
 
   @impl true
   def handle_cast(:resume_luxcavation, %{phase: :paused, task_pid: pid} = state) when is_pid(pid) do
+    clear_pause_request(state)
     send(pid, :resume_luxcavation)
     state = %{state | phase: :running}
     broadcast(state)
@@ -407,6 +417,17 @@ defmodule StarlightBot.Navigation.Navigator do
 
   @impl true
   def handle_cast(:resume_luxcavation, state), do: {:noreply, state}
+
+  @impl true
+  def handle_cast(:pause, %{phase: :running, pause_flag: pause_flag} = state) when pause_flag != nil do
+    :atomics.put(pause_flag, 1, 1)
+    state = add_log(state, :info, "Pause requested, pausing before the next step")
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast(:pause, state), do: {:noreply, state}
 
   @impl true
   def handle_info({:nav_result, :localize, result}, state) do
@@ -546,6 +567,8 @@ defmodule StarlightBot.Navigation.Navigator do
       end
       |> Map.put(:phase, :idle)
       |> Map.put(:task_pid, nil)
+      |> Map.put(:run_kind, nil)
+      |> Map.put(:pause_flag, nil)
 
     broadcast(state)
 
@@ -589,6 +612,8 @@ defmodule StarlightBot.Navigation.Navigator do
       state
       |> Map.put(:phase, :idle)
       |> Map.put(:task_pid, nil)
+      |> Map.put(:run_kind, nil)
+      |> Map.put(:pause_flag, nil)
       |> add_log(:error, "Task crashed: #{inspect(reason)}")
 
     broadcast(state)
@@ -616,12 +641,18 @@ defmodule StarlightBot.Navigation.Navigator do
     result
   end
 
-  defp cancel_running(%{task_pid: nil} = state), do: %{state | phase: :idle}
+  defp cancel_running(%{task_pid: nil} = state), do: %{state | phase: :idle, run_kind: nil, pause_flag: nil}
 
   defp cancel_running(%{task_pid: pid} = state) do
     Task.Supervisor.terminate_child(StarlightBot.TaskSupervisor, pid)
-    %{state | task_pid: nil, phase: :idle}
+    %{state | task_pid: nil, phase: :idle, run_kind: nil, pause_flag: nil}
   end
+
+  defp clear_pause_request(%{pause_flag: nil}), do: :ok
+  defp clear_pause_request(%{pause_flag: pause_flag}), do: :atomics.put(pause_flag, 1, 0)
+
+  defp pause_requested?(%{pause_flag: nil}), do: false
+  defp pause_requested?(%{pause_flag: pause_flag}), do: :atomics.get(pause_flag, 1) == 1
 
   defp add_log(state, kind, text) do
     entry = %{at: System.monotonic_time(:millisecond), kind: kind, text: text}
@@ -638,7 +669,9 @@ defmodule StarlightBot.Navigation.Navigator do
       goal: state.goal,
       phase: state.phase,
       log: state.log,
-      run_memory: state.run_memory
+      run_memory: state.run_memory,
+      run_kind: state.run_kind,
+      pause_requested: pause_requested?(state)
     }
   end
 end

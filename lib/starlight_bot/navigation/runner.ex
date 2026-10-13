@@ -129,14 +129,20 @@ defmodule StarlightBot.Navigation.Runner do
   defp run_steps([], last_frame, _ctx), do: {:ok, last_frame}
 
   defp run_steps([step | rest], last_frame, ctx) do
-    if Capture.focused?() do
-      case execute_step(step, last_frame, ctx) do
-        {:ok, new_frame} -> run_steps(rest, new_frame, ctx)
-        {:error, _} = err -> err
-      end
-    else
-      Ctx.log(ctx, :error, "game window lost focus (alt-tabbed?) — aborting before #{inspect(step)}")
-      {:error, :window_not_focused}
+    cond do
+      Ctx.pause_requested?(ctx) ->
+        Ctx.log(ctx, :info, "pause requested, stopping before #{inspect(step)}")
+        {:error, :window_not_focused}
+
+      Capture.focused?() ->
+        case execute_step(step, last_frame, ctx) do
+          {:ok, new_frame} -> run_steps(rest, new_frame, ctx)
+          {:error, _} = err -> err
+        end
+
+      true ->
+        Ctx.log(ctx, :error, "game window lost focus (alt-tabbed?) — aborting before #{inspect(step)}")
+        {:error, :window_not_focused}
     end
   end
 
