@@ -31,8 +31,24 @@ defmodule StarlightBot.Automation.RunMemory do
   def ego_gifts(ctx), do: get(ctx, :ego_gifts, %{})
 
   def add_ego_gift(ctx, gift_id, gift_name) do
-    update(ctx, :ego_gifts, %{}, &Map.put(&1, gift_id, gift_name))
+    update(ctx, :ego_gifts, %{}, fn gifts ->
+      Map.update(gifts, gift_id, %{name: gift_name, uptie: 0}, &%{&1 | name: gift_name})
+    end)
   end
+
+  def set_ego_gift_uptie(ctx, gift_id, uptie) do
+    update(ctx, :ego_gifts, %{}, fn gifts ->
+      Map.update(gifts, gift_id, %{name: nil, uptie: uptie}, &%{&1 | uptie: max(&1.uptie, uptie)})
+    end)
+  end
+
+  def remove_ego_gift(ctx, gift_id) do
+    update(ctx, :ego_gifts, %{}, &Map.delete(&1, gift_id))
+  end
+
+  def shop_refreshes_used(ctx), do: get(ctx, :shop_refreshes_used, 0)
+
+  def increment_shop_refreshes(ctx), do: update(ctx, :shop_refreshes_used, 0, &(&1 + 1))
 
   def team(ctx), do: get(ctx, :team, nil)
 
