@@ -58,7 +58,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
     RunMemory.put_context(ctx, :luxcavation)
 
     result =
-      with {:ok, start} <- localize(ctx) do
+      with {:ok, start} <- localize_with_recovery(ctx) do
         {:ok, start}
         |> maybe_charge_enkephalin(collect_enkephalin?, enkephalin_convert_count, ctx)
         |> run_kind(:exp, exp_consecutive, exp_repeats, team_id, ctx)
@@ -220,6 +220,20 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
     end
   end
 
+  defp localize_with_recovery(ctx) do
+    Ctx.log(ctx, :info, "Localizing…")
+
+    case Engine.localize_with_recovery(ctx) do
+      {:ok, screen} ->
+        Ctx.log(ctx, :ok, "on screen: #{screen}")
+        {:ok, screen}
+
+      :unknown ->
+        Ctx.log(ctx, :error, "screen not recognized")
+        {:error, :unknown_screen}
+    end
+  end
+
   defp run_kind({:ok, screen}, _kind, _consecutive, 0, _team_id, _ctx), do: {:ok, screen}
 
   defp run_kind({:ok, screen}, kind, consecutive, repeats, team_id, ctx) do
@@ -325,7 +339,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   end
 
   defp resume_after_pause(ctx) do
-    Ctx.log(ctx, :info, "window lost focus — paused, waiting for Resume")
+    Ctx.log(ctx, :info, "paused (focus lost or pause requested), waiting for Resume")
     Ctx.pause(ctx)
 
     receive do

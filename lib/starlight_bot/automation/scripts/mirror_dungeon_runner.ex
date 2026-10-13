@@ -22,7 +22,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     result =
       with {:ok, team} <- fetch_team(team_id, ctx),
            {:ok, team_type} <- resolve_team_type(team, ctx),
-           {:ok, first_screen} <- localize(ctx) do
+           {:ok, first_screen} <- localize_with_recovery(ctx) do
         affinity = resolve_affinity(team)
         config = Map.put(config, :grace_picks, resolve_grace_picks(team))
         RunMemory.put_team(ctx, %{id: team_id, type: team_type, affinity: Atom.to_string(affinity)})
@@ -94,6 +94,18 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     end
   end
 
+  defp localize_with_recovery(ctx) do
+    case Engine.localize_with_recovery(ctx) do
+      {:ok, screen} ->
+        Ctx.log(ctx, :ok, "on screen: #{screen}")
+        {:ok, screen}
+
+      :unknown ->
+        Ctx.log(ctx, :error, "screen not recognized")
+        {:error, :unknown_screen}
+    end
+  end
+
   defp loop(run_count, _run_state, _iterations, _errors, _team_id, _team_type, _affinity, _config, ctx)
        when run_count <= 0 do
     case localize(ctx) do
@@ -109,7 +121,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   end
 
   defp loop(run_count, run_state, iterations, errors, team_id, team_type, affinity, config, ctx) do
-    case localize(ctx) do
+    localize_fn = if errors > 0, do: &localize_with_recovery/1, else: &localize/1
+
+    case localize_fn.(ctx) do
       {:ok, screen} ->
         screen
         |> dispatch(run_state, team_id, team_type, affinity, config, ctx)
@@ -155,7 +169,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   end
 
   defp resume_after_pause(ctx) do
-    Ctx.log(ctx, :info, "window lost focus — paused, waiting for Resume")
+    Ctx.log(ctx, :info, "paused (focus lost or pause requested), waiting for Resume")
     Ctx.pause(ctx)
 
     receive do
@@ -225,7 +239,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         Engine.goto(:event, :event_over, ctx) |> continue_after(run_state)
 
       screen in [:shop, :shop_super] ->
-        ShopBuyer.run(ctx) |> continue_after(run_state)
+        ShopBuyer.run(ctx) |> leave_shop(ctx) |> continue_after(run_state)
 
       screen == :cabinet_reward ->
         Engine.goto(:cabinet_reward, :cabinet_reward_over, ctx) |> continue_after(run_state)
@@ -348,6 +362,16 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       {:error, {:unhandled_screen, screen}}
     end
   end
+
+  defp leave_shop({:ok, _} = _result, ctx) do
+    case Engine.localize() do
+      {:ok, screen} when screen in [:shop, :shop_super] -> Engine.goto(screen, :dungeon_graph, ctx)
+      {:ok, screen} -> {:ok, screen}
+      :unknown -> {:error, :unknown_screen}
+    end
+  end
+
+  defp leave_shop({:error, _} = error, _ctx), do: error
 
   defp continue_after({:ok, _}, run_state), do: {:continue, run_state}
   defp continue_after({:error, :window_not_focused}, run_state), do: {:paused, run_state}
