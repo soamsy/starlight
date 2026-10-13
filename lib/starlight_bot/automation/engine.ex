@@ -169,5 +169,5 @@ defmodule StarlightBot.Automation.Engine do
 
   def in_battle?(screen), do: screen in battle_screens()
 
-  defp battle_screens, do: [:battle | Enum.map(Catalog.refinements_of(:battle), & &1.name)]
+  defp battle_screens, do: [:battle, :battle_over_confirm | Enum.map(Catalog.refinements_of(:battle), & &1.name)]
 end
