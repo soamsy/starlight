@@ -4,14 +4,14 @@ defmodule StarlightBot.Automation.Scripts do
   alias StarlightBot.Automation.Scripts.EncounterReward
   alias StarlightBot.Automation.Scripts.MirrorDungeonRunner
   alias StarlightBot.Automation.Scripts.MountingTrials
-  alias StarlightBot.Automation.Scripts.ShopBuyer
+  alias StarlightBot.Automation.Scripts.ShopRunner
 
   @scripts [
     %{name: :charge_enkephalin, label: "Charge Enkephalin", module: ChargeEnkephalin},
     %{name: :cabinet_reward, label: "Cabinet Reward", module: CabinetReward},
     %{name: :mounting_trials, label: "Mounting Trials", module: MountingTrials},
     %{name: :encounter_reward, label: "Encounter Reward", module: EncounterReward},
-    %{name: :shop_buyer, label: "Shop Buyer", module: ShopBuyer},
+    %{name: :shop_runner, label: "Shop Runner", module: ShopRunner},
     %{name: :mirror_dungeon, label: "Mirror Dungeon", module: MirrorDungeonRunner}
   ]
 

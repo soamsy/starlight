@@ -20,6 +20,7 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
      |> assign(:run_memory, nav.run_memory)
      |> assign(:teams, teams)
      |> assign(:team_id, default_team_id(teams))
+     |> assign(:floor, 1)
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)}
   end
@@ -28,7 +29,7 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
   def handle_event("dry_run", _, socket) do
     case Enum.find(socket.assigns.teams, &(&1.id == socket.assigns.team_id)) do
       nil -> {:noreply, put_flash(socket, :error, "Pick a team first.")}
-      team -> {:noreply, start_countdown(socket, {:run_shop_dry_run, team.id, team.name})}
+      team -> {:noreply, start_countdown(socket, {:run_shop_dry_run, team.id, team.name, socket.assigns.floor})}
     end
   end
 
@@ -36,18 +37,18 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
   def handle_event("full_run", _, socket) do
     case Enum.find(socket.assigns.teams, &(&1.id == socket.assigns.team_id)) do
       nil -> {:noreply, put_flash(socket, :error, "Pick a team first.")}
-      team -> {:noreply, start_countdown(socket, {:run_shop_buyer, team.id, team.name})}
+      team -> {:noreply, start_countdown(socket, {:run_shop, team.id, team.name, socket.assigns.floor})}
     end
   end
 
   @impl true
-  def handle_event("update_form", %{"team_id" => team_id}, socket) do
-    {:noreply, assign(socket, :team_id, parse_team_id(team_id, socket.assigns.team_id))}
+  def handle_event("update_form", params, socket) do
+    {:noreply, apply_form(socket, params)}
   end
 
   @impl true
   def handle_event("restore_form", params, socket) do
-    {:noreply, assign(socket, :team_id, restore_team_id(params, socket.assigns.team_id))}
+    {:noreply, apply_form(socket, params)}
   end
 
   @impl true
@@ -104,10 +105,16 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
     end
   end
 
-  defp restore_team_id(params, fallback) do
-    case Map.get(params, "team_id") do
-      nil -> fallback
-      str -> parse_team_id(str, fallback)
+  defp apply_form(socket, params) do
+    socket
+    |> assign(:team_id, parse_team_id(params["team_id"] || "", socket.assigns.team_id))
+    |> assign(:floor, parse_floor(params["floor"] || "", socket.assigns.floor))
+  end
+
+  defp parse_floor(str, fallback) do
+    case Integer.parse(str) do
+      {floor, ""} when floor >= 1 -> floor
+      _ -> fallback
     end
   end
 
@@ -119,11 +126,11 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
     |> assign(:countdown, @countdown_secs)
   end
 
-  defp run_pending_action({:run_shop_dry_run, team_id, _team_name}), do: Navigator.run_shop_dry_run(team_id)
-  defp run_pending_action({:run_shop_buyer, team_id, _team_name}), do: Navigator.run_shop_buyer(team_id)
+  defp run_pending_action({:run_shop_dry_run, team_id, _team_name, floor}), do: Navigator.run_shop_dry_run(team_id, floor)
+  defp run_pending_action({:run_shop, team_id, _team_name, floor}), do: Navigator.run_shop(team_id, floor)
 
-  def pending_action_label({:run_shop_dry_run, _team_id, team_name}), do: "shop dry run: #{team_name}"
-  def pending_action_label({:run_shop_buyer, _team_id, team_name}), do: "shop buyer (full run): #{team_name}"
+  def pending_action_label({:run_shop_dry_run, _team_id, team_name, floor}), do: "shop dry run: #{team_name}, floor #{floor}"
+  def pending_action_label({:run_shop, _team_id, team_name, floor}), do: "shop runner (full run): #{team_name}, floor #{floor}"
 
   def screen_label(nil), do: "Not localized"
   def screen_label(:unknown), do: "Unknown"
@@ -137,6 +144,11 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
   def phase_label(:localizing), do: "Localizing…"
   def phase_label(:running), do: "Running…"
   def phase_label(:paused), do: "Paused"
+
+  def outcome_class(outcome) when outcome in [:done, :would_run], do: "badge-success"
+  def outcome_class(:partial), do: "badge-warning"
+  def outcome_class(:failed), do: "badge-error"
+  def outcome_class(_outcome), do: "badge-ghost"
 
   def log_kind_class(:ok), do: "text-success"
   def log_kind_class(:error), do: "text-error"

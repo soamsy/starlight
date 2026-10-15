@@ -35,9 +35,10 @@
       <% end %>
 
       <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 text-xs text-warning">
-        Dry run reads the sell inventory and shelf but never clicks buy. Full
-        run actually spends Cost — keep the Limbus Company window focused and
-        the shop screen open before starting either.
+        Dry run reads the sell inventory and evaluates each step's condition
+        but never buys, fuses, or refreshes. Full run actually spends Cost.
+        Keep the Limbus Company window focused and the shop screen open before
+        starting either.
       </div>
 
       <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-1 shrink-0">
@@ -70,6 +71,11 @@
               <option value={team.id} selected={team.id == @team_id}><%= team.name %></option>
             <% end %>
           </select>
+        </label>
+
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Floor</span>
+          <input type="number" name="floor" min="1" max="15" value={@floor} class="input input-sm input-bordered w-24" />
         </label>
 
         <button
@@ -116,42 +122,28 @@
         <% plan = shop_plan(@run_memory) %>
         <%= if plan do %>
           <div class="flex gap-3 font-mono text-base-content/70 shrink-0">
-            <span>Budget <%= plan.budget %></span>
-            <span>Spend <%= plan.total_cost %></span>
-            <span>Weight <%= plan.total_weight %></span>
-            <span><%= length(plan.selected) %>/<%= plan.max_purchases %> purchase(s)</span>
+            <span>Workflow <%= plan.workflow %></span>
+            <span>Floor <%= plan.floor %></span>
+            <span><%= plan.shop_type %> shop</span>
+            <span>Reserve <%= plan.reserve %></span>
           </div>
 
           <div class="flex flex-col gap-1">
-            <span class="text-xs font-semibold text-success uppercase tracking-wide">Buying (<%= length(plan.selected) %>)</span>
-            <%= if plan.selected == [] do %>
-              <div class="text-base-content/30">Nothing selected</div>
-            <% else %>
-              <%= for item <- plan.selected do %>
-                <div class="flex justify-between gap-2 font-mono">
-                  <span><%= item.gift_name %></span>
-                  <span class="text-base-content/50">w<%= item.weight %> / c<%= item.cost %></span>
-                </div>
-              <% end %>
+            <%= if plan.steps == [] do %>
+              <div class="text-base-content/30">No steps evaluated yet</div>
             <% end %>
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Skipping (<%= length(plan.skipped) %>)</span>
-            <%= if plan.skipped == [] do %>
-              <div class="text-base-content/30">Nothing skipped</div>
-            <% else %>
-              <%= for item <- plan.skipped do %>
-                <div class="flex justify-between gap-2 font-mono text-base-content/50">
-                  <span><%= item.gift_name %></span>
-                  <span>w<%= item.weight %> / c<%= item.cost %></span>
-                </div>
-              <% end %>
+            <%= for {step, i} <- Enum.with_index(plan.steps, 1) do %>
+              <div class="flex items-start gap-2 font-mono">
+                <span class="text-base-content/40 w-5 text-right"><%= i %></span>
+                <span class={"badge badge-xs #{outcome_class(step.outcome)}"}><%= step.outcome %></span>
+                <span class="flex-1"><%= step.label %></span>
+                <span class="text-base-content/50 text-right"><%= step.detail %></span>
+              </div>
             <% end %>
           </div>
         <% else %>
           <div class="text-base-content/30 text-center py-4 select-none">
-            No plan yet — run a dry run or full run.
+            No workflow trace yet. Run a dry run or full run.
           </div>
         <% end %>
       </div>

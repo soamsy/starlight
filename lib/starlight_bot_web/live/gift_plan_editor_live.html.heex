@@ -1,5 +1,9 @@
 <div class="flex flex-col h-full gap-3 overflow-hidden">
-  <div class="grid grid-cols-[24fr_76fr] grid-rows-1 gap-2 flex-1 min-h-0">
+  <datalist id="gift-name-options">
+    <option :for={gift <- @gifts} value={gift.name} />
+  </datalist>
+
+  <div class="grid grid-cols-[18fr_82fr] grid-rows-1 gap-2 flex-1 min-h-0">
 
     <%!-- Left: Plan List --%>
     <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
@@ -18,16 +22,14 @@
                     class={"cursor-pointer hover:bg-base-200 " <> if(@editing_id == plan.id, do: "bg-primary/10 border-l-2 border-primary", else: "")}>
                   <td class="font-mono text-xs"><%= plan.name %></td>
                   <td class="text-right whitespace-nowrap">
-                    <button phx-click="duplicate_plan" phx-value-id={plan.id}
-                            class="btn btn-xs btn-ghost">Dup</button>
-                    <button phx-click="delete_plan" phx-value-id={plan.id}
-                            data-confirm={"Delete '#{plan.name}'?"}
+                    <button phx-click="duplicate_plan" phx-value-id={plan.id} class="btn btn-xs btn-ghost">Dup</button>
+                    <button phx-click="delete_plan" phx-value-id={plan.id} data-confirm={"Delete '#{plan.name}'?"}
                             class="btn btn-xs btn-ghost text-error">Del</button>
                   </td>
                 </tr>
               <% end %>
               <%= if @plans == [] do %>
-                <tr><td colspan="2" class="text-center text-base-content/40 py-4">No gift plans yet — create one.</td></tr>
+                <tr><td colspan="2" class="text-center text-base-content/40 py-4">No gift plans yet. Create one.</td></tr>
               <% end %>
             </tbody>
           </table>
@@ -37,13 +39,25 @@
 
     <%!-- Right: Editor --%>
     <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
-      <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
+      <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3">
         <%= if @editing_id do %>
+          <% issues = GiftPlans.issues(@plan_data, @gifts_by_name) %>
 
-          <input type="text" value={@name} phx-blur="rename_plan"
-                 class="input input-bordered input-sm w-64 font-semibold" placeholder="Plan name" />
+          <div class="flex items-center gap-2 flex-wrap">
+            <input type="text" value={@name} phx-blur="rename_plan"
+                   class="input input-bordered input-sm w-64 font-semibold" placeholder="Plan name" />
+            <form phx-change="set_affinity" class="flex items-center gap-1">
+              <span class="text-xs text-base-content/60">Affinity</span>
+              <select name="affinity" class="select select-bordered select-sm">
+                <option value="">none</option>
+                <option :for={affinity <- affinities()} value={affinity} selected={@plan_data["affinity"] == affinity}><%= affinity %></option>
+              </select>
+            </form>
+            <span :if={issues != []} class="badge badge-warning badge-sm ml-auto" title={Enum.join(issues, "\n")}>
+              <%= length(issues) %> issue(s)
+            </span>
+          </div>
 
-          <%!-- Tab strip --%>
           <div class="flex gap-1 flex-wrap items-center">
             <%= for tab <- tabs(), tab != :grace do %>
               <button phx-click="set_tab" phx-value-tab={tab}
@@ -59,327 +73,540 @@
 
           <div class="divider my-0"></div>
 
-          <div class="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto">
+          <div class="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+
+            <%= if @active_tab == :workflows do %>
+              <% workflow = selected_workflow(assigns) %>
+              <div class="grid grid-cols-[16rem_1fr_13rem] gap-3 flex-1 min-h-0">
+
+                <div class="flex flex-col gap-4 overflow-y-auto min-h-0 pr-1">
+                  <div class="flex flex-col gap-1">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-semibold text-base-content/70">Workflows</span>
+                      <button phx-click="add_workflow" class="btn btn-primary btn-xs ml-auto">+ New</button>
+                    </div>
+                    <div :for={wf <- @plan_data["workflows"]}
+                         phx-click="select_workflow" phx-value-id={wf["id"]}
+                         class={"flex items-center gap-1 rounded px-2 py-1 cursor-pointer text-xs " <>
+                           if(workflow && wf["id"] == workflow["id"], do: "bg-primary/10 border-l-2 border-primary", else: "hover:bg-base-200")}>
+                      <span class="flex-1 truncate"><%= wf["name"] %></span>
+                      <span class="text-[10px] text-base-content/40"><%= length(wf["steps"]) %> steps</span>
+                      <button phx-click="duplicate_workflow" phx-value-id={wf["id"]} class="btn btn-ghost btn-2xs">Dup</button>
+                      <button phx-click="delete_workflow" phx-value-id={wf["id"]} data-confirm={"Delete workflow '#{wf["name"]}'?"}
+                              class="btn btn-ghost btn-2xs text-error">✕</button>
+                    </div>
+                  </div>
+
+                  <%= if workflow do %>
+                    <form phx-change="update_workflow" class="flex flex-col gap-2">
+                      <label class="flex flex-col gap-0.5">
+                        <span class="text-[11px] text-base-content/60">Name</span>
+                        <input type="text" name="workflow[name]" value={workflow["name"]} phx-debounce="400"
+                               class="input input-bordered input-xs" />
+                      </label>
+                      <label class="flex flex-col gap-0.5">
+                        <span class="text-[11px] text-base-content/60">Keep list (never sold, never fusion fodder)</span>
+                        <select name="workflow[keep]" class="select select-bordered select-xs">
+                          <option value="">none</option>
+                          <option :for={keep <- @plan_data["library"]["keep_lists"]} value={keep["id"]} selected={workflow["keep"] == keep["id"]}>
+                            <%= keep["name"] %>
+                          </option>
+                        </select>
+                      </label>
+                    </form>
+                    <% derived = GiftPlans.derived_protected(@plan_data, workflow, @gifts) %>
+                    <div :if={derived != []} class="flex flex-col gap-1">
+                      <span class="text-[11px] text-base-content/60">Also protected by this workflow's fusions</span>
+                      <div class="flex flex-wrap gap-1">
+                        <span :for={name <- derived} class="badge badge-ghost badge-xs"><%= name %></span>
+                      </div>
+                    </div>
+                  <% end %>
+
+                  <div class="flex flex-col gap-1">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-semibold text-base-content/70">Floor schedule</span>
+                      <button phx-click="add_schedule_row" disabled={@plan_data["workflows"] == []} class="btn btn-ghost btn-xs ml-auto">+ Range</button>
+                    </div>
+                    <form phx-change="update_schedule" class="flex flex-col gap-1">
+                      <div :for={{row, index} <- Enum.with_index(@plan_data["floor_schedule"])} class="flex items-center gap-1">
+                        <span class="text-[11px] text-base-content/60">From floor</span>
+                        <input type="number" min="1" max="15" name={"rows[#{index}][from_floor]"} value={row["from_floor"]}
+                               phx-debounce="400" class="input input-bordered input-xs w-14" />
+                        <select name={"rows[#{index}][workflow]"} class="select select-bordered select-xs flex-1 min-w-0">
+                          <option :for={wf <- @plan_data["workflows"]} value={wf["id"]} selected={row["workflow"] == wf["id"]}><%= wf["name"] %></option>
+                        </select>
+                        <button type="button" phx-click="remove_schedule_row" phx-value-index={index} class="btn btn-ghost btn-2xs text-error">✕</button>
+                      </div>
+                    </form>
+                    <div :if={@plan_data["floor_schedule"] == []} class="text-[11px] text-base-content/40 italic">No floors assigned.</div>
+                  </div>
+
+                  <div :if={issues != []} class="flex flex-col gap-1 text-[11px] text-warning">
+                    <span :for={issue <- issues}><%= issue %></span>
+                  </div>
+                </div>
+
+                <div class="flex flex-col gap-2 overflow-y-auto min-h-0 pr-1">
+                  <%= if workflow do %>
+                    <div class="text-[11px] text-base-content/50">
+                      The shop runner evaluates these top to bottom, once each. Drag ⠿ or use the arrows to reorder.
+                    </div>
+                    <div id={"steps-#{workflow["id"]}"} phx-hook="SortableList" data-sort-event="reorder_steps" class="flex flex-col gap-1">
+                      <%= for {step, index} <- Enum.with_index(workflow["steps"], 1) do %>
+                        <% broken = step_broken?(@plan_data, step) %>
+                        <% expanded = @expanded_step_id == step["id"] %>
+                        <div data-sort-id={step["id"]}
+                             class={"rounded-lg border p-1.5 flex flex-col gap-1 " <>
+                               cond do
+                                 broken -> "border-error bg-error/5"
+                                 step["enabled"] == false -> "border-base-300 opacity-50"
+                                 expanded -> "border-primary"
+                                 true -> "border-base-300"
+                               end}>
+                          <div class="flex items-center gap-1.5">
+                            <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
+                            <span class="text-[10px] text-base-content/40 w-4 text-right"><%= index %></span>
+                            <input type="checkbox" class="checkbox checkbox-xs" checked={step["enabled"] != false}
+                                   phx-click="toggle_step_enabled" phx-value-id={step["id"]} title="Enabled" />
+                            <button type="button" phx-click="toggle_step" phx-value-id={step["id"]} class="flex-1 min-w-0 text-left flex flex-col">
+                              <span class={"text-xs font-medium truncate " <> if(broken, do: "text-error", else: "")}>
+                                <%= GiftPlans.step_label(@plan_data, step) %>
+                              </span>
+                              <span :if={summary = step_summary(@plan_data, step)} class="text-[10px] text-base-content/60 truncate"><%= summary %></span>
+                              <span :if={label = GiftPlans.condition_label(step["condition"])} class="text-[10px] text-secondary truncate">if <%= label %></span>
+                            </button>
+                            <button type="button" phx-click="move_step" phx-value-id={step["id"]} phx-value-dir="up" class="btn btn-ghost btn-2xs px-1">↑</button>
+                            <button type="button" phx-click="move_step" phx-value-id={step["id"]} phx-value-dir="down" class="btn btn-ghost btn-2xs px-1">↓</button>
+                            <button type="button" phx-click="duplicate_step" phx-value-id={step["id"]} class="btn btn-ghost btn-2xs">Dup</button>
+                            <button type="button" phx-click="delete_step" phx-value-id={step["id"]} class="btn btn-ghost btn-2xs text-error">✕</button>
+                          </div>
+
+                          <%= if expanded do %>
+                            <div class="border-t border-base-300 pt-2 mt-1 flex flex-col gap-3 pl-8">
+                              <form phx-change="update_step" class="flex items-end gap-2 flex-wrap">
+                                <input type="hidden" name="step_id" value={step["id"]} />
+                                <%= case step["kind"] do %>
+                                  <% "uptie" -> %>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Max gifts</span>
+                                      <input type="number" min="1" name="step[max_gifts]" value={step["max_gifts"]} phx-debounce="400" class="input input-bordered input-xs w-16" />
+                                    </label>
+                                    <span class="text-[11px] text-base-content/50 mb-1">
+                                      Walks the upties in order, skipping gifts not owned or already at target. Stops after max gifts,
+                                      or as soon as the next uptie's full cost can't be paid. Never upties partway.
+                                    </span>
+                                  <% "tiered_fusion" -> %>
+                                    <span class="text-[11px] text-base-content/50">
+                                      Works on the first fusion in the list whose target isn't owned yet. Later fusions wait until earlier ones are done,
+                                      so duplicate this step further down the workflow to keep working through the list.
+                                    </span>
+                                  <% "buy_list" -> %>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Shopping list</span>
+                                      <select name="step[list]" class="select select-bordered select-xs">
+                                        <option value="">pick one</option>
+                                        <option :for={d <- @plan_data["library"]["shopping_lists"]} value={d["id"]} selected={step["list"] == d["id"]}><%= d["name"] %></option>
+                                      </select>
+                                    </label>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Max items</span>
+                                      <input type="number" min="1" name="step[max_items]" value={step["max_items"]} phx-debounce="400" class="input input-bordered input-xs w-20" />
+                                    </label>
+                                  <% "fixed_fusion" -> %>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Target (fixed recipe)</span>
+                                      <select name="step[target]" class="select select-bordered select-xs">
+                                        <option value="">pick one</option>
+                                        <option :for={g <- @fixed_targets} value={g.name} selected={step["target"] == g.name}><%= g.name %> (T<%= g.tier %>)</option>
+                                      </select>
+                                    </label>
+                                    <label class="flex items-center gap-1 cursor-pointer mb-1">
+                                      <input type="hidden" name="step[buy_missing]" value="false" />
+                                      <input type="checkbox" name="step[buy_missing]" value="true" checked={step["buy_missing"]} class="checkbox checkbox-xs" />
+                                      <span class="text-xs">buy missing ingredients from the shelf</span>
+                                    </label>
+                                  <% "affinity_refresh" -> %>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Affinity</span>
+                                      <select name="step[affinity]" class="select select-bordered select-xs">
+                                        <option value="">pick one</option>
+                                        <option :for={affinity <- affinities()} value={affinity} selected={step["affinity"] == affinity}><%= affinity %></option>
+                                      </select>
+                                    </label>
+                                  <% "sell" -> %>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Stop once cost reaches (blank: never)</span>
+                                      <input type="number" name="step[stop_at_cost]" value={step["stop_at_cost"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
+                                    </label>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Max items sold</span>
+                                      <input type="number" min="1" name="step[max_items]" value={step["max_items"]} phx-debounce="400" class="input input-bordered input-xs w-20" />
+                                    </label>
+                                  <% "skill_replace" -> %>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Sinner</span>
+                                      <select name="step[sinner]" class="select select-bordered select-xs">
+                                        <option value="">pick one</option>
+                                        <option :for={sinner <- @sinners} value={sinner} selected={step["sinner"] == sinner}><%= sinner_label(sinner) %></option>
+                                      </select>
+                                    </label>
+                                  <% kind when kind in ~w(heal revive) -> %>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Sinner</span>
+                                      <select name="step[sinner]" class="select select-bordered select-xs">
+                                        <option value="">pick one</option>
+                                        <option :for={sinner <- @sinners} value={sinner} selected={step["sinner"] == sinner}><%= sinner_label(sinner) %></option>
+                                      </select>
+                                    </label>
+                                    <span class="text-[11px] text-base-content/50 mb-1">
+                                      <%= if kind == "heal",
+                                            do: "Heals this sinner for about 50% HP and 45 SP.",
+                                            else: "Revives this sinner if they died." %>
+                                      Costs <%= GiftPlans.heal_cost() %>.
+                                    </span>
+                                  <% "heal_all" -> %>
+                                    <span class="text-[11px] text-base-content/50">
+                                      Heals every sinner for about 15% HP and 15 SP. Heal Sinner restores much more to one sinner (about 50% HP and 45 SP).
+                                      Costs <%= GiftPlans.heal_cost() %>.
+                                    </span>
+                                  <% "budget" -> %>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Add to reserve (negative subtracts)</span>
+                                      <input type="number" name="step[amount]" value={step["amount"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
+                                    </label>
+                                  <% _ -> %>
+                                    <span class="text-[11px] text-base-content/50">No settings. One refresh per step.</span>
+                                <% end %>
+                              </form>
+
+                              <%= if step["kind"] == "sell" do %>
+                                <div class="flex items-center gap-1 flex-wrap">
+                                  <span class="text-[11px] text-base-content/60">Tiers, first sold first:</span>
+                                  <div id={"sell-tiers-#{step["id"]}"} phx-hook="SortableList" data-sort-event="reorder_step_field"
+                                       data-sort-scope={"#{step["id"]}:tiers"} class="flex items-center gap-1">
+                                    <span :for={tier <- step["tiers"] || []} data-sort-id={tier} class="badge badge-secondary badge-sm gap-1">
+                                      <span data-sort-handle class="cursor-grab">⠿</span>T<%= tier %>
+                                      <button type="button" phx-click="toggle_step_list_item" phx-value-id={step["id"]} phx-value-field="tiers" phx-value-item={tier}>✕</button>
+                                    </span>
+                                  </div>
+                                  <button :for={tier <- Enum.reject(1..4, &(&1 in (step["tiers"] || [])))} type="button"
+                                          phx-click="toggle_step_list_item" phx-value-id={step["id"]} phx-value-field="tiers" phx-value-item={tier}
+                                          class="btn btn-outline btn-2xs">+ T<%= tier %></button>
+                                </div>
+                              <% end %>
+
+                              <.step_definition_list :if={step["kind"] == "uptie"} step={step} field="upties"
+                                                     defs={@plan_data["library"]["upties"]} label="Upties, in order:" />
+                              <.step_definition_list :if={step["kind"] == "tiered_fusion"} step={step} field="fusions"
+                                                     defs={@plan_data["library"]["tiered_fusions"]} label="Fusions, in order:" />
+
+                              <%= if step["kind"] == "skill_replace" do %>
+                                <div class="flex items-center gap-1 flex-wrap">
+                                  <span class="text-[11px] text-base-content/60">Accepted offers, preferred first:</span>
+                                  <div id={"skill-options-#{step["id"]}"} phx-hook="SortableList" data-sort-event="reorder_step_field"
+                                       data-sort-scope={"#{step["id"]}:options"} class="flex items-center gap-1">
+                                    <span :for={option <- step["options"] || []} data-sort-id={option} class="badge badge-secondary badge-sm gap-1">
+                                      <span data-sort-handle class="cursor-grab">⠿</span><%= skill_option_label(option) %>
+                                      <button type="button" phx-click="toggle_step_list_item" phx-value-id={step["id"]} phx-value-field="options" phx-value-item={option}>✕</button>
+                                    </span>
+                                  </div>
+                                  <button :for={option <- Enum.reject(GiftPlans.skill_options(), &(&1 in (step["options"] || [])))} type="button"
+                                          phx-click="toggle_step_list_item" phx-value-id={step["id"]} phx-value-field="options" phx-value-item={option}
+                                          class="btn btn-outline btn-2xs">+ <%= skill_option_label(option) %></button>
+                                </div>
+                              <% end %>
+
+                              <div :if={step["kind"] in ~w(uptie tiered_fusion sell affinity_refresh skill_replace heal heal_all revive)} class="text-[10px] text-warning">
+                                No automation for this action yet. The shop runner logs it as not implemented and moves on.
+                              </div>
+
+                              <div class="flex flex-col gap-1">
+                                <span class="text-[11px] font-medium text-base-content/70">Run only if</span>
+                                <%= if step["condition"] do %>
+                                  <.condition_node node={step["condition"]} path="" step_id={step["id"]} />
+                                <% else %>
+                                  <button type="button" phx-click="cond_add" phx-value-step_id={step["id"]} phx-value-path="" phx-value-node="leaf"
+                                          class="btn btn-ghost btn-xs self-start">+ Add condition</button>
+                                <% end %>
+                              </div>
+
+                              <form :if={length(@plan_data["workflows"]) > 1} phx-change="copy_step" class="flex items-center gap-1">
+                                <input type="hidden" name="step_id" value={step["id"]} />
+                                <select name="workflow" class="select select-bordered select-xs">
+                                  <option value="" selected>Copy to workflow…</option>
+                                  <option :for={wf <- Enum.reject(@plan_data["workflows"], &(&1["id"] == workflow["id"]))} value={wf["id"]}><%= wf["name"] %></option>
+                                </select>
+                              </form>
+                            </div>
+                          <% end %>
+                        </div>
+                      <% end %>
+                    </div>
+                    <div :if={workflow["steps"] == []} class="text-xs text-base-content/40 italic">
+                      No steps yet. Add some from the palette on the right.
+                    </div>
+                  <% else %>
+                    <div class="text-xs text-base-content/40 italic">Create a workflow to start adding steps.</div>
+                  <% end %>
+                </div>
+
+                <div class="flex flex-col gap-3 overflow-y-auto min-h-0">
+                  <div class="flex flex-col gap-1">
+                    <span class="text-xs font-semibold text-base-content/70">Add step</span>
+                    <button :for={kind <- palette_kinds()} phx-click="add_step" phx-value-kind={kind} disabled={is_nil(workflow)}
+                            class="btn btn-outline btn-xs justify-start">+ <%= GiftPlans.kind_label(kind) %></button>
+                  </div>
+                  <div :for={{lib, kind} <- library_kinds()} class="flex flex-col gap-1">
+                    <span class="text-xs font-semibold text-base-content/70"><%= GiftPlans.kind_label(kind) %></span>
+                    <button :for={d <- @plan_data["library"][lib]} phx-click="add_step" phx-value-kind={kind} phx-value-ref={d["id"]}
+                            disabled={is_nil(workflow)} class="btn btn-outline btn-xs justify-start truncate">+ <%= d["name"] %></button>
+                    <span :if={@plan_data["library"][lib] == []} class="text-[11px] text-base-content/40 italic">
+                      None. Define one in the <%= tab_label(String.to_existing_atom(lib)) %> tab.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+
+            <%= if @active_tab == :upties do %>
+              <div class="grid grid-cols-[14rem_1fr] gap-3 flex-1 min-h-0">
+                <.library_list lib="upties" defs={@plan_data["library"]["upties"]} selected_id={@selected_def["upties"]} />
+                <div class="flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
+                  <%= if d = selected_definition(assigns, "upties") do %>
+                    <form phx-change="lib_update" class="flex items-end gap-2 flex-wrap">
+                      <input type="hidden" name="lib" value="upties" />
+                      <input type="hidden" name="def_id" value={d["id"]} />
+                      <label class="flex flex-col gap-0.5">
+                        <span class="text-[11px] text-base-content/60">Name</span>
+                        <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
+                      </label>
+                      <label class="flex flex-col gap-0.5">
+                        <span class="text-[11px] text-base-content/60">Target</span>
+                        <select name="def[target_level]" class="select select-bordered select-xs">
+                          <option value="2" selected={d["target_level"] == 2}>+2</option>
+                          <option value="1" selected={d["target_level"] == 1}>+1</option>
+                        </select>
+                      </label>
+                    </form>
+                    <%= if gift = d["gift"] && @gifts_by_name[d["gift"]] do %>
+                      <div class="flex items-center gap-2">
+                        <img src={gift.image_path} class="w-10 h-10 rounded object-cover" />
+                        <div class="flex flex-col">
+                          <span class="text-sm font-semibold"><%= gift.name %></span>
+                          <span class="text-[11px] text-base-content/60">Tier <%= gift.tier %> · <%= uptie_cost_hint(gift, d) %> (estimates)</span>
+                        </div>
+                      </div>
+                    <% else %>
+                      <div class="text-xs text-base-content/50">Pick the gift to uptie in the browser below.</div>
+                    <% end %>
+                    <span class="text-[11px] text-base-content/50">
+                      Upties this gift to +<%= d["target_level"] %> in one go. If the full cost can't be paid, the uptie step stops here instead of upgrading partway.
+                    </span>
+                    <div class="divider my-0"></div>
+                    <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
+                                  gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
+                                  selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
+                      <:form :let={gift}>
+                        <button phx-click="set_uptie_gift" phx-value-id={d["id"]} phx-value-gift={gift.name}
+                                class={"btn btn-sm " <> if(gift.name == d["gift"], do: "btn-primary", else: "btn-outline")}>
+                          <%= if gift.name == d["gift"], do: "Uptie target", else: "Uptie this gift" %>
+                        </button>
+                      </:form>
+                    </.gift_browser>
+                  <% else %>
+                    <div class="text-xs text-base-content/40 italic">Create an uptie definition to edit it here.</div>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+
+            <%= if @active_tab == :tiered_fusions do %>
+              <div class="grid grid-cols-[14rem_1fr] gap-3 flex-1 min-h-0">
+                <.library_list lib="tiered_fusions" defs={@plan_data["library"]["tiered_fusions"]} selected_id={@selected_def["tiered_fusions"]} />
+                <div class="flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
+                  <%= if d = selected_definition(assigns, "tiered_fusions") do %>
+                    <% target = d["target"] && @gifts_by_name[d["target"]] %>
+                    <form phx-change="lib_update" class="flex items-end gap-2">
+                      <input type="hidden" name="lib" value="tiered_fusions" />
+                      <input type="hidden" name="def_id" value={d["id"]} />
+                      <label class="flex flex-col gap-0.5">
+                        <span class="text-[11px] text-base-content/60">Name</span>
+                        <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
+                      </label>
+                    </form>
+
+                    <%= if target do %>
+                      <div class="flex items-center gap-2">
+                        <img src={target.image_path} class="w-10 h-10 rounded object-cover" />
+                        <div class="flex flex-col">
+                          <span class="text-sm font-semibold"><%= target.name %></span>
+                          <span class="text-[11px] text-base-content/60">Tier <%= target.tier %> · <%= target.affinity %> · done once owned</span>
+                        </div>
+                      </div>
+
+                      <div class="flex flex-col gap-1">
+                        <span class="text-[11px] text-base-content/60">
+                          Routes, tried in order. Each picks a combo from the valid pool and can buy missing ingredients up to a tier,
+                          demand leftover unprotected items before fusing, and fuse sub-goals for its ingredient tiers.
+                          Normal shops skip combos marked super only.
+                        </span>
+                        <div class="flex items-center gap-2">
+                          <button type="button" phx-click="rt_copy" phx-value-def_id={d["id"]} class="btn btn-xs">Copy routes</button>
+                          <button type="button" phx-click="rt_paste" phx-value-def_id={d["id"]} class="btn btn-xs"
+                                  disabled={is_nil(@route_clipboard) or @route_clipboard.tier != target.tier}
+                                  data-confirm="Replace all routes with the copied ones?">Paste routes</button>
+                          <span :if={@route_clipboard} class="text-[11px] text-base-content/60">
+                            Clipboard: <%= @route_clipboard.name %> (T<%= @route_clipboard.tier %>, <%= length(@route_clipboard.routes) %> route(s))
+                          </span>
+                        </div>
+                        <.route_list def_id={d["id"]} routes={d["routes"] || []} tier={target.tier} />
+                      </div>
+                    <% else %>
+                      <div class="text-xs text-base-content/50">Pick a target in the browser below: a Tier 2 to 4 gift without a fixed recipe.</div>
+                    <% end %>
+
+                    <div class="divider my-0"></div>
+                    <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
+                                  gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
+                                  selected_gift_name={@selected_gift_name} uptie_view={@uptie_view} show_fusion_info={true}>
+                      <:form :let={gift}>
+                        <%= if fusion_target_eligible?(gift) do %>
+                          <button phx-click="set_fusion_target" phx-value-id={d["id"]} phx-value-gift={gift.name}
+                                  class={"btn btn-sm " <> if(d["target"] == gift.name, do: "btn-primary", else: "btn-outline")}>
+                            <%= if d["target"] == gift.name, do: "Current target", else: "Set as target" %>
+                          </button>
+                        <% else %>
+                          <span class="text-[11px] text-base-content/50">Not a tiered fusion target (needs Tier 2 to 4 and no fixed recipe).</span>
+                        <% end %>
+                      </:form>
+                    </.gift_browser>
+                  <% else %>
+                    <div class="text-xs text-base-content/40 italic">Create a tiered fusion definition to edit it here.</div>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+
+            <%= if @active_tab == :shopping_lists do %>
+              <div class="grid grid-cols-[14rem_1fr] gap-3 flex-1 min-h-0">
+                <.library_list lib="shopping_lists" defs={@plan_data["library"]["shopping_lists"]} selected_id={@selected_def["shopping_lists"]} />
+                <div class="flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
+                  <%= if d = selected_definition(assigns, "shopping_lists") do %>
+                    <form phx-change="lib_update" class="flex items-end gap-2">
+                      <input type="hidden" name="lib" value="shopping_lists" />
+                      <input type="hidden" name="def_id" value={d["id"]} />
+                      <label class="flex flex-col gap-0.5">
+                        <span class="text-[11px] text-base-content/60">Name</span>
+                        <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
+                      </label>
+                      <span class="text-[11px] text-base-content/50 mb-1">
+                        Total if bought: <%= d["gifts"] |> Enum.map(&((@gifts_by_name[&1] && @gifts_by_name[&1].buying_cost) || 0)) |> Enum.sum() %> cost
+                      </span>
+                    </form>
+                    <span class="text-[11px] text-base-content/50">Buy steps take shelf matches in this order.</span>
+                    <.gift_clipboard lib="shopping_lists" definition={d} clipboard={@gift_clipboard} />
+                    <.gift_order_list lib="shopping_lists" definition={d} gifts_by_name={@gifts_by_name}>
+                      <:extra :let={gift}>
+                        <span :if={gift} class="text-[10px] text-base-content/50">Buy <%= gift.buying_cost || "?" %></span>
+                      </:extra>
+                    </.gift_order_list>
+                    <div class="divider my-0"></div>
+                    <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
+                                  gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
+                                  selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
+                      <:form :let={gift}>
+                        <button phx-click="lib_toggle_gift" phx-value-lib="shopping_lists" phx-value-id={d["id"]} phx-value-gift={gift.name}
+                                class={"btn btn-sm " <> if(gift.name in d["gifts"], do: "btn-primary", else: "btn-outline")}>
+                          <%= if gift.name in d["gifts"], do: "Remove from list", else: "Add to list" %>
+                        </button>
+                      </:form>
+                    </.gift_browser>
+                  <% else %>
+                    <div class="text-xs text-base-content/40 italic">Create a shopping list to edit it here.</div>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+
+            <%= if @active_tab == :keep_lists do %>
+              <div class="grid grid-cols-[14rem_1fr] gap-3 flex-1 min-h-0">
+                <.library_list lib="keep_lists" defs={@plan_data["library"]["keep_lists"]} selected_id={@selected_def["keep_lists"]} />
+                <div class="flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
+                  <%= if d = selected_definition(assigns, "keep_lists") do %>
+                    <form phx-change="lib_update" class="flex items-end gap-2">
+                      <input type="hidden" name="lib" value="keep_lists" />
+                      <input type="hidden" name="def_id" value={d["id"]} />
+                      <label class="flex flex-col gap-0.5">
+                        <span class="text-[11px] text-base-content/60">Name</span>
+                        <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
+                      </label>
+                      <% users = workflows_using_keep(@plan_data, d["id"]) %>
+                      <span class="text-[11px] text-base-content/50 mb-1">
+                        <%= if users == [], do: "Not used by any workflow", else: "Used by: #{Enum.join(users, ", ")}" %>
+                      </span>
+                    </form>
+                    <.gift_clipboard lib="keep_lists" definition={d} clipboard={@gift_clipboard} />
+                    <div class="flex flex-wrap gap-1">
+                      <div :for={name <- d["gifts"]} class="flex items-center gap-1 bg-base-200 rounded px-1 py-0.5">
+                        <img :if={gift = @gifts_by_name[name]} src={gift.image_path} class="w-5 h-5 rounded object-cover" />
+                        <span class="text-[11px]"><%= name %></span>
+                        <button phx-click="lib_toggle_gift" phx-value-lib="keep_lists" phx-value-id={d["id"]} phx-value-gift={name} class="btn btn-ghost btn-2xs px-1">✕</button>
+                      </div>
+                      <span :if={d["gifts"] == []} class="text-[11px] text-base-content/40 italic">No gifts kept.</span>
+                    </div>
+                    <div class="divider my-0"></div>
+                    <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
+                                  gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
+                                  selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
+                      <:form :let={gift}>
+                        <button phx-click="lib_toggle_gift" phx-value-lib="keep_lists" phx-value-id={d["id"]} phx-value-gift={gift.name}
+                                class={"btn btn-sm " <> if(gift.name in d["gifts"], do: "btn-primary", else: "btn-outline")}>
+                          <%= if gift.name in d["gifts"], do: "Kept, click to remove", else: "Keep this gift" %>
+                        </button>
+                      </:form>
+                    </.gift_browser>
+                  <% else %>
+                    <div class="text-xs text-base-content/40 italic">Create a keep list to edit it here.</div>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
 
             <%!-- ================= GRACE ================= --%>
             <%= if @active_tab == :grace do %>
-              <div class="flex items-center gap-2">
-                <span class="text-xs font-medium text-base-content/70">
-                  Starter buffs to select at grace, on every run — multi-select, pick an enhancement tier per grace
-                </span>
-                <span class="badge badge-primary badge-sm ml-auto"><%= grace_total_cost(@plan_data) %> Starlight total</span>
-              </div>
-              <div class="grid grid-cols-5 grid-rows-2 gap-2">
-                <%= for grace <- graces() do %>
-                  <% pick = grace_pick(@plan_data, grace.index) %>
-                  <% level = if pick, do: pick["enhance"], else: 0 %>
-                  <div phx-click="toggle_grace" phx-value-index={grace.index}
-                       class={"cursor-pointer rounded-lg border p-2 flex flex-col gap-1 " <>
-                         if(pick, do: "bg-primary/10 border-primary", else: "border-base-300 hover:bg-base-200")}>
-                    <div class="flex items-center justify-between gap-1">
-                      <span class="text-xs font-semibold"><%= grace.name %></span>
-                      <div class="flex items-center gap-0.5 shrink-0">
-                        <%= for enhance_level <- [0, 1, 2] do %>
-                          <button type="button" phx-click="set_grace_enhance"
-                                  phx-value-index={grace.index} phx-value-level={enhance_level}
-                                  class={"btn btn-2xs " <> if(pick && level == enhance_level, do: "btn-secondary", else: "btn-outline")}>
-                            <%= grace_enhance_icon(enhance_level) %>
-                          </button>
-                        <% end %>
-                      </div>
-                    </div>
-                    <span class="badge badge-ghost badge-xs self-start"><%= grace_level_cost(grace, level) %> Starlight</span>
-                    <p class="text-[11px] text-base-content/60 leading-snug"><%= grace_effect(grace, level) %></p>
-                  </div>
-                <% end %>
-              </div>
-            <% end %>
-
-            <%!-- ================= KEEP ================= --%>
-            <%= if @active_tab == :keep do %>
-              <div class="flex flex-col gap-1">
-                <span class="text-xs font-medium text-base-content/70">
-                  Kept gifts — never sold, never used as fusion fodder
-                </span>
-                <div class="flex flex-wrap gap-1">
-                  <%= for name <- @plan_data["keep"] do %>
-                    <% gift = @gifts_by_name[name] %>
-                    <div class="flex items-center gap-1 bg-base-200 rounded px-1 py-0.5">
-                      <img :if={gift} src={gift.image_path} class="w-5 h-5 rounded object-cover" />
-                      <span class="text-[11px]"><%= name %></span>
-                      <button phx-click="toggle_keep" phx-value-gift={name} class="btn btn-ghost btn-2xs px-1">✕</button>
-                    </div>
-                  <% end %>
-                  <%= if @plan_data["keep"] == [] do %>
-                    <span class="text-[11px] text-base-content/30 italic">none</span>
-                  <% end %>
+              <div class="flex flex-col gap-3 overflow-y-auto min-h-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-medium text-base-content/70">
+                    Starter buffs to select at grace, on every run. Multi-select, pick an enhancement tier per grace.
+                  </span>
+                  <span class="badge badge-primary badge-sm ml-auto"><%= grace_total_cost(@plan_data) %> Starlight total</span>
                 </div>
-              </div>
-
-              <div class="divider my-0"></div>
-
-              <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter} gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
-                            selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
-                <:form :let={gift}>
-                  <button phx-click="toggle_keep" phx-value-gift={gift.name}
-                          class={"btn btn-sm " <> if(gift.name in @plan_data["keep"], do: "btn-primary", else: "btn-outline")}>
-                    <%= if gift.name in @plan_data["keep"], do: "Kept — click to remove", else: "Keep this gift" %>
-                  </button>
-                </:form>
-              </.gift_browser>
-            <% end %>
-
-            <%!-- ================= BUY ON SIGHT ================= --%>
-            <%= if @active_tab == :buy do %>
-              <.weight_list entries={buy_gifts_sorted(@gifts_by_name, @plan_data["buy_on_sight"])}>
-                <:card :let={{gift, weight}}>
-                  <div class="flex items-center gap-1 bg-base-200 rounded p-1">
-                    <img src={gift.image_path} class="w-6 h-6 rounded object-cover shrink-0" />
-                    <span class="text-[11px] truncate flex-1" title={gift.name}><%= gift.name %></span>
-                    <span class="badge badge-primary badge-xs">W<%= weight %></span>
-                    <span class="badge badge-ghost badge-xs">Buy <%= gift.buying_cost || "—" %></span>
-                    <button phx-click="remove_buy_target" phx-value-gift={gift.name}
-                            class="btn btn-ghost btn-2xs px-1" title="Remove">✕</button>
-                  </div>
-                </:card>
-              </.weight_list>
-
-              <div class="divider my-0"></div>
-
-              <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter} gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
-                            selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
-                <:form :let={gift}>
-                  <form phx-submit="assign_buy_weight" class="flex flex-col gap-2">
-                    <input type="hidden" name="gift" value={gift.name} />
-                    <div class="form-control">
-                      <label class="label py-0.5"><span class="label-text text-xs">Weight</span></label>
-                      <input type="number" name="weight" value={buy_weight_for(@plan_data, gift.name) || 0}
-                             class="input input-bordered input-sm w-24" />
-                    </div>
-                    <div class="flex gap-1">
-                      <button type="submit" class="btn btn-primary btn-sm">
-                        <%= if buy_weight_for(@plan_data, gift.name), do: "Update weight", else: "Add to Buy on Sight" %>
-                      </button>
-                      <button :if={buy_weight_for(@plan_data, gift.name)} type="button" phx-click="remove_buy_target"
-                              phx-value-gift={gift.name} class="btn btn-ghost btn-sm text-error">Remove</button>
-                    </div>
-                  </form>
-                </:form>
-              </.gift_browser>
-            <% end %>
-
-            <%!-- ================= FUSION ================= --%>
-            <%= if @active_tab == :fusion do %>
-              <.weight_list entries={sort_by_weight(@plan_data["fusion_targets"])}>
-                <:card :let={target}>
-                  <div class="flex flex-col gap-0.5 bg-base-200 rounded p-1">
-                    <div class="flex items-center gap-1">
-                      <% tier = fusion_target_tier(target, @gifts_by_name) %>
-                      <span :if={tier} class="badge badge-ghost badge-xs">T<%= tier %></span>
-                      <span class="text-[11px] font-medium flex-1 truncate"><%= fusion_target_label(target, @gifts_by_name) %></span>
-                      <span class="badge badge-primary badge-xs">W<%= target["weight"] || 0 %></span>
-                      <button phx-click="remove_fusion_target" phx-value-id={target["id"]}
-                              class="btn btn-ghost btn-2xs px-1" title="Remove">✕</button>
-                    </div>
-                    <div class="flex items-center gap-1 flex-wrap">
-                      <span class="badge badge-ghost badge-xs"><%= ingredient_source_label(target["ingredient_source"]) %></span>
-                      <span :if={fusion_is_named_recipe?(target, @gifts_by_name)} class="badge badge-outline badge-xs">fixed recipe</span>
-                      <% fallback = fallback_label(target["fallback_of"], @plan_data["fusion_targets"], @gifts_by_name) %>
-                      <span :if={fallback} class="badge badge-ghost badge-xs">↳ fallback of <%= fallback %></span>
-                    </div>
-                  </div>
-                </:card>
-              </.weight_list>
-
-              <div class="divider my-0"></div>
-
-              <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter} gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
-                            selected_gift_name={@selected_gift_name} uptie_view={@uptie_view} show_fusion_info={true}>
-                <:form :let={gift}>
-                  <form phx-submit="add_fusion_target" class="flex items-end gap-2 flex-wrap flex-1">
-                    <input type="hidden" name="gift" value={gift.name} />
-                    <div class="form-control">
-                      <label class="label py-0.5"><span class="label-text text-xs">Ingredients</span></label>
-                      <select name="ingredient_source" class="select select-bordered select-sm">
-                        <%= for source <- ingredient_sources() do %>
-                          <option value={source}><%= ingredient_source_label(source) %></option>
-                        <% end %>
-                      </select>
-                    </div>
-                    <div class="form-control">
-                      <label class="label py-0.5"><span class="label-text text-xs">Fallback of</span></label>
-                      <select name="fallback_of" class="select select-bordered select-sm">
-                        <option value="">— none —</option>
-                        <%= for target <- @plan_data["fusion_targets"] do %>
-                          <option value={target["id"]}><%= fusion_target_label(target, @gifts_by_name) %></option>
-                        <% end %>
-                      </select>
-                    </div>
-                    <div class="form-control">
-                      <label class="label py-0.5"><span class="label-text text-xs">Weight</span></label>
-                      <input type="number" name="weight" value="0" class="input input-bordered input-sm w-20" />
-                    </div>
-                    <button type="submit" class="btn btn-primary leading-tight line-clamp-2 max-w-full">Add fusion target — <%= gift.name %></button>
-                  </form>
-                </:form>
-              </.gift_browser>
-            <% end %>
-
-            <%!-- ================= UPTIE ================= --%>
-            <%= if @active_tab == :uptie do %>
-              <.weight_list entries={sort_by_weight(@plan_data["uptie_targets"])}>
-                <:card :let={target}>
-                  <div class="flex items-center gap-1 bg-base-200 rounded p-1">
-                    <span class="text-[11px] flex-1 truncate"><%= uptie_target_label(target) %></span>
-                    <span class="badge badge-ghost badge-xs"><%= target["target_level"] %></span>
-                    <% cost = uptie_target_cost(target, @gifts_by_name) %>
-                    <span :if={cost} class="badge badge-secondary badge-xs"><%= cost %> Cost</span>
-                    <span class="badge badge-primary badge-xs">W<%= target["weight"] || 0 %></span>
-                    <button phx-click="remove_uptie_target" phx-value-id={target["id"]}
-                            class="btn btn-ghost btn-2xs px-1" title="Remove">✕</button>
-                  </div>
-                </:card>
-              </.weight_list>
-
-              <div class="divider my-0"></div>
-
-              <div class="flex gap-1">
-                <button type="button" phx-click="set_uptie_scope" phx-value-scope="named"
-                        class={"btn btn-xs " <> if(@uptie_scope == "named", do: "btn-secondary", else: "btn-outline")}>
-                  Named gift
-                </button>
-                <button type="button" phx-click="set_uptie_scope" phx-value-scope="tier_affinity"
-                        class={"btn btn-xs " <> if(@uptie_scope == "tier_affinity", do: "btn-secondary", else: "btn-outline")}>
-                  Any tier + affinity
-                </button>
-              </div>
-
-              <%= if @uptie_scope == "named" do %>
-                <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter} gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
-                              selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
-                  <:form :let={gift}>
-                    <form phx-submit="add_uptie_target" class="flex items-end gap-2 flex-wrap">
-                      <input type="hidden" name="scope" value="named" />
-                      <input type="hidden" name="gift" value={gift.name} />
-                      <div class="form-control">
-                        <label class="label py-0.5"><span class="label-text text-xs">Target level</span></label>
-                        <select name="target_level" class="select select-bordered select-sm">
-                          <%= for level <- uptie_levels() do %>
-                            <option value={level} selected={level == "0->2"}><%= String.replace(level, "->", " → ") %></option>
+                <div class="grid grid-cols-5 grid-rows-2 gap-2">
+                  <%= for grace <- graces() do %>
+                    <% pick = grace_pick(@plan_data, grace.index) %>
+                    <% level = if pick, do: pick["enhance"], else: 0 %>
+                    <div phx-click="toggle_grace" phx-value-index={grace.index}
+                         class={"cursor-pointer rounded-lg border p-2 flex flex-col gap-1 " <>
+                           if(pick, do: "bg-primary/10 border-primary", else: "border-base-300 hover:bg-base-200")}>
+                      <div class="flex items-center justify-between gap-1">
+                        <span class="text-xs font-semibold"><%= grace.name %></span>
+                        <div class="flex items-center gap-0.5 shrink-0">
+                          <%= for enhance_level <- [0, 1, 2] do %>
+                            <button type="button" phx-click="set_grace_enhance"
+                                    phx-value-index={grace.index} phx-value-level={enhance_level}
+                                    class={"btn btn-2xs " <> if(pick && level == enhance_level, do: "btn-secondary", else: "btn-outline")}>
+                              <%= grace_enhance_icon(enhance_level) %>
+                            </button>
                           <% end %>
-                        </select>
+                        </div>
                       </div>
-                      <div class="form-control">
-                        <label class="label py-0.5"><span class="label-text text-xs">Weight</span></label>
-                        <input type="number" name="weight" value="0" class="input input-bordered input-sm w-20" />
-                      </div>
-                      <button type="submit" class="btn btn-primary leading-tight line-clamp-2 max-w-full">Add uptie target — <%= gift.name %></button>
-                    </form>
-                  </:form>
-                </.gift_browser>
-              <% else %>
-                <form phx-submit="add_uptie_target" class="flex items-end gap-2 flex-wrap">
-                  <input type="hidden" name="scope" value="tier_affinity" />
-                  <div class="form-control">
-                    <label class="label py-0.5"><span class="label-text text-xs">Tier</span></label>
-                    <select name="tier" class="select select-bordered select-sm">
-                      <%= for tier <- fusable_tiers() do %>
-                        <option value={tier}>Tier <%= tier %></option>
-                      <% end %>
-                    </select>
-                  </div>
-                  <div class="form-control">
-                    <label class="label py-0.5"><span class="label-text text-xs">Affinity</span></label>
-                    <select name="affinity" class="select select-bordered select-sm">
-                      <%= for affinity <- affinities() do %>
-                        <option value={affinity}><%= affinity %></option>
-                      <% end %>
-                    </select>
-                  </div>
-                  <div class="form-control">
-                    <label class="label py-0.5"><span class="label-text text-xs">Target level</span></label>
-                    <select name="target_level" class="select select-bordered select-sm">
-                      <%= for level <- uptie_levels() do %>
-                        <option value={level} selected={level == "0->2"}><%= String.replace(level, "->", " → ") %></option>
-                      <% end %>
-                    </select>
-                  </div>
-                  <div class="form-control">
-                    <label class="label py-0.5"><span class="label-text text-xs">Weight</span></label>
-                    <input type="number" name="weight" value="0" class="input input-bordered input-sm w-20" />
-                  </div>
-                  <button type="submit" class="btn btn-primary btn-sm">Add uptie target</button>
-                </form>
-              <% end %>
-            <% end %>
-
-            <%!-- ================= SKILLS ================= --%>
-            <%= if @active_tab == :skills do %>
-              <.priority_board entries_by_priority={group_by_priority(@plan_data["skill_targets"])}>
-                <:card :let={target}>
-                  <div class="flex items-center gap-1 bg-base-200 rounded p-1">
-                    <span class="text-[11px] flex-1 truncate"><%= sinner_label(target["sinner"]) %> → Skill <%= target["target_level"] %></span>
-                    <span :if={target["allow_search"]} class="text-xs" title="Search allowed (double cost)">🔍</span>
-                    <button phx-click="remove_skill_target" phx-value-id={target["id"]}
-                            class="btn btn-ghost btn-2xs px-1" title="Remove">✕</button>
-                  </div>
-                </:card>
-              </.priority_board>
-
-              <div class="divider my-0"></div>
-
-              <form phx-submit="add_skill_target" class="flex items-end gap-2 flex-wrap">
-                <div class="form-control">
-                  <label class="label py-0.5"><span class="label-text text-xs">Sinner</span></label>
-                  <select name="sinner" class="select select-bordered select-sm">
-                    <%= for sinner <- @sinners do %>
-                      <option value={sinner}><%= sinner_label(sinner) %></option>
-                    <% end %>
-                  </select>
+                      <span class="badge badge-ghost badge-xs self-start"><%= grace_level_cost(grace, level) %> Starlight</span>
+                      <p class="text-[11px] text-base-content/60 leading-snug"><%= grace_effect(grace, level) %></p>
+                    </div>
+                  <% end %>
                 </div>
-                <div class="form-control">
-                  <label class="label py-0.5"><span class="label-text text-xs">Target skill</span></label>
-                  <select name="target_level" class="select select-bordered select-sm">
-                    <option value="2">Skill 2</option>
-                    <option value="3">Skill 3</option>
-                  </select>
-                </div>
-                <label class="flex items-center gap-1 cursor-pointer mb-2">
-                  <input type="checkbox" name="allow_search" value="true" class="checkbox checkbox-xs" />
-                  <span class="text-xs">allow Super Shop search (2x cost)</span>
-                </label>
-                <div class="form-control">
-                  <label class="label py-0.5"><span class="label-text text-xs">Priority</span></label>
-                  <select name="priority" class="select select-bordered select-sm">
-                    <%= for priority <- priorities() do %>
-                      <option value={priority}><%= priority_label(priority) %></option>
-                    <% end %>
-                  </select>
-                </div>
-                <button type="submit" class="btn btn-primary btn-sm">Add skill target</button>
-              </form>
-            <% end %>
-
-            <%!-- ================= REFRESH ================= --%>
-            <%= if @active_tab == :refresh do %>
-              <% policy = @plan_data["refresh_policy"] %>
-              <form phx-change="update_refresh_policy" class="flex flex-col gap-3 max-w-sm">
-                <label class="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" name="allow_affinity_refresh" value="true" checked={policy["allow_affinity_refresh"]}
-                         class="checkbox checkbox-sm" />
-                  <span class="text-sm">Allow affinity refresh (costs more, biases toward target affinity)</span>
-                </label>
-                <div class="form-control">
-                  <label class="label py-0.5"><span class="label-text text-sm">Max normal refreshes per shop</span></label>
-                  <input type="number" name="max_normal_refreshes" value={policy["max_normal_refreshes"]} min="0" max="10"
-                         class="input input-bordered input-sm w-24" />
-                </div>
-                <div class="form-control">
-                  <label class="label py-0.5"><span class="label-text text-sm">Max affinity refreshes per shop</span></label>
-                  <input type="number" name="max_affinity_refreshes" value={policy["max_affinity_refreshes"]} min="0" max="10"
-                         class="input input-bordered input-sm w-24" />
-                </div>
-              </form>
+              </div>
             <% end %>
 
           </div>

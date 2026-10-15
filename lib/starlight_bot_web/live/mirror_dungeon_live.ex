@@ -106,7 +106,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   def current_cost(run_memory), do: Map.get(run_memory, :cost, nil)
 
-  def current_mode(run_memory), do: RunMemory.mode_for(Map.get(run_memory, :team), current_floor(run_memory))
+  def current_mode(run_memory), do: Map.get(run_memory, :mode) || RunMemory.mode_for(Map.get(run_memory, :team), current_floor(run_memory))
 
   defp default_team_id([]), do: nil
   defp default_team_id([%{id: id} | _]), do: id

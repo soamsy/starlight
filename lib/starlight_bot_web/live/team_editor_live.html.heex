@@ -191,31 +191,17 @@
                 <option value="" selected={is_nil(@selected_ids["battle_strategy"])}>— none —</option>
                 <%= for bs <- @battle_strategies do %>
                   <option value={bs.id} selected={@selected_ids["battle_strategy"] == bs.id}>
-                    <%= bs.name %> (MD: <%= get_in(bs.data, ["mirror_dungeon", "type"]) %> / Lux: <%= get_in(bs.data, ["luxcavation", "type"]) %>)
+                    <%= bs.name %>
                   </option>
                 <% end %>
               </select>
             </form>
-            <button type="button" phx-click="toggle_new_strategy" phx-value-kind="battle_strategy"
-                    class="btn btn-xs btn-ghost">+ New</button>
+            <%= if @selected_ids["battle_strategy"] do %>
+              <.link navigate={~p"/battle-strategies?id=#{@selected_ids["battle_strategy"]}"}
+                     class="btn btn-xs btn-ghost">Edit ↗</.link>
+            <% end %>
+            <.link navigate={~p"/battle-strategies"} class="btn btn-xs btn-ghost">+ New</.link>
           </div>
-          <%= if @strategy_forms["battle_strategy"] do %>
-            <form phx-submit="save_strategy" phx-value-kind="battle_strategy"
-                  class="flex gap-1 items-center mt-1 p-2 bg-base-200 rounded">
-              <input type="text" name="name" placeholder="Name" class="input input-bordered input-xs flex-1" required />
-              <select name="mirror_dungeon_type" class="select select-bordered select-xs">
-                <option value="chain">MD: Chain</option>
-                <option value="chain_a_res">MD: Chain (A-Res)</option>
-                <option value="win_rate">MD: Win Rate</option>
-              </select>
-              <select name="luxcavation_type" class="select select-bordered select-xs">
-                <option value="chain">Lux: Chain</option>
-                <option value="chain_a_res">Lux: Chain (A-Res)</option>
-                <option value="win_rate">Lux: Win Rate</option>
-              </select>
-              <button type="submit" class="btn btn-xs btn-primary">Add</button>
-            </form>
-          <% end %>
         </div>
 
         <%!-- Theme Pack Plan --%>

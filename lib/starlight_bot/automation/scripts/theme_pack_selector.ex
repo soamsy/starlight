@@ -33,6 +33,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
       mode = Resolver.mode_for_floor(plan_data["mode_schedule"] || [], floor)
 
       with {:ok, frame} <- ensure_mode(frame, mode, ctx) do
+        RunMemory.put_mode(ctx, mode)
         select(frame, plan_data, theme_packs, mode, floor, ctx)
       end
     end

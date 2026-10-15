@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{Strategies, Teams}
+  alias StarlightBot.{GiftPlans, Strategies, Teams}
   alias StarlightBot.Navigation.Navigator
 
   @sinners_row1 ~w(yi_sang faust don_quixote ryoshu meursault hong_lu)
@@ -264,7 +264,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   defp blank_strategy_forms do
-    %{"gift_strategy" => false, "battle_strategy" => false, "theme_pack_plan" => false}
+    %{"gift_strategy" => false, "theme_pack_plan" => false}
   end
 
   defp blank_form, do: build_form(%{})
@@ -281,17 +281,9 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   defp kind_table("gift_strategy"), do: :gift_strategies
-  defp kind_table("battle_strategy"), do: :battle_strategies
   defp kind_table("theme_pack_plan"), do: :theme_pack_plans
 
-  defp strategy_data("gift_strategy", params), do: %{version: 1, type: "predefined", affinity: params["affinity"]}
-  defp strategy_data("battle_strategy", params) do
-    %{
-      version: 2,
-      mirror_dungeon: %{type: params["mirror_dungeon_type"] || "chain"},
-      luxcavation: %{type: params["luxcavation_type"] || "chain"}
-    }
-  end
+  defp strategy_data("gift_strategy", params), do: GiftPlans.blank(params["affinity"])
   defp strategy_data("theme_pack_plan", _params), do: %{version: 1, mode_schedule: [], packs: %{}}
 
   defp parse_id(nil), do: nil

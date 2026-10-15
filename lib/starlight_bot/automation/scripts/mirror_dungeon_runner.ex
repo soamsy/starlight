@@ -1,7 +1,7 @@
 defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   import StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.{Engine, RunMemory}
-  alias StarlightBot.Automation.Scripts.{ClaimRewards, SelectTeamOnScreen, ShopBuyer, ThemePackSelector}
+  alias StarlightBot.Automation.Scripts.{ClaimRewards, SelectTeamOnScreen, ShopRunner, ThemePackSelector}
   alias StarlightBot.Ctx
   alias StarlightBot.Teams
 
@@ -27,6 +27,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         config = Map.put(config, :grace_picks, resolve_grace_picks(team))
         RunMemory.put_team(ctx, %{id: team_id, type: team_type, affinity: Atom.to_string(affinity)})
         RunMemory.put_context(ctx, :mirror_dungeon)
+        RunMemory.put_floor(ctx, 1)
         run_state = %{run_started?: first_screen not in @door_family}
         loop(run_count, run_state, 0, 0, team_id, team_type, affinity, config, ctx)
       end
@@ -239,7 +240,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         Engine.goto(:event, :event_over, ctx) |> continue_after(run_state)
 
       screen in [:shop, :shop_super] ->
-        ShopBuyer.run(ctx) |> leave_shop(ctx) |> continue_after(run_state)
+        ShopRunner.run(ctx) |> leave_shop(ctx) |> continue_after(run_state)
 
       screen == :cabinet_reward ->
         Engine.goto(:cabinet_reward, :cabinet_reward_over, ctx) |> continue_after(run_state)

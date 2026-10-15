@@ -4,6 +4,7 @@ defmodule StarlightBot.Vision.Capture do
   alias StarlightBot.{Native, Vision.Frame}
 
   @refresh_interval_ms 2_000
+  @topic "capture:window_rect"
   @max_refresh_interval_ms 30_000
 
   defstruct [:window_title, :window_class, :window_rect, :refresh_interval_ms]
@@ -11,6 +12,8 @@ defmodule StarlightBot.Vision.Capture do
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
+
+  def subscribe, do: Phoenix.PubSub.subscribe(StarlightBot.PubSub, @topic)
 
   def start_cache do
     GenServer.call(__MODULE__, :start_cache, 60_000)
@@ -223,7 +226,7 @@ defmodule StarlightBot.Vision.Capture do
       {:error, reason} ->
         Logger.warning("Window rect refresh failed: #{inspect(reason)}", module: __MODULE__)
         next_interval = min(state.refresh_interval_ms * 2, @max_refresh_interval_ms)
-        %{state | window_rect: nil, refresh_interval_ms: next_interval}
+        %{put_rect(state, nil) | refresh_interval_ms: next_interval}
     end
   end
 
@@ -237,9 +240,15 @@ defmodule StarlightBot.Vision.Capture do
 
   defp query_window_rect(state) do
     case Native.get_window_rect(state.window_class) do
-      {:ok, wx, wy, w, h} -> {:ok, %{state | window_rect: {wx, wy, w, h}}}
+      {:ok, wx, wy, w, h} -> {:ok, put_rect(state, {wx, wy, w, h})}
       err -> err
     end
+  end
+
+  defp put_rect(%{window_rect: rect} = state, rect), do: state
+  defp put_rect(state, rect) do
+    Phoenix.PubSub.broadcast(StarlightBot.PubSub, @topic, {:window_rect, rect})
+    %{state | window_rect: rect}
   end
 
   defp maybe_rect(%{window_rect: nil}), do: {:error, :no_window}

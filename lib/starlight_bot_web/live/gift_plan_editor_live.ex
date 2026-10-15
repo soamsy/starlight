@@ -1,24 +1,19 @@
 defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{EgoGifts, Strategies, Teams}
+  alias StarlightBot.{EgoGifts, GiftPlans, Strategies, Teams}
+  alias StarlightBot.GiftPlans.{Routes, Combos}
 
-  @priorities ~w(essential desired opportunistic)
-  @tabs ~w(buy fusion uptie keep skills refresh grace)a
-  @fusable_tiers 1..4
+  @tabs ~w(workflows upties tiered_fusions shopping_lists keep_lists grace)a
   @gift_tiers 1..6
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)
   @gift_sorts ~w(default name tier affinity)
-  @uptie_levels ["0->1", "0->2"]
-  @uptie_costs %{
-    1 => %{"0->1" => 50, "0->2" => 150},
-    2 => %{"0->1" => 60, "0->2" => 180},
-    3 => %{"0->1" => 75, "0->2" => 225},
-    4 => %{"0->1" => 100, "0->2" => 300}
-  }
-  @ingredient_sources ~w(buy_if_short junk_only)
+  @uptie_step_costs %{1 => [50, 100], 2 => [60, 120], 3 => [75, 150], 4 => [100, 200]}
   @uptie_views ~w(base uptie2 uptie3)
   @stat_codes %{"cp" => "Clash Power", "fc" => "Final Power", "bc" => "Base Power", "cg" => "Coin Count"}
+  @palette_kinds ~w(refresh affinity_refresh fixed_fusion sell skill_replace heal heal_all revive budget)
+  @library_kinds [{"upties", "uptie"}, {"tiered_fusions", "tiered_fusion"}, {"shopping_lists", "buy_list"}]
+  @default_leaf %{"op" => "cost_gte", "value" => 0}
 
   @graces [
     %{index: 0, name: "Star of the Beginning", base_cost: 10,
@@ -89,11 +84,14 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
     {:ok,
      socket
-     |> assign(:plans, custom_plans(Strategies.list(:gift_strategies)))
+     |> assign(:plans, Strategies.list(:gift_strategies))
      |> assign(:gifts, gifts)
      |> assign(:gifts_by_name, Map.new(gifts, &{&1.name, &1}))
      |> assign(:gifts_by_id, Map.new(gifts, &{&1.id, &1}))
+     |> assign(:fixed_targets, gifts |> Enum.filter(&(GiftPlans.ingredient_ids(&1) != [])) |> Enum.sort_by(& &1.name))
      |> assign(:sinners, Teams.all_sinners())
+     |> assign(:route_clipboard, nil)
+     |> assign(:gift_clipboard, nil)
      |> reset_editor()}
   end
 
@@ -110,17 +108,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("new_plan", _, socket) do
-    attrs = %{name: new_plan_name(socket.assigns.plans), data: blank_plan_data()}
+    attrs = %{name: new_plan_name(socket.assigns.plans), data: GiftPlans.blank()}
 
     case Strategies.save(:gift_strategies, attrs) do
-      {:ok, id} ->
-        {:noreply,
-         socket
-         |> assign(:plans, custom_plans(Strategies.list(:gift_strategies)))
-         |> load_plan(id)}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
+      {:ok, id} -> {:noreply, socket |> refresh_plans() |> load_plan(id)}
+      {:error, reason} -> {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
     end
   end
 
@@ -136,17 +128,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         {:noreply, put_flash(socket, :error, "Plan not found.")}
 
       plan ->
-        attrs = %{name: "#{plan.name} (copy)", data: plan.data}
-
-        case Strategies.save(:gift_strategies, attrs) do
-          {:ok, new_id} ->
-            {:noreply,
-             socket
-             |> assign(:plans, custom_plans(Strategies.list(:gift_strategies)))
-             |> load_plan(new_id)}
-
-          {:error, reason} ->
-            {:noreply, put_flash(socket, :error, "Duplicate failed: #{inspect(reason)}")}
+        case Strategies.save(:gift_strategies, %{name: "#{plan.name} (copy)", data: plan.data}) do
+          {:ok, new_id} -> {:noreply, socket |> refresh_plans() |> load_plan(new_id)}
+          {:error, reason} -> {:noreply, put_flash(socket, :error, "Duplicate failed: #{inspect(reason)}")}
         end
     end
   end
@@ -158,11 +142,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     case Strategies.delete(:gift_strategies, id) do
       {:ok, _} ->
         socket = if socket.assigns.editing_id == id, do: reset_editor(socket), else: socket
-
-        {:noreply,
-         socket
-         |> assign(:plans, custom_plans(Strategies.list(:gift_strategies)))
-         |> put_flash(:info, "Plan deleted.")}
+        {:noreply, socket |> refresh_plans() |> put_flash(:info, "Plan deleted.")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Delete failed: #{inspect(reason)}")}
@@ -175,8 +155,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("set_affinity", %{"affinity" => affinity}, socket) do
+    {:noreply, update_plan(socket, &Map.put(&1, "affinity", blank_to_nil(affinity)))}
+  end
+
+  @impl true
   def handle_event("set_tab", %{"tab" => tab}, socket) do
-    {:noreply, assign(socket, :active_tab, String.to_existing_atom(tab))}
+    {:noreply, socket |> assign(:active_tab, String.to_existing_atom(tab)) |> assign(:selected_gift_name, nil)}
   end
 
   @impl true
@@ -192,8 +177,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("set_gift_affinity_filter", %{"value" => affinity}, socket) do
-    affinity = if affinity == "", do: nil, else: affinity
-    {:noreply, assign(socket, :gift_affinity_filter, affinity)}
+    {:noreply, assign(socket, :gift_affinity_filter, blank_to_nil(affinity))}
   end
 
   @impl true
@@ -218,193 +202,430 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("toggle_grace", %{"index" => index}, socket) do
     index = String.to_integer(index)
-    picks = socket.assigns.plan_data["grace_picks"]
-
-    picks =
-      if Enum.any?(picks, &(&1["index"] == index)) do
-        Enum.reject(picks, &(&1["index"] == index))
-      else
-        [%{"index" => index, "enhance" => 0} | picks]
-      end
 
     {:noreply,
-     socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "grace_picks", picks))
-     |> persist_plan()}
+     update_plan(socket, fn data ->
+       picks = data["grace_picks"]
+
+       picks =
+         if Enum.any?(picks, &(&1["index"] == index)),
+           do: Enum.reject(picks, &(&1["index"] == index)),
+           else: [%{"index" => index, "enhance" => 0} | picks]
+
+       Map.put(data, "grace_picks", picks)
+     end)}
   end
 
   @impl true
   def handle_event("set_grace_enhance", %{"index" => index, "level" => level}, socket) do
     index = String.to_integer(index)
     level = String.to_integer(level)
-    picks = socket.assigns.plan_data["grace_picks"]
 
-    picks =
-      if Enum.any?(picks, &(&1["index"] == index)) do
-        Enum.map(picks, fn pick -> if pick["index"] == index, do: %{pick | "enhance" => level}, else: pick end)
-      else
-        [%{"index" => index, "enhance" => level} | picks]
+    {:noreply,
+     update_plan(socket, fn data ->
+       picks = data["grace_picks"]
+
+       picks =
+         if Enum.any?(picks, &(&1["index"] == index)),
+           do: Enum.map(picks, fn pick -> if pick["index"] == index, do: %{pick | "enhance" => level}, else: pick end),
+           else: [%{"index" => index, "enhance" => level} | picks]
+
+       Map.put(data, "grace_picks", picks)
+     end)}
+  end
+
+  @impl true
+  def handle_event("add_workflow", _, socket) do
+    data = socket.assigns.plan_data
+    keep_id = data["library"]["keep_lists"] |> List.first() |> then(&(&1 && &1["id"]))
+    workflow = %{"id" => GiftPlans.new_id("wf"), "name" => "Workflow #{length(data["workflows"]) + 1}", "keep" => keep_id, "steps" => []}
+
+    {:noreply,
+     socket
+     |> update_plan(&Map.update!(&1, "workflows", fn workflows -> workflows ++ [workflow] end))
+     |> assign(:selected_workflow_id, workflow["id"])}
+  end
+
+  @impl true
+  def handle_event("select_workflow", %{"id" => id}, socket) do
+    {:noreply, socket |> assign(:selected_workflow_id, id) |> assign(:expanded_step_id, nil)}
+  end
+
+  @impl true
+  def handle_event("update_workflow", %{"workflow" => params}, socket) do
+    {:noreply,
+     update_plan(socket, fn data ->
+       update_workflow(data, socket.assigns.selected_workflow_id, fn workflow ->
+         workflow
+         |> Map.put("name", String.trim(params["name"] || workflow["name"]))
+         |> Map.put("keep", blank_to_nil(params["keep"]))
+       end)
+     end)}
+  end
+
+  @impl true
+  def handle_event("duplicate_workflow", %{"id" => id}, socket) do
+    case GiftPlans.find_workflow(socket.assigns.plan_data, id) do
+      nil ->
+        {:noreply, socket}
+
+      workflow ->
+        copy = %{
+          workflow
+          | "id" => GiftPlans.new_id("wf"),
+            "name" => "#{workflow["name"]} (copy)",
+            "steps" => Enum.map(workflow["steps"], &Map.put(&1, "id", GiftPlans.new_id("st")))
+        }
+
+        {:noreply,
+         socket
+         |> update_plan(&Map.update!(&1, "workflows", fn workflows -> workflows ++ [copy] end))
+         |> assign(:selected_workflow_id, copy["id"])}
+    end
+  end
+
+  @impl true
+  def handle_event("delete_workflow", %{"id" => id}, socket) do
+    data = socket.assigns.plan_data
+
+    if Enum.any?(data["floor_schedule"], &(&1["workflow"] == id)) do
+      {:noreply, put_flash(socket, :error, "That workflow is assigned to a floor range. Reassign the floors first.")}
+    else
+      remaining = Enum.reject(data["workflows"], &(&1["id"] == id))
+      selected = if socket.assigns.selected_workflow_id == id, do: first_id(remaining), else: socket.assigns.selected_workflow_id
+
+      {:noreply,
+       socket
+       |> update_plan(&Map.put(&1, "workflows", remaining))
+       |> assign(:selected_workflow_id, selected)}
+    end
+  end
+
+  @impl true
+  def handle_event("add_schedule_row", _, socket) do
+    data = socket.assigns.plan_data
+    next_floor = (data["floor_schedule"] |> Enum.map(& &1["from_floor"]) |> Enum.max(fn -> 0 end)) + 1
+    row = %{"from_floor" => next_floor, "workflow" => socket.assigns.selected_workflow_id}
+
+    {:noreply, update_plan(socket, &Map.put(&1, "floor_schedule", sort_schedule(&1["floor_schedule"] ++ [row])))}
+  end
+
+  @impl true
+  def handle_event("update_schedule", %{"rows" => rows}, socket) do
+    schedule =
+      rows
+      |> Enum.sort_by(fn {index, _row} -> String.to_integer(index) end)
+      |> Enum.map(fn {_index, row} -> %{"from_floor" => max(parse_int(row["from_floor"], 1), 1), "workflow" => row["workflow"]} end)
+      |> sort_schedule()
+
+    {:noreply, update_plan(socket, &Map.put(&1, "floor_schedule", schedule))}
+  end
+
+  @impl true
+  def handle_event("remove_schedule_row", %{"index" => index}, socket) do
+    {:noreply, update_plan(socket, &Map.update!(&1, "floor_schedule", fn rows -> List.delete_at(rows, String.to_integer(index)) end))}
+  end
+
+  @impl true
+  def handle_event("add_step", %{"kind" => kind} = params, socket) do
+    step =
+      case GiftPlans.library_ref(kind) do
+        {_lib, field} ->
+          step = GiftPlans.new_step(kind, socket.assigns.plan_data)
+          Map.put(step, field, if(is_list(step[field]), do: [params["ref"]], else: params["ref"]))
+
+        nil ->
+          GiftPlans.new_step(kind, socket.assigns.plan_data)
       end
 
     {:noreply,
      socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "grace_picks", picks))
-     |> persist_plan()}
+     |> update_selected_steps(&(&1 ++ [step]))
+     |> assign(:expanded_step_id, step["id"])}
   end
 
   @impl true
-  def handle_event("toggle_keep", %{"gift" => gift}, socket) do
-    keep = socket.assigns.plan_data["keep"]
-    keep = if gift in keep, do: List.delete(keep, gift), else: [gift | keep]
+  def handle_event("toggle_step", %{"id" => id}, socket) do
+    expanded = if socket.assigns.expanded_step_id == id, do: nil, else: id
+    {:noreply, assign(socket, :expanded_step_id, expanded)}
+  end
+
+  @impl true
+  def handle_event("update_step", %{"step_id" => id, "step" => params}, socket) do
+    {:noreply, update_step(socket, id, &apply_step_params(&1, params))}
+  end
+
+  @impl true
+  def handle_event("toggle_step_enabled", %{"id" => id}, socket) do
+    {:noreply, update_step(socket, id, &Map.put(&1, "enabled", &1["enabled"] == false))}
+  end
+
+  @impl true
+  def handle_event("move_step", %{"id" => id, "dir" => dir}, socket) do
+    offset = if dir == "up", do: -1, else: 1
+
+    {:noreply,
+     update_selected_steps(socket, fn steps ->
+       index = Enum.find_index(steps, &(&1["id"] == id))
+       target = index + offset
+
+       if target < 0 or target >= length(steps) do
+         steps
+       else
+         {step, rest} = List.pop_at(steps, index)
+         List.insert_at(rest, target, step)
+       end
+     end)}
+  end
+
+  @impl true
+  def handle_event("reorder_steps", %{"ids" => ids}, socket) do
+    {:noreply, update_selected_steps(socket, &reorder_by_ids(&1, ids, fn step -> step["id"] end))}
+  end
+
+  @impl true
+  def handle_event("duplicate_step", %{"id" => id}, socket) do
+    {:noreply,
+     update_selected_steps(socket, fn steps ->
+       index = Enum.find_index(steps, &(&1["id"] == id))
+       copy = steps |> Enum.at(index) |> Map.put("id", GiftPlans.new_id("st"))
+       List.insert_at(steps, index + 1, copy)
+     end)}
+  end
+
+  @impl true
+  def handle_event("delete_step", %{"id" => id}, socket) do
+    {:noreply, update_selected_steps(socket, fn steps -> Enum.reject(steps, &(&1["id"] == id)) end)}
+  end
+
+  @impl true
+  def handle_event("copy_step", %{"step_id" => id, "workflow" => workflow_id}, socket) when workflow_id != "" do
+    step = socket |> selected_steps() |> Enum.find(&(&1["id"] == id))
+    copy = Map.put(step, "id", GiftPlans.new_id("st"))
 
     {:noreply,
      socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "keep", keep))
-     |> persist_plan()}
+     |> update_plan(fn data -> update_workflow(data, workflow_id, &Map.update!(&1, "steps", fn steps -> steps ++ [copy] end)) end)
+     |> put_flash(:info, "Copied to #{GiftPlans.find_workflow(socket.assigns.plan_data, workflow_id)["name"]}.")}
   end
 
   @impl true
-  def handle_event("assign_buy_weight", %{"gift" => gift, "weight" => weight}, socket) do
-    entry = %{"gift" => gift, "weight" => parse_int(weight, 0)}
+  def handle_event("copy_step", _params, socket), do: {:noreply, socket}
 
-    buy_on_sight =
-      [entry | Enum.reject(socket.assigns.plan_data["buy_on_sight"], &(&1["gift"] == gift))]
+  @impl true
+  def handle_event("toggle_step_list_item", %{"id" => id, "field" => field, "item" => item}, socket)
+      when field in ["tiers", "options", "upties", "fusions"] do
+    value = if field == "tiers", do: String.to_integer(item), else: item
 
     {:noreply,
-     socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "buy_on_sight", buy_on_sight))
-     |> persist_plan()}
+     update_step(socket, id, fn step ->
+       items = step[field] || []
+       items = if value in items, do: List.delete(items, value), else: items ++ [value]
+       Map.put(step, field, items)
+     end)}
   end
 
   @impl true
-  def handle_event("remove_buy_target", %{"gift" => gift}, socket) do
-    buy_on_sight = Enum.reject(socket.assigns.plan_data["buy_on_sight"], &(&1["gift"] == gift))
+  def handle_event("reorder_step_field", %{"scope" => scope, "ids" => ids}, socket) do
+    [id, field] = String.split(scope, ":")
+    ids = if field == "tiers", do: Enum.map(ids, &String.to_integer/1), else: ids
+    {:noreply, update_step(socket, id, &Map.put(&1, field, ids))}
+  end
+
+  @impl true
+  def handle_event("cond_add", %{"step_id" => id, "path" => path, "node" => node}, socket) do
+    child = if node == "group", do: %{"op" => "or", "children" => [@default_leaf]}, else: @default_leaf
 
     {:noreply,
-     socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "buy_on_sight", buy_on_sight))
-     |> persist_plan()}
+     update_condition(socket, id, fn
+       nil -> %{"op" => "and", "children" => [child]}
+       tree -> update_node(tree, parse_path(path), &Map.update!(&1, "children", fn children -> children ++ [child] end))
+     end)}
   end
 
   @impl true
-  def handle_event("add_fusion_target", %{"gift" => gift} = params, socket) when gift not in [nil, ""] do
-    entry = %{
-      "id" => new_id("ft"),
-      "gift" => gift,
-      "weight" => parse_int(params["weight"], 0),
-      "ingredient_source" => params["ingredient_source"],
-      "fallback_of" => blank_to_nil(params["fallback_of"])
-    }
+  def handle_event("cond_remove", %{"step_id" => id, "path" => path}, socket) do
+    {:noreply, update_condition(socket, id, &remove_node(&1, parse_path(path)))}
+  end
 
-    fusion_targets = [entry | socket.assigns.plan_data["fusion_targets"]]
-
+  @impl true
+  def handle_event("cond_toggle_op", %{"step_id" => id, "path" => path}, socket) do
     {:noreply,
-     socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "fusion_targets", fusion_targets))
-     |> persist_plan()}
+     update_condition(socket, id, fn tree ->
+       update_node(tree, parse_path(path), fn group -> Map.put(group, "op", if(group["op"] == "and", do: "or", else: "and")) end)
+     end)}
   end
 
   @impl true
-  def handle_event("add_fusion_target", _params, socket) do
-    {:noreply, put_flash(socket, :error, "Select a gift to fuse toward first.")}
-  end
-
-  @impl true
-  def handle_event("remove_fusion_target", %{"id" => id}, socket) do
-    fusion_targets =
-      socket.assigns.plan_data["fusion_targets"]
-      |> Enum.reject(&(&1["id"] == id))
-      |> Enum.map(fn t -> if t["fallback_of"] == id, do: Map.put(t, "fallback_of", nil), else: t end)
-
-    {:noreply,
-     socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "fusion_targets", fusion_targets))
-     |> persist_plan()}
-  end
-
-  @impl true
-  def handle_event("set_uptie_scope", %{"scope" => scope}, socket) do
-    {:noreply, assign(socket, :uptie_scope, scope)}
-  end
-
-  @impl true
-  def handle_event("add_uptie_target", params, socket) do
-    entry =
-      case params["scope"] do
-        "named" ->
-          %{"id" => new_id("ut"), "scope" => "named", "gift" => params["gift"],
-            "target_level" => params["target_level"], "weight" => parse_int(params["weight"], 0)}
-
-        "tier_affinity" ->
-          %{"id" => new_id("ut"), "scope" => "tier_affinity", "tier" => String.to_integer(params["tier"]),
-            "affinity" => params["affinity"], "target_level" => params["target_level"], "weight" => parse_int(params["weight"], 0)}
+  def handle_event("cond_update", %{"step_id" => id, "path" => path} = params, socket) do
+    leaf =
+      case params["op"] do
+        "cost_gte" -> %{"op" => "cost_gte", "value" => parse_int(params["value"], 0)}
+        op -> %{"op" => op, "gift" => String.trim(params["gift"] || "")}
       end
 
-    uptie_targets = [entry | socket.assigns.plan_data["uptie_targets"]]
-
-    {:noreply,
-     socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "uptie_targets", uptie_targets))
-     |> persist_plan()}
+    {:noreply, update_condition(socket, id, &update_node(&1, parse_path(path), fn _ -> leaf end))}
   end
 
   @impl true
-  def handle_event("remove_uptie_target", %{"id" => id}, socket) do
-    uptie_targets = Enum.reject(socket.assigns.plan_data["uptie_targets"], &(&1["id"] == id))
+  def handle_event("lib_add", %{"lib" => lib}, socket) do
+    count = length(socket.assigns.plan_data["library"][lib])
+    definition = GiftPlans.new_definition(lib, "#{lib_label(lib)} #{count + 1}")
 
     {:noreply,
      socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "uptie_targets", uptie_targets))
-     |> persist_plan()}
+     |> update_plan(&update_in(&1, ["library", lib], fn defs -> defs ++ [definition] end))
+     |> select_definition(lib, definition["id"])}
   end
 
   @impl true
-  def handle_event("add_skill_target", params, socket) do
-    entry = %{
-      "id" => new_id("st"),
-      "sinner" => params["sinner"],
-      "target_level" => String.to_integer(params["target_level"]),
-      "priority" => params["priority"],
-      "allow_search" => params["allow_search"] == "true"
-    }
-
-    skill_targets = [entry | socket.assigns.plan_data["skill_targets"]]
-
-    {:noreply,
-     socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "skill_targets", skill_targets))
-     |> persist_plan()}
+  def handle_event("lib_select", %{"lib" => lib, "id" => id}, socket) do
+    {:noreply, select_definition(socket, lib, id)}
   end
 
   @impl true
-  def handle_event("remove_skill_target", %{"id" => id}, socket) do
-    skill_targets = Enum.reject(socket.assigns.plan_data["skill_targets"], &(&1["id"] == id))
+  def handle_event("lib_delete", %{"lib" => lib, "id" => id}, socket) do
+    remaining = Enum.reject(socket.assigns.plan_data["library"][lib], &(&1["id"] == id))
 
     {:noreply,
      socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "skill_targets", skill_targets))
-     |> persist_plan()}
+     |> update_plan(&put_in(&1, ["library", lib], remaining))
+     |> select_definition(lib, first_id(remaining))}
   end
 
   @impl true
-  def handle_event("update_refresh_policy", params, socket) do
-    policy = %{
-      "allow_affinity_refresh" => params["allow_affinity_refresh"] == "true",
-      "max_normal_refreshes" => parse_int(params["max_normal_refreshes"], 0),
-      "max_affinity_refreshes" => parse_int(params["max_affinity_refreshes"], 0)
-    }
-
-    {:noreply,
-     socket
-     |> assign(:plan_data, Map.put(socket.assigns.plan_data, "refresh_policy", policy))
-     |> persist_plan()}
+  def handle_event("lib_update", %{"lib" => lib, "def_id" => id, "def" => params}, socket) do
+    {:noreply, update_plan(socket, &update_definition(&1, lib, id, fn definition -> apply_definition_params(lib, definition, params) end))}
   end
 
-  # --- Display helpers (used from the template) ---
+  @impl true
+  def handle_event("lib_toggle_gift", %{"lib" => lib, "id" => id, "gift" => gift}, socket) do
+    {:noreply,
+     update_plan(socket, fn data ->
+       update_definition(data, lib, id, fn definition ->
+         gifts = definition["gifts"]
+         Map.put(definition, "gifts", if(gift in gifts, do: List.delete(gifts, gift), else: gifts ++ [gift]))
+       end)
+     end)}
+  end
 
-  def priorities, do: @priorities
+  @impl true
+  def handle_event("lib_reorder_gifts", %{"scope" => scope, "ids" => ids}, socket) do
+    [lib, id] = String.split(scope, ":")
+    {:noreply, update_plan(socket, &update_definition(&1, lib, id, fn definition -> Map.put(definition, "gifts", ids) end))}
+  end
+
+  @impl true
+  def handle_event("set_uptie_gift", %{"id" => id, "gift" => gift_name}, socket) do
+    {:noreply, update_plan(socket, &update_definition(&1, "upties", id, fn definition -> Map.put(definition, "gift", gift_name) end))}
+  end
+
+  @impl true
+  def handle_event("set_fusion_target", %{"id" => id, "gift" => gift_name}, socket) do
+    tier = socket.assigns.gifts_by_name[gift_name].tier
+
+    {:noreply,
+     update_plan(socket, fn data ->
+       update_definition(data, "tiered_fusions", id, fn definition ->
+         routes =
+           case Routes.valid_for_tier(definition["routes"] || [], tier) do
+             [] -> Routes.defaults(tier)
+             kept -> kept
+           end
+
+         %{definition | "target" => gift_name, "routes" => routes}
+       end)
+     end)}
+  end
+
+  @impl true
+  def handle_event("gifts_copy", %{"lib" => lib, "def_id" => id}, socket) do
+    definition = GiftPlans.find_definition(socket.assigns.plan_data, lib, id)
+    clipboard = %{name: definition["name"], lib: lib, gifts: definition["gifts"]}
+    {:noreply, assign(socket, :gift_clipboard, clipboard)}
+  end
+
+  @impl true
+  def handle_event("gifts_paste", %{"lib" => lib, "def_id" => id}, socket) do
+    case socket.assigns.gift_clipboard do
+      %{gifts: gifts} -> {:noreply, update_plan(socket, &update_definition(&1, lib, id, fn definition -> Map.put(definition, "gifts", gifts) end))}
+      nil -> {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("rt_copy", %{"def_id" => id}, socket) do
+    definition = GiftPlans.find_definition(socket.assigns.plan_data, "tiered_fusions", id)
+    target = socket.assigns.gifts_by_name[definition["target"]]
+
+    clipboard = %{name: definition["name"], tier: target.tier, routes: definition["routes"] || []}
+    {:noreply, assign(socket, :route_clipboard, clipboard)}
+  end
+
+  @impl true
+  def handle_event("rt_paste", %{"def_id" => id}, socket) do
+    case socket.assigns.route_clipboard do
+      %{routes: routes} -> {:noreply, update_routes(socket, id, fn _routes -> Routes.copy(routes) end)}
+      nil -> {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("rt_add", %{"def_id" => id, "parent" => parent, "tier" => tier, "combo" => key}, socket) when key != "" do
+    route = Routes.new(Combos.parse_combo_key(key))
+    {:noreply, update_routes(socket, id, &Routes.add(&1, blank_to_nil(parent), String.to_integer(tier), route))}
+  end
+
+  @impl true
+  def handle_event("rt_add", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("rt_update", %{"def_id" => id, "route_id" => route_id} = params, socket) do
+    leftover =
+      for {tier, value} <- params["leftover"] || %{}, count = parse_int(value, 0), count > 0, into: %{}, do: {tier, count}
+
+    {:noreply,
+     update_routes(socket, id, fn routes ->
+       Routes.update(routes, route_id, fn route ->
+         %{route | "buy_up_to" => parse_optional_int(params["buy_up_to"]), "leftover" => leftover}
+       end)
+     end)}
+  end
+
+  @impl true
+  def handle_event("rt_duplicate", %{"def_id" => id, "route_id" => route_id}, socket) do
+    {:noreply, update_routes(socket, id, &Routes.duplicate(&1, route_id))}
+  end
+
+  @impl true
+  def handle_event("rt_delete", %{"def_id" => id, "route_id" => route_id}, socket) do
+    {:noreply, update_routes(socket, id, &Routes.delete(&1, route_id))}
+  end
+
+  @impl true
+  def handle_event("rt_reorder", %{"scope" => scope, "ids" => ids}, socket) do
+    [id, parent, tier] = String.split(scope, "|")
+    {:noreply, update_routes(socket, id, &Routes.reorder(&1, blank_to_nil(parent), String.to_integer(tier), ids))}
+  end
+
   def tabs, do: @tabs
   def graces, do: @graces
+  def gift_tiers, do: @gift_tiers
+  def affinities, do: @affinities
+  def palette_kinds, do: @palette_kinds
+  def library_kinds, do: @library_kinds
+
+  def tab_label(:workflows), do: "Workflows"
+  def tab_label(:upties), do: "Upties"
+  def tab_label(:tiered_fusions), do: "Tiered Fusions"
+  def tab_label(:shopping_lists), do: "Shopping Lists"
+  def tab_label(:keep_lists), do: "Keep Lists"
+  def tab_label(:grace), do: "Grace"
+
+  def lib_label("upties"), do: "Uptie"
+  def lib_label("tiered_fusions"), do: "Tiered Fusion"
+  def lib_label("shopping_lists"), do: "Shopping List"
+  def lib_label("keep_lists"), do: "Keep List"
 
   def grace_pick(plan_data, index), do: Enum.find(plan_data["grace_picks"], &(&1["index"] == index))
 
@@ -424,47 +645,91 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       end
     end)
   end
-  def fusable_tiers, do: @fusable_tiers
-  def gift_tiers, do: @gift_tiers
-  def affinities, do: @affinities
-  def uptie_levels, do: @uptie_levels
-  def ingredient_sources, do: @ingredient_sources
+  def sinner_label(nil), do: "(none)"
+  def sinner_label(sinner), do: sinner |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
 
-  def tab_label(:grace), do: "Grace"
-  def tab_label(:keep), do: "Keep"
-  def tab_label(:buy), do: "Buy on Sight"
-  def tab_label(:fusion), do: "Fusion"
-  def tab_label(:uptie), do: "Uptie"
-  def tab_label(:skills), do: "Skills"
-  def tab_label(:refresh), do: "Refresh"
+  def skill_option_label("s1_s2"), do: "S1 → S2 (45)"
+  def skill_option_label("s2_s3"), do: "S2 → S3 (75)"
+  def skill_option_label("s1_s3"), do: "S1 → S3 (120)"
 
-  def priority_label("essential"), do: "Essential"
-  def priority_label("desired"), do: "Desired"
-  def priority_label("opportunistic"), do: "Opportunistic"
+  def selected_workflow(assigns), do: GiftPlans.find_workflow(assigns.plan_data, assigns.selected_workflow_id)
 
-  def priority_tooltip("essential"), do: "Chase this aggressively — spend cost freely to get it."
-  def priority_tooltip("desired"), do: "Worth going for, but don't sacrifice the essentials to get it."
-  def priority_tooltip("opportunistic"), do: "Only take it if it's already cheap and available — never chase it."
+  def selected_definition(assigns, lib), do: GiftPlans.find_definition(assigns.plan_data, lib, assigns.selected_def[lib])
 
-  def ingredient_source_label("buy_if_short"), do: "Buy if short"
-  def ingredient_source_label("junk_only"), do: "Junk only"
+  def workflows_using_keep(data, keep_id), do: data["workflows"] |> Enum.filter(&(&1["keep"] == keep_id)) |> Enum.map(& &1["name"])
 
-  def sinner_label(sinner) do
-    sinner |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
+  def step_broken?(data, step), do: match?({:error, _}, GiftPlans.definition_for(data, step))
+
+  def step_summary(data, %{"kind" => "uptie"} = step) do
+    case GiftPlans.definition_for(data, step) do
+      {:ok, defs} -> "up to #{step["max_gifts"]} · " <> Enum.map_join(defs, " › ", &"#{&1["gift"] || "(no gift)"} +#{&1["target_level"]}")
+      _ -> nil
+    end
   end
 
-  def buy_gifts_sorted(gifts_by_name, buy_on_sight) do
-    buy_on_sight
-    |> Enum.map(fn entry -> {Map.get(gifts_by_name, entry["gift"]), entry["weight"] || 0} end)
-    |> Enum.reject(fn {gift, _weight} -> is_nil(gift) end)
-    |> Enum.sort_by(fn {_gift, weight} -> -weight end)
+  def step_summary(data, %{"kind" => "tiered_fusion"} = step) do
+    case GiftPlans.definition_for(data, step) do
+      {:ok, defs} -> Enum.map_join(defs, " › ", &(&1["target"] || "(no target)"))
+      _ -> nil
+    end
   end
 
-  def sort_by_weight(entries), do: Enum.sort_by(entries, &(-(&1["weight"] || 0)))
+  def step_summary(_data, %{"kind" => "buy_list"} = step), do: "up to #{step["max_items"]}"
 
-  def group_by_priority(entries) do
-    Map.new(@priorities, fn p -> {p, Enum.filter(entries, &(&1["priority"] == p))} end)
+  def step_summary(_data, %{"kind" => "fixed_fusion"} = step), do: if(step["buy_missing"], do: "buy missing", else: "owned ingredients only")
+
+  def step_summary(_data, %{"kind" => "sell"} = step) do
+    tiers = Enum.map_join(step["tiers"] || [], " then ", &"T#{&1}")
+    stop = if step["stop_at_cost"], do: "until #{step["stop_at_cost"]} or ", else: "up to "
+    "#{tiers} · #{stop}#{step["max_items"]} sold"
   end
+
+  def step_summary(_data, %{"kind" => "skill_replace"} = step), do: Enum.map_join(step["options"] || [], ", ", &String.replace(&1, "_", "→"))
+
+  def step_summary(_data, %{"kind" => kind}) when kind in ~w(heal heal_all revive), do: "costs #{GiftPlans.heal_cost()}"
+
+  def step_summary(_data, _step), do: nil
+
+  def combo_roman(combo), do: Enum.map_join(combo, " ", &gift_tier_roman/1)
+
+  def combo_shops_label([:normal, :super]), do: nil
+  def combo_shops_label([:normal]), do: "normal only"
+  def combo_shops_label([:super]), do: "super only"
+  def combo_shops_label([]), do: "can't make this tier"
+
+  def selector_combos(tier) do
+    tier |> Combos.valid_combos() |> Enum.sort_by(&{&1.shops == [:super], Enum.max(&1.combo) >= tier, &1.points})
+  end
+
+  def combo_meta(combo), do: "#{Combos.points(combo)} pts · #{Combos.keyword_odds(combo)}% keyword"
+
+  def fusion_target_eligible?(gift), do: gift.tier in 2..4 and GiftPlans.ingredient_ids(gift) == []
+
+  def uptie_cost(nil, _from, _to), do: nil
+
+  def uptie_cost(tier, from, to) do
+    case Map.get(@uptie_step_costs, tier) do
+      nil -> nil
+      steps -> steps |> Enum.slice(from, to - from) |> Enum.sum()
+    end
+  end
+
+  def uptie_cost_hint(gift, definition) do
+    target = definition["target_level"]
+    tier = gift && gift.tier
+
+    [
+      uptie_cost(tier, 0, target) && "0→#{target}: #{uptie_cost(tier, 0, target)}",
+      target == 2 && uptie_cost(tier, 1, 2) && "1→2: #{uptie_cost(tier, 1, 2)}"
+    ]
+    |> Enum.filter(& &1)
+    |> Enum.join(" · ")
+  end
+
+  def child_path("", index), do: "#{index}"
+  def child_path(path, index), do: "#{path}.#{index}"
+
+  def fusion_ingredient_ids(gift), do: GiftPlans.ingredient_ids(gift)
 
   def filtered_gifts(gifts, filter, tier_filter, affinity_filter, sort_by) do
     gifts
@@ -497,77 +762,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp to_roman(_n, []), do: ""
 
   def gift_affinity_icon(affinity), do: "/images/affinity/#{affinity}.webp"
-
-  def buy_weight_for(plan_data, gift_name) do
-    case Enum.find(plan_data["buy_on_sight"], &(&1["gift"] == gift_name)) do
-      %{"weight" => weight} -> weight
-      nil -> nil
-    end
-  end
-
-  def fusion_target_label(target, gifts_by_name) do
-    case Map.get(gifts_by_name, target["gift"]) do
-      %{name: name} -> name
-      nil -> target["gift"] || legacy_fusion_target_label(target)
-    end
-  end
-
-  defp legacy_fusion_target_label(%{"target_tier" => tier, "target_affinity" => affinity}),
-    do: "T#{tier} · #{affinity} (legacy)"
-
-  defp legacy_fusion_target_label(_), do: "?"
-
-  def fusion_target_tier(target, gifts_by_name) do
-    case Map.get(gifts_by_name, target["gift"]) do
-      %{tier: tier} -> tier
-      nil -> nil
-    end
-  end
-
-  def fusion_ingredient_ids(%{ingredients: ingredients}) when is_binary(ingredients) and ingredients != "" do
-    ingredients |> String.split(",") |> Enum.map(&String.trim/1)
-  end
-
-  def fusion_ingredient_ids(_gift), do: []
-
-  def fusion_is_named_recipe?(target, gifts_by_name) do
-    case Map.get(gifts_by_name, target["gift"]) do
-      %{} = gift -> fusion_ingredient_ids(gift) != []
-      nil -> false
-    end
-  end
-
-  def fallback_label(nil, _fusion_targets, _gifts_by_name), do: nil
-
-  def fallback_label(fallback_of, fusion_targets, gifts_by_name) do
-    case Enum.find(fusion_targets, &(&1["id"] == fallback_of)) do
-      nil -> nil
-      target -> fusion_target_label(target, gifts_by_name)
-    end
-  end
-
-  def uptie_target_label(%{"scope" => "named"} = target), do: target["gift"]
-  def uptie_target_label(%{"scope" => "tier_affinity"} = target), do: "T#{target["tier"]} · #{target["affinity"]}"
-
-  def uptie_target_tier(%{"scope" => "named", "gift" => gift}, gifts_by_name) do
-    case Map.get(gifts_by_name, gift) do
-      %{tier: tier} -> tier
-      nil -> nil
-    end
-  end
-
-  def uptie_target_tier(%{"scope" => "tier_affinity", "tier" => tier}, _gifts_by_name), do: tier
-  def uptie_target_tier(_target, _gifts_by_name), do: nil
-
-  def uptie_target_cost(target, gifts_by_name) do
-    with tier when not is_nil(tier) <- uptie_target_tier(target, gifts_by_name),
-         %{} = costs_by_tier <- Map.get(@uptie_costs, tier),
-         cost when not is_nil(cost) <- Map.get(costs_by_tier, target["target_level"]) do
-      cost
-    else
-      _ -> nil
-    end
-  end
 
   def uptie_views, do: @uptie_views
 
@@ -605,7 +799,166 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     end
   end
 
-  # --- Private ---
+  defp refresh_plans(socket), do: assign(socket, :plans, Strategies.list(:gift_strategies))
+
+  defp reset_editor(socket) do
+    socket
+    |> assign(:editing_id, nil)
+    |> assign(:name, "")
+    |> assign(:plan_data, GiftPlans.blank())
+    |> assign(:active_tab, :workflows)
+    |> assign(:selected_workflow_id, nil)
+    |> assign(:expanded_step_id, nil)
+    |> assign(:selected_def, %{})
+    |> reset_browser()
+  end
+
+  defp reset_browser(socket) do
+    socket
+    |> assign(:gift_filter, "")
+    |> assign(:gift_tier_filter, nil)
+    |> assign(:gift_affinity_filter, nil)
+    |> assign(:gift_sort, "default")
+    |> assign(:selected_gift_name, nil)
+    |> assign(:uptie_view, "base")
+  end
+
+  defp load_plan(socket, id) do
+    case Strategies.get(:gift_strategies, id) do
+      nil ->
+        put_flash(socket, :error, "Plan not found.")
+
+      plan ->
+        data = GiftPlans.normalize(plan.data)
+
+        socket
+        |> assign(:editing_id, plan.id)
+        |> assign(:name, plan.name)
+        |> assign(:plan_data, data)
+        |> assign(:active_tab, :workflows)
+        |> assign(:selected_workflow_id, first_id(data["workflows"]))
+        |> assign(:expanded_step_id, nil)
+        |> assign(:selected_def, Map.new(GiftPlans.library_keys(), &{&1, first_id(data["library"][&1])}))
+        |> reset_browser()
+    end
+  end
+
+  defp persist_plan(socket) do
+    attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.plan_data}
+
+    case Strategies.save(:gift_strategies, attrs) do
+      {:ok, _id} -> refresh_plans(socket)
+      {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
+    end
+  end
+
+  defp update_plan(socket, fun), do: socket |> assign(:plan_data, fun.(socket.assigns.plan_data)) |> persist_plan()
+
+  defp update_workflow(data, id, fun) do
+    Map.update!(data, "workflows", fn workflows -> Enum.map(workflows, &if(&1["id"] == id, do: fun.(&1), else: &1)) end)
+  end
+
+  defp selected_steps(socket), do: selected_workflow(socket.assigns)["steps"]
+
+  defp update_selected_steps(socket, fun) do
+    update_plan(socket, &update_workflow(&1, socket.assigns.selected_workflow_id, fn workflow -> Map.update!(workflow, "steps", fun) end))
+  end
+
+  defp update_step(socket, id, fun) do
+    update_selected_steps(socket, fn steps -> Enum.map(steps, &if(&1["id"] == id, do: fun.(&1), else: &1)) end)
+  end
+
+  defp update_condition(socket, id, fun) do
+    update_step(socket, id, fn step -> Map.put(step, "condition", step["condition"] |> fun.() |> GiftPlans.prune_condition()) end)
+  end
+
+  defp update_routes(socket, id, fun) do
+    update_plan(socket, &update_definition(&1, "tiered_fusions", id, fn definition -> Map.update(definition, "routes", fun.([]), fun) end))
+  end
+
+  defp update_definition(data, lib, id, fun) do
+    update_in(data, ["library", lib], fn defs -> Enum.map(defs, &if(&1["id"] == id, do: fun.(&1), else: &1)) end)
+  end
+
+  defp select_definition(socket, lib, id) do
+    socket
+    |> assign(:selected_def, Map.put(socket.assigns.selected_def, lib, id))
+    |> assign(:selected_gift_name, nil)
+  end
+
+  defp apply_step_params(%{"kind" => "uptie"} = step, p), do: Map.put(step, "max_gifts", max(parse_int(p["max_gifts"], 1), 1))
+
+  defp apply_step_params(%{"kind" => "buy_list"} = step, p) do
+    %{step | "list" => blank_to_nil(p["list"]), "max_items" => max(parse_int(p["max_items"], 1), 1)}
+  end
+
+  defp apply_step_params(%{"kind" => "fixed_fusion"} = step, p) do
+    %{step | "target" => blank_to_nil(p["target"]), "buy_missing" => p["buy_missing"] == "true"}
+  end
+
+  defp apply_step_params(%{"kind" => "affinity_refresh"} = step, p), do: Map.put(step, "affinity", blank_to_nil(p["affinity"]))
+
+  defp apply_step_params(%{"kind" => "sell"} = step, p) do
+    %{step | "stop_at_cost" => parse_optional_int(p["stop_at_cost"]), "max_items" => max(parse_int(p["max_items"], 1), 1)}
+  end
+
+  defp apply_step_params(%{"kind" => "skill_replace"} = step, p), do: Map.put(step, "sinner", blank_to_nil(p["sinner"]))
+  defp apply_step_params(%{"kind" => kind} = step, p) when kind in ["heal", "revive"], do: Map.put(step, "sinner", blank_to_nil(p["sinner"]))
+  defp apply_step_params(%{"kind" => "budget"} = step, p), do: Map.put(step, "amount", parse_int(p["amount"], 0))
+  defp apply_step_params(step, _p), do: step
+
+  defp apply_definition_params("upties", definition, p) do
+    %{definition | "name" => p["name"] || definition["name"], "target_level" => parse_int(p["target_level"], 2)}
+  end
+
+  defp apply_definition_params(_lib, definition, p), do: Map.put(definition, "name", p["name"] || definition["name"])
+
+  defp sort_schedule(rows), do: Enum.sort_by(rows, & &1["from_floor"])
+
+  defp reorder_by_ids(items, ids, key_fun) do
+    by_key = Map.new(items, &{key_fun.(&1), &1})
+    ordered = ids |> Enum.map(&Map.get(by_key, &1)) |> Enum.reject(&is_nil/1)
+    ordered ++ Enum.reject(items, &(&1 in ordered))
+  end
+
+  defp parse_path(""), do: []
+  defp parse_path(path), do: path |> String.split(".") |> Enum.map(&String.to_integer/1)
+
+  defp update_node(node, [], fun), do: fun.(node)
+
+  defp update_node(%{"children" => children} = node, [index | rest], fun) do
+    %{node | "children" => List.update_at(children, index, &update_node(&1, rest, fun))}
+  end
+
+  defp remove_node(_tree, []), do: nil
+
+  defp remove_node(tree, path) do
+    {parent_path, [index]} = Enum.split(path, -1)
+    update_node(tree, parent_path, &Map.update!(&1, "children", fn children -> List.delete_at(children, index) end))
+  end
+
+  defp first_id([%{"id" => id} | _]), do: id
+  defp first_id(_), do: nil
+
+  defp new_plan_name(plans), do: "New Gift Plan #{length(plans) + 1}"
+
+  defp blank_to_nil(nil), do: nil
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(val), do: val
+
+  defp parse_int(val, default) do
+    case Integer.parse(val || "") do
+      {int, _} -> int
+      :error -> default
+    end
+  end
+
+  defp parse_optional_int(val) do
+    case Integer.parse(val || "") do
+      {int, _} -> int
+      :error -> nil
+    end
+  end
 
   defp replace_entity_tokens(text, gifts_by_id) do
     text
@@ -645,117 +998,218 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp matches_text_filter?(_gift, ""), do: true
   defp matches_text_filter?(gift, filter), do: String.contains?(String.downcase(gift.name || ""), String.downcase(filter))
 
-  defp custom_plans(plans), do: Enum.filter(plans, &(get_in(&1.data, ["type"]) == "custom"))
+  attr :node, :map, required: true
+  attr :path, :string, required: true
+  attr :step_id, :string, required: true
 
-  defp reset_editor(socket) do
-    socket
-    |> assign(:editing_id, nil)
-    |> assign(:name, "")
-    |> assign(:plan_data, blank_plan_data())
-    |> assign(:active_tab, :buy)
-    |> assign(:gift_filter, "")
-    |> assign(:gift_tier_filter, nil)
-    |> assign(:gift_affinity_filter, nil)
-    |> assign(:gift_sort, "default")
-    |> assign(:uptie_scope, "named")
-    |> assign(:selected_gift_name, nil)
-    |> assign(:uptie_view, "base")
+  def condition_node(%{node: %{"children" => _}} = assigns) do
+    ~H"""
+    <div class="border border-base-300 rounded-lg p-1.5 flex flex-col gap-1">
+      <div class="flex items-center gap-1">
+        <button type="button" phx-click="cond_toggle_op" phx-value-step_id={@step_id} phx-value-path={@path}
+                class="btn btn-2xs btn-secondary" title="Toggle AND / OR">
+          <%= String.upcase(@node["op"]) %>
+        </button>
+        <span class="text-[10px] text-base-content/40">
+          <%= if @node["op"] == "and", do: "all of", else: "any of" %>
+        </span>
+        <button type="button" phx-click="cond_add" phx-value-step_id={@step_id} phx-value-path={@path} phx-value-node="leaf"
+                class="btn btn-2xs btn-ghost ml-auto">+ condition</button>
+        <button type="button" phx-click="cond_add" phx-value-step_id={@step_id} phx-value-path={@path} phx-value-node="group"
+                class="btn btn-2xs btn-ghost">+ group</button>
+        <button type="button" phx-click="cond_remove" phx-value-step_id={@step_id} phx-value-path={@path}
+                class="btn btn-2xs btn-ghost text-error" title="Remove group">✕</button>
+      </div>
+      <div class="flex flex-col gap-1 pl-3">
+        <%= for {child, index} <- Enum.with_index(@node["children"]) do %>
+          <.condition_node node={child} path={child_path(@path, index)} step_id={@step_id} />
+        <% end %>
+      </div>
+    </div>
+    """
   end
 
-  defp load_plan(socket, id) do
-    case Strategies.get(:gift_strategies, id) do
-      nil ->
-        put_flash(socket, :error, "Plan not found.")
-
-      plan ->
-        socket
-        |> assign(:editing_id, plan.id)
-        |> assign(:name, plan.name)
-        |> assign(:plan_data, normalize_plan_data(plan.data))
-        |> assign(:active_tab, :buy)
-        |> assign(:gift_filter, "")
-        |> assign(:gift_tier_filter, nil)
-        |> assign(:gift_affinity_filter, nil)
-        |> assign(:gift_sort, "default")
-        |> assign(:uptie_scope, "named")
-        |> assign(:selected_gift_name, nil)
-        |> assign(:uptie_view, "base")
-    end
+  def condition_node(assigns) do
+    ~H"""
+    <form phx-change="cond_update" class="flex items-center gap-1">
+      <input type="hidden" name="step_id" value={@step_id} />
+      <input type="hidden" name="path" value={@path} />
+      <select name="op" class="select select-bordered select-xs">
+        <option value="cost_gte" selected={@node["op"] == "cost_gte"}>cost at least</option>
+        <option value="has_gift" selected={@node["op"] == "has_gift"}>owns gift</option>
+        <option value="missing_gift" selected={@node["op"] == "missing_gift"}>doesn't own gift</option>
+      </select>
+      <%= if @node["op"] == "cost_gte" do %>
+        <input type="number" name="value" value={@node["value"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
+      <% else %>
+        <input type="text" name="gift" value={@node["gift"]} list="gift-name-options" phx-debounce="blur"
+               placeholder="Gift name" class="input input-bordered input-xs flex-1 min-w-0" />
+      <% end %>
+      <button type="button" phx-click="cond_remove" phx-value-step_id={@step_id} phx-value-path={@path}
+              class="btn btn-2xs btn-ghost text-error" title="Remove condition">✕</button>
+    </form>
+    """
   end
 
-  defp persist_plan(socket) do
-    attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.plan_data}
+  attr :def_id, :string, required: true
+  attr :routes, :list, required: true
+  attr :tier, :integer, required: true
+  attr :parent, :string, default: ""
 
-    case Strategies.save(:gift_strategies, attrs) do
-      {:ok, _id} -> assign(socket, :plans, custom_plans(Strategies.list(:gift_strategies)))
-      {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
-    end
+  def route_list(assigns) do
+    ~H"""
+    <div class="flex flex-col gap-1">
+      <div id={"routes-#{@def_id}-#{@parent}-#{@tier}"} phx-hook="SortableList" data-sort-event="rt_reorder"
+           data-sort-scope={"#{@def_id}|#{@parent}|#{@tier}"} class="flex flex-col gap-1">
+        <div :for={{route, index} <- Enum.with_index(@routes, 1)} data-sort-id={route["id"]}
+             class="border border-base-300 rounded-lg p-1.5 flex flex-col gap-1 bg-base-100">
+          <div class="flex items-center gap-2">
+            <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
+            <span class="text-[10px] text-base-content/40 w-4 text-right"><%= index %></span>
+            <span class="text-xs font-semibold" style="font-family: ui-serif, Georgia, serif;"><%= combo_roman(route["combo"]) %></span>
+            <span class="text-[10px] text-base-content/50"><%= combo_meta(route["combo"]) %></span>
+            <span :if={label = combo_shops_label(Combos.shops(route["combo"], @tier))} class="badge badge-outline badge-xs"><%= label %></span>
+            <button type="button" phx-click="rt_duplicate" phx-value-def_id={@def_id} phx-value-route_id={route["id"]}
+                    class="btn btn-ghost btn-2xs ml-auto">Dup</button>
+            <button type="button" phx-click="rt_delete" phx-value-def_id={@def_id} phx-value-route_id={route["id"]}
+                    class="btn btn-ghost btn-2xs text-error">✕</button>
+          </div>
+          <form phx-change="rt_update" class="flex items-center gap-2 flex-wrap pl-8">
+            <input type="hidden" name="def_id" value={@def_id} />
+            <input type="hidden" name="route_id" value={route["id"]} />
+            <label class="flex items-center gap-1">
+              <span class="text-[11px] text-base-content/60">Buy missing</span>
+              <select name="buy_up_to" class="select select-bordered select-xs">
+                <option value="" selected={is_nil(route["buy_up_to"])}>don't buy</option>
+                <option :for={tier <- 1..4} value={tier} selected={route["buy_up_to"] == tier}>up to T<%= tier %></option>
+              </select>
+            </label>
+            <span class="text-[11px] text-base-content/60">Leftover required</span>
+            <label :for={tier <- 1..4} class="flex items-center gap-0.5">
+              <span class="text-[10px] text-base-content/50">T<%= tier %></span>
+              <input type="number" min="0" name={"leftover[#{tier}]"} value={Routes.leftover_for(route, tier)}
+                     phx-debounce="400" class="input input-bordered input-xs w-12" />
+            </label>
+          </form>
+          <div :for={sub_tier <- Routes.subgoal_tiers(route["combo"])} class="pl-8 flex flex-col gap-1">
+            <span class="text-[11px] text-base-content/60">
+              Sub-goal: make T<%= sub_tier %>s
+              <span :if={Routes.subgoals_for(route, sub_tier) == []} class="text-base-content/40">(empty: won't fuse for T<%= sub_tier %>)</span>
+            </span>
+            <.route_list def_id={@def_id} routes={Routes.subgoals_for(route, sub_tier)} tier={sub_tier} parent={route["id"]} />
+          </div>
+        </div>
+      </div>
+      <form phx-change="rt_add">
+        <input type="hidden" name="def_id" value={@def_id} />
+        <input type="hidden" name="parent" value={@parent} />
+        <input type="hidden" name="tier" value={@tier} />
+        <select name="combo" class="select select-bordered select-xs">
+          <option value="" selected>+ add T<%= @tier %> route…</option>
+          <option :for={%{combo: combo, shops: shops} <- selector_combos(@tier)} value={Combos.combo_key(combo)}>
+            <%= Combos.combo_key(combo) %> · <%= combo_meta(combo) %><%= if label = combo_shops_label(shops), do: " · #{label}" %>
+          </option>
+        </select>
+      </form>
+    </div>
+    """
   end
 
-  defp new_plan_name(plans), do: "New Gift Plan #{length(plans) + 1}"
+  attr :lib, :string, required: true
+  attr :defs, :list, required: true
+  attr :selected_id, :any, required: true
 
-  defp new_id(prefix), do: "#{prefix}-#{System.unique_integer([:positive, :monotonic])}"
-
-  defp blank_to_nil(nil), do: nil
-  defp blank_to_nil(""), do: nil
-  defp blank_to_nil(val), do: val
-
-  defp parse_int(val, default) do
-    case Integer.parse(val || "") do
-      {int, _} -> int
-      :error -> default
-    end
+  def library_list(assigns) do
+    ~H"""
+    <div class="flex flex-col gap-1">
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-semibold text-base-content/70"><%= lib_label(@lib) %>s</span>
+        <button phx-click="lib_add" phx-value-lib={@lib} class="btn btn-primary btn-xs ml-auto">+ New</button>
+      </div>
+      <div :for={definition <- @defs}
+           phx-click="lib_select" phx-value-lib={@lib} phx-value-id={definition["id"]}
+           class={"flex items-center gap-1 rounded px-2 py-1 cursor-pointer text-xs " <>
+             if(definition["id"] == @selected_id, do: "bg-primary/10 border-l-2 border-primary", else: "hover:bg-base-200")}>
+        <span class="flex-1 truncate"><%= definition["name"] %></span>
+        <button phx-click="lib_delete" phx-value-lib={@lib} phx-value-id={definition["id"]}
+                data-confirm={"Delete '#{definition["name"]}'? Steps using it will break."}
+                class="btn btn-ghost btn-2xs text-error">✕</button>
+      </div>
+      <div :if={@defs == []} class="text-[11px] text-base-content/40 italic">None yet.</div>
+    </div>
+    """
   end
 
-  defp blank_plan_data do
-    %{
-      "version" => 1,
-      "type" => "custom",
-      "affinity" => nil,
-      "grace_picks" => [
-        %{"index" => 0, "enhance" => 0},
-        %{"index" => 2, "enhance" => 0},
-        %{"index" => 3, "enhance" => 0},
-        %{"index" => 7, "enhance" => 0}
-      ],
-      "keep" => [],
-      "buy_on_sight" => [],
-      "fusion_targets" => [],
-      "uptie_targets" => [],
-      "skill_targets" => [],
-      "refresh_policy" => %{
-        "allow_affinity_refresh" => true,
-        "max_normal_refreshes" => 1,
-        "max_affinity_refreshes" => 0
-      }
-    }
+  attr :step, :map, required: true
+  attr :field, :string, required: true
+  attr :defs, :list, required: true
+  attr :label, :string, required: true
+
+  def step_definition_list(assigns) do
+    assigns = assign(assigns, :by_id, Map.new(assigns.defs, &{&1["id"], &1}))
+
+    ~H"""
+    <div class="flex items-center gap-1 flex-wrap">
+      <span class="text-[11px] text-base-content/60"><%= @label %></span>
+      <div id={"#{@field}-#{@step["id"]}"} phx-hook="SortableList" data-sort-event="reorder_step_field"
+           data-sort-scope={"#{@step["id"]}:#{@field}"} class="flex items-center gap-1 flex-wrap">
+        <span :for={id <- @step[@field] || []} data-sort-id={id}
+              class={"badge badge-sm gap-1 " <> if(@by_id[id], do: "badge-secondary", else: "badge-error")}>
+          <span data-sort-handle class="cursor-grab">⠿</span><%= if d = @by_id[id], do: d["name"], else: "(deleted)" %>
+          <button type="button" phx-click="toggle_step_list_item" phx-value-id={@step["id"]} phx-value-field={@field} phx-value-item={id}>✕</button>
+        </span>
+      </div>
+      <button :for={d <- Enum.reject(@defs, &(&1["id"] in (@step[@field] || [])))} type="button"
+              phx-click="toggle_step_list_item" phx-value-id={@step["id"]} phx-value-field={@field} phx-value-item={d["id"]}
+              class="btn btn-outline btn-2xs">+ <%= d["name"] %></button>
+    </div>
+    """
   end
 
-  defp normalize_plan_data(nil), do: blank_plan_data()
+  attr :lib, :string, required: true
+  attr :definition, :map, required: true
+  attr :clipboard, :any, required: true
 
-  defp normalize_plan_data(data) do
-    data
-    |> Map.put_new("type", "custom")
-    |> Map.put_new("grace_picks", [])
-    |> Map.update!("grace_picks", &normalize_grace_picks/1)
-    |> Map.put_new("keep", [])
-    |> Map.put_new("buy_on_sight", [])
-    |> Map.put_new("fusion_targets", [])
-    |> Map.put_new("uptie_targets", [])
-    |> Map.put_new("skill_targets", [])
-    |> Map.put_new("refresh_policy", blank_plan_data()["refresh_policy"])
+  def gift_clipboard(assigns) do
+    ~H"""
+    <div class="flex items-center gap-2">
+      <button type="button" phx-click="gifts_copy" phx-value-lib={@lib} phx-value-def_id={@definition["id"]} class="btn btn-xs">Copy gifts</button>
+      <button type="button" phx-click="gifts_paste" phx-value-lib={@lib} phx-value-def_id={@definition["id"]} class="btn btn-xs"
+              disabled={is_nil(@clipboard)} data-confirm="Replace all gifts with the copied ones?">Paste gifts</button>
+      <span :if={@clipboard} class="text-[11px] text-base-content/60">
+        Clipboard: <%= @clipboard.name %> (<%= lib_label(@clipboard.lib) %>, <%= length(@clipboard.gifts) %> gift(s))
+      </span>
+    </div>
+    """
   end
 
-  defp normalize_grace_picks(picks) when is_list(picks) do
-    Enum.map(picks, fn
-      %{"index" => _, "enhance" => _} = pick -> pick
-      index when is_integer(index) -> %{"index" => index, "enhance" => 0}
-    end)
+  attr :lib, :string, required: true
+  attr :definition, :map, required: true
+  attr :gifts_by_name, :map, required: true
+  slot :extra
+
+  def gift_order_list(assigns) do
+    ~H"""
+    <div id={"gift-order-#{@definition["id"]}"} phx-hook="SortableList" data-sort-event="lib_reorder_gifts"
+         data-sort-scope={"#{@lib}:#{@definition["id"]}"} class="flex flex-col gap-1">
+      <div :for={{name, index} <- Enum.with_index(@definition["gifts"], 1)} data-sort-id={name}
+           class="flex items-center gap-2 bg-base-200 rounded px-1 py-0.5">
+        <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
+        <span class="text-[10px] text-base-content/40 w-4 text-right"><%= index %></span>
+        <% gift = @gifts_by_name[name] %>
+        <img :if={gift} src={gift.image_path} class="w-6 h-6 rounded object-cover" />
+        <span :if={gift} class="badge badge-ghost badge-xs">T<%= gift.tier %></span>
+        <span class="text-[11px] flex-1 truncate"><%= name %></span>
+        <%= render_slot(@extra, gift) %>
+        <button phx-click="lib_toggle_gift" phx-value-lib={@lib} phx-value-id={@definition["id"]} phx-value-gift={name}
+                class="btn btn-ghost btn-2xs px-1">✕</button>
+      </div>
+      <div :if={@definition["gifts"] == []} class="text-[11px] text-base-content/40 italic">
+        No gifts yet. Pick one from the browser below.
+      </div>
+    </div>
+    """
   end
-
-  defp normalize_grace_picks(_), do: []
-
-  # --- Function components ---
 
   attr :gifts, :list, required: true
   attr :gifts_by_id, :map, required: true
@@ -888,40 +1342,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <% else %>
         <div class="text-xs text-base-content/40 italic">Select a gift above to add it to the plan.</div>
       <% end %>
-    </div>
-    """
-  end
-
-  attr :entries, :list, required: true
-  slot :card, required: true
-
-  def weight_list(assigns) do
-    ~H"""
-    <div class="border border-base-300 rounded-lg p-2 flex flex-col gap-1 min-h-24 max-h-72 overflow-y-auto">
-      <%= for item <- @entries do %>
-        <%= render_slot(@card, item) %>
-      <% end %>
-      <div :if={@entries == []} class="text-[11px] text-base-content/30 italic">none — sorted by weight, highest first</div>
-    </div>
-    """
-  end
-
-  attr :entries_by_priority, :map, required: true
-  slot :card, required: true
-
-  def priority_board(assigns) do
-    ~H"""
-    <div class="grid grid-cols-3 gap-2">
-      <div :for={priority <- priorities()} class="border border-base-300 rounded-lg p-2 flex flex-col gap-1 min-h-24 max-h-72 overflow-y-auto">
-        <div class="text-xs font-semibold text-base-content/70 flex items-center gap-1">
-          <%= priority_label(priority) %>
-          <span class="tooltip tooltip-bottom text-base-content/40 cursor-help" data-tip={priority_tooltip(priority)}>ⓘ</span>
-        </div>
-        <%= for item <- Map.get(@entries_by_priority, priority, []) do %>
-          <%= render_slot(@card, item) %>
-        <% end %>
-        <div :if={Map.get(@entries_by_priority, priority, []) == []} class="text-[11px] text-base-content/30 italic">none</div>
-      </div>
     </div>
     """
   end
