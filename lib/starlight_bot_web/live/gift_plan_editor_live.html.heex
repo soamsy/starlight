@@ -317,8 +317,11 @@
                                 </div>
                               <% end %>
 
-                              <div :if={step["kind"] in ~w(uptie tiered_fusion sell affinity_refresh skill_replace heal heal_all revive)} class="text-[10px] text-warning">
+                              <div :if={step["kind"] in ~w(skill_replace heal heal_all revive)} class="text-[10px] text-warning">
                                 No automation for this action yet. The shop runner logs it as not implemented and moves on.
+                              </div>
+                              <div :if={step["kind"] == "uptie"} class="text-[10px] text-warning">
+                                Partly automated: the shop runner opens the uptie popup and selects the first gift, then stops until the +1/+2 hooks exist.
                               </div>
 
                               <div class="flex flex-col gap-1">

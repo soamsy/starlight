@@ -10,6 +10,7 @@ defmodule StarlightBot.GiftPlans do
   }
   @skill_options ~w(s1_s3 s1_s2 s2_s3)
   @heal_cost 100
+  @uptie_step_costs %{1 => [50, 100], 2 => [60, 120], 3 => [75, 150], 4 => [100, 200]}
   @default_grace_indexes [0, 2, 3, 7]
 
   def library_keys, do: @library_keys
@@ -168,6 +169,58 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def ingredient_ids(_gift), do: []
+
+  def uptie_cost(tier, from, to) do
+    case Map.get(@uptie_step_costs, tier) do
+      nil -> nil
+      steps -> steps |> Enum.slice(from, to - from) |> Enum.sum()
+    end
+  end
+
+  def fodder(owned, protected, gifts_by_id) do
+    for {id, %{uptie: uptie}} <- owned,
+        gift = gifts_by_id[id],
+        gift && gift.tier in 1..4 && not MapSet.member?(protected, gift.name) do
+      %{id: id, name: gift.name, tier: gift.tier, uptie: uptie, selling_cost: gift.selling_cost || 0}
+    end
+  end
+
+  def sell_order(fodder, tiers) do
+    rank = tiers |> Enum.with_index() |> Map.new()
+
+    fodder
+    |> Enum.filter(&Map.has_key?(rank, &1.tier))
+    |> Enum.sort_by(&{rank[&1.tier], -&1.selling_cost, &1.name})
+  end
+
+  def uptie_plan(definitions, owned, gifts_by_name, cost, max_gifts) do
+    owned_by_name = Map.new(owned, fn {_id, entry} -> {entry.name, entry} end)
+    walk_upties(definitions, owned_by_name, gifts_by_name, cost || 0, max_gifts, [])
+  end
+
+  defp walk_upties(_definitions, _owned, _gifts, _cost, max, planned) when length(planned) >= max,
+    do: {Enum.reverse(planned), "reached max gifts"}
+
+  defp walk_upties([], _owned, _gifts, _cost, _max, planned), do: {Enum.reverse(planned), "end of list"}
+
+  defp walk_upties([definition | rest], owned, gifts, cost, max, planned) do
+    entry = owned[definition["gift"]]
+    gift = gifts[definition["gift"]]
+    target = definition["target_level"]
+    price = gift && entry && uptie_cost(gift.tier, entry.uptie, target)
+
+    cond do
+      is_nil(entry) or is_nil(gift) or entry.uptie >= target or is_nil(price) ->
+        walk_upties(rest, owned, gifts, cost, max, planned)
+
+      price > cost ->
+        {Enum.reverse(planned), "can't afford #{gift.name} +#{target} (#{price}, have #{cost})"}
+
+      true ->
+        item = %{gift: gift, from: entry.uptie, to: target, price: price}
+        walk_upties(rest, owned, gifts, cost - price, max, [item | planned])
+    end
+  end
 
   def eval_condition(nil, _env), do: true
   def eval_condition(%{"op" => "and", "children" => children}, env), do: Enum.all?(children, &eval_condition(&1, env))

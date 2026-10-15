@@ -136,6 +136,54 @@ defmodule StarlightBot.GiftPlansTest do
     assert GiftPlans.step_label(plan(), fusion) == "Tiered Fusion · Glimpse › Hellterfly"
   end
 
+  describe "fodder, selling, and uptie planning" do
+    setup do
+      gifts = [
+        %{id: "g1", name: "Keep Me", tier: 2, selling_cost: 100},
+        %{id: "g2", name: "Junk T1", tier: 1, selling_cost: 50},
+        %{id: "g3", name: "Pricey T1", tier: 1, selling_cost: 80},
+        %{id: "g4", name: "Junk T2", tier: 2, selling_cost: 90},
+        %{id: "g5", name: "Wealth", tier: 6, selling_cost: 999}
+      ]
+
+      owned = %{
+        "g1" => %{name: "Keep Me", uptie: 0},
+        "g2" => %{name: "Junk T1", uptie: 0},
+        "g3" => %{name: "Pricey T1", uptie: 1},
+        "g4" => %{name: "Junk T2", uptie: 0},
+        "g5" => %{name: "Wealth", uptie: 0}
+      }
+
+      %{gifts: gifts, owned: owned, by_id: Map.new(gifts, &{&1.id, &1}), by_name: Map.new(gifts, &{&1.name, &1})}
+    end
+
+    test "fodder/3 drops protected gifts and tiers outside 1 to 4", %{owned: owned, by_id: by_id} do
+      names = owned |> GiftPlans.fodder(MapSet.new(["Keep Me"]), by_id) |> Enum.map(& &1.name) |> Enum.sort()
+      assert names == ["Junk T1", "Junk T2", "Pricey T1"]
+    end
+
+    test "sell_order/2 follows tier priority, then highest price", %{owned: owned, by_id: by_id} do
+      fodder = GiftPlans.fodder(owned, MapSet.new(["Keep Me"]), by_id)
+      assert Enum.map(GiftPlans.sell_order(fodder, [1, 2]), & &1.name) == ["Pricey T1", "Junk T1", "Junk T2"]
+      assert Enum.map(GiftPlans.sell_order(fodder, [2]), & &1.name) == ["Junk T2"]
+    end
+
+    test "uptie_plan/5 skips unowned and finished gifts and stops when it can't pay in full", %{owned: owned, by_name: by_name} do
+      defs = [
+        %{"gift" => "Not Owned", "target_level" => 2},
+        %{"gift" => "Pricey T1", "target_level" => 1},
+        %{"gift" => "Keep Me", "target_level" => 2},
+        %{"gift" => "Junk T1", "target_level" => 2}
+      ]
+
+      assert {[%{gift: %{name: "Keep Me"}, from: 0, to: 2, price: 180}], reason} = GiftPlans.uptie_plan(defs, owned, by_name, 300, 3)
+      assert reason =~ "can't afford Junk T1 +2 (150, have 120)"
+
+      assert {[_, _], "end of list"} = GiftPlans.uptie_plan(defs, owned, by_name, 400, 3)
+      assert {[_], "reached max gifts"} = GiftPlans.uptie_plan(defs, owned, by_name, 400, 1)
+    end
+  end
+
   test "blank/1 schedules its single workflow from floor 1" do
     data = GiftPlans.blank("burn")
     [workflow] = data["workflows"]

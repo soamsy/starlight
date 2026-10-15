@@ -37,6 +37,21 @@ defmodule StarlightBot.Automation.Shop.Ops do
     "pierce" => :shop_affinity_pierce,
     "blunt" => :shop_affinity_blunt
   }
+  @sell_popup %{
+    name: "sell",
+    inventory: @sell_inventory_hook,
+    top: @sell_scroll_top_hook,
+    bottom: @sell_scroll_bottom_hook,
+    track: @sell_scroll_track_hook
+  }
+  @uptie_popup %{
+    name: "uptie",
+    inventory: :shop_uptie_popup_inventory,
+    top: :shop_uptie_popup_scroll_top,
+    bottom: :shop_uptie_popup_scroll_bottom,
+    track: :shop_uptie_popup_scroll_track
+  }
+
   @fuse_open_hook :shop_fuse
   @fuse_popup_hook :shop_fuse_popup
   @fuse_select_keyword_hook :shop_fuse_popup_select_a_keyword
@@ -238,9 +253,9 @@ defmodule StarlightBot.Automation.Shop.Ops do
     end
   end
 
-  defp buy_first_affordable([], _ctx), do: :none_available
+  def buy_first_affordable([], _ctx), do: :none_available
 
-  defp buy_first_affordable([item | rest], ctx) do
+  def buy_first_affordable([item | rest], ctx) do
     cost = EgoGifts.buying_cost_for(item.gift_id) || 0
 
     if cost <= (RunMemory.cost(ctx) || 0) do
@@ -334,13 +349,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp select_fuse_ingredients(click_plan, ctx) do
-    state =
-      case click_plan do
-        {:strict, ingredient_ids} -> {:strict, MapSet.new(ingredient_ids), MapSet.new()}
-        {:tiered, needed} -> {:tiered, needed, MapSet.new()}
-      end
-
-    select_fuse_pass(state, ctx, 0)
+    {:strict, ingredient_ids} = click_plan
+    select_fuse_pass({:strict, MapSet.new(ingredient_ids), MapSet.new()}, ctx, 0)
   end
 
   defp select_fuse_pass(_state, _ctx, pass) when pass >= @max_fuse_scroll_passes do
@@ -368,7 +378,6 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp fuse_selection_done?({:strict, needed, clicked}), do: MapSet.subset?(needed, clicked)
-  defp fuse_selection_done?({:tiered, needed, _clicked}), do: needed |> Map.values() |> Enum.all?(&(&1 == 0))
 
   defp clicked_ids({_kind, _needed, clicked}), do: MapSet.to_list(clicked)
 
@@ -405,28 +414,6 @@ defmodule StarlightBot.Automation.Shop.Ops do
     {:strict, needed, clicked_after}
   end
 
-  defp click_matching_fuse_items({:tiered, needed, clicked}, gifts, ctx) do
-    gifts_by_id = Map.new(EgoGifts.list_gifts(), &{&1.id, &1})
-
-    {needed_after, clicked_after} =
-      Enum.reduce(gifts, {needed, clicked}, fn item, {needed_acc, clicked_acc} ->
-        case Map.get(gifts_by_id, item.gift_id) do
-          %{tier: tier} when tier != nil ->
-            if Map.get(needed_acc, tier, 0) > 0 and not MapSet.member?(clicked_acc, item.gift_id) do
-              click_item_rect(item, ctx)
-              {Map.update!(needed_acc, tier, &(&1 - 1)), MapSet.put(clicked_acc, item.gift_id)}
-            else
-              {needed_acc, clicked_acc}
-            end
-
-          _ ->
-            {needed_acc, clicked_acc}
-        end
-      end)
-
-    {:tiered, needed_after, clicked_after}
-  end
-
   defp fuse_inventory_region(frame, ctx) do
     with {:ok, hook} <- find_hook(@fuse_inventory_hook, ctx, "shop fuse ingredient scan") do
       {:ok, crop_below_owned_label(frame, hook.scan_region || hook.region)}
@@ -449,6 +436,93 @@ defmodule StarlightBot.Automation.Shop.Ops do
         {:error, _} = err -> err
       end
     end
+  end
+
+  def sell_gift(gift_id, ctx) do
+    with {:ok, _} <- Engine.act([click(@sell_open_hook), await(@sell_popup_hook)], ctx),
+         :ok <- find_and_click_gift(@sell_popup, gift_id, ctx, 0),
+         {:ok, _} <-
+           Engine.act(
+             [click(:shop_sell_popup_confirm), await(:shop_sell_popup_confirm_confirm), click(:shop_sell_popup_confirm_confirm)],
+             ctx
+           ) do
+      RunMemory.remove_ego_gift(ctx, gift_id)
+      close_sell_popup(ctx)
+      :ok
+    else
+      {:error, reason} = err ->
+        Ctx.log(ctx, :error, "shop sell: #{gift_id} — #{inspect(reason)}")
+        recover_to_shop(ctx)
+        err
+    end
+  end
+
+  def select_uptie_gift(gift_id, ctx) do
+    with {:ok, _} <- Engine.act([click(:shop_uptie), await(:shop_uptie_popup)], ctx),
+         :ok <- find_and_click_gift(@uptie_popup, gift_id, ctx, 0) do
+      :ok
+    else
+      {:error, reason} = err ->
+        Ctx.log(ctx, :error, "shop uptie: #{gift_id} — #{inspect(reason)}")
+        err
+    end
+  end
+
+  def keyword_refresh(affinity, ctx) do
+    with {:ok, affinity_hook} <- affinity_hook(affinity),
+         false <- Engine.check(:shop_keyword_refresh_disabled),
+         {:ok, _} <-
+           Engine.act(
+             [
+               click(:shop_keyword_refresh),
+               await(:shop_keyword_refresh_popup),
+               click(affinity_hook),
+               click(:shop_keyword_refresh_popup_confirm),
+               await(not_hook(:shop_keyword_refresh_popup))
+             ],
+             ctx
+           ) do
+      :ok
+    else
+      true -> {:error, :keyword_refresh_disabled}
+      {:error, _} = err -> err
+    end
+  end
+
+  defp affinity_hook(affinity) do
+    case Map.fetch(@affinity_hooks, affinity) do
+      {:ok, hook} -> {:ok, hook}
+      :error -> {:error, {:unknown_affinity, affinity}}
+    end
+  end
+
+  defp find_and_click_gift(_popup, gift_id, _ctx, pass) when pass >= @max_sell_scroll_passes,
+    do: {:error, {:scroll_limit, gift_id}}
+
+  defp find_and_click_gift(popup, gift_id, ctx, pass) do
+    with {:ok, frame} <- Capture.grab_frame(),
+         {:ok, hook} <- find_hook(popup.inventory, ctx, "shop #{popup.name} scan") do
+      gifts = detect_inventory_gifts(frame, hook.scan_region || hook.region, ctx)
+
+      case Enum.find(gifts, &(&1.gift_id == gift_id)) do
+        %{} = item ->
+          click_item_rect(item, ctx)
+          :ok
+
+        nil ->
+          if popup_at_bottom?(popup) do
+            {:error, {:not_in_popup, gift_id}}
+          else
+            Engine.act([move_to(popup.inventory), scroll_down(@sell_scroll_clicks), sleep(@sell_scroll_settle_ms)], ctx)
+            find_and_click_gift(popup, gift_id, ctx, pass + 1)
+          end
+      end
+    end
+  end
+
+  defp popup_at_bottom?(popup) do
+    checks = Engine.check_all([popup.top, popup.bottom, popup.track])
+    checks[popup.bottom] or not (checks[popup.top] or checks[popup.track])
   end
 
   def detect_and_update_cost(ctx) do

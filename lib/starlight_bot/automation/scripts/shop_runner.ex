@@ -7,7 +7,16 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     "budget" => Actions.Budget,
     "refresh" => Actions.Refresh,
     "buy_list" => Actions.BuyList,
-    "fixed_fusion" => Actions.FixedFusion
+    "fixed_fusion" => Actions.FixedFusion,
+    "tiered_fusion" => Actions.TieredFusion,
+    "sell" => Actions.Sell,
+    "uptie" => Actions.Uptie,
+    "affinity_refresh" => Actions.AffinityRefresh
+  }
+  @previews %{
+    "tiered_fusion" => Actions.TieredFusion,
+    "sell" => Actions.Sell,
+    "uptie" => Actions.Uptie
   }
 
   def run(ctx), do: execute(:run, ctx)
@@ -66,6 +75,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       reserve: 0,
       gifts_by_name: Map.new(gifts, &{&1.name, &1}),
       gifts_by_id: Map.new(gifts, &{&1.id, &1}),
+      protected: GiftPlans.protected_set(plan, workflow, gifts),
       steps: []
     }
 
@@ -83,7 +93,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
           {:skipped, "condition not met: #{GiftPlans.condition_label(step["condition"])}", state}
 
         mode == :dry_run and step["kind"] != "budget" ->
-          {:would_run, "condition passes", state}
+          preview(step, state, ctx)
 
         true ->
           dispatch(step, state, ctx)
@@ -105,6 +115,17 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       :error -> {:not_implemented, "no automation for #{step["kind"]} yet", state}
       {:error, :missing_definition} -> {:failed, "references a deleted definition", state}
       {:error, :no_definitions} -> {:failed, "no definitions selected", state}
+    end
+  end
+
+  defp preview(step, state, ctx) do
+    with {:ok, module} <- Map.fetch(@previews, step["kind"]),
+         {:ok, definition} <- GiftPlans.definition_for(state.plan, step) do
+      module.preview(step, definition, state, ctx)
+    else
+      {:error, :missing_definition} -> {:failed, "references a deleted definition", state}
+      {:error, :no_definitions} -> {:failed, "no definitions selected", state}
+      :error -> {:would_run, "condition passes", state}
     end
   end
 

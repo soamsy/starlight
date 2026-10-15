@@ -163,7 +163,7 @@ None of this needs new schema. It's runner behavior, implemented when tiered fus
 
 **Buy from list**: buy up to `max_items` shelf gifts that appear in the list, in list order.
 
-**Sell**: `tiers` is an ordered multi-select. Sell unprotected gifts from the first tier in the list, then the next, until `wallet >= stop_at_cost` or `max_items` sold. Skips entirely if `wallet` already meets `stop_at_cost`.
+**Sell**: `tiers` is an ordered multi-select. Sell unprotected gifts from the first tier in the list, then the next, until `wallet >= stop_at_cost` or `max_items` sold. Skips entirely if `wallet` already meets `stop_at_cost`. The gifts to sell are chosen up front from the entry inventory scan; within a tier, the highest `ego_gifts.selling_cost` goes first, so fewer gifts are sold to reach `stop_at_cost`. Each sale opens the sell popup, scrolls to that gift, clicks it, confirms twice, and re-reads cost.
 
 **Skill Replace**: if the shelf shows a skill-replace offer for `sinner` whose transition is in `options`, and that sinner hasn't had a replacement this run, take it. Options: `s1_s2` (45), `s2_s3` (75), `s1_s3` (120), ranked by preference.
 
@@ -303,18 +303,21 @@ Kept as primitives in `Automation.Shop.Ops`, moved out of `ShopBuyer` unchanged:
 
 Each action becomes a module under `Automation.Shop.Actions` with `run(step, definition, state, ctx) :: {outcome, state}`. First cut:
 
-| Action | First cut |
+| Action | Status |
 |---|---|
 | Budget | Implemented (pure state change) |
-| Refresh | Port from existing refresh call |
-| Buy from list | Port from shelf scan + `buy_item` |
-| Fixed Fusion | Port from strict-ingredient path |
-| Tiered Fusion | Stub; new planner + retry loop is the main automation work |
-| Uptie, Sell, Affinity Refresh, Skill Replace, Heal Sinner, Heal All, Revive | Stub, log `:not_implemented` |
+| Refresh | Implemented |
+| Buy from list | Implemented |
+| Fixed Fusion | Implemented |
+| Tiered Fusion | Implemented. Pure planner in `GiftPlans.FusionPlanner` (current fusion, reachability, next fusion, wanted tiers, fodder picks); `Actions.TieredFusion` runs the loop with a 15-round cap. Fodder is picked by gift id (un-uptied and cheapest first) and selected with the strict ingredient path, so protected gifts are never clicked. |
+| Sell | Implemented, untested in game |
+| Affinity Refresh | Implemented, untested in game. Clicks `shop_keyword_refresh`, the keyword icon (same `shop_affinity_*` hooks as the fuse popup), then `shop_keyword_refresh_popup_confirm`. |
+| Uptie | Partial. Plans the upties (`GiftPlans.uptie_plan/5`), opens the uptie popup, scrolls to and clicks the first gift, then logs `:not_implemented` and backs out. Needs +1/+2 selection and can't-afford hooks. |
+| Skill Replace, Heal Sinner, Heal All, Revive | Stub, log `:not_implemented`. Waiting on per-sinner hooks. |
 
-If UI + schema should land with every action stubbed, the port rows also start as stubs and the primitives just move.
+Every shop visit starts with the inventory scan: open the sell popup, scroll to the bottom while classifying gifts and reading uptie badges, close it. Every action plans from that inventory, kept current by buys, fuses, and sells. Gift prices come from `ego_gifts` (`buying_cost`, `selling_cost`); uptie prices from the tier table in `docs/uptie.md` (`GiftPlans.uptie_cost/3`).
 
-Dry run = resolve the workflow for the chosen floor, detect cost, inventory, and shop type, and report per step whether its condition passes and what the action would target, with no clicks.
+Dry run = resolve the workflow for the chosen floor, detect cost, inventory, and shop type, and report per step whether its condition passes and what the action would target, with no clicks. Tiered fusion, sell, and uptie report their plan: what they would fuse (and with which gifts), which tiers they'd buy, which gifts they'd sell, and which upties they'd buy at what price.
 
 ## New pure modules (testable, no hardware)
 

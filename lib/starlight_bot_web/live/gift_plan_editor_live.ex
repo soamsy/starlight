@@ -8,7 +8,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @gift_tiers 1..6
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)
   @gift_sorts ~w(default name tier affinity)
-  @uptie_step_costs %{1 => [50, 100], 2 => [60, 120], 3 => [75, 150], 4 => [100, 200]}
   @uptie_views ~w(base uptie2 uptie3)
   @stat_codes %{"cp" => "Clash Power", "fc" => "Final Power", "bc" => "Base Power", "cg" => "Coin Count"}
   @palette_kinds ~w(refresh affinity_refresh fixed_fusion sell skill_replace heal heal_all revive budget)
@@ -705,22 +704,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def fusion_target_eligible?(gift), do: gift.tier in 2..4 and GiftPlans.ingredient_ids(gift) == []
 
-  def uptie_cost(nil, _from, _to), do: nil
-
-  def uptie_cost(tier, from, to) do
-    case Map.get(@uptie_step_costs, tier) do
-      nil -> nil
-      steps -> steps |> Enum.slice(from, to - from) |> Enum.sum()
-    end
-  end
-
   def uptie_cost_hint(gift, definition) do
     target = definition["target_level"]
     tier = gift && gift.tier
 
     [
-      uptie_cost(tier, 0, target) && "0→#{target}: #{uptie_cost(tier, 0, target)}",
-      target == 2 && uptie_cost(tier, 1, 2) && "1→2: #{uptie_cost(tier, 1, 2)}"
+      GiftPlans.uptie_cost(tier, 0, target) && "0→#{target}: #{GiftPlans.uptie_cost(tier, 0, target)}",
+      target == 2 && GiftPlans.uptie_cost(tier, 1, 2) && "1→2: #{GiftPlans.uptie_cost(tier, 1, 2)}"
     ]
     |> Enum.filter(& &1)
     |> Enum.join(" · ")
