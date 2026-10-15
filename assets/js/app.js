@@ -533,6 +533,44 @@ const PriorityClipboard = {
   }
 }
 
+const SortableList = {
+  mounted() {
+    this.el.addEventListener("mousedown", (e) => {
+      const handle = e.target.closest("[data-sort-handle]")
+      if (!handle) return
+      const item = handle.closest("[data-sort-id]")
+      if (item && item.parentElement === this.el) item.draggable = true
+    })
+
+    this.el.addEventListener("dragstart", (e) => {
+      const item = e.target.closest("[data-sort-id]")
+      if (!item || item.parentElement !== this.el) return
+      this.dragging = item
+      item.classList.add("opacity-40")
+      e.dataTransfer.effectAllowed = "move"
+    })
+
+    this.el.addEventListener("dragover", (e) => {
+      if (!this.dragging) return
+      e.preventDefault()
+      const over = e.target.closest("[data-sort-id]")
+      if (!over || over === this.dragging || over.parentElement !== this.el) return
+      const rect = over.getBoundingClientRect()
+      const after = e.clientY > rect.top + rect.height / 2
+      this.el.insertBefore(this.dragging, after ? over.nextSibling : over)
+    })
+
+    this.el.addEventListener("dragend", () => {
+      if (!this.dragging) return
+      this.dragging.classList.remove("opacity-40")
+      this.dragging.draggable = false
+      this.dragging = null
+      const ids = Array.from(this.el.children).filter(c => c.dataset.sortId).map(c => c.dataset.sortId)
+      this.pushEvent(this.el.dataset.sortEvent, { scope: this.el.dataset.sortScope || "", ids })
+    })
+  }
+}
+
 const LocalStorageForm = {
   mounted() {
     this.key = this.el.dataset.storageKey
@@ -560,7 +598,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList }
 })
 
 liveSocket.connect()
