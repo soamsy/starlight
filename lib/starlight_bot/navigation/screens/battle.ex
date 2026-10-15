@@ -1,6 +1,6 @@
 defmodule StarlightBot.Navigation.Screens.Battle do
   use StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.BattleChain
+  alias StarlightBot.Automation.PlaybookRunner
   alias StarlightBot.Navigation.Screens.Event
 
   screen :battle, identity: :battle_settings do
@@ -23,11 +23,14 @@ defmodule StarlightBot.Navigation.Screens.Battle do
 
   screen :battle_chain, identity: :battle_chain, refines: :battle_turn do
     transition to: :battle_playing do
-      [custom(&BattleChain.select_and_commit/2)]
+      [custom(&PlaybookRunner.play_chain_turn/2)]
     end
   end
 
   screen :battle_focused, identity: :battle_focused, refines: :battle_turn do
+    transition to: :battle_playing do
+      [custom(&PlaybookRunner.play_focused_turn/2)]
+    end
   end
 
   screen :battle_playing, identity: :battle_pause_button, refines: :battle do
@@ -75,7 +78,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   end
 
   defp after_loading do
-    [branch([confirm_battle_clause(), {:default, []}])]
+    [custom(&PlaybookRunner.new_battle/2), branch([confirm_battle_clause(), {:default, []}])]
   end
 
   defp confirm_battle_clause do

@@ -1,5 +1,4 @@
 defmodule StarlightBot.Automation.RunMemory do
-  alias StarlightBot.BattleStrategies.Resolver, as: BattleStrategyResolver
   alias StarlightBot.Ctx
   alias StarlightBot.ThemePackPlans.Resolver
   alias StarlightBot.{Strategies, Teams}
@@ -46,10 +45,6 @@ defmodule StarlightBot.Automation.RunMemory do
     update(ctx, :ego_gifts, %{}, &Map.delete(&1, gift_id))
   end
 
-  def shop_refreshes_used(ctx), do: get(ctx, :shop_refreshes_used, 0)
-
-  def increment_shop_refreshes(ctx), do: update(ctx, :shop_refreshes_used, 0, &(&1 + 1))
-
   def team(ctx), do: get(ctx, :team, nil)
 
   def put_team(ctx, team), do: put(ctx, :team, team)
@@ -80,18 +75,30 @@ defmodule StarlightBot.Automation.RunMemory do
 
   def put_context(ctx, context), do: put(ctx, :context, context)
 
-  def battle_strategy_type(ctx) do
-    with ctx_key when not is_nil(ctx_key) <- context(ctx),
-         %{id: team_id} <- team(ctx),
+  def battle_strategy(ctx) do
+    with %{id: team_id} <- team(ctx),
          %{battle_strategy_id: id} when is_integer(id) <- Teams.get_team(team_id),
          %{data: data} when is_map(data) <- Strategies.get(:battle_strategies, id) do
-      BattleStrategyResolver.type_for(data, ctx_key)
+      data
     else
-      _ -> "chain"
+      _ -> nil
     end
   end
 
-  def mode(ctx), do: mode_for(team(ctx), get(ctx, :floor, 1))
+  def battle_track(ctx, kind) do
+    case context(ctx) do
+      :luxcavation -> "lux_" <> kind
+      _ -> mode(ctx) <> "_" <> kind
+    end
+  end
+
+  def battle_turn(ctx), do: get(ctx, :battle_turn, 1)
+
+  def put_battle_turn(ctx, turn), do: put(ctx, :battle_turn, turn)
+
+  def mode(ctx), do: get(ctx, :mode, nil) || mode_for(team(ctx), get(ctx, :floor, 1))
+
+  def put_mode(ctx, mode), do: put(ctx, :mode, mode)
 
   def mode_for(%{id: team_id}, floor), do: Resolver.mode_for_floor(mode_schedule(team_id), floor)
   def mode_for(_team, _floor), do: "normal"

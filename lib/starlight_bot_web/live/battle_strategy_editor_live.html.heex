@@ -1,0 +1,358 @@
+<div class="flex flex-col h-full gap-2 overflow-hidden">
+  <div role="tablist" class="tabs tabs-boxed tabs-sm self-start">
+    <button role="tab" phx-click="set_tab" phx-value-tab="strategies"
+            class={"tab " <> if(@tab == "strategies", do: "tab-active", else: "")}>Strategies</button>
+    <button role="tab" phx-click="set_tab" phx-value-tab="profiles"
+            class={"tab " <> if(@tab == "profiles", do: "tab-active", else: "")}>Sinner Profiles</button>
+  </div>
+
+  <%= if @tab == "strategies" do %>
+  <div class="grid grid-cols-[24fr_76fr] grid-rows-1 gap-2 flex-1 min-h-0">
+
+    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
+      <div class="card-body p-3 flex flex-col flex-1 min-h-0">
+        <div class="flex items-center gap-3 mb-2">
+          <h2 class="card-title text-lg">Strategies</h2>
+          <span class="badge badge-neutral badge-sm"><%= length(@strategies) %></span>
+          <button phx-click="new_strategy" class="btn btn-primary btn-sm ml-auto">+ New</button>
+        </div>
+
+        <div class="overflow-y-auto flex-1 min-h-0">
+          <table class="table table-xs table-pin-rows">
+            <tbody>
+              <%= for strategy <- @strategies do %>
+                <tr phx-click="select_strategy" phx-value-id={strategy.id}
+                    class={"cursor-pointer hover:bg-base-200 " <> if(@editing_id == strategy.id, do: "bg-primary/10 border-l-2 border-primary", else: "")}>
+                  <td class="font-mono text-xs"><%= strategy.name %></td>
+                  <td class="text-right">
+                    <button phx-click="delete_strategy" phx-value-id={strategy.id}
+                            data-confirm={"Delete '#{strategy.name}'?"}
+                            class="btn btn-xs btn-ghost text-error">Del</button>
+                  </td>
+                </tr>
+              <% end %>
+              <%= if @strategies == [] do %>
+                <tr><td colspan="2" class="text-center text-base-content/40 py-4">No strategies yet. Create one.</td></tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
+      <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
+        <%= if @data do %>
+          <input type="text" value={@name} phx-blur="rename_strategy"
+                 class="input input-bordered input-sm w-64 font-semibold" placeholder="Strategy name" />
+
+          <div class="flex flex-col gap-1">
+            <div class="flex items-center gap-2 text-xs text-base-content/60 flex-wrap">
+              <span class="font-medium">Tracks</span>
+              <span>Click a floor to start a playbook there. It applies until the next change point.</span>
+              <label class="ml-auto flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" checked={@extreme?} phx-click="toggle_extreme" class="checkbox checkbox-xs" />
+                floors 6-15
+              </label>
+            </div>
+
+            <div class="flex items-center gap-1 flex-wrap text-xs">
+              <span class="text-base-content/60">Painting:</span>
+              <%= for pb <- @data["playbooks"] do %>
+                <button phx-click="set_paint" phx-value-id={pb["id"]} title={"#{pb["name"]} (#{pb["kind"]})"}
+                        class={"btn btn-2xs gap-1 " <> if(@paint == pb["id"], do: "ring ring-offset-1 ring-base-content/50", else: "btn-ghost")}>
+                  <span class="inline-block w-2.5 h-2.5 rounded-sm" style={playbook_color(@data, pb["id"], 1)}></span>
+                  <%= pb["name"] %>
+                </button>
+              <% end %>
+              <button phx-click="set_paint" phx-value-id="erase" title="Remove a change point"
+                      class={"btn btn-2xs " <> if(@paint == "erase", do: "btn-error", else: "btn-ghost text-error")}>eraser</button>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="text-[11px] border-separate border-spacing-0.5">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <%= for floor <- floors(@extreme?) do %>
+                      <th class="font-normal text-base-content/50 w-8"><%= floor %></th>
+                    <% end %>
+                    <%= unless @extreme? do %>
+                      <th class="font-normal text-base-content/50 w-12">6-15</th>
+                    <% end %>
+                  </tr>
+                </thead>
+                <tbody>
+                  <%= for track <- StarlightBot.BattleStrategies.tracks() do %>
+                    <% entries = @data["tracks"][track] %>
+                    <% lux? = StarlightBot.BattleStrategies.lux_track?(track) %>
+                    <tr>
+                      <td class="pr-2 whitespace-nowrap text-base-content/70"><%= track_label(track) %></td>
+                      <%= for floor <- if(lux?, do: [1], else: floors(@extreme?)) do %>
+                        <% id = StarlightBot.BattleStrategies.Resolver.playbook_id_at(entries, floor) %>
+                        <% start? = change_point?(entries, floor) %>
+                        <td>
+                          <button phx-click="paint_cell" phx-value-track={track} phx-value-floor={floor}
+                                  title={if lux?, do: find_playbook(@data, id)["name"], else: run_tooltip(@data, entries, floor)}
+                                  style={playbook_color(@data, id, if(start?, do: 0.9, else: 0.25))}
+                                  class={"w-8 h-6 rounded text-[10px] font-semibold " <> if(start?, do: "border-l-4 border-base-content/70 text-white", else: "text-base-content/40")}>
+                            <%= if start?, do: playbook_tag(find_playbook(@data, id)), else: "··" %>
+                          </button>
+                        </td>
+                      <% end %>
+                      <%= if not @extreme? and not lux? do %>
+                        <% id = StarlightBot.BattleStrategies.Resolver.playbook_id_at(entries, 6) %>
+                        <td>
+                          <button phx-click="toggle_extreme"
+                                  title={run_tooltip(@data, entries, 6) <> if(hidden_change_points?(entries), do: ", more change points above", else: "")}
+                                  style={playbook_color(@data, id, if(change_point?(entries, 6), do: 0.9, else: 0.25))}
+                                  class="w-12 h-6 rounded text-[10px] font-semibold">
+                            <%= playbook_tag(find_playbook(@data, id)) %><%= if hidden_change_points?(entries), do: " •" %>
+                          </button>
+                        </td>
+                      <% end %>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="divider my-0"></div>
+
+          <div class="grid grid-cols-[14rem_1fr] gap-3 flex-1 min-h-0">
+            <div class="flex flex-col gap-2">
+              <%= for kind <- ~w(chain focused) do %>
+                <div class="flex flex-col gap-0.5">
+                  <div class="flex items-center text-xs font-semibold text-base-content/70">
+                    <%= String.capitalize(kind) %> playbooks
+                    <button phx-click="new_playbook" phx-value-kind={kind} class="btn btn-2xs btn-ghost ml-auto">+ <%= kind %></button>
+                  </div>
+                  <%= for pb <- Enum.filter(@data["playbooks"], &(&1["kind"] == kind)) do %>
+                    <% used = StarlightBot.BattleStrategies.tracks_using(@data, pb["id"]) %>
+                    <button phx-click="select_playbook" phx-value-id={pb["id"]}
+                            class={"flex items-center gap-1.5 text-left text-xs rounded px-1.5 py-1 hover:bg-base-200 " <> if(@playbook_id == pb["id"], do: "bg-primary/10 border-l-2 border-primary", else: "")}>
+                      <span class="inline-block w-5 text-center rounded text-[10px] font-semibold text-white" style={playbook_color(@data, pb["id"], 0.9)}><%= playbook_tag(pb) %></span>
+                      <span class="flex-1 truncate"><%= pb["name"] %></span>
+                      <span class="text-[10px] text-base-content/40" title={Enum.map_join(used, ", ", &track_label/1)}><%= length(used) %> tr</span>
+                    </button>
+                  <% end %>
+                </div>
+              <% end %>
+            </div>
+
+            <div class="flex flex-col gap-2 min-w-0">
+              <% playbook = find_playbook(@data, @playbook_id) %>
+              <%= if playbook do %>
+                <div class="flex items-center gap-2">
+                  <input type="text" value={playbook["name"]} phx-blur="rename_playbook"
+                         class="input input-bordered input-sm w-56 font-semibold" />
+                  <span class="badge badge-sm badge-outline"><%= playbook["kind"] %></span>
+                  <button phx-click="duplicate_playbook" phx-value-id={playbook["id"]} class="btn btn-xs btn-ghost ml-auto">Duplicate</button>
+                  <button phx-click="delete_playbook" phx-value-id={playbook["id"]}
+                          data-confirm={"Delete playbook '#{playbook["name"]}'?"}
+                          class="btn btn-xs btn-ghost text-error">Delete</button>
+                </div>
+
+                <div class="flex items-center gap-1 text-xs flex-wrap">
+                  <span class="text-base-content/60 mr-1">Turns (click to split):</span>
+                  <% turns = ruler_turns(playbook) %>
+                  <%= for turn <- turns do %>
+                    <% boundary? = Enum.any?(playbook["phases"], &(&1["from_turn"] == turn)) %>
+                    <button phx-click="split_phase" phx-value-turn={turn} disabled={turn == 1 or boundary?}
+                            class={"btn btn-2xs w-7 " <> if(boundary?, do: "btn-primary", else: "btn-outline")}>
+                      <%= turn %><%= if turn == List.last(turns), do: "+" %>
+                    </button>
+                  <% end %>
+                </div>
+
+                <%= for phase <- playbook["phases"] do %>
+                  <% turn = phase["from_turn"] %>
+                  <div class="border border-base-300 rounded-lg p-2 flex flex-col gap-1">
+                    <div class="flex items-center text-xs font-semibold text-base-content/70">
+                      <%= phase_range(playbook["phases"], phase) %>
+                      <%= if turn > 1 do %>
+                        <button phx-click="remove_phase" phx-value-turn={turn}
+                                class="btn btn-2xs btn-ghost text-error ml-auto" title="Merge into the previous phase">remove phase</button>
+                      <% end %>
+                    </div>
+
+                    <%= for {action, index} <- Enum.with_index(phase["actions"], 1) do %>
+                      <div class="flex items-start gap-2 bg-base-200 rounded p-1.5 text-xs">
+                        <span class="text-base-content/50 w-4 pt-1"><%= index %>.</span>
+                        <form phx-change="update_action" class="flex flex-col gap-1 flex-1">
+                          <input type="hidden" name="turn" value={turn} />
+                          <input type="hidden" name="action" value={action["id"]} />
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <span class="font-semibold w-32 cursor-help" title={action_tooltip(action["type"])}><%= action_label(action["type"]) %></span>
+
+                            <%= if action["type"] in ~w(dodge ego) do %>
+                              <select name="profile_id" class="select select-bordered select-xs">
+                                <option value="" selected={is_nil(action["profile_id"])}>(profile)</option>
+                                <%= for p <- @profiles do %>
+                                  <option value={p.id} selected={action["profile_id"] == p.id}><%= p.name %></option>
+                                <% end %>
+                              </select>
+                              <span class="text-base-content/60">skill</span>
+                              <select name="pick" class="select select-bordered select-xs">
+                                <%= for pick <- skill_picks(false) do %>
+                                  <option value={pick} selected={action["skill"]["pick"] == pick}><%= pick_label(pick) %></option>
+                                <% end %>
+                              </select>
+                              <%= if numbered_pick?(action["skill"]) do %>
+                                <input type="number" name="n" min="1" value={action["skill"]["n"]} class="input input-bordered input-xs w-14" phx-debounce="300" />
+                              <% end %>
+                            <% end %>
+
+                            <%= if action["type"] == "ego" do %>
+                              <select name="grade" class="select select-bordered select-xs">
+                                <%= for grade <- StarlightBot.BattleStrategies.grades() do %>
+                                  <option value={grade} selected={action["grade"] == grade}><%= String.upcase(grade) %></option>
+                                <% end %>
+                              </select>
+                              <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="hidden" name="corrode" value="false" />
+                                <input type="checkbox" name="corrode" value="true" checked={action["corrode"]} class="checkbox checkbox-xs" />
+                                corrode
+                              </label>
+                            <% end %>
+                          </div>
+
+                          <%= if Map.has_key?(action, "pins") do %>
+                            <%= for {pin, pin_index} <- Enum.with_index(action["pins"]) do %>
+                              <div class="flex items-center gap-2 pl-4">
+                                <span class="text-base-content/60">pin</span>
+                                <select name={"pins[#{pin_index}][profile_id]"} class="select select-bordered select-xs">
+                                  <option value="" selected={is_nil(pin["profile_id"])}>(profile)</option>
+                                  <%= for p <- @profiles do %>
+                                    <option value={p.id} selected={pin["profile_id"] == p.id}><%= p.name %></option>
+                                  <% end %>
+                                </select>
+                                <span class="text-base-content/60">skill</span>
+                                <select name={"pins[#{pin_index}][pick]"} class="select select-bordered select-xs">
+                                  <%= for pick <- skill_picks(true) do %>
+                                    <option value={pick} selected={pin["skill"]["pick"] == pick}><%= pick_label(pick) %></option>
+                                  <% end %>
+                                </select>
+                                <%= if numbered_pick?(pin["skill"]) do %>
+                                  <input type="number" name={"pins[#{pin_index}][n]"} min="1" value={pin["skill"]["n"]} class="input input-bordered input-xs w-14" phx-debounce="300" />
+                                <% end %>
+                                <span class="text-base-content/60">row</span>
+                                <select name={"pins[#{pin_index}][row]"} class="select select-bordered select-xs">
+                                  <option value="top" selected={pin["row"] == "top"}>top</option>
+                                  <option value="bottom" selected={pin["row"] == "bottom"}>bottom</option>
+                                </select>
+                                <button type="button" phx-click="remove_pin" phx-value-turn={turn} phx-value-action={action["id"]} phx-value-index={pin_index}
+                                        class="btn btn-2xs btn-ghost text-error">✕</button>
+                              </div>
+                            <% end %>
+                            <button type="button" phx-click="add_pin" phx-value-turn={turn} phx-value-action={action["id"]}
+                                    class="btn btn-2xs btn-ghost self-start ml-4">+ pin</button>
+                          <% end %>
+                        </form>
+                        <div class="flex gap-0.5">
+                          <button phx-click="move_action" phx-value-turn={turn} phx-value-action={action["id"]} phx-value-dir="up" class="btn btn-2xs btn-ghost">↑</button>
+                          <button phx-click="move_action" phx-value-turn={turn} phx-value-action={action["id"]} phx-value-dir="down" class="btn btn-2xs btn-ghost">↓</button>
+                          <button phx-click="remove_action" phx-value-turn={turn} phx-value-action={action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
+                        </div>
+                      </div>
+                    <% end %>
+
+                    <form id={"add-#{playbook["id"]}-#{turn}-#{length(phase["actions"])}"} phx-change="add_action" class="flex items-center gap-2">
+                      <input type="hidden" name="turn" value={turn} />
+                      <select name="type" class="select select-bordered select-xs">
+                        <option value="" selected>+ action</option>
+                        <%= for type <- available_actions(playbook, phase["actions"]) do %>
+                          <option value={type}><%= action_label(type) %></option>
+                        <% end %>
+                      </select>
+                      <span class="text-[11px] text-base-content/50 italic">
+                        <%= if ends_with_chain?(phase["actions"]) do %>
+                          then: the chain drag starts the turn; fallback only if it didn't
+                        <% else %>
+                          then: fallback (enter if ready, otherwise p + enter)
+                        <% end %>
+                      </span>
+                    </form>
+                  </div>
+                <% end %>
+              <% else %>
+                <div class="text-xs text-base-content/40 italic">Select a playbook to edit.</div>
+              <% end %>
+            </div>
+          </div>
+        <% else %>
+          <div class="flex-1 flex items-center justify-center text-base-content/40 text-sm">
+            Select or create a strategy to edit.
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+  <% else %>
+  <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
+    <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-2">
+      <div class="flex items-center gap-3">
+        <h2 class="card-title text-lg">Sinner Profiles</h2>
+        <span class="badge badge-neutral badge-sm"><%= length(@profiles) %></span>
+        <span class="text-xs text-base-content/50">A profile's locator hook finds the sinner in the battle skill tray.</span>
+        <button phx-click="new_profile" class="btn btn-primary btn-sm ml-auto">+ New</button>
+      </div>
+
+      <datalist id="hook-names">
+        <%= for name <- @hook_names do %>
+          <option value={name}></option>
+        <% end %>
+      </datalist>
+
+      <div class="overflow-y-auto flex-1 min-h-0">
+        <table class="table table-xs table-pin-rows">
+          <thead>
+            <tr><th>Name</th><th>Sinner</th><th>Locator hook</th><th></th><th>Used by</th><th></th></tr>
+          </thead>
+          <tbody>
+            <%= for profile <- @profiles do %>
+              <tr>
+                <td colspan="3">
+                  <form phx-change="save_profile" class="flex items-center gap-2">
+                    <input type="hidden" name="profile_id" value={profile.id} />
+                    <input type="text" name="name" value={profile.name} phx-debounce="blur"
+                           class="input input-bordered input-xs w-48" />
+                    <select name="sinner" class="select select-bordered select-xs w-32">
+                      <option value="" selected={is_nil(profile.sinner)}>(sinner)</option>
+                      <%= for sinner <- StarlightBot.SinnerProfiles.sinners() do %>
+                        <option value={sinner} selected={profile.sinner == sinner}><%= sinner %></option>
+                      <% end %>
+                    </select>
+                    <input type="text" name="locator_hook" value={profile.locator_hook} list="hook-names" phx-debounce="blur"
+                           placeholder="hook name"
+                           class={"input input-bordered input-xs w-64 font-mono " <> if(profile.locator_hook && profile.locator_hook not in @hook_names, do: "input-error", else: "")} />
+                  </form>
+                </td>
+                <td>
+                  <%= if @profile_thumbs[profile.id] do %>
+                    <img src={"data:image/png;base64,#{@profile_thumbs[profile.id]}"} class="h-8 rounded" />
+                  <% end %>
+                </td>
+                <td class="text-center"><%= Map.get(@profile_usage, profile.id, 0) %></td>
+                <td class="text-right whitespace-nowrap">
+                  <button phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost">Test</button>
+                  <button phx-click="delete_profile" phx-value-id={profile.id}
+                          data-confirm={"Delete '#{profile.name}'?"}
+                          class="btn btn-xs btn-ghost text-error">Del</button>
+                </td>
+              </tr>
+              <%= if @profile_tests[profile.id] do %>
+                <tr><td colspan="6" class="text-xs text-base-content/60 pl-4"><%= @profile_tests[profile.id] %></td></tr>
+              <% end %>
+            <% end %>
+            <%= if @profiles == [] do %>
+              <tr><td colspan="6" class="text-center text-base-content/40 py-4">No sinner profiles yet.</td></tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <% end %>
+</div>

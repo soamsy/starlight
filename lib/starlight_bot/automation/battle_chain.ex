@@ -1,8 +1,8 @@
 defmodule StarlightBot.Automation.BattleChain do
-  alias StarlightBot.Automation.{ChainStreak, RunMemory, TrayWatch}
+  alias StarlightBot.Automation.ChainStreak
   alias StarlightBot.Ctx
   alias StarlightBot.Input.Mouse
-  alias StarlightBot.Navigation.{DSL, Runner}
+  alias StarlightBot.Navigation.Runner
   alias StarlightBot.Vision.{Capture, Matcher, SinColor, SkillTray}
 
   @gear_hook :battle_chain
@@ -13,27 +13,6 @@ defmodule StarlightBot.Automation.BattleChain do
   @diagonal_x_bias 0.7
   @diagonal_y_lead_pct 0.2
 
-  @spec select_and_commit(term, Ctx.t()) :: {:ok, term} | {:error, term}
-  def select_and_commit(_last_frame, ctx) do
-    case RunMemory.battle_strategy_type(ctx) do
-      "win_rate" ->
-        Ctx.log(ctx, :info, "battle_chain: team strategy is win_rate — using p+enter instead of chaining")
-        fallback(ctx)
-
-      strategy_type ->
-        with {:ok, frame} <- Capture.grab_frame(),
-             {:ok, gear_rect} <- Matcher.find(frame, @gear_hook),
-             {:ok, tray} <- SkillTray.scan(frame) do
-          TrayWatch.record(frame)
-          drag_chain(frame, tray, gear_rect, ctx, strategy_type)
-        else
-          _ ->
-            Ctx.log(ctx, :info, "battle_chain: skill tray not readable — falling back to p+enter")
-            fallback(ctx)
-        end
-    end
-  end
-
   @spec preview_drag() ::
           {:ok, %{frame: term, tray: SkillTray.t(), picks: [{:top | :bottom, number, number}], path: [{number, number}]}}
           | {:error, term}
@@ -43,7 +22,7 @@ defmodule StarlightBot.Automation.BattleChain do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, {gx, gy, gw, gh} = gear_rect} <- Matcher.find(frame, @gear_hook),
          {:ok, tray} <- SkillTray.scan(frame),
-         {picks, _top_results, _bottom_results} = compute_picks(frame, tray, "chain"),
+         {picks, _top_results, _bottom_results} = compute_picks(frame, tray, "chain_fast", %{}),
          path = build_path({gx + gw / 2, gy + gh / 2}, picks, release_point(tray)),
          :ok <- click_and_release(gear_rect) do
       case Capture.grab_frame() do
@@ -66,21 +45,17 @@ defmodule StarlightBot.Automation.BattleChain do
     end
   end
 
-  defp drag_chain(frame, tray, {gx, gy, gw, gh}, ctx, strategy_type) do
-    {picks, top_results, bottom_results} = compute_picks(frame, tray, strategy_type)
+  @spec drag(term, SkillTray.t(), {number, number, number, number}, String.t(), %{non_neg_integer => :top | :bottom}, Ctx.t()) ::
+          :ok | {:error, term}
+  def drag(frame, tray, {gx, gy, gw, gh}, chain_type, forced, ctx) do
+    {picks, top_results, bottom_results} = compute_picks(frame, tray, chain_type, forced)
     log_skill_tray(ctx, top_results, bottom_results)
-    gear_point = {gx + gw / 2, gy + gh / 2}
-    path = build_path(gear_point, picks, release_point(tray))
+    path = build_path({gx + gw / 2, gy + gh / 2}, picks, release_point(tray))
 
     with {:ok, path_screens} <- to_screen_points(path) do
-      Ctx.log(ctx, :info, "battle_chain: dragging chain selection across #{tray.skill_num} slot(s)")
+      Ctx.log(ctx, :info, "battle_chain: dragging #{chain_type} across #{tray.skill_num} slot(s)")
       run_drag(path_screens)
-      Ctx.log(ctx, :ok, "battle_chain: chain selection committed")
-      {:ok, nil}
-    else
-      {:error, reason} ->
-        Ctx.log(ctx, :error, "battle_chain: #{inspect(reason)} — falling back to p+enter")
-        fallback(ctx)
+      :ok
     end
   end
 
@@ -126,7 +101,7 @@ defmodule StarlightBot.Automation.BattleChain do
     {tray.tray_end_x + @release_margin_px, tray.chain_top_y + 50}
   end
 
-  defp compute_picks(frame, tray, strategy_type) do
+  defp compute_picks(frame, tray, chain_type, forced) do
     bg_color = SinColor.background_color(frame.mat, SkillTray.background_region(tray))
 
     top_results =
@@ -136,12 +111,17 @@ defmodule StarlightBot.Automation.BattleChain do
       SinColor.classify_row(frame.mat, tray.bottom_row, bg_color.hue, bg_color.saturation, bg_color.value)
 
     picks =
-      case strategy_type do
+      case chain_type do
         "chain_a_res" ->
-          waypoints_by_streak(tray, Enum.map(top_results, & &1.sin), Enum.map(bottom_results, & &1.sin))
+          waypoints_by_streak(tray, Enum.map(top_results, & &1.sin), Enum.map(bottom_results, & &1.sin), forced)
 
         _ ->
-          waypoints(tray, Enum.map(top_results, &{&1.tier, &1.tier_margin}), Enum.map(bottom_results, &{&1.tier, &1.tier_margin}))
+          waypoints(
+            tray,
+            Enum.map(top_results, &{&1.tier, &1.tier_margin}),
+            Enum.map(bottom_results, &{&1.tier, &1.tier_margin}),
+            forced
+          )
       end
 
     {picks, top_results, bottom_results}
@@ -171,13 +151,15 @@ defmodule StarlightBot.Automation.BattleChain do
 
   @type scored_tier :: {SinColor.tier(), float}
 
-  @spec waypoints(SkillTray.t(), [scored_tier], [scored_tier]) :: [{:top | :bottom, number, number}]
-  def waypoints(%SkillTray{} = tray, top_skills, bottom_skills) do
+  @spec waypoints(SkillTray.t(), [scored_tier], [scored_tier], %{non_neg_integer => :top | :bottom}) ::
+          [{:top | :bottom, number, number}]
+  def waypoints(%SkillTray{} = tray, top_skills, bottom_skills, forced \\ %{}) do
     top_skills
     |> Enum.zip(bottom_skills)
     |> Enum.zip(SkillTray.chain_grid(tray))
-    |> Enum.map(fn {{top_skill, bottom_skill}, {x, top_y, bottom_y}} ->
-      row_choice = pick_row(top_skill, bottom_skill)
+    |> Enum.with_index()
+    |> Enum.map(fn {{{top_skill, bottom_skill}, {x, top_y, bottom_y}}, index} ->
+      row_choice = Map.get_lazy(forced, index, fn -> pick_row(top_skill, bottom_skill) end)
       y = if row_choice == :top, do: top_y, else: bottom_y
       {row_choice, x, y}
     end)
@@ -188,10 +170,11 @@ defmodule StarlightBot.Automation.BattleChain do
     if {tier_rank(top_tier), top_margin} < {tier_rank(bottom_tier), bottom_margin}, do: :top, else: :bottom
   end
 
-  @spec waypoints_by_streak(SkillTray.t(), [SinColor.sin()], [SinColor.sin()]) :: [{:top | :bottom, number, number}]
-  def waypoints_by_streak(%SkillTray{} = tray, top_sins, bottom_sins) do
+  @spec waypoints_by_streak(SkillTray.t(), [SinColor.sin()], [SinColor.sin()], %{non_neg_integer => :top | :bottom}) ::
+          [{:top | :bottom, number, number}]
+  def waypoints_by_streak(%SkillTray{} = tray, top_sins, bottom_sins, forced \\ %{}) do
     top_sins
-    |> ChainStreak.best_path(bottom_sins)
+    |> ChainStreak.best_path(bottom_sins, forced)
     |> Enum.zip(SkillTray.chain_grid(tray))
     |> Enum.map(fn {row_choice, {x, top_y, bottom_y}} ->
       y = if row_choice == :top, do: top_y, else: bottom_y
@@ -202,8 +185,4 @@ defmodule StarlightBot.Automation.BattleChain do
   defp tier_rank(:skill2), do: 0
   defp tier_rank(:skill1), do: 1
   defp tier_rank(:skill3), do: 2
-
-  defp fallback(ctx) do
-    Runner.run_steps([DSL.key(:p), DSL.sleep(100), DSL.key(:enter)], ctx)
-  end
 end

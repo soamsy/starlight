@@ -68,4 +68,20 @@ defmodule StarlightBot.Automation.ChainStreakTest do
       end
     end
   end
+
+  describe "best_path/3 with forced columns" do
+    test "keeps forced columns on their row even when that breaks the best streak" do
+      top = [:wrath, :wrath, :wrath]
+      bottom = [:lust, :lust, :lust]
+
+      assert ChainStreak.best_path(top, bottom, %{1 => :bottom}) |> Enum.at(1) == :bottom
+    end
+
+    test "still optimizes the free columns around the forced ones" do
+      top = [:wrath, :lust, :wrath, :wrath]
+      bottom = [:lust, :wrath, :lust, :lust]
+
+      assert ChainStreak.best_path(top, bottom, %{0 => :top}) == [:top, :bottom, :top, :top]
+    end
+  end
 end

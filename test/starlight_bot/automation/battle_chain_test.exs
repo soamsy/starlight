@@ -94,4 +94,17 @@ defmodule StarlightBot.Automation.BattleChainTest do
       assert BattleChain.expand_diagonals([{0, 0}]) == [{0, 0}]
     end
   end
+
+  describe "waypoints/4 with forced columns" do
+    test "forced columns override the tier choice" do
+      tray = SkillTray.geometry(400)
+      top_tiers = List.duplicate({:skill2, 0.5}, tray.skill_num)
+      bottom_tiers = List.duplicate({:skill3, 0.8}, tray.skill_num)
+
+      rows = BattleChain.waypoints(tray, top_tiers, bottom_tiers, %{0 => :bottom}) |> Enum.map(&elem(&1, 0))
+
+      assert hd(rows) == :bottom
+      assert Enum.all?(tl(rows), &(&1 == :top))
+    end
+  end
 end

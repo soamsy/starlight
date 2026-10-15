@@ -92,6 +92,20 @@
         <path d="M13 18h5" />
       </svg>
     </.link>
+    <.link navigate={~p"/battle-strategies"}
+           class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :battle_strategies, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Battle Strategies">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <path d="M14.5 17.5 3 6V3h3l11.5 11.5" />
+        <path d="m13 19 6-6" />
+        <path d="m16 16 4 4" />
+        <path d="m19 21 2-2" />
+        <path d="M14.5 6.5 18 3h3v3l-3.5 3.5" />
+        <path d="m5 14 4 4" />
+        <path d="m7 17-3 3" />
+        <path d="m3 19 2 2" />
+      </svg>
+    </.link>
 
     <div class="divider my-1"></div>
 
@@ -171,7 +185,45 @@
       </svg>
     </.link>
 
-    <label class="swap swap-rotate btn btn-ghost btn-square btn-sm mt-auto" title="Toggle theme">
+    <div class="mt-auto"></div>
+
+    <%= if bad_window_size?(assigns[:game_window_rect]) do %>
+      <% {_x, _y, w, h} = @game_window_rect %>
+      <div class="dropdown dropdown-right dropdown-end">
+        <div tabindex="0" role="button"
+             class="btn btn-square btn-sm btn-error animate-pulse"
+             title="Limbus window has the wrong aspect ratio">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+            <line x1="12" x2="12" y1="4" y2="14" />
+            <line x1="12" x2="12.01" y1="20" y2="20" />
+          </svg>
+        </div>
+        <div tabindex="0" class="dropdown-content z-50 ml-2 w-72 rounded-lg border border-error bg-base-100 p-3 shadow-lg text-xs">
+          <div class="font-semibold text-error mb-2">Limbus window is the wrong size</div>
+          <table class="w-full">
+            <tbody>
+              <tr>
+                <td class="text-base-content/60 pr-2 py-0.5">Current size</td>
+                <td class="font-mono">{w} × {h}</td>
+              </tr>
+              <tr>
+                <td class="text-base-content/60 pr-2 py-0.5">Current ratio</td>
+                <td class="font-mono">{aspect_label(w, h)}</td>
+              </tr>
+              <tr>
+                <td class="text-base-content/60 pr-2 py-0.5">Expected ratio</td>
+                <td class="font-mono">16:9 (1.778)</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="mt-2 text-base-content/70">
+            Resize the game window to <span class="font-mono font-semibold">1920 × 1080</span>. Detection and click coordinates assume 16:9.
+          </div>
+        </div>
+      </div>
+    <% end %>
+
+    <label class="swap swap-rotate btn btn-ghost btn-square btn-sm" title="Toggle theme">
       <input type="checkbox" id="theme-toggle-cb" />
       <svg class="swap-off h-5 w-5 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
         <path d="M5.64,17l-.71.71a1,1,0,0,0,0,1.41,1,1,0,0,0,1.41,0l.71-.71A1,1,0,0,0,5.64,17ZM5,12a1,1,0,0,0-1-1H3a1,1,0,0,0,0,2H4A1,1,0,0,0,5,12Zm7-7a1,1,0,0,0,1-1V3a1,1,0,0,0-2,0V4A1,1,0,0,0,12,5ZM5.64,7.05a1,1,0,0,0,.7.29,1,1,0,0,0,.71-.29,1,1,0,0,0,0-1.41l-.71-.71A1,1,0,0,0,4.93,6.34Zm12,.29a1,1,0,0,0,.7-.29l.71-.71a1,1,0,1,0-1.41-1.41L17,5.64a1,1,0,0,0,0,1.41A1,1,0,0,0,17.66,7.34ZM21,11H20a1,1,0,0,0,0,2h1a1,1,0,0,0,0-2Zm-9,8a1,1,0,0,0-1,1v1a1,1,0,0,0,2,0V20A1,1,0,0,0,12,19ZM18.36,17A1,1,0,0,0,17,18.36l.71.71a1,1,0,0,0,1.41,0,1,1,0,0,0,0-1.41ZM12,6.5A5.5,5.5,0,1,0,17.5,12,5.51,5.51,0,0,0,12,6.5Zm0,9A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"/>

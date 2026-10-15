@@ -3,28 +3,45 @@ defmodule StarlightBot.BattleStrategies.ResolverTest do
 
   alias StarlightBot.BattleStrategies.Resolver
 
-  describe "type_for/2" do
-    test "reads the type for the requested context" do
-      data = %{"mirror_dungeon" => %{"type" => "chain"}, "luxcavation" => %{"type" => "win_rate"}}
+  @data %{
+    "playbooks" => [
+      %{"id" => "fast", "kind" => "chain", "phases" => [%{"from_turn" => 1, "actions" => [%{"type" => "chain_fast"}]}]},
+      %{
+        "id" => "boss",
+        "kind" => "chain",
+        "phases" => [
+          %{"from_turn" => 1, "actions" => [%{"type" => "dodge"}, %{"type" => "chain_a_res"}]},
+          %{"from_turn" => 5, "actions" => [%{"type" => "win_rate"}, %{"type" => "commit"}]}
+        ]
+      }
+    ],
+    "tracks" => %{
+      "hard_chain" => [%{"from_floor" => 1, "playbook" => "fast"}, %{"from_floor" => 5, "playbook" => "boss"}]
+    }
+  }
 
-      assert Resolver.type_for(data, :mirror_dungeon) == "chain"
-      assert Resolver.type_for(data, :luxcavation) == "win_rate"
+  describe "playbook_id_at/2" do
+    test "applies a change point until the next one" do
+      entries = @data["tracks"]["hard_chain"]
+
+      assert Resolver.playbook_id_at(entries, 1) == "fast"
+      assert Resolver.playbook_id_at(entries, 4) == "fast"
+      assert Resolver.playbook_id_at(entries, 5) == "boss"
+      assert Resolver.playbook_id_at(entries, 15) == "boss"
     end
 
-    test "defaults to chain when the context is missing from the data" do
-      data = %{"mirror_dungeon" => %{"type" => "win_rate"}}
-
-      assert Resolver.type_for(data, :luxcavation) == "chain"
+    test "returns nil for a missing track" do
+      assert Resolver.playbook_id_at(nil, 3) == nil
     end
+  end
 
-    test "defaults to chain for empty data" do
-      assert Resolver.type_for(%{}, :mirror_dungeon) == "chain"
-      assert Resolver.type_for(%{}, :luxcavation) == "chain"
-    end
+  describe "phase_for/2" do
+    test "the split turn itself adopts the new phase" do
+      boss = Resolver.playbook_for(@data, "hard_chain", 5)
 
-    test "defaults to chain for non-map data" do
-      assert Resolver.type_for(nil, :mirror_dungeon) == "chain"
-      assert Resolver.type_for("garbage", :luxcavation) == "chain"
+      assert Resolver.phase_for(boss, 4)["from_turn"] == 1
+      assert Resolver.phase_for(boss, 5)["from_turn"] == 5
+      assert Resolver.phase_for(boss, 9)["from_turn"] == 5
     end
   end
 end

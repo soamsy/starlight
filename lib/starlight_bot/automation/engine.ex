@@ -1,5 +1,6 @@
 defmodule StarlightBot.Automation.Engine do
 
+  alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Ctx
   alias StarlightBot.Navigation.{Catalog, Runner}
   alias StarlightBot.Vision.Capture
@@ -116,11 +117,14 @@ defmodule StarlightBot.Automation.Engine do
   @hiccup_backoff_ms 500
   @hiccup_max_attempts 5
 
-  def play_battle(from, ctx \\ Ctx.new(), loops_left \\ @max_battle_loops)
+  def play_battle(from, ctx \\ Ctx.new()) do
+    RunMemory.put_battle_turn(ctx, 1)
+    play_battle(from, ctx, @max_battle_loops)
+  end
 
-  def play_battle(from, _ctx, 0), do: {:error, {:battle_turn_limit_exceeded, from}}
+  defp play_battle(from, _ctx, 0), do: {:error, {:battle_turn_limit_exceeded, from}}
 
-  def play_battle(from, ctx, loops_left) do
+  defp play_battle(from, ctx, loops_left) do
     target = if from in @screens_awaiting_turn_or_over, do: :battle_turn_or_over, else: :battle_playing
 
     case goto(from, target, ctx) do

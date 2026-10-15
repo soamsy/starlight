@@ -1,29 +1,41 @@
 defmodule StarlightBot.Automation.ChainStreak do
   @type choice :: :top | :bottom
 
-  @spec best_path([term], [term]) :: [choice]
-  def best_path([], []), do: []
+  @spec best_path([term], [term], %{non_neg_integer => choice}) :: [choice]
+  def best_path(top, bottom, forced \\ %{})
 
-  def best_path(top, bottom) when length(top) == length(bottom) do
+  def best_path([], [], _forced), do: []
+
+  def best_path(top, bottom, forced) when length(top) == length(bottom) do
     weight = length(top) + 1
 
     top
     |> Enum.zip(bottom)
-    |> build_layers(weight)
+    |> Enum.with_index()
+    |> build_layers(weight, forced)
     |> backtrack(weight)
   end
 
-  defp build_layers(columns, weight) do
+  defp build_layers(columns, weight, forced) do
     start_layer = %{start: %{score: 0, choice: nil, prev: nil}}
 
     {_last_layer, layers_rev} =
-      Enum.reduce(columns, {start_layer, []}, fn {top_color, bottom_color}, {prev_layer, acc} ->
+      Enum.reduce(columns, {start_layer, []}, fn {{top_color, bottom_color}, index}, {prev_layer, acc} ->
         layer =
-          prev_layer
-          |> extend(top_color, :top, weight)
-          |> Map.merge(extend(prev_layer, bottom_color, :bottom, weight), fn _key, a, b ->
-            if a.score >= b.score, do: a, else: b
-          end)
+          case Map.get(forced, index) do
+            :top ->
+              extend(prev_layer, top_color, :top, weight)
+
+            :bottom ->
+              extend(prev_layer, bottom_color, :bottom, weight)
+
+            nil ->
+              prev_layer
+              |> extend(top_color, :top, weight)
+              |> Map.merge(extend(prev_layer, bottom_color, :bottom, weight), fn _key, a, b ->
+                if a.score >= b.score, do: a, else: b
+              end)
+          end
 
         {layer, [layer | acc]}
       end)

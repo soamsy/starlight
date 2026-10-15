@@ -33,6 +33,8 @@ defmodule StarlightBot.Vision.SkillTray do
   @chain_top_y_offset 100
   @chain_bottom_y_offset 200
 
+  @sinner_action_y_offset 130
+
   defstruct [
     :gear_start_x,
     :tray_start_x,
@@ -43,7 +45,8 @@ defmodule StarlightBot.Vision.SkillTray do
     :top_row,
     :bottom_row,
     :chain_top_y,
-    :chain_bottom_y
+    :chain_bottom_y,
+    :sinner_action_y
   ]
 
   @type row :: %{
@@ -68,7 +71,8 @@ defmodule StarlightBot.Vision.SkillTray do
           top_row: row,
           bottom_row: row,
           chain_top_y: integer,
-          chain_bottom_y: integer
+          chain_bottom_y: integer,
+          sinner_action_y: integer
         }
 
   @spec scan(Frame.t()) :: {:ok, t()} | :not_found | {:error, term()}
@@ -151,6 +155,7 @@ defmodule StarlightBot.Vision.SkillTray do
       sinner_of_slot: nil,
       chain_top_y: round(top_row_y + top_row_h / 2 + @chain_top_y_offset),
       chain_bottom_y: round(@bottom_row_y + @bottom_row_h / 2 + @chain_bottom_y_offset),
+      sinner_action_y: @bottom_row_y + @bottom_row_h + @sinner_action_y_offset,
       top_row:
         row(
           tray_start_x,
@@ -209,6 +214,25 @@ defmodule StarlightBot.Vision.SkillTray do
     for i <- 0..(skill_num - 1) do
       {tray_start_x + bin_width * (i + 0.5), tray.chain_top_y, tray.chain_bottom_y}
     end
+  end
+
+  @spec slot_x(t(), non_neg_integer) :: float
+  def slot_x(%__MODULE__{tray_start_x: tray_start_x, bin_width: bin_width}, column),
+    do: tray_start_x + bin_width * (column + 0.5)
+
+  @spec column_at(t(), number) :: non_neg_integer
+  def column_at(%__MODULE__{} = tray, x) do
+    ((x - tray.tray_start_x) / tray.bin_width) |> floor() |> max(0) |> min(tray.skill_num - 1)
+  end
+
+  @spec owned_columns(t(), non_neg_integer) :: [non_neg_integer]
+  def owned_columns(%__MODULE__{sinner_of_slot: sinner_of_slot}, column) do
+    owner = Enum.at(sinner_of_slot, column)
+
+    sinner_of_slot
+    |> Enum.with_index()
+    |> Enum.filter(fn {sinner, _column} -> sinner == owner end)
+    |> Enum.map(&elem(&1, 1))
   end
 
   @spec row_columns(row) :: [{integer, integer}]

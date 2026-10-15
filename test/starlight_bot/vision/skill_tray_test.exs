@@ -176,4 +176,30 @@ defmodule StarlightBot.Vision.SkillTrayTest do
   defp paint_blob(mat, cx, cy, {b, g, r}) do
     Evision.rectangle(mat, {cx - 5, cy - 5}, {cx + 5, cy + 5}, {b, g, r}, thickness: -1)
   end
+
+  describe "slot helpers" do
+    test "column_at maps an x inside a slot back to that slot, clamped to the tray" do
+      tray = SkillTray.geometry(400)
+
+      for column <- 0..(tray.skill_num - 1) do
+        assert SkillTray.column_at(tray, SkillTray.slot_x(tray, column)) == column
+      end
+
+      assert SkillTray.column_at(tray, 0) == 0
+      assert SkillTray.column_at(tray, 5_000) == tray.skill_num - 1
+    end
+
+    test "owned_columns lists every slot belonging to the same sinner" do
+      tray = %{SkillTray.geometry(400) | sinner_of_slot: [0, 0, 0, 1, 1, 2]}
+
+      assert SkillTray.owned_columns(tray, 0) == [0, 1, 2]
+      assert SkillTray.owned_columns(tray, 4) == [3, 4]
+      assert SkillTray.owned_columns(tray, 5) == [5]
+    end
+
+    test "sinner action y sits below the bottom skill row" do
+      tray = SkillTray.geometry(400)
+      assert tray.sinner_action_y > tray.bottom_row.y + tray.bottom_row.h
+    end
+  end
 end
