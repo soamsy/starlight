@@ -2,11 +2,11 @@ defmodule StarlightBot.Navigation.Navigator do
   use GenServer
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Automation.Scripts.ShopRunner
-  alias StarlightBot.Ctx
-  alias StarlightBot.Navigation.{Catalog, Runner}
+  alias StarlightBot.{Ctx, LogStore, RunHistory, Teams}
+  alias StarlightBot.Navigation.{Catalog, RunClock, RunSplits, Runner, ScreenTimes}
 
   @topic "navigation"
-  @log_limit 100
+  @log_limit 1000
 
   defstruct [
     current_screen: nil,   # nil = never localized | :unknown | screen atom
@@ -16,7 +16,11 @@ defmodule StarlightBot.Navigation.Navigator do
     run_memory: %{},       # snapshot of the current mirror dungeon run's RunMemory, cleared per run
     task_pid: nil,
     run_kind: nil,
-    pause_flag: nil
+    pause_flag: nil,
+    run_clock: nil,
+    run_splits: [],
+    screen_times: %ScreenTimes{},
+    next_run: nil
   ]
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -52,8 +56,11 @@ defmodule StarlightBot.Navigation.Navigator do
            collect_enkephalin?, enkephalin_convert_count}
         )
 
-  def run_mirror_dungeon(team_id, run_count, config),
-    do: GenServer.cast(__MODULE__, {:run_mirror_dungeon, team_id, run_count, config})
+  def run_mirror_dungeon(team_ids, run_count, config),
+    do: GenServer.cast(__MODULE__, {:run_mirror_dungeon, team_ids, run_count, config})
+
+  def queue_after_run({:run_mirror_dungeon, _team_ids, _run_count, _config} = next),
+    do: GenServer.cast(__MODULE__, {:queue_after_run, next})
 
   def select_team_on_screen(team_id),
     do: GenServer.cast(__MODULE__, {:select_team_on_screen, team_id})
@@ -238,6 +245,12 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
+  def handle_cast({:run_luxcavation, _, _, _, _, _, _, _, _}, %{run_kind: :mirror_dungeon, task_pid: pid} = state) when is_pid(pid),
+    do: refuse_run(state, "luxcavation", "mirror dungeon")
+
+  def handle_cast({:run_mirror_dungeon, _, _, _}, %{run_kind: :luxcavation, task_pid: pid} = state) when is_pid(pid),
+    do: refuse_run(state, "mirror dungeon", "luxcavation")
+
   def handle_cast(
         {:run_luxcavation, team_id, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
          collect_enkephalin?, enkephalin_convert_count},
@@ -287,10 +300,10 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
-  def handle_cast({:run_mirror_dungeon, team_id, run_count, config}, state) do
+  def handle_cast({:run_mirror_dungeon, team_ids, run_count, config}, state) do
     state = cancel_running(state)
     state = %{state | run_memory: %{}}
-    state = add_log(state, :info, "Running mirror dungeon: team=#{team_id} runs=#{run_count} config=#{inspect(config)}")
+    state = add_log(state, :info, "Running mirror dungeon: teams=#{inspect(team_ids)} runs=#{run_count} config=#{inspect(config)}")
     me = self()
     pause_flag = :atomics.new(1, [])
 
@@ -304,11 +317,11 @@ defmodule StarlightBot.Navigation.Navigator do
             on_run_memory_change: fn snapshot -> send(me, {:nav_run_memory, snapshot}) end
           )
 
-        result = StarlightBot.Automation.Scripts.MirrorDungeonRunner.run(team_id, run_count, config, ctx)
+        result = StarlightBot.Automation.Scripts.MirrorDungeonRunner.run(team_ids, run_count, config, ctx)
         send(me, {:nav_result, :run_script, result})
       end).pid
 
-    state = %{state | phase: :running, goal: nil, task_pid: pid, run_kind: :mirror_dungeon, pause_flag: pause_flag}
+    state = %{state | phase: :running, goal: nil, task_pid: pid, run_kind: :mirror_dungeon, pause_flag: pause_flag, run_clock: RunClock.start(now_ms()), run_splits: [], screen_times: ScreenTimes.track(%ScreenTimes{}, %{run: 1}, 0, DateTime.utc_now())}
     broadcast(state)
     {:noreply, state}
   end
@@ -317,7 +330,7 @@ defmodule StarlightBot.Navigation.Navigator do
   def handle_cast(:resume_mirror_dungeon, %{phase: :paused, task_pid: pid} = state) when is_pid(pid) do
     clear_pause_request(state)
     send(pid, :resume_mirror_dungeon)
-    state = %{state | phase: :running}
+    state = %{state | phase: :running} |> update_clock(&RunClock.start/2)
     broadcast(state)
     {:noreply, state}
   end
@@ -334,7 +347,7 @@ defmodule StarlightBot.Navigation.Navigator do
     pid =
       Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
         ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end)
-        result = StarlightBot.Automation.Scripts.SelectTeamOnScreen.run(team_id, ctx)
+        result = StarlightBot.Automation.Scripts.SelectTeamOnScreen.run(team_id, "md_battle", 1, ctx)
         send(me, {:nav_result, :select_team_on_screen, result})
       end).pid
 
@@ -393,6 +406,19 @@ defmodule StarlightBot.Navigation.Navigator do
       end).pid
 
     state = %{state | phase: :running, goal: nil, task_pid: pid}
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast({:queue_after_run, next}, %{task_pid: pid} = state) when is_pid(pid) do
+    state = %{state | next_run: next} |> add_log(:info, "Queued to run next: #{next_run_label(next)}")
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  def handle_cast({:queue_after_run, next}, state) do
+    state = add_log(state, :error, "Nothing is running, so #{next_run_label(next)} wasn't queued")
     broadcast(state)
     {:noreply, state}
   end
@@ -561,6 +587,8 @@ defmodule StarlightBot.Navigation.Navigator do
 
   @impl true
   def handle_info({:nav_result, :run_script, result}, state) do
+    state = persist_last_run(state, if(match?({:ok, _}, result), do: "success", else: "failure"))
+
     state =
       case result do
         {:ok, screen} -> add_log(state, :ok, "Script finished at #{screen}")
@@ -571,33 +599,42 @@ defmodule StarlightBot.Navigation.Navigator do
       |> Map.put(:task_pid, nil)
       |> Map.put(:run_kind, nil)
       |> Map.put(:pause_flag, nil)
+      |> update_clock(&RunClock.stop/2)
 
-    broadcast(state)
+    {next, state} = {state.next_run, %{state | next_run: nil}}
 
-    # A script can move through several screens before succeeding or
-    # failing partway. Its return value alone doesn't say which one we
-    # ended up on, so re-sync current_screen from live state instead of
-    # guessing from the result.
-    handle_cast(:localize, state)
+    case {next, result} do
+      {nil, _} ->
+        localize_after_script(state)
+
+      {next, {:ok, _}} ->
+        state = add_log(state, :info, "Starting the queued #{next_run_label(next)}")
+        broadcast(state)
+        handle_cast(next, state)
+
+      {next, _} ->
+        state = add_log(state, :error, "Skipping the queued #{next_run_label(next)} because the run before it didn't finish")
+        localize_after_script(state)
+    end
   end
 
   @impl true
   def handle_info({:nav_log, kind, text}, state) do
-    state = add_log(state, kind, text)
+    state = remember_log(state, kind, text)
     broadcast(state)
     {:noreply, state}
   end
 
   @impl true
   def handle_info({:nav_run_memory, snapshot}, state) do
-    state = %{state | run_memory: snapshot}
+    state = %{state | run_memory: snapshot} |> track_split(snapshot) |> track_screen(snapshot)
     broadcast(state)
     {:noreply, state}
   end
 
   @impl true
   def handle_info(:nav_paused, state) do
-    state = %{state | phase: :paused}
+    state = %{state | phase: :paused} |> update_clock(&RunClock.stop/2)
     broadcast(state)
     {:noreply, state}
   end
@@ -612,10 +649,13 @@ defmodule StarlightBot.Navigation.Navigator do
   def handle_info({:DOWN, _ref, :process, pid, reason}, %{task_pid: pid} = state) do
     state =
       state
+      |> persist_last_run("failure")
       |> Map.put(:phase, :idle)
       |> Map.put(:task_pid, nil)
       |> Map.put(:run_kind, nil)
       |> Map.put(:pause_flag, nil)
+      |> Map.put(:next_run, nil)
+      |> update_clock(&RunClock.stop/2)
       |> add_log(:error, "Task crashed: #{inspect(reason)}")
 
     broadcast(state)
@@ -644,12 +684,80 @@ defmodule StarlightBot.Navigation.Navigator do
     result
   end
 
-  defp cancel_running(%{task_pid: nil} = state), do: %{state | phase: :idle, run_kind: nil, pause_flag: nil}
+  defp localize_after_script(state) do
+    broadcast(state)
+
+    # A script can move through several screens before succeeding or
+    # failing partway. Its return value alone doesn't say which one we
+    # ended up on, so re-sync current_screen from live state instead of
+    # guessing from the result.
+    handle_cast(:localize, state)
+  end
+
+  defp next_run_label({:run_mirror_dungeon, team_ids, run_count, _config}),
+    do: "mirror dungeon (#{run_count} run(s), #{length(team_ids)} team(s))"
+
+  defp refuse_run(state, wanted, active) do
+    state = add_log(state, :error, "Not starting #{wanted}: #{active} is running. Cancel it first.")
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  defp cancel_running(%{task_pid: nil} = state), do: update_clock(%{state | phase: :idle, run_kind: nil, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
 
   defp cancel_running(%{task_pid: pid} = state) do
     Task.Supervisor.terminate_child(StarlightBot.TaskSupervisor, pid)
-    %{state | task_pid: nil, phase: :idle, run_kind: nil, pause_flag: nil}
+    state = persist_last_run(state, "interrupted")
+    update_clock(%{state | task_pid: nil, phase: :idle, run_kind: nil, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
   end
+
+  defp track_split(%{run_kind: :mirror_dungeon, run_clock: %RunClock{} = clock} = state, %{run_progress: %{current: run}, floor: floor} = snapshot) do
+    team = get_in(snapshot, [:team, :name])
+    %{state | run_splits: RunSplits.track(state.run_splits, run, floor, RunClock.elapsed_ms(clock, now_ms()), team)}
+  end
+
+  defp track_split(state, _snapshot), do: state
+
+  defp track_screen(%{run_kind: :mirror_dungeon, run_clock: %RunClock{} = clock} = state, snapshot) do
+    key = %{
+      screen: snapshot[:screen],
+      task: snapshot[:task],
+      step: snapshot[:step],
+      run: get_in(snapshot, [:run_progress, :current]) || 1,
+      floor: snapshot[:floor]
+    }
+
+    previous_run = ScreenTimes.current_run(state.screen_times)
+    state = %{state | screen_times: ScreenTimes.track(state.screen_times, key, RunClock.elapsed_ms(clock, now_ms()), DateTime.utc_now())}
+    if previous_run != key.run, do: persist_run(state, previous_run, "success")
+    state
+  end
+
+  defp track_screen(state, _snapshot), do: state
+
+  defp persist_last_run(%{run_kind: :mirror_dungeon, screen_times: times} = state, result) do
+    persist_run(state, ScreenTimes.current_run(times), result)
+    state
+  end
+
+  defp persist_last_run(state, _result), do: state
+
+  defp persist_run(%{run_clock: %RunClock{} = clock, screen_times: times, run_memory: run_memory}, run, result) when is_integer(run) do
+    segments = times |> ScreenTimes.segments(RunClock.elapsed_ms(clock, now_ms())) |> Enum.filter(&(&1.run == run))
+    team_id = get_in(run_memory, [:team, :id])
+
+    Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn ->
+      team_name = team_id && Teams.get_team(team_id)[:name]
+      RunHistory.save_run(%{team_id: team_id, team_name: team_name, result: result}, segments)
+    end)
+  end
+
+  defp persist_run(_state, _run, _result), do: :ok
+
+  defp update_clock(%{run_clock: nil} = state, _fun), do: state
+  defp update_clock(%{run_clock: clock} = state, fun), do: %{state | run_clock: fun.(clock, now_ms())}
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
 
   defp clear_pause_request(%{pause_flag: nil}), do: :ok
   defp clear_pause_request(%{pause_flag: pause_flag}), do: :atomics.put(pause_flag, 1, 0)
@@ -658,7 +766,12 @@ defmodule StarlightBot.Navigation.Navigator do
   defp pause_requested?(%{pause_flag: pause_flag}), do: :atomics.get(pause_flag, 1) == 1
 
   defp add_log(state, kind, text) do
-    entry = %{at: System.monotonic_time(:millisecond), kind: kind, text: text}
+    LogStore.append(kind, text)
+    remember_log(state, kind, text)
+  end
+
+  defp remember_log(state, kind, text) do
+    entry = %{at: LogStore.now(), kind: kind, text: text}
     %{state | log: [entry | state.log] |> Enum.take(@log_limit)}
   end
 
@@ -674,7 +787,11 @@ defmodule StarlightBot.Navigation.Navigator do
       log: state.log,
       run_memory: state.run_memory,
       run_kind: state.run_kind,
-      pause_requested: pause_requested?(state)
+      next_run: state.next_run,
+      pause_requested: pause_requested?(state),
+      run_clock: state.run_clock && %{elapsed_ms: RunClock.elapsed_ms(state.run_clock, now_ms()), running?: RunClock.running?(state.run_clock)},
+      run_splits: state.run_splits,
+      screen_times: state.screen_times
     }
   end
 end

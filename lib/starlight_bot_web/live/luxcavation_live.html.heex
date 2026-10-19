@@ -8,6 +8,10 @@
       <%= screen_label(@current_screen) %>
     </span>
 
+    <button phx-click="localize" disabled={@phase != :idle} class="btn btn-ghost btn-xs">
+      Localize
+    </button>
+
     <%= if label = phase_label(@phase) do %>
       <span class={"flex items-center gap-1 text-sm #{if @phase == :paused, do: "text-warning", else: "text-base-content/60"}"}>
         <%= if @phase != :paused do %>
@@ -115,7 +119,11 @@
           </label>
         <% end %>
 
-        <%= if @phase == :paused do %>
+        <%= if @other_running? do %>
+          <span class="text-xs text-warning">Mirror dungeon is running. Cancel it there before starting this.</span>
+        <% end %>
+
+        <%= if @phase == :paused and not @other_running? do %>
           <button
             type="button"
             phx-click="resume"
@@ -126,13 +134,34 @@
         <% else %>
           <button
             type="submit"
-            disabled={@teams == [] or @phase != :idle or @countdown != nil}
+            disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
             class="btn btn-primary btn-sm">
             Run
           </button>
+          <button
+            type="submit"
+            name="then"
+            value="mirror_dungeon"
+            disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running? or is_nil(@md_next)}
+            title={if @md_next, do: "After luxcavation finishes, start " <> MirrorDungeonLive.pending_action_label(@md_next), else: "Set up a mirror dungeon run on its page first"}
+            class="btn btn-secondary btn-sm">
+            Run, then mirror dungeon
+          </button>
         <% end %>
 
-        <%= if @phase != :idle do %>
+        <div id="lux-md-setup" phx-hook="StoredFormReader" data-storage-key="starlight-mirror-dungeon-runner-form" data-event="mirror_dungeon_setup"
+             class="text-xs text-base-content/60">
+          <%= cond do %>
+            <% @queued_next -> %>
+              Queued next: <%= MirrorDungeonLive.pending_action_label(@queued_next) %>
+            <% @md_next -> %>
+              Mirror dungeon setup: <%= MirrorDungeonLive.pending_action_label(@md_next) %>
+            <% true -> %>
+              No mirror dungeon setup found. Set one up on the Mirror Dungeon page.
+          <% end %>
+        </div>
+
+        <%= if @phase != :idle and not @other_running? do %>
           <button type="button" phx-click="cancel" class="btn btn-ghost btn-sm btn-error">Cancel</button>
         <% end %>
       </form>
