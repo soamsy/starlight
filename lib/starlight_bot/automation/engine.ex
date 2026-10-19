@@ -7,13 +7,14 @@ defmodule StarlightBot.Automation.Engine do
 
   @localize_max_attempts 5
   @localize_backoff_ms 500
+  @check_poll_ms 100
 
   def localize, do: localize(@localize_max_attempts, @localize_backoff_ms)
 
   defp localize(attempts_left, delay_ms) do
     case Runner.check_screens(Catalog.all_screens()) do
       {:ok, _screen} = ok ->
-        ok
+        Runner.settle_fallback(ok, fn -> Runner.check_screens(Catalog.all_screens()) end)
 
       :unknown when attempts_left > 1 ->
         Process.sleep(delay_ms)
@@ -28,17 +29,17 @@ defmodule StarlightBot.Automation.Engine do
   @escape_click_sleep_ms 300
   @max_escape_hops 3
 
-  def localize_with_recovery(ctx \\ Ctx.new()) do
+  def localize_with_recovery(ctx \\ Ctx.new(), keep? \\ fn _screen -> false end) do
     case localize() do
-      {:ok, screen} -> escape_then_localize(screen, ctx, @max_escape_hops)
+      {:ok, screen} -> escape_then_localize(screen, ctx, keep?, @max_escape_hops)
       :unknown -> fallback_recovery(ctx)
     end
   end
 
-  defp escape_then_localize(screen, _ctx, 0), do: {:ok, screen}
+  defp escape_then_localize(screen, _ctx, _keep?, 0), do: {:ok, screen}
 
-  defp escape_then_localize(screen, ctx, hops_left) do
-    case Catalog.escape_transition(screen) do
+  defp escape_then_localize(screen, ctx, keep?, hops_left) do
+    case if(keep?.(screen), do: nil, else: Catalog.escape_transition(screen)) do
       nil ->
         {:ok, screen}
 
@@ -47,7 +48,7 @@ defmodule StarlightBot.Automation.Engine do
         Runner.run_plan([transition], ctx)
 
         case localize() do
-          {:ok, next_screen} -> escape_then_localize(next_screen, ctx, hops_left - 1)
+          {:ok, next_screen} -> escape_then_localize(next_screen, ctx, keep?, hops_left - 1)
           :unknown -> fallback_recovery(ctx)
         end
     end
@@ -105,6 +106,18 @@ defmodule StarlightBot.Automation.Engine do
     end
   end
 
+  def check_within(hook_spec, timeout_ms), do: poll_check(hook_spec, System.monotonic_time(:millisecond) + timeout_ms)
+
+  defp poll_check(hook_spec, deadline) do
+    cond do
+      check(hook_spec) -> true
+      System.monotonic_time(:millisecond) >= deadline -> false
+      true ->
+        Process.sleep(@check_poll_ms)
+        poll_check(hook_spec, deadline)
+    end
+  end
+
   def check_all(hook_specs) when is_list(hook_specs) do
     case Capture.grab_frame() do
       {:ok, frame} -> Map.new(hook_specs, &{&1, Runner.hook_matches?(frame, &1)})
@@ -114,8 +127,10 @@ defmodule StarlightBot.Automation.Engine do
 
   @screens_awaiting_turn_or_over [:battle, :battle_playing, :battle_over_confirm]
   @max_battle_loops 500
+  @max_defeat_failures 3
   @hiccup_backoff_ms 500
   @hiccup_max_attempts 5
+  @give_up_screens [:battle_turn, :battle_chain, :battle_focused, :battle_settings_popup]
 
   def play_battle(from, ctx \\ Ctx.new()) do
     RunMemory.put_battle_turn(ctx, 1)
@@ -124,22 +139,88 @@ defmodule StarlightBot.Automation.Engine do
 
   defp play_battle(from, _ctx, 0), do: {:error, {:battle_turn_limit_exceeded, from}}
 
-  defp play_battle(from, ctx, loops_left) do
+  defp play_battle(:battle_defeat, ctx, loops_left) do
+    case resolve_defeat(ctx) do
+      {:ok, _} ->
+        RunMemory.put(ctx, :defeat_failures, 0)
+        continue_battle(ctx, loops_left)
+
+      {:error, :window_not_focused} = err ->
+        err
+
+      {:error, reason} ->
+        failures = RunMemory.get(ctx, :defeat_failures, 0) + 1
+        RunMemory.put(ctx, :defeat_failures, failures)
+
+        if failures >= @max_defeat_failures do
+          Ctx.log(ctx, :error, "defeat screen did not respond after #{failures} tries, stopping")
+          RunMemory.put(ctx, :defeat_failures, 0)
+          {:error, {:defeat_stuck, reason}}
+        else
+          recover_from_hiccup(reason, ctx, loops_left)
+        end
+    end
+  end
+
+  defp play_battle(from, ctx, loops_left) when from in @give_up_screens do
+    if RunMemory.give_up?(ctx) do
+      Ctx.log(ctx, :info, "giving up (#{inspect(RunMemory.give_up(ctx))}), leaving the battle through the settings menu")
+
+      case goto(from, :battle_given_up, ctx) do
+        {:ok, screen} -> leave_or_continue(screen, ctx, loops_left)
+        {:error, :window_not_focused} = err -> err
+        {:error, reason} -> recover_from_hiccup(reason, ctx, loops_left)
+      end
+    else
+      advance_battle(from, ctx, loops_left)
+    end
+  end
+
+  defp play_battle(from, ctx, loops_left), do: advance_battle(from, ctx, loops_left)
+
+  defp advance_battle(from, ctx, loops_left) do
     target = if from in @screens_awaiting_turn_or_over, do: :battle_turn_or_over, else: :battle_playing
 
     case goto(from, target, ctx) do
       {:ok, screen} ->
-        if screen in battle_screens() do
-          play_battle(screen, ctx, loops_left - 1)
-        else
-          {:ok, screen}
-        end
+        leave_or_continue(screen, ctx, loops_left)
+
+      {:error, :battle_left} ->
+        continue_battle(ctx, loops_left)
 
       {:error, :window_not_focused} = err ->
         err
 
       {:error, reason} ->
         recover_from_hiccup(reason, ctx, loops_left)
+    end
+  end
+
+  defp leave_or_continue(screen, ctx, loops_left) do
+    if screen in battle_screens() do
+      play_battle(screen, ctx, loops_left - 1)
+    else
+      RunMemory.reset_battle_retries(ctx)
+      {:ok, screen}
+    end
+  end
+
+  defp continue_battle(ctx, loops_left) do
+    case localize() do
+      {:ok, screen} -> leave_or_continue(screen, ctx, loops_left)
+      :unknown -> recover_from_hiccup(:unknown_screen, ctx, loops_left)
+    end
+  end
+
+  defp resolve_defeat(ctx) do
+    case RunMemory.claim_battle_retry(ctx) do
+      {:retry, retry, max_retries} ->
+        Ctx.log(ctx, :info, "battle lost, retrying (#{retry}/#{max_retries})")
+        run_action(:battle_defeat, :retry, ctx)
+
+      :give_up ->
+        Ctx.log(ctx, :error, "battle lost, giving up (#{inspect(RunMemory.give_up(ctx))}) and returning to stage select")
+        run_action(:battle_defeat, :to_stage_select, ctx)
     end
   end
 
@@ -161,6 +242,7 @@ defmodule StarlightBot.Automation.Engine do
           play_battle(screen, ctx, loops_left - 1)
         else
           Ctx.log(ctx, :ok, "resolved to #{screen} despite the hiccup — continuing")
+          RunMemory.reset_battle_retries(ctx)
           {:ok, screen}
         end
 
@@ -173,5 +255,5 @@ defmodule StarlightBot.Automation.Engine do
 
   def in_battle?(screen), do: screen in battle_screens()
 
-  defp battle_screens, do: [:battle, :battle_over_confirm | Enum.map(Catalog.refinements_of(:battle), & &1.name)]
+  defp battle_screens, do: [:battle, :battle_over_confirm, :battle_defeat | Enum.map(Catalog.refinements_of(:battle), & &1.name)]
 end
