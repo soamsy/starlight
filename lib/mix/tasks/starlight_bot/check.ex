@@ -118,7 +118,7 @@ defmodule Mix.Tasks.StarlightBot.Check do
     display = System.get_env("DISPLAY")
 
     if is_nil(display) do
-      warn("$DISPLAY not set — xcap capture may fail on pure Wayland (expected for XWayland games)")
+      warn("$DISPLAY not set — capture still scans /tmp/.X11-unix, but the host display is unknown, so input will treat any display the game is on as nested")
     else
       ok("$DISPLAY=#{display} (X11/XWayland accessible)")
     end

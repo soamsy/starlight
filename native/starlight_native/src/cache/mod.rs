@@ -1,14 +1,23 @@
-pub mod xcap_poll;
+pub mod x11_poll;
 
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 use std::time::Instant;
 
+use rustler::ResourceArc;
+
 use crate::error::NativeError;
 
-pub struct CachedFrame {
+pub struct FrameData {
     pub bgr: Vec<u8>,
+}
+
+#[rustler::resource_impl]
+impl rustler::Resource for FrameData {}
+
+pub struct CachedFrame {
+    pub data: ResourceArc<FrameData>,
     pub width: u32,
     pub height: u32,
     pub captured_at: Instant,
@@ -41,7 +50,7 @@ pub fn start(window_title: String) -> Result<(), NativeError> {
         *guard = None;
     }
 
-    let handle = xcap_poll::start(window_title, frame_arc(), stop_arc());
+    let handle = x11_poll::start(window_title, frame_arc(), stop_arc());
     if let Ok(mut guard) = THREAD.lock() {
         *guard = Some(handle);
     }
@@ -56,10 +65,10 @@ pub fn stop() {
     }
 }
 
-pub fn grab_frame() -> Option<(Vec<u8>, u32, u32)> {
+pub fn grab_frame() -> Option<(ResourceArc<FrameData>, u32, u32)> {
     let arc = frame_arc();
     let guard = arc.read().ok()?;
-    guard.as_ref().map(|f| (f.bgr.clone(), f.width, f.height))
+    guard.as_ref().map(|f| (f.data.clone(), f.width, f.height))
 }
 
 pub fn grab_region(rx: u32, ry: u32, rw: u32, rh: u32) -> Option<(Vec<u8>, u32, u32)> {
@@ -74,11 +83,11 @@ pub fn grab_region(rx: u32, ry: u32, rw: u32, rh: u32) -> Option<(Vec<u8>, u32, 
                 break;
             }
             let start = y as usize * stride + rx as usize * 3;
-            let end = (start + rw as usize * 3).min(f.bgr.len());
-            if start >= f.bgr.len() {
+            let end = (start + rw as usize * 3).min(f.data.bgr.len());
+            if start >= f.data.bgr.len() {
                 break;
             }
-            out.extend_from_slice(&f.bgr[start..end]);
+            out.extend_from_slice(&f.data.bgr[start..end]);
         }
         (out, rw, rh)
     })

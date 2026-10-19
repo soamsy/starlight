@@ -26,7 +26,7 @@ defmodule Mix.Tasks.StarlightBot.Screenshot do
         Mix.raise("Game window not found. Start Limbus Company first.")
 
       {:error, :window_not_found} ->
-        Mix.raise("Window not found by xcap. Is Limbus Company running and is $DISPLAY set?")
+        Mix.raise("Limbus Company window not found on any X display in /tmp/.X11-unix. Is the game running?")
 
       {:error, reason} ->
         Mix.raise("Screenshot failed: #{inspect(reason)}")

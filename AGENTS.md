@@ -46,7 +46,7 @@ The Rust NIF in `native/starlight_native/` compiles automatically via Rustler wh
 If the Rust code has errors, `mix compile` prints them in full. Fix them in `native/starlight_native/src/`. Key libraries:
 
 - **reis 0.7**: libei EIS protocol for wayland input injection (Linux only)
-- **xcap 0.9.6**: X11 window capture and geometry; all metadata methods return `XCapResult<T>` (fallible API — use `.ok()` or `.map_err()`)
+- **xcb 1.7** (`shm`, `composite` features): direct X11 protocol for window discovery, geometry, focus, capture and pointer queries. One cached connection per display, so a single process can see both the host Xwayland and a nested one. Capture names the window's composite pixmap each frame and reads it with MIT-SHM into a memfd segment (`AttachFd`); the window itself can't be used because MIT-SHM rejects windows that extend past the screen edge, which KWin's title bar causes in the nested session
 - **ashpd 0.13**: XDG portal access; kept for `remote_desktop` feature (internally imports from `screencast`, so both features must be listed even if screencast portal isn't used directly)
 - **image 0.25**: resizing and PNG/JPEG encoding (no system libs)
 - **rustler 0.38**: NIFs collected via `#[rustler::nif]` attribute; `rustler::init!` takes only the module name
@@ -139,7 +139,8 @@ cargo clippy --manifest-path native/starlight_native/Cargo.toml   # Rust lints
 
 ## Key Constraints
 
-- **No `kdotool` or external CLI tools for window geometry.** Window position/size comes from `xcap::Window::all()` in `native/starlight_native/src/capture/xcap_capture.rs`. xcap 0.9.6 uses XWayland-compatible X11; all `Window` methods are fallible (`XCapResult<T>`) — use `.ok()` / `.map_err()`, never `.unwrap()`.
+- **No `kdotool` or external CLI tools for window geometry.** Window discovery/position/size comes from `x11::locate()` in `native/starlight_native/src/capture/x11.rs`, which scans every X display in `/tmp/.X11-unix` (host `$DISPLAY` first) over xcb. Never set `DISPLAY` per call: the process env is shared across threads. All xcb calls are fallible; map errors to `NativeError`, never `.unwrap()`.
+- **Nested session input routing.** When the game is found on a display other than the host `$DISPLAY`, `eis.rs` connects to that nested KWin's `org.kde.KWin.EIS.RemoteDesktop.connectToEIS` over the bus at `$XDG_RUNTIME_DIR/starlight-nested/bus` (started by the `limbus-nested` Steam launch wrapper) and reconnects automatically when the game moves between displays. Host input still goes `LIBEI_SOCKET` → portal.
 - **No `uinput`.** Input injection uses libei/EIS via `reis 0.7`. KWin sets `LIBEI_SOCKET` automatically for child processes in a KDE session.
 - **Rust warnings are not acceptable.** Unused imports, dead code, and shadowed bindings must be fixed, not suppressed.
 - **Ecto migration syntax:** `add :col, references(:table, ...)` — `references()` is the type, not an option. Passing `add :col, :integer, references(...)` is wrong and will crash `mix db.setup`.
@@ -170,9 +171,10 @@ native/starlight_native/
   src/
     cache/
       mod.rs            # start/stop/grab API; OnceLock FRAME+STOP, Mutex THREAD
-      xcap_poll.rs      # ~30fps polling loop; caches Window handle across frames
+      x11_poll.rs       # ~30fps polling loop via x11::locate (validated cached window)
     capture/
-      xcap_capture.rs   # single-shot grab + window geometry (xcap 0.9.6 fallible API)
+      x11.rs            # per-display xcb connections, window search, geometry, focus, MIT-SHM capture
+      x11_capture.rs    # single-shot grab + window geometry API used by the NIFs
     input/eis.rs        # libei EIS input injection (Linux only)
     movement/           # bezier mouse trajectory
     scale.rs            # rgba_to_bgr, resize_rgba (NORM_W=1920, NORM_H=1080)
@@ -189,7 +191,7 @@ config/
 lib/starlight_bot_web/
   live/
     hook_editor_live.ex           # /hooks — create/edit/test hooks; ?from_cache=1 loads handoff image
-    screenshot_viewer_live.ex     # /screenshots — live xcap stream, 40-frame timeline, hook overlay
+    screenshot_viewer_live.ex     # /screenshots — live X11 capture stream, 40-frame timeline, hook overlay
     screenshot_viewer_live.html.heex
     hook_editor_live.html.heex
   router.ex             # / and /hooks → HookEditorLive; /screenshots → ScreenshotViewerLive
@@ -197,7 +199,7 @@ lib/starlight_bot_web/
 
 ### Screenshot cache pipeline
 
-`Capture.start_cache/0` → `Native.cache_start/1` (DirtyIo NIF, joins old thread ~33ms) → `xcap_poll` thread polls `Window::all()` lazily (only on handle failure), writes `CachedFrame{bgr, width, height}` into `OnceLock<Arc<RwLock<Option<CachedFrame>>>>`.
+`Capture.start_cache/0` → `Native.cache_start/1` (DirtyIo NIF, joins old thread ~33ms) → `x11_poll` thread calls `x11::locate` each frame (one `GetGeometry` round trip to validate the cached window, full display scan only when it's gone), writes `CachedFrame{bgr, width, height}` into `OnceLock<Arc<RwLock<Option<CachedFrame>>>>`.
 
 `Native.cache_stop/0` sets the stop flag and immediately clears the FRAME store so subsequent `cache_grab_frame` calls return `{:error, :not_ready}` rather than a stale frame.
 
@@ -207,7 +209,7 @@ Screenshot viewer writes the selected frame as `/tmp/_starlight_hook_handoff.jpg
 
 ### Template image quality
 
-The entire pipeline is lossless: xcap → 1920×1080 BGR `Vec<u8>` → PNG on disk → `Evision.Mat` → PNG blob in DB. `gray_mat` is precomputed at hook load time in `Hook.from_db_row/1`. Template matching uses `TM_CCOEFF_NORMED` for `:gray`/`:rgb` modes and `TM_CCORR_NORMED` for `:binary_thresh`.
+The entire pipeline is lossless: MIT-SHM `GetImage` of the composite window pixmap (socket `GetImage` fallback) → 1920×1080 BGR `Vec<u8>` → PNG on disk → `Evision.Mat` → PNG blob in DB. `gray_mat` is precomputed at hook load time in `Hook.from_db_row/1`. Template matching uses `TM_CCOEFF_NORMED` for `:gray`/`:rgb` modes and `TM_CCORR_NORMED` for `:binary_thresh`.
 
 ---
 

@@ -7,15 +7,14 @@ mod scale;
 use rustler::{Binary, Encoder, Env, OwnedBinary, Term};
 use crate::error::{ok, error};
 
+fn new_binary(len: usize) -> OwnedBinary {
+    OwnedBinary::new(len).unwrap()
+}
+
 #[rustler::nif(schedule = "DirtyCpu")]
 fn grab_frame<'a>(env: Env<'a>, window_title: String) -> Term<'a> {
-    match capture::grab_frame(&window_title) {
-        Ok((bytes, w, h)) => {
-            let mut owned = OwnedBinary::new(bytes.len()).unwrap();
-            owned.as_mut_slice().copy_from_slice(&bytes);
-            let bin = owned.release(env);
-            (ok(), bin, w, h).encode(env)
-        }
+    match capture::grab_frame(&window_title, new_binary) {
+        Ok((owned, w, h)) => (ok(), owned.release(env), w, h).encode(env),
         Err(e) => {
             eprintln!("[starlight_native] grab_frame error: {e}");
             (error(), e.to_atom(env)).encode(env)
@@ -25,13 +24,8 @@ fn grab_frame<'a>(env: Env<'a>, window_title: String) -> Term<'a> {
 
 #[rustler::nif(schedule = "DirtyCpu")]
 fn grab_frame_region<'a>(env: Env<'a>, window_title: String, rx: u32, ry: u32, rw: u32, rh: u32) -> Term<'a> {
-    match capture::grab_frame_region(&window_title, rx, ry, rw, rh) {
-        Ok((bytes, w, h)) => {
-            let mut owned = OwnedBinary::new(bytes.len()).unwrap();
-            owned.as_mut_slice().copy_from_slice(&bytes);
-            let bin = owned.release(env);
-            (ok(), bin, w, h).encode(env)
-        }
+    match capture::grab_frame_region(&window_title, (rx, ry, rw, rh), new_binary) {
+        Ok((owned, w, h)) => (ok(), owned.release(env), w, h).encode(env),
         Err(e) => {
             eprintln!("[starlight_native] grab_frame_region error: {e}");
             (error(), e.to_atom(env)).encode(env)
@@ -41,13 +35,8 @@ fn grab_frame_region<'a>(env: Env<'a>, window_title: String, rx: u32, ry: u32, r
 
 #[rustler::nif(schedule = "DirtyCpu")]
 fn grab_frame_raw<'a>(env: Env<'a>, window_title: String) -> Term<'a> {
-    match capture::grab_frame_raw(&window_title) {
-        Ok((bytes, w, h)) => {
-            let mut owned = OwnedBinary::new(bytes.len()).unwrap();
-            owned.as_mut_slice().copy_from_slice(&bytes);
-            let bin = owned.release(env);
-            (ok(), bin, w, h).encode(env)
-        }
+    match capture::grab_frame_raw(&window_title, new_binary) {
+        Ok((owned, w, h)) => (ok(), owned.release(env), w, h).encode(env),
         Err(e) => {
             eprintln!("[starlight_native] grab_frame_raw error: {e}");
             (error(), e.to_atom(env)).encode(env)
@@ -89,21 +78,13 @@ fn is_window_focused<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-fn init_input<'a>(env: Env<'a>) -> Term<'a> {
-    match input::init_input() {
+fn init_input<'a>(env: Env<'a>, window_title: String) -> Term<'a> {
+    match input::init_input(&window_title) {
         Ok(()) => ok().encode(env),
         Err(e) => {
             eprintln!("[starlight_native] init_input error: {e}");
             (error(), e.to_atom(env)).encode(env)
         }
-    }
-}
-
-#[rustler::nif]
-fn move_absolute<'a>(env: Env<'a>, x: f64, y: f64) -> Term<'a> {
-    match input::move_absolute(x as f32, y as f32) {
-        Ok(()) => ok().encode(env),
-        Err(e) => (error(), e.to_atom(env)).encode(env),
     }
 }
 
@@ -177,11 +158,7 @@ fn cache_stop<'a>(env: Env<'a>) -> Term<'a> {
 #[rustler::nif(schedule = "DirtyCpu")]
 fn cache_grab_frame<'a>(env: Env<'a>) -> Term<'a> {
     match cache::grab_frame() {
-        Some((bgr, w, h)) => {
-            let mut owned = OwnedBinary::new(bgr.len()).unwrap();
-            owned.as_mut_slice().copy_from_slice(&bgr);
-            (ok(), owned.release(env), w, h).encode(env)
-        }
+        Some((data, w, h)) => (ok(), data.make_binary(env, |d| &d.bgr), w, h).encode(env),
         None => (error(), rustler::types::atom::Atom::from_str(env, "not_ready").unwrap()).encode(env),
     }
 }

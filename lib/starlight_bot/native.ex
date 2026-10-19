@@ -60,14 +60,16 @@ defmodule StarlightBot.Native do
   # --- Input ---
 
   @doc """
-  Connect to KWin's EIS D-Bus interface and initialize the libei EIS client.
+  Initialize the libei EIS client for whichever display the game window is on.
+  Locates `window_title` across every X display first: if it's on a nested
+  display (not the host `$DISPLAY`), connects to that nested KWin's EIS over
+  `$XDG_RUNTIME_DIR/starlight-nested/bus`; otherwise uses `LIBEI_SOCKET`, then
+  the RemoteDesktop portal. If the game isn't running yet, connects to the host;
+  input calls reconnect automatically once the game is found on another display.
   Must be called once at startup before any input functions.
   Returns :ok or {:error, reason_atom}.
   """
-  def init_input(), do: nif_err()
-
-  @doc "Inject absolute mouse motion (screen coordinates). Returns :ok or {:error, atom}."
-  def move_absolute(_x, _y), do: nif_err()
+  def init_input(_window_title), do: nif_err()
 
   @doc "Inject relative mouse motion (screen pixels). Returns :ok or {:error, atom}."
   def move_relative(_dx, _dy), do: nif_err()

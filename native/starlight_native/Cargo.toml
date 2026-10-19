@@ -9,8 +9,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 rustler = "0.38"
-# Cross-platform window capture (X11 on Linux via x11rb, XWayland-compatible)
-xcap = "0.9.6"
+# X11 window discovery, geometry and capture across every Xwayland display (host and nested)
+xcb = { version = "1.7", features = ["shm", "composite"] }
+libc = "0.2"
 # Image resizing and PNG encoding (no system libs required)
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
 # Error types

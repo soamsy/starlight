@@ -1,3 +1,5 @@
-pub mod xcap_capture;
+pub mod x11;
+pub mod x11_capture;
 
-pub use xcap_capture::{get_window_rect, grab_frame, grab_frame_raw, grab_frame_region, is_window_focused, save_png};
+pub use x11::nested_display_name;
+pub use x11_capture::{get_window_rect, grab_frame, grab_frame_raw, grab_frame_region, is_window_focused, save_png};

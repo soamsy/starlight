@@ -30,3 +30,22 @@ pub fn rgba_to_bgr(img: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> Vec<u8> {
     img.pixels().flat_map(|px| [px[2], px[1], px[0]]).collect()
 }
 
+pub fn bgr_to_rgba(bgr: &[u8], w: u32, h: u32) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+    ImageBuffer::from_fn(w, h, |x, y| {
+        let i = (y as usize * w as usize + x as usize) * 3;
+        Rgba([bgr[i + 2], bgr[i + 1], bgr[i], 255])
+    })
+}
+
+pub fn resize_bgr(bgr: &[u8], w: u32, h: u32, to_w: u32, to_h: u32) -> Vec<u8> {
+    rgba_to_bgr(&resize_rgba(&bgr_to_rgba(bgr, w, h), to_w, to_h))
+}
+
+pub fn normalize_bgr(bgr: Vec<u8>, w: u32, h: u32) -> Vec<u8> {
+    if w == NORM_W && h == NORM_H {
+        bgr
+    } else {
+        resize_bgr(&bgr, w, h, NORM_W, NORM_H)
+    }
+}
+
