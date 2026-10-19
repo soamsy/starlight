@@ -1,21 +1,37 @@
 defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   use StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.Engine
+  alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Ctx
-  alias StarlightBot.Teams
+  alias StarlightBot.{BattleStrategies, Strategies, Teams}
+  alias StarlightBot.BattleStrategies.Resolver
 
-  @front_line_size 7
-  @backup_size 5
-
-  @max_scroll_attempts 8
-  @scroll_to_top_clicks 30
+  @max_scroll_attempts 12
+  @scroll_to_top_clicks 60
   @scroll_down_clicks 8
   @scroll_settle_ms 500
 
-  def run(team_id, ctx \\ Ctx.new()) when is_integer(team_id) do
+  def run(team_id, venue, floor, ctx \\ Ctx.new()) when is_integer(team_id) do
     with {:ok, team} <- fetch_team(team_id, ctx),
          {:ok, checks} <- check_selectors(ctx) do
-      apply_team(team, checks, ctx)
+      apply_team(team, lineup_sinners(team, venue, floor, ctx), checks, ctx)
+    end
+  end
+
+  defp lineup_sinners(team, venue, floor, ctx) do
+    data =
+      case team.battle_strategy_id && Strategies.get(:battle_strategies, team.battle_strategy_id) do
+        %{data: data} -> data
+        _ -> nil
+      end
+
+    case Resolver.lineup_for(data, venue, floor) do
+      %{"name" => name, "sinners" => sinners} ->
+        Ctx.log(ctx, :info, "lineup for #{BattleStrategies.venue_label(venue)} F#{floor}: #{name}")
+        sinners
+
+      nil ->
+        Ctx.log(ctx, :error, "battle strategy has no lineup for #{BattleStrategies.venue_label(venue)} F#{floor}")
+        []
     end
   end
 
@@ -41,12 +57,12 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     end
   end
 
-  defp apply_team(team, checks, ctx) do
+  defp apply_team(team, sinners, checks, ctx) do
     can_choose_team = checks.team_selector or checks.team_selector_tall
     can_choose_order = checks.clear_selection or checks.sinner_count_0
 
     with :ok <- maybe_select_team(can_choose_team, team, ctx),
-         :ok <- maybe_select_order(can_choose_order, team, ctx) do
+         :ok <- maybe_select_order(can_choose_order, sinners, ctx) do
       {:ok, %{team: can_choose_team, order: can_choose_order}}
     end
   end
@@ -72,36 +88,42 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     {:error, :team_missing_hook}
   end
 
-  defp maybe_select_order(false, _team, ctx) do
+  defp maybe_select_order(false, _order, ctx) do
     Ctx.log(ctx, :info, "order selection not available on this screen — skipping")
     :ok
   end
 
-  defp maybe_select_order(true, %{sinner_order: []}, ctx) do
-    Ctx.log(ctx, :info, "team has no sinner order configured — skipping")
+  defp maybe_select_order(true, [], ctx) do
+    Ctx.log(ctx, :info, "lineup has no sinners — skipping")
     :ok
   end
 
-  defp maybe_select_order(true, %{sinner_order: order}, ctx) do
+  defp maybe_select_order(true, order, ctx) do
     Engine.act([move_to(:clear_selection)], ctx)
-    case order_mismatches(order) do
+    formation = formation(order)
+
+    case order_mismatches(formation) do
       [] ->
         Ctx.log(ctx, :ok, "sinner order already set — nothing to do")
+        RunMemory.put_formation(ctx, BattleStrategies.formation(order))
         :ok
 
       mismatches ->
         Ctx.log(ctx, :info, "sinner order needs clearing + reselecting:")
         Enum.each(mismatches, &Ctx.log(ctx, :info, "  #{&1}"))
 
-        case Engine.act(order_steps(order, ctx), ctx) do
-          {:ok, _} -> :ok
-          {:error, _} = err -> err
+        case Engine.act(order_steps(formation, ctx), ctx) do
+          {:ok, _} ->
+            RunMemory.put_formation(ctx, BattleStrategies.formation(order))
+            :ok
+
+          {:error, _} = err ->
+            err
         end
     end
   end
 
-  defp order_mismatches(order) do
-    {front, backup} = front_and_backup(order)
+  defp order_mismatches(%{front: front, backup: backup}) do
     placed = MapSet.new(front ++ backup)
     unplaced = Enum.reject(Teams.all_sinners(), &(&1 in placed))
 
@@ -134,18 +156,13 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     front_mismatches ++ backup_mismatches ++ unplaced_mismatches
   end
 
-  defp order_steps(order, ctx) do
-    {front, backup} = front_and_backup(order)
-
+  defp order_steps(%{front: front, backup: backup}, ctx) do
     clear_steps(ctx) ++
-      Enum.map(front, &click(sinner_hook(&1, :selected))) ++
-      Enum.map(backup, &click(sinner_hook(&1, :backup)))
+      Enum.map(front, &click(sinner_hook(&1, :selected), duration_mult: 1.1)) ++
+      Enum.map(backup, &click(sinner_hook(&1, :backup), duration_mult: 1.1))
   end
 
-  defp front_and_backup(order) do
-    {front, rest} = order |> alive_order() |> Enum.split(@front_line_size)
-    {front, Enum.take(rest, @backup_size)}
-  end
+  defp formation(order), do: order |> alive_order() |> BattleStrategies.formation()
 
   defp alive_order(order) do
     dead = Engine.check_all(Enum.map(order, &sinner_hook(&1, :dead)))
@@ -158,17 +175,8 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
       []
     else
       [click(:clear_selection)] ++
-      confirm_either(:clear_selection_confirm, :clear_selection_confirm_2) ++
-      [sleep(400)]
+      confirm_enter(any_of([:clear_selection_confirm, :clear_selection_confirm_2])) ++ [sleep(500)]
     end
-  end
-
-  defp confirm_either(hook_a, hook_b) do
-    [
-      await_any([hook_a, hook_b]),
-      sleep(300),
-      key(:enter)
-    ]
   end
 
   defp sinner_hook(sinner, kind), do: :"sinner_#{kind}_#{String.replace(sinner, "_", "")}"

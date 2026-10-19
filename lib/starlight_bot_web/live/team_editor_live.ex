@@ -4,8 +4,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   alias StarlightBot.{GiftPlans, Strategies, Teams}
   alias StarlightBot.Navigation.Navigator
 
-  @sinners_row1 ~w(yi_sang faust don_quixote ryoshu meursault hong_lu)
-  @sinners_row2 ~w(heathcliff ishmael rodion sinclair outis gregor)
   @gift_affinities ~w(burn bleed tremor rupture sinking poise charge)
   @countdown_secs 2
 
@@ -21,13 +19,10 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:battle_strategies, Strategies.list(:battle_strategies))
      |> assign(:theme_pack_plans, Strategies.list(:theme_pack_plans))
      |> assign(:team_hooks, Teams.team_hooks())
-     |> assign(:sinners_row1, @sinners_row1)
-     |> assign(:sinners_row2, @sinners_row2)
      |> assign(:gift_affinities, @gift_affinities)
      |> assign(:form, blank_form())
      |> assign(:editing_id, nil)
      |> assign(:active, false)
-     |> assign(:sinner_order, [])
      |> assign(:selected_ids, blank_selected_ids())
      |> assign(:strategy_forms, blank_strategy_forms())
      |> assign(:phase, nav.phase)
@@ -50,6 +45,23 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
     end
   end
+
+  @impl true
+  def handle_event("duplicate_team", _, %{assigns: %{editing_id: id}} = socket) when is_integer(id) do
+    case Teams.duplicate_team(id) do
+      {:ok, new_id} ->
+        {:noreply,
+         socket
+         |> assign(:teams, Teams.list_teams())
+         |> load_team(new_id)
+         |> put_flash(:info, "Team duplicated.")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Duplicate failed: #{inspect(reason)}")}
+    end
+  end
+
+  def handle_event("duplicate_team", _, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("edit_team", %{"id" => id}, socket) do
@@ -94,18 +106,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Delete failed: #{inspect(reason)}")}
     end
-  end
-
-  @impl true
-  def handle_event("toggle_sinner", %{"sinner" => sinner}, socket) do
-    order = socket.assigns.sinner_order
-    new_order = if sinner in order, do: List.delete(order, sinner), else: order ++ [sinner]
-    {:noreply, assign(socket, :sinner_order, new_order)}
-  end
-
-  @impl true
-  def handle_event("clear_sinner_order", _, socket) do
-    {:noreply, assign(socket, :sinner_order, [])}
   end
 
   @impl true
@@ -209,7 +209,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       id: socket.assigns.editing_id,
       name: name,
       hook: hook,
-      sinner_order: socket.assigns.sinner_order,
       gift_strategy_id: sel["gift_strategy"],
       battle_strategy_id: sel["battle_strategy"],
       theme_pack_plan_id: sel["theme_pack_plan"]
@@ -239,7 +238,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         |> assign(:form, build_form(params))
         |> assign(:editing_id, team.id)
         |> assign(:active, true)
-        |> assign(:sinner_order, team.sinner_order)
         |> assign(:selected_ids, %{
           "gift_strategy" => team.gift_strategy_id,
           "battle_strategy" => team.battle_strategy_id,
@@ -254,7 +252,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     |> assign(:form, blank_form())
     |> assign(:editing_id, nil)
     |> assign(:active, false)
-    |> assign(:sinner_order, [])
     |> assign(:selected_ids, blank_selected_ids())
     |> assign(:strategy_forms, blank_strategy_forms())
   end
@@ -296,22 +293,9 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     end
   end
 
-  defp sinner_label(key) do
-    key
-    |> String.split("_")
-    |> Enum.map_join(" ", &String.capitalize/1)
-  end
-
-  defp sinner_position(order, sinner) do
-    case Enum.find_index(order, &(&1 == sinner)) do
-      nil -> nil
-      idx -> idx + 1
-    end
-  end
-
   defp missing_label(:hook), do: "hook"
-  defp missing_label(:sinner_order), do: "sinner order"
   defp missing_label(:gift_strategy), do: "gift strategy"
   defp missing_label(:battle_strategy), do: "battle strategy"
+  defp missing_label(:lineup), do: "lineup (set it up in the battle strategy)"
   defp missing_label(:theme_pack_plan), do: "theme pack plan"
 end

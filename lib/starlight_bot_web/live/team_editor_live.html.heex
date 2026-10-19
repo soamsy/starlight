@@ -14,7 +14,9 @@
             </span>
           <% end %>
 
-          <button phx-click="new_team" class="btn btn-primary btn-sm ml-auto">+ New Team</button>
+          <button phx-click="duplicate_team" disabled={is_nil(@editing_id)} class="btn btn-sm btn-outline ml-auto"
+                  title="Copy the selected team, keeping its hook and strategies">Duplicate</button>
+          <button phx-click="new_team" class="btn btn-primary btn-sm">+ New Team</button>
         </div>
 
         <%= if @countdown do %>
@@ -40,7 +42,6 @@
               <tr>
                 <th>Name</th>
                 <th>Hook</th>
-                <th>Sinners</th>
                 <th></th>
                 <th></th>
                 <th></th>
@@ -52,7 +53,6 @@
                     class={"cursor-pointer hover:bg-base-200 " <> if(@editing_id == team.id, do: "bg-primary/10 border-l-2 border-primary", else: "")}>
                   <td class="font-mono text-xs"><%= team.name %></td>
                   <td class="text-xs text-base-content/60"><%= team.hook || "—" %></td>
-                  <td class="text-xs text-base-content/60"><%= length(team.sinner_order) %></td>
                   <td>
                     <%= if team.missing != [] do %>
                       <div class="tooltip" data-tip={"Missing: " <> Enum.map_join(team.missing, ", ", &missing_label/1)}>
@@ -74,7 +74,7 @@
               <% end %>
               <%= if @teams == [] do %>
                 <tr>
-                  <td colspan="6" class="text-center text-base-content/40 py-4">No teams yet — create one.</td>
+                  <td colspan="5" class="text-center text-base-content/40 py-4">No teams yet — create one.</td>
                 </tr>
               <% end %>
             </tbody>
@@ -107,37 +107,14 @@
             <label class="label py-0.5"><span class="label-text text-sm font-medium">Team-Select Hook</span></label>
             <select name="team[hook]" class="select select-bordered select-sm">
               <option value="">— none —</option>
-              <%= for h <- @team_hooks do %>
-                <option value={h} selected={@form[:hook].value == h}><%= h %></option>
+              <%= for {label, hooks} <- @team_hooks do %>
+                <optgroup label={label}>
+                  <%= for h <- hooks do %>
+                    <option value={h} selected={@form[:hook].value == h}><%= h %></option>
+                  <% end %>
+                </optgroup>
               <% end %>
             </select>
-          </div>
-
-          <div class="form-control mb-2">
-            <label class="label py-0.5"><span class="label-text text-sm font-medium">Sinner Order</span></label>
-            <div class="grid grid-cols-6 gap-1">
-              <%= for sinner <- @sinners_row1 do %>
-                <button type="button" phx-click="toggle_sinner" phx-value-sinner={sinner}
-                        class={"btn btn-xs relative " <> if(sinner in @sinner_order, do: "btn-primary", else: "btn-outline")}>
-                  <%= sinner_label(sinner) %>
-                  <%= if pos = sinner_position(@sinner_order, sinner) do %>
-                    <span class="absolute -top-2 -right-2 badge badge-secondary badge-xs"><%= pos %></span>
-                  <% end %>
-                </button>
-              <% end %>
-            </div>
-            <div class="grid grid-cols-6 gap-1 mt-1">
-              <%= for sinner <- @sinners_row2 do %>
-                <button type="button" phx-click="toggle_sinner" phx-value-sinner={sinner}
-                        class={"btn btn-xs relative " <> if(sinner in @sinner_order, do: "btn-primary", else: "btn-outline")}>
-                  <%= sinner_label(sinner) %>
-                  <%= if pos = sinner_position(@sinner_order, sinner) do %>
-                    <span class="absolute -top-2 -right-2 badge badge-secondary badge-xs"><%= pos %></span>
-                  <% end %>
-                </button>
-              <% end %>
-            </div>
-            <button type="button" phx-click="clear_sinner_order" class="btn btn-xs btn-ghost mt-1 self-start">Clear</button>
           </div>
 
           <div class="flex gap-2 mt-1">

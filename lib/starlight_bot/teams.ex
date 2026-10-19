@@ -1,12 +1,17 @@
 defmodule StarlightBot.Teams do
   require Logger
   import Ecto.Query
-  alias StarlightBot.Repo
+  alias StarlightBot.{BattleStrategies, Repo}
 
-  @team_types ~w(
-    burn bleed tremor rupture sinking poise charge wrath lust sloth
-    gluttony gloom pride envy slash pierce blunt
-  )
+  @team_groups [
+    {"Status", ~w(burn bleed tremor rupture sinking poise charge)},
+    {"Sin", ~w(wrath lust sloth gluttony gloom pride envy)},
+    {"Damage Type", ~w(slash pierce blunt)},
+    {"Fixer", ~w(zwei shi cinq liu seven devyat dieci oufi)},
+    {"Syndicate", ~w(fingers thumb index middle ring pinky)}
+  ]
+
+  @team_types Enum.flat_map(@team_groups, &elem(&1, 1))
 
   @all_sinners ~w(
     yi_sang faust don_quixote ryoshu meursault hong_lu
@@ -14,6 +19,7 @@ defmodule StarlightBot.Teams do
   )
 
   def all_sinners, do: @all_sinners
+  def team_types, do: @team_types
 
   @doc "List all teams, with joined-in strategy names and a `:missing` field list for incomplete configs."
   def list_teams do
@@ -30,11 +36,11 @@ defmodule StarlightBot.Teams do
           id: t.id,
           name: t.name,
           hook: t.hook,
-          sinner_order: t.sinner_order,
           gift_strategy_id: t.gift_strategy_id,
           gift_strategy_name: g.name,
           battle_strategy_id: t.battle_strategy_id,
           battle_strategy_name: b.name,
+          battle_strategy_data: b.data,
           theme_pack_plan_id: t.theme_pack_plan_id,
           theme_pack_plan_name: p.name
         }
@@ -44,7 +50,7 @@ defmodule StarlightBot.Teams do
     _ -> []
   end
 
-  @doc "Get a single team by id, sinner_order JSON-decoded. Returns nil if not found."
+  @doc "Get a single team by id. Returns nil if not found."
   def get_team(id) when is_integer(id) do
     Repo.one(
       from t in "teams",
@@ -55,14 +61,12 @@ defmodule StarlightBot.Teams do
           id: t.id,
           name: t.name,
           hook: t.hook,
-          sinner_order: t.sinner_order,
           gift_strategy_id: t.gift_strategy_id,
           gift_strategy_data: g.data,
           battle_strategy_id: t.battle_strategy_id,
           theme_pack_plan_id: t.theme_pack_plan_id
         }
     )
-    |> decode_sinner_order()
     |> decode_affinity()
   rescue
     _ -> nil
@@ -74,7 +78,6 @@ defmodule StarlightBot.Teams do
     row = %{
       name: name,
       hook: blank_to_nil(attrs[:hook]),
-      sinner_order: Jason.encode!(attrs[:sinner_order] || []),
       gift_strategy_id: attrs[:gift_strategy_id],
       battle_strategy_id: attrs[:battle_strategy_id],
       theme_pack_plan_id: attrs[:theme_pack_plan_id]
@@ -103,7 +106,14 @@ defmodule StarlightBot.Teams do
 
   @doc "Insert a new team with a unique default name and blank fields. Returns `{:ok, id}` or `{:error, reason}`."
   def create_default_team do
-    save_team(%{name: unique_default_name()})
+    save_team(%{name: unique_name("New Team")})
+  end
+
+  def duplicate_team(id) when is_integer(id) do
+    case get_team(id) do
+      nil -> {:error, :not_found}
+      team -> team |> Map.take([:hook, :gift_strategy_id, :battle_strategy_id, :theme_pack_plan_id]) |> Map.put(:name, unique_name("#{team.name} (copy)")) |> save_team()
+    end
   end
 
   @doc "Delete a team by id."
@@ -119,37 +129,25 @@ defmodule StarlightBot.Teams do
   def team_hooks do
     names = StarlightBot.Hooks.list_hooks() |> MapSet.new(& &1.name)
 
-    @team_types
-    |> Enum.map(&"team_#{&1}")
-    |> Enum.filter(&MapSet.member?(names, &1))
-    |> Enum.sort()
+    for {label, types} <- @team_groups,
+        hooks = types |> Enum.map(&"team_#{&1}") |> Enum.filter(&MapSet.member?(names, &1)),
+        hooks != [],
+        do: {label, hooks}
   end
 
   defp blank_to_nil(nil), do: nil
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(val), do: val
 
-  defp unique_default_name do
+  defp unique_name(base) do
     existing = Repo.all(from t in "teams", select: t.name) |> MapSet.new()
 
-    if MapSet.member?(existing, "New Team") do
-      n = Stream.iterate(2, &(&1 + 1)) |> Enum.find(&(not MapSet.member?(existing, "New Team #{&1}")))
-      "New Team #{n}"
+    if MapSet.member?(existing, base) do
+      n = Stream.iterate(2, &(&1 + 1)) |> Enum.find(&(not MapSet.member?(existing, "#{base} #{&1}")))
+      "#{base} #{n}"
     else
-      "New Team"
+      base
     end
-  end
-
-  defp decode_sinner_order(nil), do: nil
-
-  defp decode_sinner_order(%{sinner_order: json} = team) do
-    order =
-      case json && Jason.decode(json) do
-        {:ok, list} when is_list(list) -> list
-        _ -> []
-      end
-
-    %{team | sinner_order: order}
   end
 
   defp decode_affinity(nil), do: nil
@@ -171,14 +169,20 @@ defmodule StarlightBot.Teams do
   end
 
   defp decorate(team) do
-    team = decode_sinner_order(team)
+    {data, team} = Map.pop(team, :battle_strategy_data)
+
+    lineup_issues =
+      case data && Jason.decode(data) do
+        {:ok, %{} = data} -> BattleStrategies.lineup_issues(data)
+        _ -> []
+      end
 
     missing =
       [
         team.hook in [nil, ""] and :hook,
-        team.sinner_order == [] and :sinner_order,
         is_nil(team.gift_strategy_id) and :gift_strategy,
         is_nil(team.battle_strategy_id) and :battle_strategy,
+        lineup_issues != [] and :lineup,
         is_nil(team.theme_pack_plan_id) and :theme_pack_plan
       ]
       |> Enum.filter(& &1)

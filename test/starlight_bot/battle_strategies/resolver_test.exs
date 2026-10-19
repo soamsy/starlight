@@ -35,6 +35,28 @@ defmodule StarlightBot.BattleStrategies.ResolverTest do
     end
   end
 
+  describe "lineup_for/3" do
+    @lineups %{
+      "lineups" => [%{"id" => "full", "name" => "Full", "sinners" => ["ryoshu", "sinclair"]}, %{"id" => "solo", "name" => "Solo", "sinners" => ["ryoshu"]}],
+      "lineup_tracks" => %{
+        "md_battle" => [%{"from_floor" => 1, "lineup" => "full"}],
+        "md_boss" => [%{"from_floor" => 1, "lineup" => "full"}, %{"from_floor" => 5, "lineup" => "solo"}]
+      }
+    }
+
+    test "picks the lineup painted for the venue and floor" do
+      assert Resolver.lineup_for(@lineups, "md_boss", 4)["id"] == "full"
+      assert Resolver.lineup_for(@lineups, "md_boss", 5)["id"] == "solo"
+      assert Resolver.lineup_for(@lineups, "md_battle", 5)["id"] == "full"
+    end
+
+    test "returns nil for an unassigned venue or a strategy without lineups" do
+      assert Resolver.lineup_for(@lineups, "lux", 1) == nil
+      assert Resolver.lineup_for(%{"playbooks" => []}, "md_battle", 1) == nil
+      assert Resolver.lineup_for(nil, "md_battle", 1) == nil
+    end
+  end
+
   describe "phase_for/2" do
     test "the split turn itself adopts the new phase" do
       boss = Resolver.playbook_for(@data, "hard_chain", 5)
