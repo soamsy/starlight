@@ -335,6 +335,7 @@ function overlayCanvasHook(eventName) {
 
 const BattleInspectorCanvas = overlayCanvasHook("load_battle_frame")
 const ChainPreviewCanvas = overlayCanvasHook("load_chain_preview_frame")
+const TargetPreviewCanvas = overlayCanvasHook("load_target_preview_frame")
 const DungeonInspectorCanvas = overlayCanvasHook("load_dungeon_frame")
 
 // --- GiftInspectorCanvas hook ---

@@ -1,11 +1,13 @@
 defmodule StarlightBotWeb.Live.BattleInspectorLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.Automation.{BattleChain, TrayWatch}
+  alias StarlightBot.Automation.{BattleChain, PlaybookRunner, TrayWatch}
+  alias StarlightBot.Ctx
   alias StarlightBot.Navigation.Navigator
-  alias StarlightBot.Vision.{Capture, HookRegistry, Matcher, SinColor, SkillTray}
+  alias StarlightBot.Vision.{Capture, EnemyTargets, HookRegistry, Matcher, SinColor, SkillTray}
 
   @tmp_jpeg "/tmp/_starlight_battle_inspector.jpg"
   @tmp_chain_preview_jpeg "/tmp/_starlight_battle_inspector_chain_preview.jpg"
+  @tmp_target_preview_jpeg "/tmp/_starlight_battle_inspector_target_preview.jpg"
   @tmp_cell_png "/tmp/_starlight_battle_inspector_cell.png"
   @palette ["#f87171", "#60a5fa", "#facc15", "#4ade80", "#c084fc", "#fb923c", "#22d3ee"]
   @chain_top_color "#38bdf8"
@@ -46,6 +48,10 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
       |> assign(:chain_preview_status, :idle)
       |> assign(:chain_preview_ready?, false)
       |> assign(:chain_preview_error, nil)
+      |> assign(:target_preview_status, :idle)
+      |> assign(:target_preview_ready?, false)
+      |> assign(:target_preview_outcome, nil)
+      |> assign(:target_preview_log, [])
 
     case {connected?(socket), tray_watch.latest} do
       {true, {frame, at}} -> {:ok, socket |> show_frame(frame) |> assign(:last_watched_at, at)}
@@ -112,6 +118,34 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
      |> assign(:chain_preview_error, nil)}
   end
 
+  def handle_event("preview_target", _, %{assigns: %{target_preview_status: :running}} = socket) do
+    {:noreply, socket}
+  end
+
+  def handle_event("preview_target", %{"enemy" => enemy}, socket) when enemy in ~w(first last) do
+    me = self()
+    ctx = Ctx.new(on_log: fn {_kind, text} -> send(me, {:target_preview_log, text}) end)
+    Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn -> send(me, {:target_preview_result, PlaybookRunner.preview_target(enemy, ctx)}) end)
+
+    {:noreply,
+     socket
+     |> assign(:target_preview_status, :running)
+     |> assign(:target_preview_outcome, nil)
+     |> assign(:target_preview_log, [])}
+  end
+
+  def handle_event("preview_target_everyone", _, socket) do
+    me = self()
+    ctx = Ctx.new(on_log: fn {_kind, text} -> send(me, {:target_preview_log, text}) end)
+    Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn -> send(me, {:target_preview_result, PlaybookRunner.preview_target_everyone(ctx)}) end)
+
+    {:noreply,
+     socket
+     |> assign(:target_preview_status, :running)
+     |> assign(:target_preview_outcome, nil)
+     |> assign(:target_preview_log, [])}
+  end
+
   @impl true
   def handle_info({:skill_tray_scanned, frame, at}, %{assigns: %{watch_tray?: true}} = socket) do
     {:noreply, socket |> show_frame(frame) |> assign(:last_watched_at, at)}
@@ -151,6 +185,35 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
     end
   end
 
+  def handle_info({:target_preview_log, text}, socket) do
+    {:noreply, update(socket, :target_preview_log, &(&1 ++ [text]))}
+  end
+
+  def handle_info({:target_preview_result, {:ok, {outcome, attempts}}}, socket) do
+    socket = socket |> assign(:target_preview_status, :done) |> assign(:target_preview_outcome, target_outcome_text(outcome, attempts))
+
+    case List.last(attempts) do
+      nil ->
+        {:noreply, socket}
+
+      %{frame: frame, targets: targets, chosen: chosen} ->
+        case encode_jpeg(frame.mat, @tmp_target_preview_jpeg) do
+          {:ok, jpeg} ->
+            {:noreply,
+             socket
+             |> assign(:target_preview_ready?, true)
+             |> push_event("load_target_preview_frame", %{data: Base.encode64(jpeg), overlays: enemy_target_overlays(targets, chosen)})}
+
+          {:error, reason} ->
+            {:noreply, assign(socket, :target_preview_outcome, "Encode failed: #{inspect(reason)}")}
+        end
+    end
+  end
+
+  def handle_info({:target_preview_result, {:error, reason}}, socket) do
+    {:noreply, socket |> assign(:target_preview_status, :error) |> assign(:target_preview_outcome, inspect(reason))}
+  end
+
   def handle_info({:chain_preview_result, {:error, reason}}, socket) do
     {:noreply,
      socket
@@ -175,13 +238,35 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
         |> assign(:bg_color, scan.bg_color)
         |> assign(:bg_strip_b64, scan.bg_strip_b64)
         |> assign(:scan_error, scan.error)
-        |> push_event("load_battle_frame", %{data: b64, overlays: overlays(scan)})
+        |> push_event("load_battle_frame", %{data: b64, overlays: overlays(scan) ++ enemy_target_overlays(EnemyTargets.find(frame), nil)})
 
       {:error, reason} ->
         socket
         |> assign(:status, :error)
         |> put_flash(:error, "Encode failed: #{inspect(reason)}")
     end
+  end
+
+  defp target_outcome_text({:highlighted, attempt}, _attempts), do: "highlighted on try #{attempt}"
+  defp target_outcome_text(:gave_up, attempts), do: "gave up after #{length(attempts)} detection(s)"
+  defp target_outcome_text({:error, reason}, _attempts), do: "stopped: #{inspect(reason)}"
+
+  @enemy_target_color "#f472b6"
+  @chosen_target_color "#4ade80"
+
+  defp enemy_target_overlays(targets, chosen) do
+    targets
+    |> Enum.with_index(1)
+    |> Enum.flat_map(fn {%EnemyTargets{point: {px, py} = point, icon: {ix, iy} = icon} = target, i} ->
+      color = if target == chosen, do: @chosen_target_color, else: @enemy_target_color
+      label = if target == chosen, do: "enemy #{i} (chosen)", else: "enemy #{i}"
+
+      [
+        %{type: "line", x1: ix, y1: iy, x2: px, y2: py, color: color, dashed: true},
+        point_marker(icon, color, nil),
+        point_marker(point, color, label)
+      ]
+    end)
   end
 
   def run_label(:mirror_dungeon), do: "Mirror dungeon"

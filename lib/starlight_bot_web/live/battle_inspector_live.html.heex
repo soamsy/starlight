@@ -7,6 +7,16 @@
     <button phx-click="preview_chain_drag" class="btn btn-sm btn-secondary" disabled={@chain_preview_status == :running}>
       🖱️ Preview Chain Drag (2s delay)
     </button>
+    <button phx-click="preview_target" phx-value-enemy="first" class="btn btn-sm btn-secondary" disabled={@target_preview_status == :running}>
+      🎯 First skill to first enemy (2s delay)
+    </button>
+    <button phx-click="preview_target" phx-value-enemy="last" class="btn btn-sm btn-secondary" disabled={@target_preview_status == :running}>
+      🎯 First skill to last enemy (2s delay)
+    </button>
+    <button phx-click="preview_target_everyone" class="btn btn-sm btn-secondary" disabled={@target_preview_status == :running}
+            title="Every sinner drags a random one of their skills, top or bottom, to a random enemy">
+      🎲 Everyone to random enemies (2s delay)
+    </button>
     <label class="flex items-center gap-2 cursor-pointer">
       <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@watch_tray?} phx-click="toggle_watch_tray" />
       <span class="text-sm">Watch tray</span>
@@ -48,7 +58,7 @@
     <%= if @scan_error do %>
       <span class="text-xs text-error">scan error: <%= @scan_error %></span>
     <% end %>
-    <%= if @chain_preview_status == :running do %>
+    <%= if @chain_preview_status == :running or @target_preview_status == :running do %>
       <span class="text-xs text-warning">alt-tab into Limbus Company now…</span>
     <% end %>
     <%= if @chain_preview_error do %>
@@ -203,6 +213,29 @@
                   class="max-w-full max-h-full" style="aspect-ratio: 16/9;"></canvas>
         <% else %>
           <div class="text-base-content/40 text-sm">Preview Chain Drag to see the computed trajectory against the dragged skill tray</div>
+        <% end %>
+      </div>
+    </div>
+    <div class="flex flex-col gap-1 shrink-0">
+      <div class="text-xs font-semibold text-base-content/60">
+        Enemy target preview: last detection frame, every detected target and the chosen one
+        <%= if @target_preview_outcome do %>
+          <span class={if @target_preview_status == :error, do: "text-error", else: "text-base-content"}>(<%= @target_preview_outcome %>)</span>
+        <% end %>
+      </div>
+      <%= if @target_preview_log != [] do %>
+        <div class="text-xs font-mono text-base-content/70 flex flex-col">
+          <%= for line <- @target_preview_log do %>
+            <span><%= line %></span>
+          <% end %>
+        </div>
+      <% end %>
+      <div class="flex items-center justify-center bg-base-200 rounded-lg border border-base-300 shrink-0" style="aspect-ratio: 16/9;">
+        <%= if @target_preview_ready? do %>
+          <canvas id="target-preview-canvas" phx-hook="TargetPreviewCanvas" phx-update="ignore"
+                  class="max-w-full max-h-full" style="aspect-ratio: 16/9;"></canvas>
+        <% else %>
+          <div class="text-base-content/40 text-sm">Use a 🎯 button to drag the first skill onto an enemy target</div>
         <% end %>
       </div>
     </div>
