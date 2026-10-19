@@ -29,6 +29,7 @@ defmodule StarlightBotWeb.Router do
       live "/battle-strategies", Live.BattleStrategyEditorLive
       live "/luxcavation", Live.LuxcavationLive
       live "/mirror-dungeon", Live.MirrorDungeonLive
+      live "/scheduler", Live.SchedulerLive
       live "/shop-runner", Live.ShopRunnerLive
       live "/rewards", Live.RewardsLive
       live "/log", Live.LogLive

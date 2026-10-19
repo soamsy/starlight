@@ -39,6 +39,14 @@
         <polygon points="6 3 20 12 6 21 6 3" />
       </svg>
     </.link>
+    <.link navigate={~p"/scheduler"}
+           class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :scheduler, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Scheduler">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </svg>
+    </.link>
     <.link navigate={~p"/shop-runner"}
            class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :shop_runner, do: "btn-primary", else: "btn-ghost text-base-content/50")}
            data-tip="Shop Runner">

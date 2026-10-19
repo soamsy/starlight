@@ -19,6 +19,7 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.LuxcavationLive => :luxcavation,
     StarlightBotWeb.Live.RewardsLive => :rewards,
     StarlightBotWeb.Live.MirrorDungeonLive => :mirror_dungeon,
+    StarlightBotWeb.Live.SchedulerLive => :scheduler,
     StarlightBotWeb.Live.ShopRunnerLive => :shop_runner,
     StarlightBotWeb.Live.LogLive => :log
   }

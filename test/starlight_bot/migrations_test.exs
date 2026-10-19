@@ -31,7 +31,7 @@ defmodule StarlightBot.MigrationsTest do
     tables = Enum.map(rows, fn [name] -> name end)
 
     expected =
-      ~w[battle_strategies ego_gifts gift_strategies hooks images run_events run_logs sinner_profiles teams theme_pack_plans]
+      ~w[battle_strategies ego_gifts fusion_route_defaults gift_strategies hooks images run_events run_logs scheduler_settings sinner_profiles teams theme_pack_plans]
 
     for table <- expected do
       assert table in tables, "Expected table '#{table}' to exist after migrations. Found: #{inspect(tables)}"

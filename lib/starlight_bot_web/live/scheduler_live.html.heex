@@ -1,0 +1,133 @@
+<div class="flex flex-col h-full gap-2 overflow-hidden">
+
+  <div class="flex items-center gap-3 shrink-0">
+    <h2 class="text-lg font-semibold">Scheduler</h2>
+
+    <span class={"badge " <> if(@settings.enabled, do: "badge-success", else: "badge-ghost")}>
+      <%= if @settings.enabled, do: "on", else: "off" %>
+    </span>
+
+    <%= if @activity do %>
+      <span class="flex items-center gap-1 text-sm text-base-content/60">
+        <span class="loading loading-spinner loading-xs"></span>
+        <%= @activity %>
+      </span>
+    <% end %>
+  </div>
+
+  <div class="flex gap-2 flex-1 min-h-0 overflow-hidden">
+
+    <div class="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto">
+
+      <div class="flex flex-col gap-1 bg-base-200 rounded-xl p-3 text-sm">
+        <span><%= plan_label(@now, @settings) %></span>
+        <%= if @settings.last_fired_on do %>
+          <span class="text-xs text-base-content/50">Last scheduled run started on <%= @settings.last_fired_on %></span>
+        <% end %>
+        <%= if @retry_after_ms do %>
+          <span class="text-xs text-warning">Retrying in <%= div(@retry_after_ms, 60_000) + 1 %> min</span>
+        <% end %>
+        <span class="text-xs text-base-content/50"><%= window_label(@game_window_rect) %></span>
+      </div>
+
+      <form id="scheduler-form" phx-submit="save" phx-change="update_form" class="flex flex-col gap-3">
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="enabled" value="true" checked={@form["enabled"] == "true"} class="toggle toggle-sm toggle-success" />
+          <span class="text-sm">Enabled</span>
+        </label>
+
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Runner</span>
+          <select name="runner" class="select select-sm select-bordered">
+            <option value="mirror_dungeon" selected={@form["runner"] == "mirror_dungeon"}>Mirror Dungeon</option>
+            <option value="luxcavation" selected={@form["runner"] == "luxcavation"}>Luxcavation</option>
+          </select>
+        </label>
+
+        <div id="scheduler-md-form" phx-hook="StoredFormReader" data-storage-key="starlight-mirror-dungeon-runner-form" data-event="mirror_dungeon_form"></div>
+        <div id="scheduler-lux-form" phx-hook="StoredFormReader" data-storage-key="starlight-lux-runner-form" data-event="luxcavation_form"></div>
+
+        <div class="flex flex-col gap-1 text-xs text-base-content/60">
+          <%= if @form["runner"] == "mirror_dungeon" do %>
+            <span>Scheduled: <%= action_label(@settings.mirror_dungeon_action, @teams) %></span>
+            <%= if @form_md_action && @form_md_action != @settings.mirror_dungeon_action do %>
+              <span class="text-warning">Saving updates it to the Mirror Dungeon page's current setup: <%= action_label(@form_md_action, @teams) %></span>
+            <% end %>
+          <% else %>
+            <span>Scheduled: <%= action_label(@settings.luxcavation_action, @teams) %></span>
+            <%= if @form_lux_action && @form_lux_action != @settings.luxcavation_action do %>
+              <span class="text-warning">Saving updates it to the Luxcavation page's current setup: <%= action_label(@form_lux_action, @teams) %></span>
+            <% end %>
+          <% end %>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Daily window</span>
+          <div class="flex items-center gap-2">
+            <input type="time" name="window_start" value={@form["window_start"]} class="input input-sm input-bordered flex-1" />
+            <span class="text-base-content/40">to</span>
+            <input type="time" name="window_end" value={@form["window_end"]} class="input input-sm input-bordered flex-1" />
+          </div>
+          <span class="text-xs text-base-content/50">Starts at a random time in the first half of the window, once a day. An end before the start runs past midnight.</span>
+        </div>
+
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">If Limbus isn't open</span>
+          <select name="launch_mode" class="select select-sm select-bordered">
+            <option value="steam" selected={@form["launch_mode"] == "steam"}>Launch through Steam</option>
+            <option value="exe" selected={@form["launch_mode"] == "exe"}>Launch an executable</option>
+            <option value="none" selected={@form["launch_mode"] == "none"}>Don't launch, wait for it</option>
+          </select>
+        </label>
+
+        <%= if @form["launch_mode"] == "steam" do %>
+          <label class="flex flex-col gap-1">
+            <span class="text-xs text-base-content/40">Steam app id</span>
+            <input type="text" name="steam_app_id" value={@form["steam_app_id"]} class="input input-sm input-bordered font-mono" />
+          </label>
+        <% else %>
+          <input type="hidden" name="steam_app_id" value={@form["steam_app_id"]} />
+        <% end %>
+
+        <%= if @form["launch_mode"] == "exe" do %>
+          <label class="flex flex-col gap-1">
+            <span class="text-xs text-base-content/40">Executable path</span>
+            <input type="text" name="exe_path" value={@form["exe_path"]} class="input input-sm input-bordered font-mono" />
+          </label>
+        <% else %>
+          <input type="hidden" name="exe_path" value={@form["exe_path"]} />
+        <% end %>
+
+        <label class="flex flex-col gap-1">
+          <span class="text-xs text-base-content/40">Launch timeout (seconds)</span>
+          <input type="number" name="launch_timeout_s" min="1" value={@form["launch_timeout_s"]} class="input input-sm input-bordered" />
+        </label>
+
+        <button type="submit" class="btn btn-primary btn-sm">Save schedule</button>
+      </form>
+
+      <div class="flex flex-col gap-2 border-t border-base-300 pt-3">
+        <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Tests</span>
+        <%= if @activity == "testing launch" do %>
+          <button phx-click="cancel_test_launch" class="btn btn-sm btn-error">Cancel opening Limbus</button>
+        <% else %>
+          <button phx-click="test_launch" disabled={@activity != nil} class="btn btn-sm">Open Limbus</button>
+        <% end %>
+        <button phx-click="test_fix_aspect" disabled={@activity != nil} class="btn btn-sm">Set window to 1920x1080</button>
+        <span class="text-xs text-base-content/50">Tests use the saved launch settings.</span>
+      </div>
+    </div>
+
+    <div id="scheduler-log" phx-hook="ScrollToBottom" class="flex-1 min-h-0 overflow-y-auto bg-base-200 rounded-xl p-3 font-mono text-xs flex flex-col gap-0.5">
+      <%= if @events == [] do %>
+        <div class="text-base-content/30 text-center py-4 select-none">No scheduler activity yet</div>
+      <% else %>
+        <%= for event <- Enum.reverse(@events) do %>
+          <div class={"leading-snug #{event_class(event.kind)}"}>
+            <span class="text-base-content/40"><%= clock(event.at) %></span> <%= event.text %>
+          </div>
+        <% end %>
+      <% end %>
+    </div>
+  </div>
+</div>

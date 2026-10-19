@@ -611,11 +611,28 @@ const LocalStorageForm = {
     }
 
     this.persist = () => {
-      const data = new FormData(this.el)
-      localStorage.setItem(this.key, JSON.stringify(Object.fromEntries(data.entries())))
+      const data = {}
+      for (const [name, value] of new FormData(this.el).entries()) {
+        if (name.endsWith("[]")) (data[name] ||= []).push(value)
+        else data[name] = value
+      }
+      localStorage.setItem(this.key, JSON.stringify(data))
     }
     this.el.addEventListener("input", this.persist)
     this.el.addEventListener("change", this.persist)
+  },
+  updated() {
+    this.persist?.()
+  }
+}
+
+const StoredFormReader = {
+  mounted() {
+    const saved = localStorage.getItem(this.el.dataset.storageKey)
+    if (!saved) return
+    try {
+      this.pushEvent(this.el.dataset.event, JSON.parse(saved))
+    } catch (e) {}
   }
 }
 
@@ -625,7 +642,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, StoredFormReader }
 })
 
 liveSocket.connect()

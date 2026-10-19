@@ -45,6 +45,7 @@ defmodule StarlightBot.Application do
         {StarlightBot.Input.Mouse, []},
         {StarlightBot.Input.Keyboard, []},
         {StarlightBot.Navigation.Navigator, []},
+        {StarlightBot.Scheduler.Server, []},
       ]
     else
       []
