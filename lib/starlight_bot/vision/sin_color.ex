@@ -5,12 +5,12 @@ defmodule StarlightBot.Vision.SinColor do
 
   @colors [
     wrath: {0, 6, 70, 255, 105, 255},
-    gloom: {96, 6, 100, 255, 83, 245},
-    sloth: {23, 5, 145, 255, 83, 245},
+    gloom: {96, 6, 100, 250, 100, 240},
+    sloth: {23, 5, 145, 255, 100, 245},
     lust: {12, 5, 140, 255, 105, 245},
-    pride: {110, 6, 100, 255, 83, 200},
-    gluttony: {41, 6, 100, 255, 83, 252},
-    envy: {140, 6, 100, 255, 83, 245}
+    pride: {110, 6, 80, 245, 100, 223},
+    gluttony: {41, 6, 100, 255, 100, 252},
+    envy: {140, 6, 100, 252, 100, 245}
   ]
 
   @type sin :: :wrath | :lust | :sloth | :gluttony | :gloom | :pride | :envy
@@ -195,6 +195,12 @@ defmodule StarlightBot.Vision.SinColor do
     |> Enum.map(fn {{x0, x1}, hue_x} ->
       classify_cell(mat, {x0, x1}, row.y, row.h, row.hue_scan_y, hue_x, bg_hue, bg_saturation, bg_value)
     end)
+  end
+
+  @spec classify_tray(term, SkillTray.t()) :: {[result], [result]}
+  def classify_tray(mat, tray) do
+    bg = background_color(mat, SkillTray.background_region(tray))
+    {classify_row(mat, tray.top_row, bg.hue, bg.saturation, bg.value), classify_row(mat, tray.bottom_row, bg.hue, bg.saturation, bg.value)}
   end
 
   @spec background_color(term, {integer, integer, integer, integer}) :: %{

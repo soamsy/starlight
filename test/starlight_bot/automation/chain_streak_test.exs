@@ -40,7 +40,7 @@ defmodule StarlightBot.Automation.ChainStreakTest do
 
       choices = ChainStreak.best_path(top, bottom)
 
-      assert choices == [:top, :bottom, :bottom, :top, :top, :top, :top]
+      assert choices == [:bottom, :bottom, :bottom, :top, :top, :top, :top]
       assert colors_for(top, bottom, choices) == [:gloom, :gloom, :gloom, :wrath, :wrath, :wrath, :wrath]
     end
 
@@ -69,6 +69,26 @@ defmodule StarlightBot.Automation.ChainStreakTest do
     end
   end
 
+  describe "best_path/2 row steadiness" do
+    test "breaks equal streak scores by changing rows fewer times" do
+      top = [:wrath, :gloom, :pride, :lust]
+      bottom = [:lust, :envy, :sloth, :wrath]
+
+      choices = ChainStreak.best_path(top, bottom)
+
+      assert choices |> Enum.uniq() |> length() == 1
+    end
+
+    test "never trades streak score for fewer row changes" do
+      top = [:wrath, :lust, :wrath]
+      bottom = [:lust, :wrath, :lust]
+
+      choices = ChainStreak.best_path(top, bottom)
+
+      assert colors_for(top, bottom, choices) |> Enum.uniq() |> length() == 1
+    end
+  end
+
   describe "best_path/3 with forced columns" do
     test "keeps forced columns on their row even when that breaks the best streak" do
       top = [:wrath, :wrath, :wrath]
@@ -82,6 +102,13 @@ defmodule StarlightBot.Automation.ChainStreakTest do
       bottom = [:lust, :wrath, :lust, :lust]
 
       assert ChainStreak.best_path(top, bottom, %{0 => :top}) == [:top, :bottom, :top, :top]
+    end
+
+    test "free columns with no streak to gain stay on a pinned row" do
+      top = [:wrath, :gloom, :pride]
+      bottom = [:lust, :envy, :sloth]
+
+      assert ChainStreak.best_path(top, bottom, %{0 => :bottom}) == [:bottom, :bottom, :bottom]
     end
   end
 end

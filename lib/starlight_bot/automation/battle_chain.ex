@@ -12,6 +12,7 @@ defmodule StarlightBot.Automation.BattleChain do
 
   @diagonal_x_bias 0.7
   @diagonal_y_lead_pct 0.2
+  @chain_duration_mult 0.7
 
   @spec preview_drag() ::
           {:ok, %{frame: term, tray: SkillTray.t(), picks: [{:top | :bottom, number, number}], path: [{number, number}]}}
@@ -78,9 +79,9 @@ defmodule StarlightBot.Automation.BattleChain do
   end
 
   defp run_drag([{gx, gy} | rest]) do
-    Mouse.move_to(gx, gy)
+    Mouse.move_to(gx, gy, duration_mult: @chain_duration_mult)
     Mouse.mouse_down()
-    Enum.each(rest, fn {x, y} -> Mouse.move_to(x, y) end)
+    Enum.each(rest, fn {x, y} -> Mouse.move_to(x, y, duration_mult: @chain_duration_mult) end)
     Mouse.mouse_up()
   end
 
@@ -102,13 +103,7 @@ defmodule StarlightBot.Automation.BattleChain do
   end
 
   defp compute_picks(frame, tray, chain_type, forced) do
-    bg_color = SinColor.background_color(frame.mat, SkillTray.background_region(tray))
-
-    top_results =
-      SinColor.classify_row(frame.mat, tray.top_row, bg_color.hue, bg_color.saturation, bg_color.value)
-
-    bottom_results =
-      SinColor.classify_row(frame.mat, tray.bottom_row, bg_color.hue, bg_color.saturation, bg_color.value)
+    {top_results, bottom_results} = SinColor.classify_tray(frame.mat, tray)
 
     picks =
       case chain_type do
@@ -156,18 +151,41 @@ defmodule StarlightBot.Automation.BattleChain do
   def waypoints(%SkillTray{} = tray, top_skills, bottom_skills, forced \\ %{}) do
     top_skills
     |> Enum.zip(bottom_skills)
+    |> steady_rows(forced)
     |> Enum.zip(SkillTray.chain_grid(tray))
-    |> Enum.with_index()
-    |> Enum.map(fn {{{top_skill, bottom_skill}, {x, top_y, bottom_y}}, index} ->
-      row_choice = Map.get_lazy(forced, index, fn -> pick_row(top_skill, bottom_skill) end)
+    |> Enum.map(fn {row_choice, {x, top_y, bottom_y}} ->
       y = if row_choice == :top, do: top_y, else: bottom_y
       {row_choice, x, y}
     end)
   end
 
-  @spec pick_row(scored_tier, scored_tier) :: :top | :bottom
-  def pick_row({top_tier, top_margin}, {bottom_tier, bottom_margin}) do
-    if {tier_rank(top_tier), top_margin} < {tier_rank(bottom_tier), bottom_margin}, do: :top, else: :bottom
+  defp steady_rows([], _forced), do: []
+
+  defp steady_rows(columns, forced) do
+    columns
+    |> Enum.with_index()
+    |> Enum.reduce(%{start: {{0, 0, 0.0}, []}}, fn {{top_skill, bottom_skill}, index}, paths ->
+      rows = if row = Map.get(forced, index), do: [row], else: [:bottom, :top]
+
+      Map.new(rows, fn row ->
+        {tier, margin} = if row == :top, do: top_skill, else: bottom_skill
+
+        best =
+          paths
+          |> Enum.map(fn {prev_row, {{ranks, switches, margins}, picked}} ->
+            switched = if prev_row in [:start, row], do: 0, else: 1
+            {{ranks + tier_rank(tier), switches + switched, margins + margin}, [row | picked], prev_row == :top}
+          end)
+          |> Enum.min_by(fn {cost, _picked, from_top?} -> {cost, from_top?} end)
+          |> Tuple.delete_at(2)
+
+        {row, best}
+      end)
+    end)
+    |> Enum.min_by(fn {row, {cost, _picked}} -> {cost, row == :top} end)
+    |> elem(1)
+    |> elem(1)
+    |> Enum.reverse()
   end
 
   @spec waypoints_by_streak(SkillTray.t(), [SinColor.sin()], [SinColor.sin()], %{non_neg_integer => :top | :bottom}) ::

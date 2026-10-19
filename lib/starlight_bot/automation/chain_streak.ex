@@ -17,7 +17,7 @@ defmodule StarlightBot.Automation.ChainStreak do
   end
 
   defp build_layers(columns, weight, forced) do
-    start_layer = %{start: %{score: 0, choice: nil, prev: nil}}
+    start_layer = %{start: %{score: {0, 0}, choice: nil, prev: nil}}
 
     {_last_layer, layers_rev} =
       Enum.reduce(columns, {start_layer, []}, fn {{top_color, bottom_color}, index}, {prev_layer, acc} ->
@@ -30,11 +30,7 @@ defmodule StarlightBot.Automation.ChainStreak do
               extend(prev_layer, bottom_color, :bottom, weight)
 
             nil ->
-              prev_layer
-              |> extend(top_color, :top, weight)
-              |> Map.merge(extend(prev_layer, bottom_color, :bottom, weight), fn _key, a, b ->
-                if a.score >= b.score, do: a, else: b
-              end)
+              Map.merge(extend(prev_layer, top_color, :top, weight), extend(prev_layer, bottom_color, :bottom, weight))
           end
 
         {layer, [layer | acc]}
@@ -45,7 +41,7 @@ defmodule StarlightBot.Automation.ChainStreak do
 
   defp extend(prev_layer, color, choice, weight) do
     Enum.reduce(prev_layer, %{}, fn {prev_key, %{score: prev_score}}, acc ->
-      {new_key, new_score} = transition(prev_key, prev_score, color, weight)
+      {new_key, new_score} = transition(prev_key, prev_score, color, choice, weight)
       candidate = %{score: new_score, choice: choice, prev: prev_key}
 
       Map.update(acc, new_key, candidate, fn existing ->
@@ -54,13 +50,15 @@ defmodule StarlightBot.Automation.ChainStreak do
     end)
   end
 
-  defp transition(:start, score, color, _weight), do: {{color, 1}, score}
+  defp transition(:start, score, color, choice, _weight), do: {{color, 1, choice}, score}
 
-  defp transition({prev_color, prev_len}, score, color, weight) do
+  defp transition({prev_color, prev_len, prev_choice}, {streaks, steadiness}, color, choice, weight) do
+    steadiness = if prev_choice == choice, do: steadiness, else: steadiness - 1
+
     if prev_color == color do
-      {{color, prev_len + 1}, score}
+      {{color, prev_len + 1, choice}, {streaks, steadiness}}
     else
-      {{color, 1}, score + Integer.pow(weight, prev_len)}
+      {{color, 1, choice}, {streaks + Integer.pow(weight, prev_len), steadiness}}
     end
   end
 
@@ -68,8 +66,8 @@ defmodule StarlightBot.Automation.ChainStreak do
     last_layer = List.last(layers)
 
     {best_key, _} =
-      Enum.max_by(last_layer, fn {{_color, len}, %{score: score}} ->
-        score + Integer.pow(weight, len)
+      Enum.max_by(last_layer, fn {{_color, len, _choice}, %{score: {streaks, steadiness}}} ->
+        {streaks + Integer.pow(weight, len), steadiness}
       end)
 
     layers

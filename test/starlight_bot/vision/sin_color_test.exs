@@ -75,7 +75,7 @@ defmodule StarlightBot.Vision.SinColorTest do
 
     test "exposes the match mask and reference mask actually used, for UI inspection" do
       {hue, _tol, s_lo, s_hi, v_lo, v_hi} = SinColor.colors()[:pride]
-      border_bgr = hsv_to_bgr({hue, s_hi, v_hi})
+      border_bgr = hsv_to_bgr({hue, s_hi - 3, v_hi - 3})
       fill_bgr = hsv_to_bgr({hue, mid(s_lo, s_hi), mid(v_lo, v_hi)})
 
       mat = solid_mat(40, 40, fill_bgr)
@@ -265,7 +265,8 @@ defmodule StarlightBot.Vision.SinColorTest do
     end
 
     test "a background hue far from a sin's own hue never raises that sin's floor, so it detects exactly as well as with no background info" do
-      pride_bgr = hsv_to_bgr({110, 150, 90})
+      {hue, _tol, s_lo, s_hi, v_lo, v_hi} = Keyword.fetch!(SinColor.colors(), :pride)
+      pride_bgr = hsv_to_bgr({hue, mid(s_lo, s_hi), mid(v_lo, v_hi)})
       mat = solid_mat(40, 30, pride_bgr)
 
       bg_hue = 12

@@ -4,29 +4,34 @@ defmodule StarlightBot.Automation.BattleChainTest do
   alias StarlightBot.Automation.BattleChain
   alias StarlightBot.Vision.SkillTray
 
-  describe "pick_row/2" do
+  defp pick_row(top, bottom) do
+    [{row, _x, _y}] = BattleChain.waypoints(SkillTray.geometry(400), [top], [bottom])
+    row
+  end
+
+  describe "single-column row choice" do
     test "prefers skill2 over skill1 and skill3, regardless of position or threshold margin" do
-      assert BattleChain.pick_row({:skill2, 0.9}, {:skill1, 0.1}) == :top
-      assert BattleChain.pick_row({:skill1, 0.1}, {:skill2, 0.9}) == :bottom
-      assert BattleChain.pick_row({:skill2, 0.9}, {:skill3, 0.1}) == :top
-      assert BattleChain.pick_row({:skill3, 0.1}, {:skill2, 0.9}) == :bottom
+      assert pick_row({:skill2, 0.9}, {:skill1, 0.1}) == :top
+      assert pick_row({:skill1, 0.1}, {:skill2, 0.9}) == :bottom
+      assert pick_row({:skill2, 0.9}, {:skill3, 0.1}) == :top
+      assert pick_row({:skill3, 0.1}, {:skill2, 0.9}) == :bottom
     end
 
     test "prefers skill1 over skill3 when skill2 isn't available" do
-      assert BattleChain.pick_row({:skill1, 0.9}, {:skill3, 0.1}) == :top
-      assert BattleChain.pick_row({:skill3, 0.1}, {:skill1, 0.9}) == :bottom
+      assert pick_row({:skill1, 0.9}, {:skill3, 0.1}) == :top
+      assert pick_row({:skill3, 0.1}, {:skill1, 0.9}) == :bottom
     end
 
     test "breaks same-tier ties by choosing the smaller margin over the tier threshold" do
-      assert BattleChain.pick_row({:skill1, 0.30}, {:skill1, 0.40}) == :top
-      assert BattleChain.pick_row({:skill2, 0.55}, {:skill2, 0.50}) == :bottom
-      assert BattleChain.pick_row({:skill3, 0.70}, {:skill3, 0.90}) == :top
+      assert pick_row({:skill1, 0.30}, {:skill1, 0.40}) == :top
+      assert pick_row({:skill2, 0.55}, {:skill2, 0.50}) == :bottom
+      assert pick_row({:skill3, 0.70}, {:skill3, 0.90}) == :top
     end
 
     test "breaks exact ties by choosing the bottom option" do
-      assert BattleChain.pick_row({:skill1, 0.4}, {:skill1, 0.4}) == :bottom
-      assert BattleChain.pick_row({:skill2, 0.5}, {:skill2, 0.5}) == :bottom
-      assert BattleChain.pick_row({:skill3, 0.8}, {:skill3, 0.8}) == :bottom
+      assert pick_row({:skill1, 0.4}, {:skill1, 0.4}) == :bottom
+      assert pick_row({:skill2, 0.5}, {:skill2, 0.5}) == :bottom
+      assert pick_row({:skill3, 0.8}, {:skill3, 0.8}) == :bottom
     end
   end
 
@@ -57,6 +62,48 @@ defmodule StarlightBot.Automation.BattleChainTest do
       rows = Enum.map(picks, fn {row, _x, _y} -> row end)
 
       assert rows == [:top, :bottom, :top, :bottom, :bottom, :top, :top]
+    end
+  end
+
+  describe "waypoints/3 row steadiness" do
+    test "same-tier columns stay on the current row even when the margin prefers the other one" do
+      tray = SkillTray.geometry(400)
+      top_tiers = [{:skill2, 0.5}, {:skill1, 0.9}, {:skill2, 0.5}]
+      bottom_tiers = [{:skill3, 0.8}, {:skill1, 0.1}, {:skill3, 0.8}]
+
+      rows = BattleChain.waypoints(tray, top_tiers, bottom_tiers) |> Enum.map(&elem(&1, 0))
+
+      assert rows == [:top, :top, :top]
+    end
+
+    test "leading same-tier columns start on the row the first decided column needs" do
+      tray = SkillTray.geometry(400)
+      top_tiers = [{:skill1, 0.1}, {:skill1, 0.1}, {:skill3, 0.8}]
+      bottom_tiers = [{:skill1, 0.9}, {:skill1, 0.9}, {:skill2, 0.5}]
+
+      rows = BattleChain.waypoints(tray, top_tiers, bottom_tiers) |> Enum.map(&elem(&1, 0))
+
+      assert rows == [:bottom, :bottom, :bottom]
+    end
+
+    test "never trades a better tier for fewer row changes" do
+      tray = SkillTray.geometry(400)
+      top_tiers = [{:skill2, 0.5}, {:skill1, 0.3}, {:skill2, 0.5}]
+      bottom_tiers = [{:skill1, 0.3}, {:skill2, 0.5}, {:skill1, 0.3}]
+
+      rows = BattleChain.waypoints(tray, top_tiers, bottom_tiers) |> Enum.map(&elem(&1, 0))
+
+      assert rows == [:top, :bottom, :top]
+    end
+
+    test "same-tier columns next to a pin follow the pinned row" do
+      tray = SkillTray.geometry(400)
+      top_tiers = [{:skill1, 0.1}, {:skill1, 0.1}, {:skill1, 0.1}]
+      bottom_tiers = [{:skill1, 0.9}, {:skill1, 0.9}, {:skill1, 0.9}]
+
+      rows = BattleChain.waypoints(tray, top_tiers, bottom_tiers, %{1 => :bottom}) |> Enum.map(&elem(&1, 0))
+
+      assert rows == [:bottom, :bottom, :bottom]
     end
   end
 
