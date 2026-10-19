@@ -6,14 +6,14 @@ defmodule StarlightBot.Automation.Shop.Actions.TieredFusion do
 
   @max_rounds 15
 
-  def run(_step, definitions, state, ctx) do
-    with {:ok, definition, target} <- current(definitions, state, ctx) do
-      work(definition, target, [], 0, state, ctx)
+  def obtain(definition, step, state, ctx) do
+    with {:ok, target} <- target(definition, state) do
+      work(definition, target, [], %{rounds: 0, misses: 0, retries: step["max_retries"]}, state, ctx)
     end
   end
 
-  def preview(_step, definitions, state, ctx) do
-    with {:ok, definition, target} <- current(definitions, state, ctx) do
+  def preview(definition, state, ctx) do
+    with {:ok, target} <- target(definition, state) do
       fodder = fodder(state, ctx)
       counts = FusionPlanner.tier_counts(fodder)
       routes = definition["routes"] || []
@@ -35,23 +35,17 @@ defmodule StarlightBot.Automation.Shop.Actions.TieredFusion do
     end
   end
 
-  defp current(definitions, state, ctx) do
-    case FusionPlanner.current_fusion(definitions, owned_names(ctx)) do
-      nil ->
-        {:skipped, "every fusion target is owned", state}
-
-      definition ->
-        case state.gifts_by_name[definition["target"]] do
-          nil -> {:failed, "#{definition["name"]} has no target set", state}
-          target -> {:ok, definition, target}
-        end
+  defp target(definition, state) do
+    case state.gifts_by_name[definition["target"]] do
+      nil -> {:failed, "#{definition["name"]} has no target set", state}
+      target -> {:ok, target}
     end
   end
 
-  defp work(_definition, target, progress, rounds, state, _ctx) when rounds >= @max_rounds,
+  defp work(_definition, target, progress, %{rounds: rounds}, state, _ctx) when rounds >= @max_rounds,
     do: finish(progress, "stopped after #{@max_rounds} rounds without getting #{target.name}", state)
 
-  defp work(definition, target, progress, rounds, state, ctx) do
+  defp work(definition, target, progress, round_counts, state, ctx) do
     if MapSet.member?(owned_names(ctx), target.name) do
       {:done, Enum.join(progress ++ ["got #{target.name}"], "; "), state}
     else
@@ -60,23 +54,31 @@ defmodule StarlightBot.Automation.Shop.Actions.TieredFusion do
       routes = definition["routes"] || []
 
       case FusionPlanner.next_fusion(routes, target.tier, counts, state.shop_type) do
-        {:fuse, tier, combo} -> fuse(definition, target, tier, combo, fodder, progress, rounds, state, ctx)
-        nil -> buy(definition, target, counts, progress, rounds, state, ctx)
+        {:fuse, tier, combo} -> fuse(definition, target, tier, combo, fodder, progress, round_counts, state, ctx)
+        nil -> buy(definition, target, counts, progress, round_counts, state, ctx)
       end
     end
   end
 
-  defp fuse(definition, target, tier, combo, fodder, progress, rounds, state, ctx) do
+  defp fuse(definition, target, tier, combo, fodder, progress, %{misses: misses, retries: retries} = round_counts, state, ctx) do
     {:ok, picks} = FusionPlanner.pick_fodder(fodder, combo)
     label = "T#{tier} from #{Combos.combo_key(combo)}"
 
     case Ops.perform_fusion(%{gift_name: "#{label} toward #{target.name}", affinity: target.affinity}, {:strict, Enum.map(picks, & &1.id)}, ctx) do
-      :ok -> work(definition, target, progress ++ ["fused #{label}"], rounds + 1, state, ctx)
-      {:error, reason} -> finish(progress, "fusing #{label} failed: #{inspect(reason)}", state)
+      :ok ->
+        progress = progress ++ ["fused #{label}"]
+        misses = if tier == target.tier and not MapSet.member?(owned_names(ctx), target.name), do: misses + 1, else: misses
+
+        if is_integer(retries) and misses > retries,
+          do: finish(progress, "missed #{target.name} #{misses} time(s), out of retries (#{retries})", state),
+          else: work(definition, target, progress, %{round_counts | rounds: round_counts.rounds + 1, misses: misses}, state, ctx)
+
+      {:error, reason} ->
+        finish(progress, "fusing #{label} failed: #{inspect(reason)}", state)
     end
   end
 
-  defp buy(definition, target, counts, progress, rounds, state, ctx) do
+  defp buy(definition, target, counts, progress, round_counts, state, ctx) do
     wanted = FusionPlanner.wanted_tiers(definition["routes"] || [], target.tier, counts, state.shop_type)
 
     if MapSet.size(wanted) == 0 do
@@ -84,8 +86,7 @@ defmodule StarlightBot.Automation.Shop.Actions.TieredFusion do
     else
       with {:ok, items} <- Ops.shelf_items(ctx),
            {:bought, item} <- items |> candidates(wanted, state, ctx) |> Ops.buy_first_affordable(ctx) do
-        Ops.detect_and_update_cost(ctx)
-        work(definition, target, progress ++ ["bought #{item.gift_name}"], rounds + 1, state, ctx)
+        work(definition, target, progress ++ ["bought #{item.gift_name}"], %{round_counts | rounds: round_counts.rounds + 1}, state, ctx)
       else
         :none_available -> finish(progress, "nothing affordable on the shelf fits a route", state)
         {:error, reason} -> finish(progress, "shelf scan failed: #{inspect(reason)}", state)

@@ -1,10 +1,43 @@
 defmodule StarlightBot.Navigation.Screens.Shop do
   use StarlightBot.Navigation.DSL
+  alias StarlightBot.Automation.Shop.Ops
+
+  screen :shop_sell_popup, identity: :shop_sell_popup do
+    transition to: :shop, do: back_to_shop()
+  end
+
+  screen :shop_fuse_popup, identity: :shop_fuse_popup do
+    transition to: :shop, do: back_to_shop()
+  end
+
+  screen :shop_uptie_popup, identity: :shop_uptie_popup do
+    transition to: :shop, do: back_to_shop()
+  end
+
+  screen :shop_keyword_refresh_popup, identity: :shop_keyword_refresh_popup do
+    transition to: :shop, do: back_to_shop()
+  end
+
+  screen :shop_purchase_popup, identity: :shop_purchase_popup do
+    transition to: :shop, do: back_to_shop()
+  end
+
+  screen :shop_replace_popup, identity: :shop_replace_popup do
+    transition to: :shop, do: back_to_shop()
+  end
+
+  screen :shop_heal_menu, identity: :shop_heal_menu do
+    transition to: :shop, do: back_to_shop()
+  end
+
+  screen :shop_leave_confirm, identity: :shop_leave_confirm do
+    transition to: :shop, do: back_to_shop()
+  end
 
   screen :shop, identity: :shop do
     transition to: :dungeon_graph do
       [
-        retry_until_arrived([click(:shop_leave), await(:shop_leave_confirm), click(:shop_leave_confirm)], every: 2000)
+        retry_until_arrived([click(:shop_leave)] ++ confirm_enter(:shop_leave_confirm), every: 2000)
       ]
     end
 
@@ -12,11 +45,26 @@ defmodule StarlightBot.Navigation.Screens.Shop do
       [
         click(:shop_refresh),
         sleep(400),
-        branch(shop_refresh_popup_are_you_sure: [click(:shop_refresh_popup_confirm)], default: [])
       ]
     end
   end
 
   screen :shop_super, identity: :shop_super, refines: :shop do
   end
+
+  def popup_screens,
+    do: [
+      :shop_sell_popup,
+      :shop_fuse_popup,
+      :shop_uptie_popup,
+      :shop_keyword_refresh_popup,
+      :shop_purchase_popup,
+      :shop_replace_popup,
+      :shop_heal_menu,
+      :shop_leave_confirm
+    ]
+
+  defp back_to_shop, do: [custom(&recover_to_shop/2)]
+
+  defp recover_to_shop(_frame, ctx), do: Ops.recover_to_shop(ctx)
 end

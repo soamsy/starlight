@@ -161,17 +161,17 @@ None of this needs new schema. It's runner behavior, implemented when tiered fus
 
 **Fixed Fusion**: `target` must have `ego_gifts.ingredients`. Buy missing ingredients from the shelf if `buy_missing`, fuse if all present, else fail. Done (skipped) if the target is already owned.
 
-**Buy from list**: buy up to `max_items` shelf gifts that appear in the list, in list order.
+**Buy from list**: buy up to `max_items` shelf gifts that appear in the list, in list order. A list entry can also be "Any T1" to "Any T4" (stored as `tier:N`), which matches every shelf gift of that tier at that position in the order. Gifts already owned are skipped. A shopping list can set `done_at`: once that many owned gifts match the list (Any-tier entries count every owned gift of that tier), buy steps on it skip as done, and until then a step buys at most the difference, even when `max_items` is higher.
 
-**Sell**: `tiers` is an ordered multi-select. Sell unprotected gifts from the first tier in the list, then the next, until `wallet >= stop_at_cost` or `max_items` sold. Skips entirely if `wallet` already meets `stop_at_cost`. The gifts to sell are chosen up front from the entry inventory scan; within a tier, the highest `ego_gifts.selling_cost` goes first, so fewer gifts are sold to reach `stop_at_cost`. Each sale opens the sell popup, scrolls to that gift, clicks it, confirms twice, and re-reads cost.
+**Sell**: `tiers` is an ordered multi-select. Sell unprotected gifts from the first tier in the list, then the next, until `wallet >= stop_at_cost` or `max_items` sold. Skips entirely if `wallet` already meets `stop_at_cost`. The gifts to sell are chosen up front from the entry inventory scan; within a tier, the highest `ego_gifts.selling_cost` goes first, so fewer gifts are sold to reach `stop_at_cost`. Uptie level doesn't change sell price, so the whole sale is planned from known prices: take gifts in that order until their prices cover `stop_at_cost - wallet` (capped at `max_items`), then sell them all in one popup session without re-reading cost between sales. For each gift, check the current view first, then scroll to the top and scan down. When the first non-budget step of the workflow is a sell, the entry inventory scan leaves the sell popup open for it; any other step closes it first.
 
-**Skill Replace**: if the shelf shows a skill-replace offer for `sinner` whose transition is in `options`, and that sinner hasn't had a replacement this run, take it. Options: `s1_s2` (45), `s2_s3` (75), `s1_s3` (120), ranked by preference.
+**Skill Replace**: if this shop's skill-replace offer is for `sinner` (`shop_replace_<sinner>` matches the name label) and `shop_replace_purchased` isn't showing, open the offer and take the first transition in `options` that the game accepts. Options: `s1_s2` (45), `s2_s3` (75), `s1_s3` (120), ranked by preference. Works once per shop, so the same step on every floor's workflow keeps converting skills all run.
 
 **Heal Sinner**: heal `sinner` for about 50% HP and 45 SP. Costs 100.
 
 **Heal All**: heal every sinner for about 15% HP and 15 SP. Costs 100.
 
-**Revive**: revive `sinner` if dead. Costs 100.
+**Revive**: revive `sinner` if `shop_dead_<sinner>` is on. Costs 100.
 
 **Budget**: `reserve += amount`.
 
@@ -275,7 +275,7 @@ Tiered fusion step cards get the same ordered multi-select over tiered fusion de
 
 **Shopping Lists**: list of definitions; editor with ordered gift list showing tier and buying cost.
 
-Shopping lists and keep lists have Copy gifts / Paste gifts buttons sharing one clipboard. Tiered fusions have Copy routes / Paste routes, limited to targets of the same tier.
+Shopping lists and keep lists have Copy gifts / Paste gifts buttons sharing one clipboard. Pasting into a keep list drops Any-tier entries. Tiered fusions have Copy routes / Paste routes, limited to targets of the same tier.
 
 **Keep Lists**: list of definitions; editor reuses the current Keep tab's gift grid. Shows which workflows use each list.
 
@@ -312,10 +312,12 @@ Each action becomes a module under `Automation.Shop.Actions` with `run(step, def
 | Tiered Fusion | Implemented. Pure planner in `GiftPlans.FusionPlanner` (current fusion, reachability, next fusion, wanted tiers, fodder picks); `Actions.TieredFusion` runs the loop with a 15-round cap. Fodder is picked by gift id (un-uptied and cheapest first) and selected with the strict ingredient path, so protected gifts are never clicked. |
 | Sell | Implemented, untested in game |
 | Affinity Refresh | Implemented, untested in game. Clicks `shop_keyword_refresh`, the keyword icon (same `shop_affinity_*` hooks as the fuse popup), then `shop_keyword_refresh_popup_confirm`. |
-| Uptie | Partial. Plans the upties (`GiftPlans.uptie_plan/5`), opens the uptie popup, scrolls to and clicks the first gift, then logs `:not_implemented` and backs out. Needs +1/+2 selection and can't-afford hooks. |
-| Skill Replace, Heal Sinner, Heal All, Revive | Stub, log `:not_implemented`. Waiting on per-sinner hooks. |
+| Uptie | Implemented, untested in game. For each planned gift: open the uptie popup if it isn't open, find the gift, `shop_uptie_popup_confirm`, click `shop_uptie_popup_commit_uptie_<target>`, then `shop_uptie_popup_commit_confirm`. If `shop_uptie_popup_commit_cancel` is still visible after 1.5s the commit didn't go through: a +0 to +2 attempt switches to +1, and the step stops after taking it (a partial uptie counts as running out of cost). Otherwise cancel and stop. |
+| Heal Sinner, Heal All | Implemented, untested in game. Bail if `shop_heal_disabled` shows (checked before and after opening). Open with `shop_heal` and wait for `shop_heal_menu`. Heal Sinner: `shop_heal_greatly_heal`, `shop_heal_<sinner>`, `shop_heal_confirm`. If `shop_heal_confirm` doesn't show within 1.5s the sinner is already full, so it tries the other sinners in roster order until one offers confirm (the menu can't be left without a heal). Heal All: `shop_heal_every_sinner`. Both then wait for `shop_heal_heal_again` and click it to get back to the menu. Consecutive heal steps share one visit; any other step (or the end of the workflow) leaves through `shop_heal_return` and re-reads cost. Each heal deducts 100 from the remembered cost in the meantime. |
+| Skill Replace | Implemented, untested in game. Skips unless `shop_replace_<sinner>` matches and `shop_replace_purchased` doesn't. Clicks the sinner label, awaits `shop_replace_popup`, then per option: `shop_replace_popup_<from>_<to>`, `shop_replace_popup_confirm`, and waits 1.5s for `shop_replace_popup_are_you_sure`. If it doesn't show, the option is grayed out (cost, or no skill to convert) and the next option is tried. Once it shows, clicks `shop_replace_popup_confirm` again until `shop_replace_popup_are_you_sure` is gone, then waits for `shop_replace_popup` to close and `shop_sell` to be back. No option accepted: recover to the shop and log `:skipped`. Dry run reports whether the offer is for `sinner`. |
+| Revive | Implemented, untested in game. Closes the heal menu if a previous heal step left it open, then skips unless `shop_dead_<sinner>` matches on the shop screen. Opens the heal menu (same disabled checks as heal), clicks `shop_heal_revive`, `shop_heal_<sinner>`, waits 1.5s for `shop_heal_confirm` and clicks it, then `shop_heal_heal_again`. Shares the heal visit with following heal steps and deducts 100 from the remembered cost. Dry run reports whether the sinner is dead. |
 
-Every shop visit starts with the inventory scan: open the sell popup, scroll to the bottom while classifying gifts and reading uptie badges, close it. Every action plans from that inventory, kept current by buys, fuses, and sells. Gift prices come from `ego_gifts` (`buying_cost`, `selling_cost`); uptie prices from the tier table in `docs/uptie.md` (`GiftPlans.uptie_cost/3`).
+Every shop visit starts with the inventory scan: open the sell popup, scroll to the bottom while classifying gifts and reading uptie badges, close it (or leave it open when the first step is a sell). Every action plans from that inventory, kept current by buys, fuses, and sells. Gift prices come from `ego_gifts` (`buying_cost`, `selling_cost`); uptie prices from the tier table in `docs/uptie.md` (`GiftPlans.uptie_cost/3`).
 
 Dry run = resolve the workflow for the chosen floor, detect cost, inventory, and shop type, and report per step whether its condition passes and what the action would target, with no clicks. Tiered fusion, sell, and uptie report their plan: what they would fuse (and with which gifts), which tiers they'd buy, which gifts they'd sell, and which upties they'd buy at what price.
 

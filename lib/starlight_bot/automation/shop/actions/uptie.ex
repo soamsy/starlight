@@ -8,16 +8,32 @@ defmodule StarlightBot.Automation.Shop.Actions.Uptie do
       {[], reason} ->
         {:skipped, "nothing to uptie: #{reason}", state}
 
-      {[first | _], _reason} ->
-        result = Ops.select_uptie_gift(first.gift.id, ctx)
+      {planned, reason} ->
+        {outcome, detail} = uptie_all(planned, [], reason, ctx)
         Ops.recover_to_shop(ctx)
-
-        case result do
-          :ok -> {:not_implemented, "selected #{first.gift.name} in the uptie popup; +1/+2 hooks aren't set up yet", state}
-          {:error, reason} -> {:failed, "couldn't select #{first.gift.name}: #{inspect(reason)}", state}
-        end
+        {outcome, detail, state}
     end
   end
+
+  defp uptie_all([], done, reason, _ctx), do: {:done, done_label(done) <> " (#{reason})"}
+
+  defp uptie_all([item | rest], done, reason, ctx) do
+    case Ops.uptie_gift(item.gift.id, item.from, item.to, ctx) do
+      {:ok, level} when level == item.to ->
+        RunMemory.set_ego_gift_uptie(ctx, item.gift.id, level)
+        uptie_all(rest, done ++ ["#{item.gift.name} +#{level}"], reason, ctx)
+
+      {:ok, level} ->
+        RunMemory.set_ego_gift_uptie(ctx, item.gift.id, level)
+        {:partial, done_label(done ++ ["#{item.gift.name} +#{level}"]) <> ", couldn't afford +#{item.to}, stopping"}
+
+      {:error, failure} ->
+        detail = "#{item.gift.name} +#{item.to} failed: #{inspect(failure)}"
+        if done == [], do: {:failed, detail}, else: {:partial, done_label(done) <> ", then " <> detail}
+    end
+  end
+
+  defp done_label(done), do: "uptied #{Enum.join(done, ", ")}"
 
   def preview(step, definitions, state, ctx) do
     case plan(step, definitions, state, ctx) do
