@@ -49,6 +49,20 @@ defmodule StarlightBotWeb.Live.ThemePackPlanEditorLive do
   end
 
   @impl true
+  def handle_event("duplicate_plan", %{"id" => id}, socket) do
+    case Strategies.get(:theme_pack_plans, String.to_integer(id)) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Plan not found.")}
+
+      plan ->
+        case Strategies.save(:theme_pack_plans, %{name: "#{plan.name} (copy)", data: plan.data}) do
+          {:ok, new_id} -> {:noreply, socket |> assign(:plans, Strategies.list(:theme_pack_plans)) |> load_plan(new_id)}
+          {:error, reason} -> {:noreply, put_flash(socket, :error, "Duplicate failed: #{inspect(reason)}")}
+        end
+    end
+  end
+
+  @impl true
   def handle_event("delete_plan", %{"id" => id}, socket) do
     id = String.to_integer(id)
 
@@ -86,6 +100,18 @@ defmodule StarlightBotWeb.Live.ThemePackPlanEditorLive do
     floor = String.to_integer(floor)
     schedule = toggle_breakpoint(socket.assigns.plan_data["mode_schedule"], floor)
     plan_data = Map.put(socket.assigns.plan_data, "mode_schedule", schedule)
+    {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
+  end
+
+  @impl true
+  def handle_event("toggle_search_floor", %{"floor" => floor}, socket) do
+    floor = String.to_integer(floor)
+    search_floors = socket.assigns.plan_data["search_floors"]
+
+    search_floors =
+      if floor in search_floors, do: List.delete(search_floors, floor), else: Enum.sort([floor | search_floors])
+
+    plan_data = Map.put(socket.assigns.plan_data, "search_floors", search_floors)
     {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
   end
 
@@ -338,7 +364,7 @@ defmodule StarlightBotWeb.Live.ThemePackPlanEditorLive do
   defp new_plan_name(plans), do: "New Plan #{length(plans) + 1}"
 
   defp blank_plan_data do
-    %{"version" => 1, "mode_schedule" => [], "packs" => %{}}
+    %{"version" => 1, "mode_schedule" => [], "packs" => %{}, "search_floors" => []}
   end
 
   defp normalize_plan_data(nil), do: blank_plan_data()
@@ -347,6 +373,7 @@ defmodule StarlightBotWeb.Live.ThemePackPlanEditorLive do
     data
     |> Map.put_new("mode_schedule", [])
     |> Map.put_new("packs", %{})
+    |> Map.put_new("search_floors", [])
     |> Map.update!("mode_schedule", &normalize_mode_schedule/1)
   end
 

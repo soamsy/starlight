@@ -17,7 +17,8 @@
                 <tr phx-click="select_plan" phx-value-id={plan.id}
                     class={"cursor-pointer hover:bg-base-200 " <> if(@editing_id == plan.id, do: "bg-primary/10 border-l-2 border-primary", else: "")}>
                   <td class="font-mono text-xs"><%= plan.name %></td>
-                  <td class="text-right">
+                  <td class="text-right whitespace-nowrap">
+                    <button phx-click="duplicate_plan" phx-value-id={plan.id} class="btn btn-xs btn-ghost">Dup</button>
                     <button phx-click="delete_plan" phx-value-id={plan.id}
                             data-confirm={"Delete '#{plan.name}'?"}
                             class="btn btn-xs btn-ghost text-error">Del</button>
@@ -58,6 +59,23 @@
                 <button phx-click="toggle_breakpoint" phx-value-floor={floor}
                         class={"btn btn-xs " <> if(mode == "hard", do: "btn-secondary", else: "btn-info btn-outline") <> if(breakpoint?, do: " ring ring-offset-1 ring-base-content/30", else: "")}
                         title={"Floor #{floor}: #{mode}"}>
+                  <%= floor %>
+                </button>
+              <% end %>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <span class="text-xs text-base-content/60">
+              <span class="font-medium">Pack search</span>
+              <span>(on highlighted floors, once refreshes run out, search-replace the leftmost pack with the first unvisited Hunt pack that has a search hook)</span>
+            </span>
+            <div class="flex gap-1 flex-wrap">
+              <%= for floor <- 1..max_floor(@extreme?) do %>
+                <% search? = floor in @plan_data["search_floors"] %>
+                <button phx-click="toggle_search_floor" phx-value-floor={floor}
+                        class={"btn btn-xs " <> if(search?, do: "btn-warning", else: "btn-ghost border-base-300")}
+                        title={"Floor #{floor}: " <> if(search?, do: "search when out of refreshes", else: "no search")}>
                   <%= floor %>
                 </button>
               <% end %>
