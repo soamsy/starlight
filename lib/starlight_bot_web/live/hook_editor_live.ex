@@ -281,6 +281,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
             socket =
               socket
               |> assign(:test_result, result)
+              |> assign(:screenshot_mat, frame.mat)
               |> assign_template(hook_atom)
 
             socket = case encode_jpeg(frame.mat) do
@@ -318,7 +319,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
         {:error, :not_found} ->
           {:noreply, put_flash(socket, :error, "Hook '#{name}' not in registry — save it first.")}
 
-        {:ok, %{method: :color_detector, region: nil}} ->
+        {:ok, %{method: method, region: nil}} when method in [:color_detector, :value_detector, :saturation_detector] ->
           {:noreply, put_flash(socket, :error, "This hook has no region defined — use full Test instead.")}
 
         {:ok, %{method: :grayscale_detector, region: nil}} ->
@@ -329,7 +330,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
 
         {:ok, hook} ->
           search_region =
-            if hook.method in [:color_detector, :grayscale_detector],
+            if hook.method in [:color_detector, :value_detector, :saturation_detector, :grayscale_detector],
               do: hook.region,
               else: hook.scan_region || hook.region
 
@@ -381,6 +382,63 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
               end
           end
       end
+    end
+  end
+
+  @impl true
+  def handle_event("test_hook_all", %{"name" => name}, socket) do
+    case socket.assigns.screenshot_mat do
+      nil ->
+        {:noreply, put_flash(socket, :error, "No screenshot loaded. Take one first.")}
+
+      mat ->
+        frame = %StarlightBot.Vision.Frame{binary: nil, mat: mat, window_rect: {0, 0, 1920, 1080}, scale: 1.0, captured_at: System.monotonic_time(:millisecond)}
+        hook_atom = safe_to_atom(name)
+
+        case hook_atom && Matcher.find_all_with_scores(frame, hook_atom) do
+          nil ->
+            {:noreply, put_flash(socket, :error, "Invalid hook name.")}
+
+          {:error, :hook_not_found} ->
+            {:noreply,
+             put_flash(socket, :error, "Hook '#{name}' not in registry — save it first.")}
+
+          {:ok, matches} ->
+            match_maps =
+              matches
+              |> Enum.sort_by(fn {_rect, score} -> score end, :desc)
+              |> Enum.map(fn {{x, y, w, h}, score} ->
+                %{rect: %{x: x, y: y, w: w, h: h}, score: Float.round(score * 1.0, 4)}
+              end)
+
+            best = List.first(match_maps)
+
+            result = %{
+              found: best != nil,
+              score: if(best, do: best.score, else: 0.0),
+              rect: best && best.rect,
+              mode: :all,
+              matches: match_maps
+            }
+
+            socket =
+              socket
+              |> assign(:test_result, result)
+              |> assign_template(hook_atom)
+
+            socket =
+              case encode_jpeg(frame.mat) do
+                {:ok, jpeg} ->
+                  socket
+                  |> push_event("load_screenshot", %{data: Base.encode64(jpeg)})
+                  |> push_event("show_matches", %{matches: match_maps})
+
+                _ ->
+                  socket
+              end
+
+            {:noreply, socket}
+        end
     end
   end
 
@@ -841,7 +899,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       |> Ecto.Changeset.cast(params, Map.keys(types))
       |> Ecto.Changeset.validate_required([:name, :match_method, :confidence])
       |> Ecto.Changeset.validate_inclusion(:match_method,
-        ~w(gray rgb edge akaze sift binary_thresh color_detector grayscale_detector))
+        ~w(gray rgb edge akaze sift binary_thresh color_detector value_detector saturation_detector grayscale_detector))
       |> Ecto.Changeset.validate_inclusion(:feature_channel, ~w(gray saturation))
       |> Ecto.Changeset.validate_number(:confidence,
         greater_than_or_equal_to: 0.0,
@@ -1030,8 +1088,8 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     Enum.sort_by(hooks, &sort_key(&1, sort_by), sort_dir)
   end
 
-  def thumb_src(nil), do: nil
-  def thumb_src(image), do: "data:image/png;base64,#{Base.encode64(image)}"
+  def thumb_src(_name, nil), do: nil
+  def thumb_src(name, version), do: ~p"/hooks/#{name}/thumb.png?#{[v: version]}"
 
   @doc "CSS color for the color_detector swatch preview, from OpenCV-scale HSV (h: 0-179, s/v: 0-255)."
   def color_swatch_css(h, s, v) when is_integer(h) and is_integer(s) and is_integer(v) do

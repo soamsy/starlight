@@ -40,12 +40,17 @@ defmodule StarlightBot.Hooks do
     _ -> []
   end
 
-  @doc "Map of hook name => template image binary (or nil), for lightweight thumbnail rendering."
+  @doc "Map of hook name => updated_at for hooks that have a template image, used to version thumbnail URLs."
   def hook_thumbnails do
-    Repo.all(from h in "hooks", select: {h.name, h.image})
+    Repo.all(from h in "hooks", where: not is_nil(h.image), select: {h.name, h.updated_at})
     |> Map.new()
   rescue
     _ -> %{}
+  end
+
+  @doc "Template image binary for a hook, or nil if the hook or image is missing."
+  def get_hook_image(name) when is_binary(name) do
+    Repo.one(from h in "hooks", where: h.name == ^name, select: h.image)
   end
 
   @doc "Get a single hook by name, including image binary. Returns nil if not found."

@@ -112,6 +112,7 @@ const ScreenshotCanvas = {
     let sel = null       // detection region {x,y,w,h}
     let selClick = null  // click region {x,y,w,h}
     let selScan = null   // scan region {x,y,w,h}
+    let matches = []
     let mode = "detect"  // "detect" | "click" | "scan"
     let precisionMode = false  // whether shift key is held for precision
 
@@ -149,6 +150,21 @@ const ScreenshotCanvas = {
       if (sel)      drawSelection(sel,      "#f87171", null)
       if (selClick) drawSelection(selClick, "#60a5fa", "C")
       if (selScan)  drawSelection(selScan,  "#facc15", "S")
+      matches.forEach(({ rect, score }, i) => {
+        ctx.strokeStyle = "#4ade80"
+        ctx.lineWidth = 2
+        ctx.setLineDash([])
+        ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
+        ctx.fillStyle = "rgba(74, 222, 128, 0.15)"
+        ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
+        const label = `#${i + 1} ${score.toFixed(3)}`
+        ctx.font = "bold 14px monospace"
+        const ty = rect.y - 4 > 14 ? rect.y - 4 : rect.y + rect.h + 16
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)"
+        ctx.fillRect(rect.x, ty - 13, ctx.measureText(label).width + 6, 17)
+        ctx.fillStyle = "#4ade80"
+        ctx.fillText(label, rect.x + 3, ty)
+      })
 
       // Show precision mode indicator
       if (precisionMode && selecting) {
@@ -159,6 +175,7 @@ const ScreenshotCanvas = {
     }
 
     this.handleEvent("load_screenshot", ({ data }) => {
+      matches = []
       const newImg = new Image()
       newImg.onload = () => { img = newImg; redraw() }
       newImg.src = "data:image/jpeg;base64," + data
@@ -176,6 +193,8 @@ const ScreenshotCanvas = {
       ctx.font = "bold 18px monospace"
       ctx.fillText(`✓ ${score.toFixed(3)}`, rect.x + 4, rect.y + 22)
     })
+
+    this.handleEvent("show_matches", ({ matches: m }) => { matches = m; redraw() })
 
     this.handleEvent("set_selection", ({ x, y, w, h }) => { sel = { x, y, w, h }; redraw() })
     this.handleEvent("clear_selection", () => { sel = null; redraw() })

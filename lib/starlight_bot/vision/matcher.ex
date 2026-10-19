@@ -14,6 +14,7 @@ defmodule StarlightBot.Vision.Matcher do
   @morph_ellipse      2  # cv_MORPH_ELLIPSE — structuring element shape
   @border_constant    0  # cv_BORDER_CONSTANT
 
+  @cluster_detectors [:color_detector, :value_detector, :saturation_detector]
   @hsv_tolerance_max 30  # widest per-channel HSV slack, at confidence 0.0
   @hue_max 179           # OpenCV hue range is 0-179, not 0-359
 
@@ -65,12 +66,30 @@ defmodule StarlightBot.Vision.Matcher do
     end
   end
 
+  def find_all_with_scores(%Frame{} = frame, hook_name, opts \\ []) when is_atom(hook_name) do
+    case HookRegistry.find(hook_name) do
+      {:error, :not_found} ->
+        {:error, :hook_not_found}
+
+      {:ok, hook} ->
+        confidence = Keyword.get(opts, :confidence, hook.confidence)
+        {image_mat, offset} = crop_to_region(frame.mat, search_region(hook))
+
+        matches =
+          image_mat
+          |> scored_matches(hook, confidence)
+          |> Enum.map(fn {rect, score} -> {add_offset(rect, offset), score} end)
+
+        {:ok, matches}
+    end
+  end
+
   def score_against_mat(mat, hook_name, opts \\ []) when is_atom(hook_name) do
     case HookRegistry.find(hook_name) do
       {:error, :not_found} ->
         {:error, :hook_not_found}
 
-      {:ok, %Hook{method: :color_detector} = hook} ->
+      {:ok, %Hook{method: method} = hook} when method in @cluster_detectors ->
         confidence = Keyword.get(opts, :confidence, hook.confidence)
         score = color_detector_raw_score(mat, hook, confidence)
         match = color_cluster_match(mat, hook, confidence, :first)
@@ -136,7 +155,7 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp find_with_score_resolved(_frame, {:error, :not_found}, _cache, _opts), do: {:error, :hook_not_found}
 
-  defp find_with_score_resolved(frame, {:ok, %Hook{method: :color_detector} = hook}, _cache, opts) do
+  defp find_with_score_resolved(frame, {:ok, %Hook{method: method} = hook}, _cache, opts) when method in @cluster_detectors do
     confidence = Keyword.get(opts, :confidence, hook.confidence)
     {image_mat, offset} = crop_to_region(frame.mat, search_region(hook))
     score = color_detector_raw_score(image_mat, hook, confidence)
@@ -232,7 +251,7 @@ defmodule StarlightBot.Vision.Matcher do
     |> Enum.into(%{}, fn {:ok, entry} -> entry end)
   end
 
-  defp search_region(%Hook{method: :color_detector, region: region}), do: region
+  defp search_region(%Hook{method: method, region: region}) when method in @cluster_detectors, do: region
   defp search_region(%Hook{method: :grayscale_detector, region: region}), do: region
   defp search_region(%Hook{scan_region: scan}) when not is_nil(scan), do: scan
   defp search_region(%Hook{region: region}), do: region
@@ -243,7 +262,7 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp add_offset({x, y, w, h}, {ox, oy}), do: {x + ox, y + oy, w, h}
 
-  defp run_match(image_mat, %Hook{method: :color_detector} = hook, confidence, mode) do
+  defp run_match(image_mat, %Hook{method: method} = hook, confidence, mode) when method in @cluster_detectors do
     color_cluster_match(image_mat, hook, confidence, mode)
   end
 
@@ -304,8 +323,8 @@ defmodule StarlightBot.Vision.Matcher do
     end
   end
 
-  defp match_template(image, tmpl, _method_const, mask_mat) when not is_nil(mask_mat),
-    do: Evision.matchTemplate(image, tmpl, @tm_ccorr_normed, mask: mask_mat)
+  defp match_template(image, tmpl, method_const, mask_mat) when not is_nil(mask_mat),
+    do: Evision.matchTemplate(image, tmpl, method_const, mask: mask_mat)
   defp match_template(image, tmpl, method_const, nil),
     do: Evision.matchTemplate(image, tmpl, method_const)
 
@@ -320,12 +339,17 @@ defmodule StarlightBot.Vision.Matcher do
   end
 
   defp extract_matches(result_mat, tmpl_mat, confidence, :all) do
+    result_mat
+    |> extract_matches(tmpl_mat, confidence, :all_scored)
+    |> Enum.map(fn {rect, _score} -> rect end)
+  end
+
+  defp extract_matches(result_mat, tmpl_mat, confidence, :all_scored) do
     {tw, th} = mat_wh(tmpl_mat)
     {_rows, cols} = result_dims(result_mat)
 
-    raw = Evision.Mat.to_binary(result_mat, 0)
-
-    for(<<v::float-32-little <- raw>>, do: v)
+    result_mat
+    |> scores()
     |> Enum.with_index()
     |> Enum.filter(fn {v, _} -> v >= confidence end)
     |> Enum.map(fn {v, i} -> {v, rem(i, cols), div(i, cols)} end)
@@ -334,11 +358,52 @@ defmodule StarlightBot.Vision.Matcher do
   end
 
   defp greedy_nms([], _tw, _th, acc), do: Enum.reverse(acc)
-  defp greedy_nms([{_, cx, cy} | rest], tw, th, acc) do
+  defp greedy_nms([{v, cx, cy} | rest], tw, th, acc) do
     remaining = Enum.reject(rest, fn {_, ox, oy} ->
       abs(ox - cx) < tw and abs(oy - cy) < th
     end)
-    greedy_nms(remaining, tw, th, [{cx, cy, tw, th} | acc])
+    greedy_nms(remaining, tw, th, [{{cx, cy, tw, th}, v} | acc])
+  end
+
+  defp scored_matches(_image_mat, %Hook{method: method, color: nil}, _confidence) when method in @cluster_detectors, do: []
+
+  defp scored_matches(image_mat, %Hook{method: method} = hook, confidence) when method in @cluster_detectors do
+    tolerance = confidence_to_hsv_tolerance(confidence)
+    min_area = scaled_min_cluster_size(hook, image_mat)
+
+    image_mat
+    |> color_cluster_rects(method, hook.color, tolerance)
+    |> Enum.filter(fn {area, _rect} -> area >= min_area end)
+    |> Enum.sort_by(fn {area, _rect} -> area end, :desc)
+    |> Enum.map(fn {area, rect} ->
+      {rect, if(min_area <= 0, do: 1.0, else: min(area / min_area, 1.0))}
+    end)
+  end
+
+  defp scored_matches(image_mat, %Hook{method: :grayscale_detector}, confidence) do
+    score = grayscale_score(image_mat)
+    {h, w} = mat_hw(image_mat)
+    if score >= confidence, do: [{{0, 0, w, h}, score}], else: []
+  end
+
+  defp scored_matches(_image_mat, %Hook{method: method, keypoints: keypoints}, _confidence)
+       when method in [:sift, :akaze] and keypoints in [nil, []], do: []
+
+  defp scored_matches(image_mat, %Hook{method: method} = hook, confidence) when method in [:sift, :akaze] do
+    case feature_score_and_rect(image_mat, hook.keypoints, hook.descriptors, hook.gray_mat, method, hook.feature_channel) do
+      {score, rect} when score >= confidence and rect != nil -> [{rect, score}]
+      _ -> []
+    end
+  end
+
+  defp scored_matches(image_mat, %Hook{} = hook, confidence) do
+    do_match(image_mat, hook.mat, hook.gray_mat, hook.mask_mat, hook.keypoints, hook.descriptors, hook.method, hook.feature_channel, confidence, :all_scored)
+  rescue
+    e in ArgumentError ->
+      Logger.warning("Matcher: #{hook.name} raised #{Exception.message(e)} during match — treating as not found",
+        module: __MODULE__)
+
+      []
   end
 
   defp feature_matches(_image_mat, keypoints, _descriptors, _tmpl_gray_mat, _method, _feature_channel, _confidence)
@@ -554,8 +619,7 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp max_loc(result_mat) do
     {_rows, cols} = result_dims(result_mat)
-    raw = Evision.Mat.to_binary(result_mat, 0)
-    values = for(<<v::float-32-little <- raw>>, do: v)
+    values = scores(result_mat)
 
     case values do
       [] ->
@@ -564,6 +628,15 @@ defmodule StarlightBot.Vision.Matcher do
       _ ->
         {max_val, max_idx} = values |> Enum.with_index() |> Enum.max_by(fn {v, _i} -> v end)
         {max_val, {rem(max_idx, cols), div(max_idx, cols)}}
+    end
+  end
+
+  defp scores(result_mat) do
+    for <<cell::binary-4 <- Evision.Mat.to_binary(result_mat, 0)>> do
+      case cell do
+        <<v::float-32-little>> -> v
+        _ -> 0.0
+      end
     end
   end
 
@@ -576,7 +649,7 @@ defmodule StarlightBot.Vision.Matcher do
 
     clusters =
       image_mat
-      |> color_cluster_rects(hook.color, tolerance)
+      |> color_cluster_rects(hook.method, hook.color, tolerance)
       |> Enum.filter(fn {area, _rect} -> area >= min_area end)
       |> Enum.sort_by(fn {area, _rect} -> area end, :desc)
 
@@ -598,7 +671,7 @@ defmodule StarlightBot.Vision.Matcher do
     tolerance = confidence_to_hsv_tolerance(confidence)
     min_area = scaled_min_cluster_size(hook, image_mat)
 
-    case color_cluster_rects(image_mat, hook.color, tolerance) do
+    case color_cluster_rects(image_mat, hook.method, hook.color, tolerance) do
       [] ->
         0.0
 
@@ -629,15 +702,25 @@ defmodule StarlightBot.Vision.Matcher do
     _ -> 0.0
   end
 
-  def color_cluster_rects(image_mat, {h, s, v}, tolerance) do
+  def color_cluster_rects(image_mat, color, tolerance), do: color_cluster_rects(image_mat, :color_detector, color, tolerance)
+
+  def color_cluster_rects(image_mat, method, {h, s, v}, tolerance) do
     hsv = Evision.cvtColor(image_mat, @color_bgr2hsv)
-    mask = color_mask(hsv, h, s, v, tolerance)
+    mask = cluster_mask(hsv, method, {h, s, v}, tolerance)
     {contours, _hierarchy} = Evision.findContours(mask, @retr_external, @chain_approx_simple)
 
     Enum.map(contours, fn contour ->
       {Evision.contourArea(contour), Evision.boundingRect(contour)}
     end)
   end
+
+  defp cluster_mask(hsv_mat, :color_detector, {h, s, v}, tolerance), do: color_mask(hsv_mat, h, s, v, tolerance)
+
+  defp cluster_mask(hsv_mat, :value_detector, {_h, _s, v}, tolerance),
+    do: Evision.inRange(hsv_mat, {0, 0, max(v - tolerance, 0)}, {@hue_max, 255, min(v + tolerance, 255)})
+
+  defp cluster_mask(hsv_mat, :saturation_detector, {_h, s, _v}, tolerance),
+    do: Evision.inRange(hsv_mat, {0, max(s - tolerance, 0), 0}, {@hue_max, min(s + tolerance, 255), 255})
 
   defp color_mask(hsv_mat, h, s, v, tolerance) do
     s_lo = max(s - tolerance, 0)

@@ -3,6 +3,22 @@ defmodule StarlightBot.Vision.MatcherTest do
 
   alias StarlightBot.Vision.Matcher
 
+  describe "color_cluster_rects/4" do
+    test "value_detector finds dark blobs whatever their hue, unlike color_detector" do
+      mat = two_blobs({0, 0, 40}, {40, 0, 0})
+
+      assert [_, _] = Matcher.color_cluster_rects(mat, :value_detector, {90, 200, 40}, 6)
+      assert [{_area, {10, 20, 20, 20}}] = Matcher.color_cluster_rects(mat, :color_detector, {0, 255, 40}, 6)
+    end
+
+    test "saturation_detector separates vivid from pale at the same brightness" do
+      mat = two_blobs({0, 0, 255}, {200, 200, 255})
+
+      assert [{_area, {10, 20, 20, 20}}] = Matcher.color_cluster_rects(mat, :saturation_detector, {90, 255, 0}, 6)
+      assert [_, _] = Matcher.color_cluster_rects(mat, :value_detector, {0, 0, 255}, 6)
+    end
+  end
+
   describe "inner_ring_mask/2" do
     test "zeroes out the interior of a large solid region, keeping only the edge band" do
       mask = solid_mask(40, 40)
@@ -223,6 +239,12 @@ defmodule StarlightBot.Vision.MatcherTest do
   defp thin_line_mask(w, h) do
     mat = Evision.Mat.from_binary(:binary.copy(<<0>>, w * h), {:u, 8}, h, w, 1)
     Evision.rectangle(mat, {0, div(h, 2)}, {w - 1, div(h, 2)}, 255, thickness: 1)
+  end
+
+  defp two_blobs(left_bgr, right_bgr) do
+    Evision.Mat.from_binary(:binary.copy(<<128, 128, 128>>, 100 * 60), {:u, 8}, 60, 100, 3)
+    |> Evision.rectangle({10, 20}, {29, 39}, left_bgr, thickness: -1)
+    |> Evision.rectangle({70, 20}, {89, 39}, right_bgr, thickness: -1)
   end
 
   defp pixel(mat, x, y) do

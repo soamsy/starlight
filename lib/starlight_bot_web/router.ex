@@ -35,6 +35,10 @@ defmodule StarlightBotWeb.Router do
     end
   end
 
+  scope "/", StarlightBotWeb do
+    get "/hooks/:name/thumb.png", HookThumbController, :show
+  end
+
   if Mix.env() == :dev do
     pipeline :dev_log do
       plug :accepts, ["json"]

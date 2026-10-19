@@ -170,7 +170,7 @@
                     </span>
                   </label>
                   <select name="hook[match_method]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :match_method), do: "select-warning"}"}>
-                    <%= for method <- ~w(gray rgb binary_thresh color_detector grayscale_detector edge akaze sift) do %>
+                    <%= for method <- ~w(gray rgb binary_thresh color_detector value_detector saturation_detector grayscale_detector edge akaze sift) do %>
                       <option value={method} selected={to_string(@form[:match_method].value) == method}>
                         <%= method %>
                       </option>
@@ -229,7 +229,7 @@
               <div class="flex justify-between text-xs text-base-content/40 px-1 mt-0.5">
                 <span>0.0</span><span>0.5</span><span>1.0</span>
               </div>
-              <p class="text-xs text-base-content/40 mt-0.5">For color_detector: how tight the color match is instead of a correlation threshold — 1.0 requires an exact HSV match, 0.0 allows up to 30 points of slack per channel. For grayscale_detector: how desaturated the region must be — 1.0 requires zero average saturation, 0.0 accepts any.</p>
+              <p class="text-xs text-base-content/40 mt-0.5">For color_detector: how tight the color match is instead of a correlation threshold — 1.0 requires an exact HSV match, 0.0 allows up to 30 points of slack per channel. For value_detector and saturation_detector: the same slack, but only on V (brightness) or S (saturation); hue is ignored. For grayscale_detector: how desaturated the region must be — 1.0 requires zero average saturation, 0.0 accepts any.</p>
             </div>
 
             <%!-- Region --%>
@@ -338,7 +338,7 @@
                   <% end %>
                 </div>
               </div>
-              <p class="text-xs text-base-content/40 mt-0.5">color_detector only. Switch to 🎨 Color mode above and click the screenshot to sample.</p>
+              <p class="text-xs text-base-content/40 mt-0.5">color_detector uses all three; value_detector uses only V; saturation_detector uses only S. Switch to 🎨 Color mode above and click the screenshot to sample.</p>
             </div>
 
             <%!-- Min Cluster Size (color_detector only) --%>
@@ -356,7 +356,7 @@
                 min="0"
                 class={"input input-bordered input-sm w-32 font-mono #{if field_dirty?(@form, @saved_params, :min_cluster_size), do: "input-warning"}"}
               />
-              <p class="text-xs text-base-content/40 mt-0.5">color_detector only. Minimum pixel-area of a color cluster to count as detected, for a 1920×1080 frame (scaled down for smaller captures).</p>
+              <p class="text-xs text-base-content/40 mt-0.5">color, value and saturation detectors. Minimum pixel-area of a cluster to count as detected, for a 1920×1080 frame (scaled down for smaller captures).</p>
             </div>
 
             <%!-- Mask --%>
@@ -407,7 +407,17 @@
                   <%= if @test_result.mode == :region do %>
                     <span class="badge badge-accent badge-sm">⚡ region</span>
                   <% end %>
+                  <%= if @test_result.mode == :all do %>
+                    <span class="badge badge-warning badge-sm"><%= length(@test_result.matches) %> matches</span>
+                  <% end %>
                 </div>
+                <%= if @test_result.mode == :all and @test_result.matches != [] do %>
+                  <ul class="text-xs font-mono max-h-32 overflow-y-auto mb-1">
+                    <%= for {m, i} <- Enum.with_index(@test_result.matches, 1) do %>
+                      <li>#<%= i %> <strong><%= m.score %></strong> x=<%= m.rect.x %> y=<%= m.rect.y %> w=<%= m.rect.w %> h=<%= m.rect.h %></li>
+                    <% end %>
+                  </ul>
+                <% end %>
                 <p class="text-sm font-mono">Score: <strong><%= @test_result.score %></strong></p>
                 <%= if @test_result.found do %>
                   <p class="text-xs font-mono">
@@ -516,7 +526,7 @@
             <%= for hook <- filtered_hooks(@hooks, @hooks_filter) |> sorted_hooks(@sort_by, @sort_dir) do %>
               <tr class={if @editing_name == hook.name, do: "bg-primary/10 border-l-2 border-primary"}>
                 <td>
-                  <% thumb = thumb_src(Map.get(@hook_thumbnails, hook.name)) %>
+                  <% thumb = thumb_src(hook.name, Map.get(@hook_thumbnails, hook.name)) %>
                   <%= if thumb do %>
                     <img src={thumb} alt=""
                          class="w-8 h-8 object-contain rounded border border-base-300 bg-base-300" />
@@ -551,6 +561,9 @@
                       <button phx-click="test_hook_region" phx-value-name={hook.name}
                               class="btn btn-xs btn-outline btn-accent" title="Region-only capture">⚡</button>
                     <% end %>
+                    <button phx-click="test_hook_all" phx-value-name={hook.name}
+                            class="btn btn-xs btn-outline btn-warning"
+                            title="Find every match on the screenshot already loaded">All</button>
                     <button phx-click="use_hook_regions"
                             phx-value-region-x={hook.region_x} phx-value-region-y={hook.region_y}
                             phx-value-region-w={hook.region_w} phx-value-region-h={hook.region_h}

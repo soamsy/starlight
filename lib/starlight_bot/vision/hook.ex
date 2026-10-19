@@ -1,5 +1,5 @@
 defmodule StarlightBot.Vision.Hook do
-  @type match_method :: :rgb | :gray | :edge | :akaze | :sift | :binary_thresh | :color_detector | :grayscale_detector
+  @type match_method :: :rgb | :gray | :edge | :akaze | :sift | :binary_thresh | :color_detector | :value_detector | :saturation_detector | :grayscale_detector
 
   @enforce_keys [:name, :mat, :gray_mat, :method, :confidence]
   defstruct [
@@ -144,6 +144,8 @@ defmodule StarlightBot.Vision.Hook do
   defp decode_match_method("sift"), do: :sift
   defp decode_match_method("binary_thresh"), do: :binary_thresh
   defp decode_match_method("color_detector"), do: :color_detector
+  defp decode_match_method("value_detector"), do: :value_detector
+  defp decode_match_method("saturation_detector"), do: :saturation_detector
   defp decode_match_method("grayscale_detector"), do: :grayscale_detector
   defp decode_match_method(other), do: raise(ArgumentError, "unknown match_method: #{inspect(other)}")
 
