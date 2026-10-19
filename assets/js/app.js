@@ -496,12 +496,17 @@ const PreserveScroll = {
   }
 }
 
+const SCROLL_PIN_THRESHOLD_PX = 60
+
 const ScrollToBottom = {
   mounted() {
     this.el.scrollTop = this.el.scrollHeight
   },
+  beforeUpdate() {
+    this.pinned = this.el.scrollHeight - this.el.scrollTop - this.el.clientHeight <= SCROLL_PIN_THRESHOLD_PX
+  },
   updated() {
-    this.el.scrollTop = this.el.scrollHeight
+    if (this.pinned) this.el.scrollTop = this.el.scrollHeight
   }
 }
 

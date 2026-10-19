@@ -15,7 +15,10 @@ defmodule StarlightBot.Ctx do
 
   def new(fields \\ []), do: struct(__MODULE__, fields)
 
-  def log(%__MODULE__{on_log: on_log}, kind, text), do: on_log.({kind, text})
+  def log(%__MODULE__{on_log: on_log}, kind, text) do
+    StarlightBot.LogStore.append(kind, text)
+    on_log.({kind, text})
+  end
 
   def pause(%__MODULE__{on_pause: on_pause}), do: on_pause.()
 

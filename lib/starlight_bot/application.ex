@@ -11,6 +11,7 @@ defmodule StarlightBot.Application do
       [
         StarlightBot.Repo,
         {Phoenix.PubSub, name: StarlightBot.PubSub},
+        {StarlightBot.LogStore, []},
         StarlightBotWeb.Endpoint,
         {Task.Supervisor, name: StarlightBot.TaskSupervisor},
         {StarlightBot.Vision.HookRegistry, []},

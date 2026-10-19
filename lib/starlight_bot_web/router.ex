@@ -31,6 +31,7 @@ defmodule StarlightBotWeb.Router do
       live "/mirror-dungeon", Live.MirrorDungeonLive
       live "/shop-runner", Live.ShopRunnerLive
       live "/rewards", Live.RewardsLive
+      live "/log", Live.LogLive
     end
   end
 

@@ -6,7 +6,7 @@ defmodule StarlightBotWeb.Live.EventInspectorLive do
 
   @tmp_jpeg "/tmp/_starlight_event_inspector.jpg"
   @countdown_secs 2
-  @log_limit 200
+  @log_limit 1000
 
   @impl true
   def mount(_params, _session, socket) do

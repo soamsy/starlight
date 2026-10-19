@@ -3,6 +3,8 @@ import Config
 # Allows tests to skip touching KDE and a real mouse+keyboard
 config :starlight_bot, start_hardware?: false
 
+config :starlight_bot, :bot_log_dir, nil
+
 config :starlight_bot, StarlightBot.Repo,
   database: Path.expand("/tmp/starlight_test.db"),
   pool: Ecto.Adapters.SQL.Sandbox,
