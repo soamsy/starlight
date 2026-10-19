@@ -1,6 +1,6 @@
 defmodule StarlightBot.Navigation.Screens.CabinetReward do
   use StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.RewardHelpers
+  alias StarlightBot.Automation.{GiftPicker, RewardHelpers}
 
   @tier_hooks [:cabinet_reward_tier_3, :cabinet_reward_tier_2, :cabinet_reward_tier_1]
 
@@ -16,5 +16,5 @@ defmodule StarlightBot.Navigation.Screens.CabinetReward do
 
   screen :cabinet_reward_over, identity: nil, catch_all: true
 
-  def select_tier_gift(_frame, ctx), do: RewardHelpers.select_best_available_gift(@tier_hooks, :cabinet_reward, ctx)
+  def select_tier_gift(_frame, ctx), do: GiftPicker.pick(:cabinet_reward_scan_area, 1, @tier_hooks, :cabinet_reward, ctx)
 end

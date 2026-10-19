@@ -4,7 +4,8 @@ defmodule StarlightBot.Navigation.Screens.EncounterReward do
   alias StarlightBot.Automation.RewardHelpers
   alias StarlightBot.Ctx
 
-  @default_location_timeout 2_000
+  @default_location_timeout 1_000
+  @entry_settle_ms 400
   @priority_hooks [
     :encounter_reward_gain_cost,
     :encounter_reward_random_gift,
@@ -15,9 +16,10 @@ defmodule StarlightBot.Navigation.Screens.EncounterReward do
   screen :encounter_reward, identity: :encounter_reward do
     transition to: :encounter_reward_over do
       [
+        sleep(@entry_settle_ms),
         custom(&select_priority_gift/2),
         click(:encounter_reward_confirm),
-        RewardHelpers.dismiss_ego_gift_get_step()
+        RewardHelpers.dismiss_ego_gift_get_step(click_confirm: true)
       ]
     end
   end

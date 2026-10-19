@@ -6,15 +6,15 @@ defmodule StarlightBot.Automation.RewardHelpers do
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.Vision.{Capture, EgoGiftDetector, HookRegistry, Matcher}
 
-  @default_appear_timeout 5_000
+  @default_appear_timeout 1_500
   @same_slot_tolerance_px 30
   @min_ego_gift_item_area_px 550
 
-  def dismiss_ego_gift_get_step, do: custom(fn _frame, ctx -> dismiss_ego_gift_get(ctx) end)
+  def dismiss_ego_gift_get_step(opts \\ []), do: custom(fn _frame, ctx -> dismiss_ego_gift_get(ctx, opts) end)
 
   def record_ego_gift_items_step, do: custom(fn frame, ctx -> record_ego_gift_items(frame, ctx) end)
 
-  defp record_ego_gift_items(frame, ctx) do
+  def record_ego_gift_items(frame, ctx) do
     case frame || elem(Capture.grab_frame(), 1) do
       nil ->
         Ctx.log(ctx, :error, "ego gift scan: no frame available")
@@ -129,7 +129,9 @@ defmodule StarlightBot.Automation.RewardHelpers do
 
     case Engine.act([await(:ego_gift_get, timeout: appear_timeout)], ctx) do
       {:ok, _} ->
-        dismiss_visible_ego_gift_get(ctx)
+        if Keyword.get(opts, :click_confirm, false) or Engine.check(:encounter_reward),
+          do: click_ego_gift_get_confirm(ctx),
+          else: dismiss_visible_ego_gift_get(ctx)
 
       {:error, {:timeout, :ego_gift_get}} ->
         Ctx.log(ctx, :info, "ego_gift_get did not appear — assuming already dismissed")
@@ -141,19 +143,22 @@ defmodule StarlightBot.Automation.RewardHelpers do
   end
 
   defp dismiss_visible_ego_gift_get(ctx) do
-    case Engine.act([retry_until(not_hook(:ego_gift_get), [key(:space), click(:ego_gift_get_confirm)], every: 700, tries: 5)], ctx) do
+    case Engine.act([retry_until(not_hook(:ego_gift_get), [key(:space), key(:enter)], every: 300, tries: 5)], ctx) do
       {:ok, _} = ok ->
         Process.sleep(500)
         ok
 
       {:error, _} ->
         Ctx.log(ctx, :info, "ego_gift_get: space didn't dismiss it — clicking confirm instead")
-
-        Engine.act(
-          [retry_until(not_hook(:ego_gift_get), [click(:ego_gift_get_confirm)], every: 700, tries: 5), sleep(500)],
-          ctx
-        )
+        click_ego_gift_get_confirm(ctx)
     end
+  end
+
+  defp click_ego_gift_get_confirm(ctx) do
+    Engine.act(
+      [retry_until(not_hook(:ego_gift_get), [branch([{:ego_gift_get_confirm, [click(:ego_gift_get_confirm)]}])], every: 400, tries: 5), sleep(500)],
+      ctx
+    )
   end
 
   defp find_best_tier_rect(frame, tier_hooks, exclude) do
@@ -168,21 +173,20 @@ defmodule StarlightBot.Automation.RewardHelpers do
     end)
   end
 
-  defp already_clicked?({x, y, w, h}, exclude) do
+  def already_clicked?({x, y, w, h}, exclude) do
     cx = x + div(w, 2)
     cy = y + div(h, 2)
 
     Enum.any?(exclude, fn {ex, ey, ew, eh} ->
-      ecx = ex + div(ew, 2)
-      ecy = ey + div(eh, 2)
-      abs(cx - ecx) <= @same_slot_tolerance_px and abs(cy - ecy) <= @same_slot_tolerance_px
+      cx >= ex - @same_slot_tolerance_px and cx <= ex + ew + @same_slot_tolerance_px and
+        cy >= ey - @same_slot_tolerance_px and cy <= ey + eh + @same_slot_tolerance_px
     end)
   end
 
   def click_rect({x, y, w, h}, ctx) do
     case Runner.to_screen_point({x + div(w, 2), y + div(h, 2)}) do
       {:ok, {sx, sy}} ->
-        Mouse.visual_click(sx, sy)
+        Mouse.click(sx, sy, settle_ms: 50)
         {:ok, nil}
 
       {:error, reason} ->
