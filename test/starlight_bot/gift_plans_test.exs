@@ -13,9 +13,10 @@ defmodule StarlightBot.GiftPlansTest do
       "library" => %{
         "keep_lists" => [%{"id" => "kp_1", "name" => "Core", "gifts" => ["Fiery Down"]}],
         "upties" => [%{"id" => "up_1", "name" => "Glimpse +2", "gift" => "Glimpse of Flames", "target_level" => 2}],
-        "tiered_fusions" => [
-          %{"id" => "tf_1", "name" => "Glimpse", "target" => "Glimpse of Flames", "routes" => []},
-          %{"id" => "tf_2", "name" => "Hellterfly", "target" => "Hellterfly's Dream", "routes" => []}
+        "fusions" => [
+          %{"id" => "tf_1", "name" => "Glimpse", "type" => "tiered", "target" => "Glimpse of Flames", "routes" => []},
+          %{"id" => "tf_2", "name" => "Hellterfly", "type" => "tiered", "target" => "Hellterfly's Dream", "routes" => []},
+          %{"id" => "fx_1", "name" => "Wholeness", "type" => "fixed", "target" => "Wholeness", "buy_missing" => true, "sub_fusions" => %{}}
         ],
         "shopping_lists" => []
       },
@@ -26,10 +27,10 @@ defmodule StarlightBot.GiftPlansTest do
           "name" => "Standard",
           "keep" => "kp_1",
           "steps" => [
-            %{"id" => "st_1", "kind" => "tiered_fusion", "fusions" => ["tf_1", "tf_2"], "enabled" => true},
-            %{"id" => "st_2", "kind" => "fixed_fusion", "target" => "Wholeness", "enabled" => true},
+            %{"id" => "st_1", "kind" => "fusion", "fusions" => ["tf_1", "tf_2"], "enabled" => true},
+            %{"id" => "st_2", "kind" => "fusion", "fusions" => ["fx_1"], "enabled" => true},
             %{"id" => "st_3", "kind" => "uptie", "upties" => ["up_1", "up_gone"], "max_gifts" => 1, "enabled" => true},
-            %{"id" => "st_4", "kind" => "tiered_fusion", "fusions" => [], "enabled" => true}
+            %{"id" => "st_4", "kind" => "fusion", "fusions" => [], "enabled" => true}
           ]
         }
       ],
@@ -59,12 +60,113 @@ defmodule StarlightBot.GiftPlansTest do
                MapSet.new(["Fiery Down", "Glimpse of Flames", "Hellterfly's Dream", "Wholeness", "Ing A", "Ing B"])
     end
 
+    test "protects the gift an uptie step works on, skipping missing uptie definitions" do
+      data = plan()
+      workflow = %{"id" => "wf_3", "keep" => nil, "steps" => [%{"id" => "st_9", "kind" => "uptie", "upties" => ["up_gone", "up_1"], "enabled" => true}]}
+
+      assert GiftPlans.protected_set(data, workflow, []) == MapSet.new(["Glimpse of Flames"])
+    end
+
     test "ignores disabled steps" do
       data = plan()
       [workflow] = Enum.filter(data["workflows"], &(&1["id"] == "wf_2"))
       workflow = update_in(workflow, ["steps"], fn steps -> Enum.map(steps, &Map.put(&1, "enabled", false)) end)
 
       assert GiftPlans.protected_set(data, workflow, []) == MapSet.new(["Fiery Down"])
+    end
+  end
+
+  describe "nested workflows" do
+    defp nested_plan do
+      run = fn id, target -> %{"id" => id, "kind" => "workflow", "workflow" => target, "enabled" => true} end
+      refresh = %{"id" => "st_r", "kind" => "refresh", "enabled" => true}
+
+      %{
+        plan()
+        | "workflows" => [
+            %{"id" => "wf_a", "name" => "A", "keep" => "kp_1", "steps" => [run.("st_a", "wf_b")]},
+            %{"id" => "wf_b", "name" => "B", "keep" => nil, "steps" => [refresh, run.("st_b", "wf_c")]},
+            %{"id" => "wf_c", "name" => "C", "keep" => nil, "steps" => [%{"id" => "st_c", "kind" => "uptie", "upties" => ["up_1"], "enabled" => true}]},
+            %{"id" => "wf_d", "name" => "D", "keep" => nil, "steps" => []}
+          ]
+      }
+    end
+
+    test "an exit step needs no settings and labels itself" do
+      step = GiftPlans.new_step("bail", plan())
+      assert Map.take(step, ["kind", "enabled", "condition"]) == %{"kind" => "bail", "enabled" => true, "condition" => nil}
+      assert GiftPlans.step_label(plan(), step) == "Exit Workflow"
+
+      data = update_in(nested_plan()["workflows"], fn [a, b | rest] -> [a, Map.update!(b, "steps", &[step | &1]) | rest] end)
+      assert GiftPlans.issues(data) == GiftPlans.issues(nested_plan())
+    end
+
+    test "a workflow can't run itself or anything that leads back to it" do
+      data = nested_plan()
+
+      assert GiftPlans.creates_cycle?(data, "wf_a", "wf_a")
+      assert GiftPlans.creates_cycle?(data, "wf_c", "wf_a")
+      assert GiftPlans.creates_cycle?(data, "wf_b", "wf_a")
+      refute GiftPlans.creates_cycle?(data, "wf_c", "wf_d")
+      refute GiftPlans.creates_cycle?(data, "wf_d", "wf_a")
+    end
+
+    test "expand_steps inlines nested steps and protection reaches into them while only the top keep list applies" do
+      data = nested_plan()
+      top = GiftPlans.find_workflow(data, "wf_a")
+
+      assert data |> GiftPlans.expand_steps(top) |> Enum.map(& &1["id"]) == ["st_r", "st_c"]
+      assert GiftPlans.protected_set(data, top, []) == MapSet.new(["Fiery Down", "Glimpse of Flames"])
+    end
+
+    test "issues flag a cycle and a missing workflow" do
+      data = nested_plan()
+      looped = update_in(data, ["workflows"], &Enum.map(&1, fn
+        %{"id" => "wf_c"} = wf -> Map.update!(wf, "steps", fn steps -> steps ++ [%{"id" => "st_x", "kind" => "workflow", "workflow" => "wf_a", "enabled" => true}] end)
+        %{"id" => "wf_d"} = wf -> Map.put(wf, "steps", [%{"id" => "st_y", "kind" => "workflow", "workflow" => "wf_gone", "enabled" => true}])
+        wf -> wf
+      end))
+
+      issues = GiftPlans.issues(looped)
+      assert Enum.any?(issues, &(&1 =~ "C: step 2 (Run Workflow) runs A, which leads back to C."))
+      assert Enum.any?(issues, &(&1 =~ "D: step 1 (Run Workflow) has no workflow selected"))
+      assert GiftPlans.expand_steps(looped, GiftPlans.find_workflow(looped, "wf_a")) |> Enum.map(& &1["id"]) == ["st_r", "st_c"]
+    end
+  end
+
+  describe "fixed fusion definitions" do
+    test "protect the target, its ingredients, and what their sub-fusions reach" do
+      gifts = [gift("g1", "Wholeness", 4, "g2,g3"), gift("g2", "Ing A", 3, "g4,g5"), gift("g3", "Ing B", 2), gift("g4", "Deep A", 1), gift("g5", "Deep B", 1)]
+
+      data =
+        plan()
+        |> update_in(["library", "fusions"], fn defs ->
+          Enum.map(defs, fn
+            %{"id" => "fx_1"} = d -> Map.put(d, "sub_fusions", %{"Ing A" => "fx_2"})
+            d -> d
+          end) ++ [%{"id" => "fx_2", "name" => "Ing A", "type" => "fixed", "target" => "Ing A", "sub_fusions" => %{}}]
+        end)
+
+      workflow = %{"id" => "wf_x", "keep" => nil, "steps" => [%{"id" => "s", "kind" => "fusion", "fusions" => ["fx_1"], "enabled" => true}]}
+
+      assert GiftPlans.protected_set(data, workflow, gifts) == MapSet.new(["Wholeness", "Ing A", "Ing B", "Deep A", "Deep B"])
+    end
+
+    test "issues flag a missing recipe and a sub-fusion aimed at the wrong gift" do
+      by_name = Map.new([gift("g1", "Wholeness", 4, "g2,g3"), gift("g2", "Ing A", 2), gift("g3", "Ing B", 2), gift("g9", "Plain", 4)], &{&1.name, &1})
+
+      data =
+        update_in(plan(), ["library", "fusions"], fn defs ->
+          Enum.map(defs, fn
+            %{"id" => "fx_1"} = d -> Map.put(d, "sub_fusions", %{"Ing A" => "tf_1", "Ing B" => "gone"})
+            d -> d
+          end) ++ [%{"id" => "fx_3", "name" => "Bad", "type" => "fixed", "target" => "Plain", "sub_fusions" => %{}}]
+        end)
+
+      issues = GiftPlans.issues(data, by_name)
+      assert "Wholeness: the sub-fusion for Ing A (Glimpse) targets Glimpse of Flames." in issues
+      assert "Wholeness: the sub-fusion for Ing B was deleted." in issues
+      assert "Bad: Plain has no fixed recipe." in issues
     end
   end
 
@@ -98,6 +200,65 @@ defmodule StarlightBot.GiftPlansTest do
 
     test "cost checks fail when cost is unknown" do
       refute GiftPlans.eval_condition(%{"op" => "cost_gte", "value" => 0}, %{wallet: nil, owned: MapSet.new()})
+      refute GiftPlans.eval_condition(%{"op" => "cost_lt", "value" => 100}, %{wallet: nil, owned: MapSet.new()})
+    end
+
+    test "cost under passes only below the value", %{env: env} do
+      assert GiftPlans.eval_condition(%{"op" => "cost_lt", "value" => 251}, env)
+      refute GiftPlans.eval_condition(%{"op" => "cost_lt", "value" => 250}, env)
+      assert GiftPlans.condition_label(%{"op" => "cost_lt", "value" => 250}) == "cost < 250"
+    end
+
+    test "all fusions complete checks top-level fusion targets against owned gifts" do
+      plan = %{
+        "library" => %{
+          "fusions" => [
+            %{"id" => "fu_top", "target" => "Top", "sub_fusions" => %{"Mid" => "fu_mid"}},
+            %{"id" => "fu_mid", "target" => "Mid"},
+            %{"id" => "fu_blank", "target" => nil}
+          ]
+        }
+      }
+
+      leaf = %{"op" => "fusions_complete"}
+      assert GiftPlans.eval_condition(leaf, %{plan: plan, owned: MapSet.new(["Top"])})
+      refute GiftPlans.eval_condition(leaf, %{plan: plan, owned: MapSet.new(["Mid"])})
+    end
+
+    test "all upties complete needs every uptie gift owned at its target level" do
+      plan = %{
+        "library" => %{
+          "upties" => [
+            %{"gift" => "A", "target_level" => 2},
+            %{"gift" => "B", "target_level" => 3},
+            %{"gift" => nil, "target_level" => 2}
+          ]
+        }
+      }
+
+      leaf = %{"op" => "upties_complete"}
+      done = %{1 => %{name: "A", uptie: 2}, 2 => %{name: "B", uptie: 3}}
+      assert GiftPlans.eval_condition(leaf, %{plan: plan, inventory: done})
+      refute GiftPlans.eval_condition(leaf, %{plan: plan, inventory: %{done | 2 => %{name: "B", uptie: 2}}})
+      refute GiftPlans.eval_condition(leaf, %{plan: plan, inventory: Map.delete(done, 2)})
+      assert GiftPlans.condition_label(leaf) == "all upties complete"
+    end
+
+    test "a specific fusion or uptie is done when its own target is reached" do
+      plan = %{
+        "library" => %{
+          "fusions" => [%{"id" => "fu_1", "name" => "Make Top", "target" => "Top"}],
+          "upties" => [%{"id" => "up_1", "name" => "A to +3", "gift" => "A", "target_level" => 3}]
+        }
+      }
+
+      env = %{plan: plan, owned: MapSet.new(["Top", "A"]), inventory: %{1 => %{name: "A", uptie: 2}}}
+      assert GiftPlans.eval_condition(%{"op" => "fusion_done", "fusion" => "fu_1"}, env)
+      refute GiftPlans.eval_condition(%{"op" => "fusion_done", "fusion" => "fu_gone"}, env)
+      refute GiftPlans.eval_condition(%{"op" => "uptie_done", "uptie" => "up_1"}, env)
+      assert GiftPlans.eval_condition(%{"op" => "uptie_done", "uptie" => "up_1"}, %{env | inventory: %{1 => %{name: "A", uptie: 3}}})
+      assert GiftPlans.condition_label(%{"op" => "uptie_done", "uptie" => "up_1"}, plan) == "uptie A to +3 done"
+      assert GiftPlans.condition_label(%{"op" => "fusion_done", "fusion" => "fu_gone"}, plan) == "fusion (deleted) done"
     end
   end
 
@@ -128,12 +289,12 @@ defmodule StarlightBot.GiftPlansTest do
 
     assert Enum.any?(issues, &String.starts_with?(&1, "Floor 1 has no workflow"))
     assert "Standard: step 3 (Uptie) references a deleted definition." in issues
-    assert "Standard: step 4 (Tiered Fusion) has no definitions selected." in issues
+    assert "Standard: step 4 (Fusion) has no definitions selected." in issues
   end
 
   test "step_label/2 lists every referenced definition in order" do
     [fusion | _] = GiftPlans.find_workflow(plan(), "wf_2")["steps"]
-    assert GiftPlans.step_label(plan(), fusion) == "Tiered Fusion · Glimpse › Hellterfly"
+    assert GiftPlans.step_label(plan(), fusion) == "Fusion · Glimpse › Hellterfly"
   end
 
   describe "fodder, selling, and uptie planning" do
@@ -143,21 +304,23 @@ defmodule StarlightBot.GiftPlansTest do
         %{id: "g2", name: "Junk T1", tier: 1, selling_cost: 50},
         %{id: "g3", name: "Pricey T1", tier: 1, selling_cost: 80},
         %{id: "g4", name: "Junk T2", tier: 2, selling_cost: 90},
-        %{id: "g5", name: "Wealth", tier: 6, selling_cost: 999}
+        %{id: "g5", name: "Wealth", tier: 6, selling_cost: 999},
+        %{id: "g6", name: "Uptied T1", tier: 1, selling_cost: 200}
       ]
 
       owned = %{
         "g1" => %{name: "Keep Me", uptie: 0},
         "g2" => %{name: "Junk T1", uptie: 0},
-        "g3" => %{name: "Pricey T1", uptie: 1},
+        "g3" => %{name: "Pricey T1", uptie: 0},
         "g4" => %{name: "Junk T2", uptie: 0},
-        "g5" => %{name: "Wealth", uptie: 0}
+        "g5" => %{name: "Wealth", uptie: 0},
+        "g6" => %{name: "Uptied T1", uptie: 1}
       }
 
       %{gifts: gifts, owned: owned, by_id: Map.new(gifts, &{&1.id, &1}), by_name: Map.new(gifts, &{&1.name, &1})}
     end
 
-    test "fodder/3 drops protected gifts and tiers outside 1 to 4", %{owned: owned, by_id: by_id} do
+    test "fodder/3 drops protected gifts, uptied gifts and tiers outside 1 to 4", %{owned: owned, by_id: by_id} do
       names = owned |> GiftPlans.fodder(MapSet.new(["Keep Me"]), by_id) |> Enum.map(& &1.name) |> Enum.sort()
       assert names == ["Junk T1", "Junk T2", "Pricey T1"]
     end
@@ -168,19 +331,78 @@ defmodule StarlightBot.GiftPlansTest do
       assert Enum.map(GiftPlans.sell_order(fodder, [2]), & &1.name) == ["Junk T2"]
     end
 
-    test "uptie_plan/5 skips unowned and finished gifts and stops when it can't pay in full", %{owned: owned, by_name: by_name} do
+    test "sell_plan/3 takes gifts in order until their known prices cover what's needed", %{owned: owned, by_id: by_id} do
+      queue = owned |> GiftPlans.fodder(MapSet.new(["Keep Me"]), by_id) |> GiftPlans.sell_order([1, 2])
+      names = fn {gifts, total} -> {Enum.map(gifts, & &1.name), total} end
+
+      assert names.(GiftPlans.sell_plan(queue, 100, 5)) == {["Pricey T1", "Junk T1"], 130}
+      assert names.(GiftPlans.sell_plan(queue, 80, 5)) == {["Pricey T1"], 80}
+      assert names.(GiftPlans.sell_plan(queue, 500, 5)) == {["Pricey T1", "Junk T1", "Junk T2"], 220}
+      assert names.(GiftPlans.sell_plan(queue, 500, 2)) == {["Pricey T1", "Junk T1"], 130}
+      assert names.(GiftPlans.sell_plan(queue, nil, 2)) == {["Pricey T1", "Junk T1"], 130}
+    end
+
+    test "uptie_plan/5 skips unowned and finished gifts, falls back to +1, and stops when it can't pay in full", %{owned: owned, by_name: by_name} do
       defs = [
         %{"gift" => "Not Owned", "target_level" => 2},
-        %{"gift" => "Pricey T1", "target_level" => 1},
+        %{"gift" => "Uptied T1", "target_level" => 1},
         %{"gift" => "Keep Me", "target_level" => 2},
         %{"gift" => "Junk T1", "target_level" => 2}
       ]
 
-      assert {[%{gift: %{name: "Keep Me"}, from: 0, to: 2, price: 180}], reason} = GiftPlans.uptie_plan(defs, owned, by_name, 300, 3)
-      assert reason =~ "can't afford Junk T1 +2 (150, have 120)"
+      assert {[%{gift: %{name: "Keep Me"}, from: 0, to: 2, price: 180}, %{gift: %{name: "Junk T1"}, from: 0, to: 1, price: 50}], reason} =
+               GiftPlans.uptie_plan(defs, owned, by_name, 300, 3)
+      assert reason =~ "can't afford Junk T1 +2 (150, have 120), going to +1"
+
+      assert {[%{gift: %{name: "Keep Me"}}], reason} = GiftPlans.uptie_plan(defs, owned, by_name, 220, 3)
+      assert reason =~ "can't afford Junk T1 +2 (150, have 40)"
 
       assert {[_, _], "end of list"} = GiftPlans.uptie_plan(defs, owned, by_name, 400, 3)
       assert {[_], "reached max gifts"} = GiftPlans.uptie_plan(defs, owned, by_name, 400, 1)
+    end
+  end
+
+  test "list_rank/2 matches gift names and Any-tier entries by their position" do
+    entries = ["Fiery Down", GiftPlans.tier_entry(3), "Glimpse"]
+
+    assert GiftPlans.list_rank(entries, %{name: "Fiery Down", tier: 2}) == 0
+    assert GiftPlans.list_rank(entries, %{name: "Some T3", tier: 3}) == 1
+    assert GiftPlans.list_rank(entries, %{name: "Glimpse", tier: 3}) == 1
+    assert GiftPlans.list_rank(entries, %{name: "Other T2", tier: 2}) == nil
+    assert GiftPlans.entry_label("tier:3") == "Any T3"
+    assert GiftPlans.parse_tier_entry("Fiery Down") == nil
+  end
+
+  describe "gift search" do
+    test "gift_search_starlight_cost/1 is the cumulative Starlight total for the number of picks" do
+      assert Enum.map(0..3, &GiftPlans.gift_search_starlight_cost/1) == [0, 70, 160, 270]
+    end
+
+    test "gift_search_tabs/2 groups searchable gifts by tab in first-seen order and caps at 3" do
+      gifts_by_name = %{
+        "Bleed A" => %{id: "b1", name: "Bleed A", tier: 2, affinity: "bleed"},
+        "Plain" => %{id: "n1", name: "Plain", tier: 3, affinity: "none"},
+        "Bleed B" => %{id: "b2", name: "Bleed B", tier: 1, affinity: "bleed"},
+        "Big" => %{id: "x1", name: "Big", tier: 4, affinity: "bleed"},
+        "Slash" => %{id: "s1", name: "Slash", tier: 2, affinity: "slash"}
+      }
+
+      tabs = GiftPlans.gift_search_tabs(["Bleed A", "Big", "Plain", "Unknown", "Bleed B", "Slash"], gifts_by_name)
+      assert Enum.map(tabs, fn {tab, gifts} -> {tab, Enum.map(gifts, & &1.id)} end) == [{"bleed", ["b1", "b2"]}, {"keywordless", ["n1"]}]
+    end
+
+    test "issues/2 flags tier 4 picks and more than 3 gifts" do
+      gifts_by_name = %{"Big" => %{name: "Big", tier: 4}, "Small" => %{name: "Small", tier: 2}}
+      data = Map.put(GiftPlans.blank(), "gift_search", ["Big", "Small", "Small", "Small"])
+
+      assert Enum.filter(GiftPlans.issues(data, gifts_by_name), &(&1 =~ "Gift search")) == [
+               "Gift search has 4 gifts; only 3 can be picked.",
+               "Gift search: Big is T4; only T3 and under show up."
+             ]
+    end
+
+    test "normalize/1 defaults gift_search to an empty list" do
+      assert GiftPlans.normalize(%{"version" => 2})["gift_search"] == []
     end
   end
 
@@ -191,5 +413,79 @@ defmodule StarlightBot.GiftPlansTest do
     assert data["affinity"] == "burn"
     assert GiftPlans.workflow_for_floor(data, 1) == workflow
     assert GiftPlans.issues(data) == []
+  end
+
+  describe "list_remaining/2" do
+    test "counts owned gifts matching named and Any-tier entries against done_at" do
+      list = %{"gifts" => ["Fiery Down", "tier:3"], "done_at" => 2}
+      assert GiftPlans.list_remaining(list, []) == 2
+      assert GiftPlans.list_remaining(list, [%{name: "Fiery Down", tier: 2}, %{name: "Other", tier: 1}]) == 1
+      assert GiftPlans.list_remaining(list, [%{name: "Fiery Down", tier: 2}, %{name: "Some T3", tier: 3}, %{name: "Other T3", tier: 3}]) == 0
+    end
+
+    test "is nil when the list has no done_at" do
+      assert GiftPlans.list_remaining(%{"gifts" => ["Fiery Down"]}, [%{name: "Fiery Down", tier: 2}]) == nil
+      assert GiftPlans.list_remaining(%{"gifts" => ["Fiery Down"], "done_at" => nil}, []) == nil
+    end
+  end
+
+  describe "import_workflows/4" do
+    defp source_plan do
+      %{
+        "workflows" => [
+          %{"id" => "wf_loop", "name" => "Repeat", "keep" => "kp_core", "steps" => [
+            %{"id" => "st_a", "kind" => "workflow", "workflow" => "wf_check"}
+          ]},
+          %{"id" => "wf_check", "name" => "ShopCheck", "keep" => "kp_core", "steps" => [
+            %{"id" => "st_b", "kind" => "buy_list", "list" => "sl_src"},
+            %{"id" => "st_c", "kind" => "fusion", "fusions" => ["fu_bsm", "tf_shared"]},
+            %{"id" => "st_d", "kind" => "uptie", "upties" => ["up_src"]}
+          ]},
+          %{"id" => "wf_other", "name" => "Unrelated", "keep" => nil, "steps" => []}
+        ],
+        "library" => %{
+          "keep_lists" => [%{"id" => "kp_core", "name" => "Core", "gifts" => ["A"]}],
+          "shopping_lists" => [%{"id" => "sl_src", "name" => "Buys", "gifts" => ["B"]}],
+          "upties" => [%{"id" => "up_src", "name" => "Glimpse +2", "gift" => "Glimpse of Flames", "target_level" => 2}],
+          "fusions" => [
+            %{"id" => "fu_bsm", "name" => "BSM", "type" => "fixed", "target" => "BSM", "sub_fusions" => %{"Midwinter" => "tf_mid"}},
+            %{"id" => "tf_mid", "name" => "Midwinter", "type" => "tiered", "target" => "Midwinter", "routes" => []},
+            %{"id" => "tf_shared", "name" => "Glimpse", "type" => "tiered", "target" => "Glimpse of Flames", "routes" => []}
+          ]
+        }
+      }
+    end
+
+    test "copies a workflow and everything it runs, reusing same-named library entries and copying the rest" do
+      data = GiftPlans.import_workflows(plan(), source_plan(), ["wf_loop"], "SinkPoise")
+      names = Enum.map(data["workflows"], & &1["name"])
+
+      assert "Repeat" in names and "ShopCheck" in names
+      refute "Unrelated" in names
+
+      loop = Enum.find(data["workflows"], &(&1["name"] == "Repeat"))
+      check = Enum.find(data["workflows"], &(&1["name"] == "ShopCheck"))
+      assert [%{"kind" => "workflow", "workflow" => check_id}] = loop["steps"]
+      assert check_id == check["id"]
+      refute check_id == "wf_check"
+
+      [buy, fusion, uptie] = check["steps"]
+      assert GiftPlans.find_definition(data, "shopping_lists", buy["list"])["name"] == "Buys"
+      assert loop["keep"] == "kp_1"
+      assert uptie["upties"] == ["up_1"]
+
+      [bsm_id, glimpse_id] = fusion["fusions"]
+      assert glimpse_id == "tf_1"
+      bsm = GiftPlans.find_definition(data, "fusions", bsm_id)
+      assert bsm["name"] == "BSM"
+      assert GiftPlans.find_definition(data, "fusions", bsm["sub_fusions"]["Midwinter"])["name"] == "Midwinter"
+    end
+
+    test "a workflow name that already exists gets the source plan's name added" do
+      base = Map.put(plan(), "workflows", [%{"id" => "wf_x", "name" => "ShopCheck", "keep" => nil, "steps" => []}])
+      data = GiftPlans.import_workflows(base, source_plan(), ["wf_check"], "SinkPoise")
+
+      assert Enum.map(data["workflows"], & &1["name"]) == ["ShopCheck", "ShopCheck (SinkPoise)"]
+    end
   end
 end

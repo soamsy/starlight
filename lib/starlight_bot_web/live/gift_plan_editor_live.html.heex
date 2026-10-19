@@ -53,21 +53,33 @@
                 <option :for={affinity <- affinities()} value={affinity} selected={@plan_data["affinity"] == affinity}><%= affinity %></option>
               </select>
             </form>
+            <div :if={GiftPlans.cabinet_order(@plan_data) != []} id="cabinet-gift-order" phx-hook="SortableList"
+                 data-sort-event="reorder_cabinet_gifts" data-sort-scope="cabinet" data-sort-axis="x" class="flex items-center gap-1"
+                 title="Starting gift pick order. The cabinet only allows as many picks as your graces give.">
+              <div :for={{name, index} <- Enum.with_index(GiftPlans.cabinet_order(@plan_data), 1)} data-sort-id={name}
+                   class="flex items-center gap-1 bg-base-200 rounded px-1 py-0.5">
+                <span data-sort-handle class="cursor-grab text-base-content/40 select-none">⠿</span>
+                <span class="text-[10px] text-base-content/40"><%= index %></span>
+                <% gift = @gifts_by_name[name] %>
+                <img :if={gift} src={gift.image_path} class="w-6 h-6 rounded object-cover" />
+                <span class="text-[11px]"><%= name %></span>
+              </div>
+            </div>
             <span :if={issues != []} class="badge badge-warning badge-sm ml-auto" title={Enum.join(issues, "\n")}>
               <%= length(issues) %> issue(s)
             </span>
           </div>
 
           <div class="flex gap-1 flex-wrap items-center">
-            <%= for tab <- tabs(), tab != :grace do %>
+            <%= for tab <- tabs(), not accent_tab?(tab) do %>
               <button phx-click="set_tab" phx-value-tab={tab}
                       class={"btn btn-sm " <> if(@active_tab == tab, do: "btn-primary", else: "btn-ghost")}>
                 <%= tab_label(tab) %>
               </button>
             <% end %>
-            <button phx-click="set_tab" phx-value-tab="grace"
-                    class={"btn btn-sm " <> if(@active_tab == :grace, do: "btn-accent", else: "btn-accent btn-outline")}>
-              <%= tab_label(:grace) %>
+            <button :for={tab <- Enum.filter(tabs(), &accent_tab?/1)} phx-click="set_tab" phx-value-tab={tab}
+                    class={"btn btn-sm " <> if(@active_tab == tab, do: "btn-accent", else: "btn-accent btn-outline")}>
+              <%= tab_label(tab) %>
             </button>
           </div>
 
@@ -96,6 +108,24 @@
                               class="btn btn-ghost btn-2xs text-error">✕</button>
                     </div>
                   </div>
+
+                  <form phx-change="import_source" phx-submit="import_workflows" class="flex flex-col gap-1">
+                    <span class="text-[11px] text-base-content/60">Copy workflows from another plan</span>
+                    <select name="plan_id" class="select select-bordered select-xs">
+                      <option value="">pick a plan</option>
+                      <option :for={plan <- @plans} :if={plan.id != @editing_id} value={plan.id}
+                              selected={@import_source && @import_source.id == plan.id}>
+                        <%= plan.name %>
+                      </option>
+                    </select>
+                    <%= if @import_source do %>
+                      <select name="workflow" class="select select-bordered select-xs">
+                        <option value="all">all workflows</option>
+                        <option :for={wf <- @import_source.data["workflows"]} value={wf["id"]}><%= wf["name"] %> (and what it runs)</option>
+                      </select>
+                      <button type="submit" class="btn btn-xs">Copy</button>
+                    <% end %>
+                  </form>
 
                   <%= if workflow do %>
                     <form phx-change="update_workflow" class="flex flex-col gap-2">
@@ -172,9 +202,10 @@
                             <button type="button" phx-click="toggle_step" phx-value-id={step["id"]} class="flex-1 min-w-0 text-left flex flex-col">
                               <span class={"text-xs font-medium truncate " <> if(broken, do: "text-error", else: "")}>
                                 <%= GiftPlans.step_label(@plan_data, step) %>
+                                <span :if={step["repeat"]} class="badge badge-accent badge-xs ml-1">×<%= step["repeat"] + 1 %></span>
                               </span>
                               <span :if={summary = step_summary(@plan_data, step)} class="text-[10px] text-base-content/60 truncate"><%= summary %></span>
-                              <span :if={label = GiftPlans.condition_label(step["condition"])} class="text-[10px] text-secondary truncate">if <%= label %></span>
+                              <span :if={label = GiftPlans.condition_label(step["condition"], @plan_data)} class="text-[10px] text-secondary truncate">if <%= label %></span>
                             </button>
                             <button type="button" phx-click="move_step" phx-value-id={step["id"]} phx-value-dir="up" class="btn btn-ghost btn-2xs px-1">↑</button>
                             <button type="button" phx-click="move_step" phx-value-id={step["id"]} phx-value-dir="down" class="btn btn-ghost btn-2xs px-1">↓</button>
@@ -186,6 +217,10 @@
                             <div class="border-t border-base-300 pt-2 mt-1 flex flex-col gap-3 pl-8">
                               <form phx-change="update_step" class="flex items-end gap-2 flex-wrap">
                                 <input type="hidden" name="step_id" value={step["id"]} />
+                                <label class="flex flex-col gap-0.5">
+                                  <span class="text-[11px] text-base-content/60">Repeat (extra runs)</span>
+                                  <input type="number" min="0" name="step[repeat]" value={step["repeat"]} placeholder="0" phx-debounce="400" class="input input-bordered input-xs w-20" />
+                                </label>
                                 <%= case step["kind"] do %>
                                   <% "uptie" -> %>
                                     <label class="flex flex-col gap-0.5">
@@ -196,8 +231,14 @@
                                       Walks the upties in order, skipping gifts not owned or already at target. Stops after max gifts,
                                       or as soon as the next uptie's full cost can't be paid. Never upties partway.
                                     </span>
-                                  <% "tiered_fusion" -> %>
+                                  <% "fusion" -> %>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Retries after a miss (blank: no limit)</span>
+                                      <input type="number" min="0" name="step[max_retries]" value={step["max_retries"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
+                                    </label>
                                     <span class="text-[11px] text-base-content/50">
+                                      A miss is a final fusion that doesn't give the target. Once the retries run out, this step stops; it doesn't move on to the next fusion.
+                                      Retries only count tiered fusions, including ones used to get a fixed fusion's ingredients.
                                       Works on the first fusion in the list whose target isn't owned yet. Later fusions wait until earlier ones are done,
                                       so duplicate this step further down the workflow to keep working through the list.
                                     </span>
@@ -212,19 +253,6 @@
                                     <label class="flex flex-col gap-0.5">
                                       <span class="text-[11px] text-base-content/60">Max items</span>
                                       <input type="number" min="1" name="step[max_items]" value={step["max_items"]} phx-debounce="400" class="input input-bordered input-xs w-20" />
-                                    </label>
-                                  <% "fixed_fusion" -> %>
-                                    <label class="flex flex-col gap-0.5">
-                                      <span class="text-[11px] text-base-content/60">Target (fixed recipe)</span>
-                                      <select name="step[target]" class="select select-bordered select-xs">
-                                        <option value="">pick one</option>
-                                        <option :for={g <- @fixed_targets} value={g.name} selected={step["target"] == g.name}><%= g.name %> (T<%= g.tier %>)</option>
-                                      </select>
-                                    </label>
-                                    <label class="flex items-center gap-1 cursor-pointer mb-1">
-                                      <input type="hidden" name="step[buy_missing]" value="false" />
-                                      <input type="checkbox" name="step[buy_missing]" value="true" checked={step["buy_missing"]} class="checkbox checkbox-xs" />
-                                      <span class="text-xs">buy missing ingredients from the shelf</span>
                                     </label>
                                   <% "affinity_refresh" -> %>
                                     <label class="flex flex-col gap-0.5">
@@ -270,6 +298,28 @@
                                       Heals every sinner for about 15% HP and 15 SP. Heal Sinner restores much more to one sinner (about 50% HP and 45 SP).
                                       Costs <%= GiftPlans.heal_cost() %>.
                                     </span>
+                                  <% "workflow" -> %>
+                                    <label class="flex flex-col gap-0.5">
+                                      <span class="text-[11px] text-base-content/60">Workflow</span>
+                                      <select name="step[workflow]" class="select select-bordered select-xs">
+                                        <option value="">pick one</option>
+                                        <option :for={wf <- callable_workflows(@plan_data, workflow["id"])} value={wf["id"]} selected={step["workflow"] == wf["id"]}><%= wf["name"] %></option>
+                                      </select>
+                                    </label>
+                                    <span class="text-[11px] text-base-content/50 mb-1">
+                                      Runs that workflow's enabled steps here, in order. Its keep list is ignored; this workflow's keep list still applies.
+                                      Workflows that would lead back here aren't listed.
+                                    </span>
+                                  <% "bail" -> %>
+                                    <span class="text-[11px] text-base-content/50 mb-1">
+                                      Stops this workflow here; its remaining steps don't run. Inside a Run Workflow step, only that workflow stops and the one that called it carries on.
+                                      Add a condition to only exit sometimes.
+                                    </span>
+                                  <% "leave" -> %>
+                                    <span class="text-[11px] text-base-content/50 mb-1">
+                                      Leaves the shop here; nothing after it runs, including the rest of any workflow that called this one.
+                                      Add a condition to only leave sometimes.
+                                    </span>
                                   <% "budget" -> %>
                                     <label class="flex flex-col gap-0.5">
                                       <span class="text-[11px] text-base-content/60">Add to reserve (negative subtracts)</span>
@@ -298,8 +348,8 @@
 
                               <.step_definition_list :if={step["kind"] == "uptie"} step={step} field="upties"
                                                      defs={@plan_data["library"]["upties"]} label="Upties, in order:" />
-                              <.step_definition_list :if={step["kind"] == "tiered_fusion"} step={step} field="fusions"
-                                                     defs={@plan_data["library"]["tiered_fusions"]} label="Fusions, in order:" />
+                              <.step_definition_list :if={step["kind"] == "fusion"} step={step} field="fusions"
+                                                     defs={@plan_data["library"]["fusions"]} label="Fusions, in order:" />
 
                               <%= if step["kind"] == "skill_replace" do %>
                                 <div class="flex items-center gap-1 flex-wrap">
@@ -317,17 +367,10 @@
                                 </div>
                               <% end %>
 
-                              <div :if={step["kind"] in ~w(skill_replace heal heal_all revive)} class="text-[10px] text-warning">
-                                No automation for this action yet. The shop runner logs it as not implemented and moves on.
-                              </div>
-                              <div :if={step["kind"] == "uptie"} class="text-[10px] text-warning">
-                                Partly automated: the shop runner opens the uptie popup and selects the first gift, then stops until the +1/+2 hooks exist.
-                              </div>
-
                               <div class="flex flex-col gap-1">
                                 <span class="text-[11px] font-medium text-base-content/70">Run only if</span>
                                 <%= if step["condition"] do %>
-                                  <.condition_node node={step["condition"]} path="" step_id={step["id"]} />
+                                  <.condition_node node={step["condition"]} path="" values={%{"step_id" => step["id"]}} leaf={&gift_leaf(Map.put(&1, :plan_data, @plan_data))} />
                                 <% else %>
                                   <button type="button" phx-click="cond_add" phx-value-step_id={step["id"]} phx-value-path="" phx-value-node="leaf"
                                           class="btn btn-ghost btn-xs self-start">+ Add condition</button>
@@ -359,6 +402,15 @@
                     <span class="text-xs font-semibold text-base-content/70">Add step</span>
                     <button :for={kind <- palette_kinds()} phx-click="add_step" phx-value-kind={kind} disabled={is_nil(workflow)}
                             class="btn btn-outline btn-xs justify-start">+ <%= GiftPlans.kind_label(kind) %></button>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-xs font-semibold text-base-content/70"><%= GiftPlans.kind_label("workflow") %></span>
+                    <% callable = if workflow, do: callable_workflows(@plan_data, workflow["id"]), else: [] %>
+                    <button :for={wf <- callable} phx-click="add_step" phx-value-kind="workflow" phx-value-ref={wf["id"]}
+                            class="btn btn-outline btn-xs justify-start truncate">+ <%= wf["name"] %></button>
+                    <span :if={callable == []} class="text-[11px] text-base-content/40 italic">
+                      No other workflow can run here without leading back to this one.
+                    </span>
                   </div>
                   <div :for={{lib, kind} <- library_kinds()} class="flex flex-col gap-1">
                     <span class="text-xs font-semibold text-base-content/70"><%= GiftPlans.kind_label(kind) %></span>
@@ -424,22 +476,73 @@
               </div>
             <% end %>
 
-            <%= if @active_tab == :tiered_fusions do %>
+            <%= if @active_tab == :fusions do %>
               <div class="grid grid-cols-[14rem_1fr] gap-3 flex-1 min-h-0">
-                <.library_list lib="tiered_fusions" defs={@plan_data["library"]["tiered_fusions"]} selected_id={@selected_def["tiered_fusions"]} />
+                <.library_list lib="fusions" defs={@plan_data["library"]["fusions"]} selected_id={@selected_def["fusions"]} />
                 <div class="flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
-                  <%= if d = selected_definition(assigns, "tiered_fusions") do %>
+                  <%= if d = selected_definition(assigns, "fusions") do %>
                     <% target = d["target"] && @gifts_by_name[d["target"]] %>
+                    <% fixed = GiftPlans.fixed_fusion?(d) %>
                     <form phx-change="lib_update" class="flex items-end gap-2">
-                      <input type="hidden" name="lib" value="tiered_fusions" />
+                      <input type="hidden" name="lib" value="fusions" />
                       <input type="hidden" name="def_id" value={d["id"]} />
                       <label class="flex flex-col gap-0.5">
                         <span class="text-[11px] text-base-content/60">Name</span>
                         <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
                       </label>
+                      <label :if={fixed} class="flex items-center gap-1 cursor-pointer mb-1">
+                        <input type="hidden" name="def[buy_missing]" value="false" />
+                        <input type="checkbox" name="def[buy_missing]" value="true" checked={d["buy_missing"] != false} class="checkbox checkbox-xs" />
+                        <span class="text-xs">buy missing ingredients from the shelf</span>
+                      </label>
                     </form>
 
-                    <%= if target do %>
+                    <%= if fixed do %>
+                      <%= if target do %>
+                        <div class="flex items-center gap-2">
+                          <img src={target.image_path} class="w-10 h-10 rounded object-cover" />
+                          <div class="flex flex-col">
+                            <span class="text-sm font-semibold"><%= target.name %></span>
+                            <span class="text-[11px] text-base-content/60">Tier <%= target.tier %> · fixed recipe · done once owned</span>
+                          </div>
+                        </div>
+                        <span class="text-[11px] text-base-content/60">
+                          Ingredients. A missing one is bought from the shelf first (if allowed above), otherwise fused with its sub-fusion.
+                          The target, every ingredient, and each sub-fusion's target are protected.
+                        </span>
+                        <div class="flex flex-col gap-1">
+                          <%= for ingredient <- GiftPlans.ingredient_names(target, @gifts_by_id) do %>
+                            <% ing = ingredient && @gifts_by_name[ingredient] %>
+                            <% options = sub_fusion_options(@plan_data, d, ingredient) %>
+                            <div class="flex items-center gap-2 bg-base-200 rounded px-1 py-0.5">
+                              <button type="button" phx-click="show_gift" phx-value-gift={ingredient} disabled={is_nil(ing)}
+                                      class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer">
+                                <img :if={ing} src={ing.image_path} class="w-6 h-6 rounded object-cover" />
+                                <span :if={ing} class="badge badge-ghost badge-xs">T<%= ing.tier %></span>
+                                <span class="text-[11px] truncate"><%= ingredient || "unknown gift" %></span>
+                              </button>
+                              <form :if={ing} phx-change="set_sub_fusion">
+                                <input type="hidden" name="def_id" value={d["id"]} />
+                                <input type="hidden" name="ingredient" value={ingredient} />
+                                <select name="sub" class="select select-bordered select-xs">
+                                  <option value="">buy only</option>
+                                  <option :for={sub <- options} value={sub["id"]} selected={(d["sub_fusions"] || %{})[ingredient] == sub["id"]}>
+                                    fuse via <%= sub["name"] %>
+                                  </option>
+                                </select>
+                              </form>
+                              <button :if={ing && options == [] && GiftPlans.ingredient_ids(ing) == []} type="button"
+                                      phx-click="create_sub_fusion" phx-value-def_id={d["id"]} phx-value-ingredient={ingredient}
+                                      class="btn btn-ghost btn-2xs">+ tiered route</button>
+                            </div>
+                          <% end %>
+                        </div>
+                      <% else %>
+                        <div class="text-xs text-base-content/50">Pick a target in the browser below: a gift with a fixed recipe.</div>
+                      <% end %>
+                    <% end %>
+
+                    <%= if target && not fixed do %>
                       <div class="flex items-center gap-2">
                         <img src={target.image_path} class="w-10 h-10 rounded object-cover" />
                         <div class="flex flex-col">
@@ -463,29 +566,44 @@
                             Clipboard: <%= @route_clipboard.name %> (T<%= @route_clipboard.tier %>, <%= length(@route_clipboard.routes) %> route(s))
                           </span>
                         </div>
+                        <div class="flex items-center gap-2">
+                          <button type="button" phx-click="rt_use_default" phx-value-def_id={d["id"]} class="btn btn-xs"
+                                  data-confirm={"Replace all routes with the tier #{target.tier} default?"}>Use T<%= target.tier %> default</button>
+                          <button type="button" phx-click="rt_make_default" phx-value-def_id={d["id"]} class="btn btn-xs"
+                                  data-confirm={"Make these routes the tier #{target.tier} default for new fusions in every plan?"}>Set as T<%= target.tier %> default</button>
+                          <span class="text-[11px] text-base-content/60">
+                            <%= case @route_defaults[target.tier] do %>
+                              <% nil -> %>No saved T<%= target.tier %> default
+                              <% routes -> %>T<%= target.tier %> default: <%= Enum.map_join(routes, ", ", &Routes.label/1) %>
+                            <% end %>
+                          </span>
+                        </div>
                         <.route_list def_id={d["id"]} routes={d["routes"] || []} tier={target.tier} />
                       </div>
-                    <% else %>
-                      <div class="text-xs text-base-content/50">Pick a target in the browser below: a Tier 2 to 4 gift without a fixed recipe.</div>
                     <% end %>
+                    <div :if={is_nil(target) and not fixed} class="text-xs text-base-content/50">Pick a target in the browser below: a Tier 2 to 4 gift without a fixed recipe.</div>
 
                     <div class="divider my-0"></div>
                     <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
                                   gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
                                   selected_gift_name={@selected_gift_name} uptie_view={@uptie_view} show_fusion_info={true}>
                       <:form :let={gift}>
-                        <%= if fusion_target_eligible?(gift) do %>
+                        <%= if (if fixed, do: fixed_target_eligible?(gift), else: fusion_target_eligible?(gift)) do %>
                           <button phx-click="set_fusion_target" phx-value-id={d["id"]} phx-value-gift={gift.name}
                                   class={"btn btn-sm " <> if(d["target"] == gift.name, do: "btn-primary", else: "btn-outline")}>
                             <%= if d["target"] == gift.name, do: "Current target", else: "Set as target" %>
                           </button>
                         <% else %>
-                          <span class="text-[11px] text-base-content/50">Not a tiered fusion target (needs Tier 2 to 4 and no fixed recipe).</span>
+                          <span class="text-[11px] text-base-content/50">
+                            <%= if fixed,
+                                  do: "Not a fixed fusion target (needs a fixed recipe).",
+                                  else: "Not a tiered fusion target (needs Tier 2 to 4 and no fixed recipe)." %>
+                          </span>
                         <% end %>
                       </:form>
                     </.gift_browser>
                   <% else %>
-                    <div class="text-xs text-base-content/40 italic">Create a tiered fusion definition to edit it here.</div>
+                    <div class="text-xs text-base-content/40 italic">Create a fusion definition to edit it here.</div>
                   <% end %>
                 </div>
               </div>
@@ -503,13 +621,26 @@
                         <span class="text-[11px] text-base-content/60">Name</span>
                         <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
                       </label>
+                      <label class="flex flex-col gap-0.5" title="Buy steps on this list skip once this many owned gifts match it, and never buy past it. Blank means never done.">
+                        <span class="text-[11px] text-base-content/60">Done at owning</span>
+                        <input type="number" name="def[done_at]" min="1" value={d["done_at"]} placeholder="never" phx-debounce="400" class="input input-bordered input-xs w-20" />
+                      </label>
                       <span class="text-[11px] text-base-content/50 mb-1">
                         Total if bought: <%= d["gifts"] |> Enum.map(&((@gifts_by_name[&1] && @gifts_by_name[&1].buying_cost) || 0)) |> Enum.sum() %> cost
                       </span>
                     </form>
-                    <span class="text-[11px] text-base-content/50">Buy steps take shelf matches in this order.</span>
+                    <span class="text-[11px] text-base-content/50">Buy steps take shelf matches in this order. An "Any T3" entry matches every T3 on the shelf.</span>
+                    <div class="flex items-center gap-1">
+                      <span class="text-[11px] text-base-content/60">Any tier:</span>
+                      <% entries = d["gifts"] %>
+                      <button :for={tier <- GiftPlans.shop_tiers()} phx-click="lib_toggle_gift" phx-value-lib="shopping_lists"
+                              phx-value-id={d["id"]} phx-value-gift={GiftPlans.tier_entry(tier)}
+                              class={"btn btn-2xs " <> if(GiftPlans.tier_entry(tier) in entries, do: "btn-secondary", else: "btn-outline")}>
+                        T<%= tier %>
+                      </button>
+                    </div>
                     <.gift_clipboard lib="shopping_lists" definition={d} clipboard={@gift_clipboard} />
-                    <.gift_order_list lib="shopping_lists" definition={d} gifts_by_name={@gifts_by_name}>
+                    <.gift_order_list lib="shopping_lists" definition={d} gifts_by_name={@gifts_by_name} selected_gift_name={@selected_gift_name}>
                       <:extra :let={gift}>
                         <span :if={gift} class="text-[10px] text-base-content/50">Buy <%= gift.buying_cost || "?" %></span>
                       </:extra>
@@ -551,9 +682,12 @@
                     </form>
                     <.gift_clipboard lib="keep_lists" definition={d} clipboard={@gift_clipboard} />
                     <div class="flex flex-wrap gap-1">
-                      <div :for={name <- d["gifts"]} class="flex items-center gap-1 bg-base-200 rounded px-1 py-0.5">
-                        <img :if={gift = @gifts_by_name[name]} src={gift.image_path} class="w-5 h-5 rounded object-cover" />
-                        <span class="text-[11px]"><%= name %></span>
+                      <div :for={name <- d["gifts"]} class={"flex items-center gap-1 rounded px-1 py-0.5 " <>
+                             if(@selected_gift_name == name, do: "bg-primary/15 ring-1 ring-primary", else: "bg-base-200")}>
+                        <button type="button" phx-click="show_gift" phx-value-gift={name} class="flex items-center gap-1 cursor-pointer">
+                          <img :if={gift = @gifts_by_name[name]} src={gift.image_path} class="w-5 h-5 rounded object-cover" />
+                          <span class="text-[11px]"><%= name %></span>
+                        </button>
                         <button phx-click="lib_toggle_gift" phx-value-lib="keep_lists" phx-value-id={d["id"]} phx-value-gift={name} class="btn btn-ghost btn-2xs px-1">✕</button>
                       </div>
                       <span :if={d["gifts"] == []} class="text-[11px] text-base-content/40 italic">No gifts kept.</span>
@@ -609,6 +743,64 @@
                     </div>
                   <% end %>
                 </div>
+              </div>
+            <% end %>
+
+            <%= if @active_tab == :gift_search do %>
+              <% picks = @plan_data["gift_search"] %>
+              <% max = GiftPlans.gift_search_max() %>
+              <div class="flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-medium text-base-content/70">
+                    Gifts to pick on the gift search screen after the cabinet, on every run. Up to <%= max %>, Tier 3 and under.
+                    Leave empty to skip gift search.
+                  </span>
+                  <span :if={picks != []} class="badge badge-warning badge-sm ml-auto whitespace-nowrap">
+                    <%= GiftPlans.gift_search_starlight_cost(length(picks)) %> Starlight
+                  </span>
+                  <span class={"badge badge-primary badge-sm " <> if(picks == [], do: "ml-auto", else: "")}><%= length(picks) %> / <%= max %></span>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  <%= for slot <- 0..(max - 1) do %>
+                    <% name = Enum.at(picks, slot) %>
+                    <% gift = name && @gifts_by_name[name] %>
+                    <div class={"rounded-lg border p-2 flex items-center gap-2 min-h-14 " <>
+                           if(name, do: "bg-primary/10 border-primary", else: "border-dashed border-base-300")}>
+                      <%= if name do %>
+                        <button type="button" phx-click="show_gift" phx-value-gift={name} class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer">
+                          <img :if={gift} src={gift.image_path} class="w-10 h-10 rounded object-cover" />
+                          <div class="flex flex-col flex-1 min-w-0">
+                            <span class="text-xs font-semibold truncate" title={name}><%= name %></span>
+                            <span :if={gift} class="text-[10px] text-base-content/60">
+                              T<%= gift.tier %> · <%= GiftPlans.gift_search_tab(gift) %> tab
+                            </span>
+                          </div>
+                        </button>
+                        <span class="badge badge-warning badge-xs whitespace-nowrap"><%= GiftPlans.gift_search_slot_cost(slot) %> Starlight</span>
+                        <button phx-click="toggle_search_gift" phx-value-gift={name} class="btn btn-ghost btn-2xs px-1">✕</button>
+                      <% else %>
+                        <span class="text-[11px] text-base-content/40 italic flex-1">Empty slot</span>
+                        <span class="badge badge-ghost badge-xs whitespace-nowrap">+<%= GiftPlans.gift_search_slot_cost(slot) %> Starlight</span>
+                      <% end %>
+                    </div>
+                  <% end %>
+                </div>
+                <div class="divider my-0"></div>
+                <.gift_browser gifts={searchable_gifts(@gifts)} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
+                              gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
+                              selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
+                  <:form :let={gift}>
+                    <button phx-click="toggle_search_gift" phx-value-gift={gift.name}
+                            disabled={gift.name not in picks and length(picks) >= max}
+                            class={"btn btn-sm " <> if(gift.name in picks, do: "btn-primary", else: "btn-outline")}>
+                      <%= cond do
+                        gift.name in picks -> "Remove from gift search"
+                        length(picks) >= max -> "Gift search is full"
+                        true -> "Add to gift search (+#{GiftPlans.gift_search_slot_cost(length(picks))} Starlight)"
+                      end %>
+                    </button>
+                  </:form>
+                </.gift_browser>
               </div>
             <% end %>
 

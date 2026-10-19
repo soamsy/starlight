@@ -6,6 +6,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
   setup do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
+    Repo.query!("DELETE FROM fusion_route_defaults")
 
     Repo.insert_all("ego_gifts", [
       %{id: "g_glimpse", name: "Glimpse of Flames", affinity: "burn", tier: 4, buying_cost: 300, ingredients: nil},
@@ -53,13 +54,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
       socket
       |> event("lib_add", %{"lib" => "upties"})
       |> then(fn s -> event(s, "set_uptie_gift", %{"id" => s.assigns.selected_def["upties"], "gift" => "Fiery Down"}) end)
-      |> event("lib_add", %{"lib" => "tiered_fusions"})
-      |> then(fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["tiered_fusions"], "gift" => "Glimpse of Flames"}) end)
+      |> event("lib_add", %{"lib" => "fusions"})
+      |> then(fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["fusions"], "gift" => "Glimpse of Flames"}) end)
 
     uptie_id = socket.assigns.selected_def["upties"]
-    fusion_id = socket.assigns.selected_def["tiered_fusions"]
+    fusion_id = socket.assigns.selected_def["fusions"]
 
-    [top_332, top_422] = hd(saved(socket)["library"]["tiered_fusions"])["routes"]
+    [top_332, top_422] = hd(saved(socket)["library"]["fusions"])["routes"]
 
     socket =
       socket
@@ -68,9 +69,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
       |> event("rt_add", %{"def_id" => fusion_id, "parent" => top_422["id"], "tier" => "2", "combo" => "2-2"})
       |> event("rt_duplicate", %{"def_id" => fusion_id, "route_id" => top_332["id"]})
       |> event("add_step", %{"kind" => "uptie", "ref" => uptie_id})
-      |> event("add_step", %{"kind" => "tiered_fusion", "ref" => fusion_id})
+      |> event("add_step", %{"kind" => "fusion", "ref" => fusion_id})
 
-    [fusion] = saved(socket)["library"]["tiered_fusions"]
+    [fusion] = saved(socket)["library"]["fusions"]
     [first, copy, edited, added] = fusion["routes"]
     assert first["combo"] == [3, 3, 2] and copy["combo"] == [3, 3, 2]
     assert copy["id"] != first["id"]
@@ -80,55 +81,100 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert added["combo"] == [4, 4]
 
     socket = event(socket, "rt_reorder", %{"scope" => "#{fusion_id}||4", "ids" => [added["id"], first["id"]]})
-    assert Enum.map(hd(saved(socket)["library"]["tiered_fusions"])["routes"], & &1["id"]) == [added["id"], first["id"], copy["id"], edited["id"]]
+    assert Enum.map(hd(saved(socket)["library"]["fusions"])["routes"], & &1["id"]) == [added["id"], first["id"], copy["id"], edited["id"]]
 
     socket = event(socket, "rt_delete", %{"def_id" => fusion_id, "route_id" => hd(first["subgoals"]["3"])["id"]})
-    assert hd(saved(socket)["library"]["tiered_fusions"])["routes"] |> Enum.at(1) |> Map.get("subgoals") == %{"3" => []}
-    assert [%{"kind" => "uptie", "upties" => [^uptie_id], "max_gifts" => 1}, %{"kind" => "tiered_fusion", "fusions" => [^fusion_id]}] = steps(socket)
+    assert hd(saved(socket)["library"]["fusions"])["routes"] |> Enum.at(1) |> Map.get("subgoals") == %{"3" => []}
+    assert [%{"kind" => "uptie", "upties" => [^uptie_id], "max_gifts" => 1}, %{"kind" => "fusion", "fusions" => [^fusion_id]}] = steps(socket)
     assert hd(saved(socket)["library"]["upties"])["gift"] == "Fiery Down"
 
-    for tab <- ~w(workflows upties tiered_fusions shopping_lists keep_lists grace) do
+    for tab <- ~w(workflows upties fusions shopping_lists keep_lists grace gift_search) do
       assert is_binary(socket |> event("set_tab", %{"tab" => tab}) |> render())
     end
 
-    html = render(event(socket, "set_tab", %{"tab" => "tiered_fusions"}))
+    html = render(event(socket, "set_tab", %{"tab" => "fusions"}))
     assert html =~ "super only"
     assert html =~ "Sub-goal: make T3s"
     assert html =~ "+ add T2 route"
   end
 
-  test "routes can be copied from one tiered fusion and pasted over another", %{socket: socket} do
-    target = fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["tiered_fusions"], "gift" => "Glimpse of Flames"}) end
+  test "shopping lists take Any-tier entries, and keep lists drop them on paste", %{socket: socket} do
+    socket = socket |> event("lib_add", %{"lib" => "shopping_lists"}) |> event("set_tab", %{"tab" => "shopping_lists"})
+    list_id = socket.assigns.selected_def["shopping_lists"]
 
-    socket = socket |> event("lib_add", %{"lib" => "tiered_fusions"}) |> then(target)
-    source_id = socket.assigns.selected_def["tiered_fusions"]
+    socket =
+      socket
+      |> event("lib_toggle_gift", %{"lib" => "shopping_lists", "id" => list_id, "gift" => "Fiery Down"})
+      |> event("lib_toggle_gift", %{"lib" => "shopping_lists", "id" => list_id, "gift" => "tier:3"})
+
+    assert hd(saved(socket)["library"]["shopping_lists"])["gifts"] == ["Fiery Down", "tier:3"]
+    assert render(socket) =~ "Any T3"
+
+    keep_id = hd(saved(socket)["library"]["keep_lists"])["id"]
+    socket = socket |> event("gifts_copy", %{"lib" => "shopping_lists", "def_id" => list_id}) |> event("gifts_paste", %{"lib" => "keep_lists", "def_id" => keep_id})
+    assert hd(saved(socket)["library"]["keep_lists"])["gifts"] == ["Fiery Down"]
+  end
+
+  test "shopping lists save an optional done-at count", %{socket: socket} do
+    socket = socket |> event("lib_add", %{"lib" => "shopping_lists"}) |> event("set_tab", %{"tab" => "shopping_lists"})
+    list_id = socket.assigns.selected_def["shopping_lists"]
+
+    socket = event(socket, "lib_update", %{"lib" => "shopping_lists", "def_id" => list_id, "def" => %{"name" => "Poise", "done_at" => "1"}})
+    assert %{"name" => "Poise", "done_at" => 1} = hd(saved(socket)["library"]["shopping_lists"])
+    assert render(socket) =~ "Done at owning"
+
+    socket = event(socket, "lib_update", %{"lib" => "shopping_lists", "def_id" => list_id, "def" => %{"name" => "Poise", "done_at" => ""}})
+    assert hd(saved(socket)["library"]["shopping_lists"])["done_at"] == nil
+  end
+
+  test "gift search holds up to 3 gifts of tier 3 or under", %{socket: socket} do
+    socket = event(socket, "set_tab", %{"tab" => "gift_search"})
+    html = render(socket)
+    assert html =~ ~s(phx-value-gift="Fiery Down")
+    refute html =~ ~s(phx-value-gift="Glimpse of Flames")
+
+    socket =
+      Enum.reduce(["Fiery Down", "Ing A", "Ing B", "Fixed Thing"], socket, &event(&2, "toggle_search_gift", %{"gift" => &1}))
+
+    assert saved(socket)["gift_search"] == ["Fiery Down", "Ing A", "Ing B"]
+    assert render(socket) =~ "3 / 3"
+
+    socket = event(socket, "toggle_search_gift", %{"gift" => "Ing A"})
+    assert saved(socket)["gift_search"] == ["Fiery Down", "Ing B"]
+  end
+
+  test "routes can be copied from one tiered fusion and pasted over another", %{socket: socket} do
+    target = fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["fusions"], "gift" => "Glimpse of Flames"}) end
+
+    socket = socket |> event("lib_add", %{"lib" => "fusions"}) |> then(target)
+    source_id = socket.assigns.selected_def["fusions"]
 
     socket =
       socket
       |> event("rt_add", %{"def_id" => source_id, "parent" => "", "tier" => "4", "combo" => "4-4"})
       |> event("rt_copy", %{"def_id" => source_id})
-      |> event("lib_add", %{"lib" => "tiered_fusions"})
+      |> event("lib_add", %{"lib" => "fusions"})
       |> then(target)
 
-    dest_id = socket.assigns.selected_def["tiered_fusions"]
+    dest_id = socket.assigns.selected_def["fusions"]
     socket = event(socket, "rt_paste", %{"def_id" => dest_id})
 
-    [source, dest] = saved(socket)["library"]["tiered_fusions"]
+    [source, dest] = saved(socket)["library"]["fusions"]
     assert Enum.map(dest["routes"], & &1["combo"]) == [[3, 3, 2], [4, 2, 2], [4, 4]]
     assert Enum.map(dest["routes"], & &1["id"]) -- Enum.map(source["routes"], & &1["id"]) == Enum.map(dest["routes"], & &1["id"])
     assert hd(dest["routes"])["subgoals"]["3"] |> hd() |> Map.get("id") != hd(source["routes"])["subgoals"]["3"] |> hd() |> Map.get("id")
-    assert render(event(socket, "set_tab", %{"tab" => "tiered_fusions"})) =~ "3 route(s)"
+    assert render(event(socket, "set_tab", %{"tab" => "fusions"})) =~ "3 route(s)"
   end
 
-  test "uptie and tiered fusion steps hold an ordered list of definitions", %{socket: socket} do
+  test "uptie and fusion steps hold an ordered list of definitions", %{socket: socket} do
     socket =
       socket
-      |> event("lib_add", %{"lib" => "tiered_fusions"})
-      |> event("lib_add", %{"lib" => "tiered_fusions"})
+      |> event("lib_add", %{"lib" => "fusions"})
+      |> event("lib_add", %{"lib" => "fusions"})
       |> event("lib_add", %{"lib" => "upties"})
 
-    [tf_a, tf_b] = Enum.map(saved(socket)["library"]["tiered_fusions"], & &1["id"])
-    socket = event(socket, "add_step", %{"kind" => "tiered_fusion", "ref" => tf_a})
+    [tf_a, tf_b] = Enum.map(saved(socket)["library"]["fusions"], & &1["id"])
+    socket = event(socket, "add_step", %{"kind" => "fusion", "ref" => tf_a})
     [step] = steps(socket)
 
     socket =
@@ -194,14 +240,21 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
       socket
       |> event("add_step", %{"kind" => "budget"})
       |> event("add_step", %{"kind" => "sell"})
-      |> event("add_step", %{"kind" => "fixed_fusion"})
+      |> event("lib_add", %{"lib" => "fusions", "type" => "fixed"})
+
+    fixed_id = socket.assigns.selected_def["fusions"]
+
+    socket =
+      socket
+      |> event("set_fusion_target", %{"id" => fixed_id, "gift" => "Fixed Thing"})
+      |> event("lib_update", %{"lib" => "fusions", "def_id" => fixed_id, "def" => %{"name" => "Fixed", "buy_missing" => "false"}})
+      |> event("add_step", %{"kind" => "fusion", "ref" => fixed_id})
 
     [budget, sell, fixed] = steps(socket)
 
     socket =
       socket
       |> event("update_step", %{"step_id" => budget["id"], "step" => %{"amount" => "-150"}})
-      |> event("update_step", %{"step_id" => fixed["id"], "step" => %{"target" => "Fixed Thing", "buy_missing" => "false"}})
       |> event("toggle_step_list_item", %{"id" => sell["id"], "field" => "tiers", "item" => "2", "value" => ""})
       |> event("reorder_step_field", %{"scope" => "#{sell["id"]}:tiers", "ids" => ["2", "1"]})
       |> event("move_step", %{"id" => fixed["id"], "dir" => "up"})
@@ -213,7 +266,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
     [budget, fixed, sell] = steps(socket)
     assert budget["amount"] == -150
-    assert fixed["target"] == "Fixed Thing" and fixed["buy_missing"] == false
+    assert fixed["fusions"] == [fixed_id]
+    assert %{"type" => "fixed", "target" => "Fixed Thing", "buy_missing" => false} = GiftPlans.find_definition(saved(socket), "fusions", fixed_id)
     assert sell["tiers"] == [2, 1]
     assert GiftPlans.condition_label(budget["condition"]) == "cost >= 200 AND missing Glimpse of Flames"
 
@@ -227,6 +281,33 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
       |> event("cond_remove", %{"step_id" => budget["id"], "path" => "0"})
 
     assert hd(steps(socket))["condition"] == nil
+  end
+
+  test "fixed fusions link ingredients to sub-fusions and protect everything they reach", %{socket: socket} do
+    socket =
+      socket
+      |> event("lib_add", %{"lib" => "fusions", "type" => "tiered"})
+      |> then(fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["fusions"], "gift" => "Ing A"}) end)
+
+    ing_a_id = socket.assigns.selected_def["fusions"]
+    socket = event(socket, "lib_add", %{"lib" => "fusions", "type" => "fixed"})
+    fixed_id = socket.assigns.selected_def["fusions"]
+    socket = event(socket, "set_fusion_target", %{"id" => fixed_id, "gift" => "Fixed Thing"})
+
+    assert GiftPlans.find_definition(saved(socket), "fusions", fixed_id)["sub_fusions"] == %{"Ing A" => ing_a_id}
+
+    socket = event(socket, "create_sub_fusion", %{"def_id" => fixed_id, "ingredient" => "Ing B"})
+    data = saved(socket)
+    %{"sub_fusions" => %{"Ing B" => ing_b_id}} = GiftPlans.find_definition(data, "fusions", fixed_id)
+    assert %{"type" => "tiered", "target" => "Ing B"} = GiftPlans.find_definition(data, "fusions", ing_b_id)
+
+    socket = event(socket, "set_sub_fusion", %{"def_id" => fixed_id, "ingredient" => "Ing A", "sub" => ""})
+    assert GiftPlans.find_definition(saved(socket), "fusions", fixed_id)["sub_fusions"] == %{"Ing B" => ing_b_id}
+    assert GiftPlans.issues(saved(socket), socket.assigns.gifts_by_name) == []
+
+    html = render(event(socket, "set_tab", %{"tab" => "fusions"}))
+    assert html =~ "fuse via Ing B"
+    assert html =~ "+ Fixed"
   end
 
   test "workflows can be added and scheduled, and scheduled workflows can't be deleted", %{socket: socket} do
@@ -245,5 +326,45 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert length(data["workflows"]) == 2
     assert GiftPlans.workflow_for_floor(data, 1)["id"] == first["id"]
     assert GiftPlans.workflow_for_floor(data, 5)["id"] == second
+  end
+
+  test "a fusion's routes can become its tier's default, which new fusions of that tier start with", %{socket: socket} do
+    socket =
+      socket
+      |> event("lib_add", %{"lib" => "fusions"})
+      |> then(fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["fusions"], "gift" => "Glimpse of Flames"}) end)
+
+    source_id = socket.assigns.selected_def["fusions"]
+
+    socket =
+      socket
+      |> event("rt_add", %{"def_id" => source_id, "parent" => "", "tier" => "4", "combo" => "4-4"})
+      |> event("rt_make_default", %{"def_id" => source_id})
+      |> event("lib_add", %{"lib" => "fusions"})
+      |> then(fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["fusions"], "gift" => "Glimpse of Flames"}) end)
+
+    combos = fn id -> Enum.map(GiftPlans.find_definition(saved(socket), "fusions", id)["routes"], & &1["combo"]) end
+    new_id = socket.assigns.selected_def["fusions"]
+
+    assert combos.(new_id) == [[3, 3, 2], [4, 2, 2], [4, 4]]
+
+    socket = event(socket, "rt_delete", %{"def_id" => new_id, "route_id" => hd(GiftPlans.find_definition(saved(socket), "fusions", new_id)["routes"])["id"]})
+    assert combos.(new_id) == [[4, 2, 2], [4, 4]]
+
+    event(socket, "rt_use_default", %{"def_id" => new_id})
+    assert combos.(new_id) == [[3, 3, 2], [4, 2, 2], [4, 4]]
+  end
+
+  test "workflows can be copied in from another plan", %{socket: socket} do
+    {:ok, source_id} = Strategies.save(:gift_strategies, %{name: "Source", data: GiftPlans.blank("burn")})
+    source = Strategies.get(:gift_strategies, source_id)
+    [%{"id" => wf_id}] = source.data["workflows"]
+
+    socket =
+      socket
+      |> event("import_source", %{"plan_id" => Integer.to_string(source_id)})
+      |> event("import_workflows", %{"workflow" => wf_id})
+
+    assert Enum.map(saved(socket)["workflows"], & &1["name"]) == ["Standard", "Standard (Source)"]
   end
 end

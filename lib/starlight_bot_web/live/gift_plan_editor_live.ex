@@ -1,17 +1,18 @@
 defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   use StarlightBotWeb, :live_view
+  import StarlightBotWeb.Components.ConditionTree
 
-  alias StarlightBot.{EgoGifts, GiftPlans, Strategies, Teams}
-  alias StarlightBot.GiftPlans.{Routes, Combos}
+  alias StarlightBot.{Conditions, EgoGifts, GiftPlans, Strategies, Teams}
+  alias StarlightBot.GiftPlans.{Routes, RouteDefaults, Combos}
 
-  @tabs ~w(workflows upties tiered_fusions shopping_lists keep_lists grace)a
+  @tabs ~w(workflows upties fusions shopping_lists keep_lists grace gift_search)a
   @gift_tiers 1..6
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)
   @gift_sorts ~w(default name tier affinity)
   @uptie_views ~w(base uptie2 uptie3)
   @stat_codes %{"cp" => "Clash Power", "fc" => "Final Power", "bc" => "Base Power", "cg" => "Coin Count"}
-  @palette_kinds ~w(refresh affinity_refresh fixed_fusion sell skill_replace heal heal_all revive budget)
-  @library_kinds [{"upties", "uptie"}, {"tiered_fusions", "tiered_fusion"}, {"shopping_lists", "buy_list"}]
+  @palette_kinds ~w(refresh affinity_refresh sell skill_replace heal heal_all revive budget bail leave)
+  @library_kinds [{"upties", "uptie"}, {"fusions", "fusion"}, {"shopping_lists", "buy_list"}]
   @default_leaf %{"op" => "cost_gte", "value" => 0}
 
   @graces [
@@ -87,9 +88,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
      |> assign(:gifts, gifts)
      |> assign(:gifts_by_name, Map.new(gifts, &{&1.name, &1}))
      |> assign(:gifts_by_id, Map.new(gifts, &{&1.id, &1}))
-     |> assign(:fixed_targets, gifts |> Enum.filter(&(GiftPlans.ingredient_ids(&1) != [])) |> Enum.sort_by(& &1.name))
      |> assign(:sinners, Teams.all_sinners())
      |> assign(:route_clipboard, nil)
+     |> assign(:route_defaults, RouteDefaults.all())
+     |> assign(:import_source, nil)
      |> assign(:gift_clipboard, nil)
      |> reset_editor()}
   end
@@ -155,7 +157,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("set_affinity", %{"affinity" => affinity}, socket) do
-    {:noreply, update_plan(socket, &Map.put(&1, "affinity", blank_to_nil(affinity)))}
+    affinity = blank_to_nil(affinity)
+    {:noreply, update_plan(socket, &Map.merge(&1, %{"affinity" => affinity, "cabinet_gifts" => GiftPlans.starting_gifts(affinity)}))}
+  end
+
+  @impl true
+  def handle_event("reorder_cabinet_gifts", %{"ids" => ids}, socket) do
+    {:noreply, update_plan(socket, &Map.put(&1, "cabinet_gifts", ids))}
   end
 
   @impl true
@@ -182,6 +190,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("set_gift_sort", %{"value" => sort_by}, socket) when sort_by in @gift_sorts do
     {:noreply, assign(socket, :gift_sort, sort_by)}
+  end
+
+  @impl true
+  def handle_event("show_gift", %{"gift" => gift}, socket) do
+    {:noreply, socket |> assign(:selected_gift_name, gift) |> assign(:uptie_view, "base")}
   end
 
   @impl true
@@ -234,6 +247,20 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("toggle_search_gift", %{"gift" => name}, socket) do
+    {:noreply,
+     update_plan(socket, fn data ->
+       picks = data["gift_search"]
+
+       cond do
+         name in picks -> Map.put(data, "gift_search", List.delete(picks, name))
+         length(picks) >= GiftPlans.gift_search_max() -> data
+         true -> Map.put(data, "gift_search", picks ++ [name])
+       end
+     end)}
+  end
+
+  @impl true
   def handle_event("add_workflow", _, socket) do
     data = socket.assigns.plan_data
     keep_id = data["library"]["keep_lists"] |> List.first() |> then(&(&1 && &1["id"]))
@@ -243,6 +270,37 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
      socket
      |> update_plan(&Map.update!(&1, "workflows", fn workflows -> workflows ++ [workflow] end))
      |> assign(:selected_workflow_id, workflow["id"])}
+  end
+
+  @impl true
+  def handle_event("import_source", params, socket) do
+    source =
+      case Integer.parse(params["plan_id"] || "") do
+        {id, ""} -> Strategies.get(:gift_strategies, id)
+        _ -> nil
+      end
+
+    {:noreply, assign(socket, :import_source, source && %{source | data: GiftPlans.normalize(source.data)})}
+  end
+
+  @impl true
+  def handle_event("import_workflows", %{"workflow" => workflow}, socket) do
+    case socket.assigns.import_source do
+      %{data: source, name: source_name} ->
+        ids = if workflow == "all", do: Enum.map(source["workflows"], & &1["id"]), else: [workflow]
+        before = MapSet.new(socket.assigns.plan_data["workflows"], & &1["id"])
+
+        socket = update_plan(socket, &GiftPlans.import_workflows(&1, source, ids, source_name))
+        added = Enum.reject(socket.assigns.plan_data["workflows"], &MapSet.member?(before, &1["id"]))
+
+        {:noreply,
+         socket
+         |> assign(:selected_workflow_id, first_id(added) || socket.assigns.selected_workflow_id)
+         |> put_flash(:info, "Copied #{length(added)} workflow(s) from #{source_name}.")}
+
+      nil ->
+        {:noreply, socket}
+    end
   end
 
   @impl true
@@ -286,17 +344,23 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("delete_workflow", %{"id" => id}, socket) do
     data = socket.assigns.plan_data
+    callers = GiftPlans.callers(data, id) |> Enum.reject(&(&1["id"] == id))
 
-    if Enum.any?(data["floor_schedule"], &(&1["workflow"] == id)) do
-      {:noreply, put_flash(socket, :error, "That workflow is assigned to a floor range. Reassign the floors first.")}
-    else
-      remaining = Enum.reject(data["workflows"], &(&1["id"] == id))
-      selected = if socket.assigns.selected_workflow_id == id, do: first_id(remaining), else: socket.assigns.selected_workflow_id
+    cond do
+      Enum.any?(data["floor_schedule"], &(&1["workflow"] == id)) ->
+        {:noreply, put_flash(socket, :error, "That workflow is assigned to a floor range. Reassign the floors first.")}
 
-      {:noreply,
-       socket
-       |> update_plan(&Map.put(&1, "workflows", remaining))
-       |> assign(:selected_workflow_id, selected)}
+      callers != [] ->
+        {:noreply, put_flash(socket, :error, "That workflow is run by #{Enum.map_join(callers, ", ", & &1["name"])}. Remove those steps first.")}
+
+      true ->
+        remaining = Enum.reject(data["workflows"], &(&1["id"] == id))
+        selected = if socket.assigns.selected_workflow_id == id, do: first_id(remaining), else: socket.assigns.selected_workflow_id
+
+        {:noreply,
+         socket
+         |> update_plan(&Map.put(&1, "workflows", remaining))
+         |> assign(:selected_workflow_id, selected)}
     end
   end
 
@@ -326,6 +390,16 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("add_step", %{"kind" => "workflow", "ref" => child}, socket) do
+    if GiftPlans.creates_cycle?(socket.assigns.plan_data, socket.assigns.selected_workflow_id, child) do
+      {:noreply, put_flash(socket, :error, "That would make the workflow run itself.")}
+    else
+      step = "workflow" |> GiftPlans.new_step(socket.assigns.plan_data) |> Map.put("workflow", child)
+      {:noreply, socket |> update_selected_steps(&(&1 ++ [step])) |> assign(:expanded_step_id, step["id"])}
+    end
+  end
+
+  @impl true
   def handle_event("add_step", %{"kind" => kind} = params, socket) do
     step =
       case GiftPlans.library_ref(kind) do
@@ -350,8 +424,18 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("update_step", %{"step_id" => id, "step" => %{"workflow" => child} = params}, socket) do
+    child = blank_to_nil(child)
+
+    if child && GiftPlans.creates_cycle?(socket.assigns.plan_data, socket.assigns.selected_workflow_id, child) do
+      {:noreply, put_flash(socket, :error, "That would make the workflow run itself.")}
+    else
+      {:noreply, update_step(socket, id, &(&1 |> Map.put("workflow", child) |> apply_repeat(params)))}
+    end
+  end
+
   def handle_event("update_step", %{"step_id" => id, "step" => params}, socket) do
-    {:noreply, update_step(socket, id, &apply_step_params(&1, params))}
+    {:noreply, update_step(socket, id, &(&1 |> apply_step_params(params) |> apply_repeat(params)))}
   end
 
   @impl true
@@ -433,43 +517,39 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("cond_add", %{"step_id" => id, "path" => path, "node" => node}, socket) do
-    child = if node == "group", do: %{"op" => "or", "children" => [@default_leaf]}, else: @default_leaf
-
-    {:noreply,
-     update_condition(socket, id, fn
-       nil -> %{"op" => "and", "children" => [child]}
-       tree -> update_node(tree, parse_path(path), &Map.update!(&1, "children", fn children -> children ++ [child] end))
-     end)}
+    child = if node == "group", do: Conditions.group(@default_leaf), else: @default_leaf
+    {:noreply, update_condition(socket, id, &Conditions.add(&1, path, child))}
   end
 
   @impl true
   def handle_event("cond_remove", %{"step_id" => id, "path" => path}, socket) do
-    {:noreply, update_condition(socket, id, &remove_node(&1, parse_path(path)))}
+    {:noreply, update_condition(socket, id, &Conditions.remove(&1, path))}
   end
 
   @impl true
   def handle_event("cond_toggle_op", %{"step_id" => id, "path" => path}, socket) do
-    {:noreply,
-     update_condition(socket, id, fn tree ->
-       update_node(tree, parse_path(path), fn group -> Map.put(group, "op", if(group["op"] == "and", do: "or", else: "and")) end)
-     end)}
+    {:noreply, update_condition(socket, id, &Conditions.toggle_op(&1, path))}
   end
 
   @impl true
   def handle_event("cond_update", %{"step_id" => id, "path" => path} = params, socket) do
     leaf =
       case params["op"] do
-        "cost_gte" -> %{"op" => "cost_gte", "value" => parse_int(params["value"], 0)}
+        op when op in ["cost_gte", "cost_lt"] -> %{"op" => op, "value" => parse_int(params["value"], 0)}
+        op when op in ["fusions_complete", "upties_complete"] -> %{"op" => op}
+        "fusion_done" -> %{"op" => "fusion_done", "fusion" => blank_to_nil(params["fusion"])}
+        "uptie_done" -> %{"op" => "uptie_done", "uptie" => blank_to_nil(params["uptie"])}
         op -> %{"op" => op, "gift" => String.trim(params["gift"] || "")}
       end
 
-    {:noreply, update_condition(socket, id, &update_node(&1, parse_path(path), fn _ -> leaf end))}
+    {:noreply, update_condition(socket, id, &Conditions.put_leaf(&1, path, leaf))}
   end
 
   @impl true
-  def handle_event("lib_add", %{"lib" => lib}, socket) do
+  def handle_event("lib_add", %{"lib" => lib} = params, socket) do
     count = length(socket.assigns.plan_data["library"][lib])
-    definition = GiftPlans.new_definition(lib, "#{lib_label(lib)} #{count + 1}")
+    name = "#{lib_label(lib)} #{count + 1}"
+    definition = if params["type"], do: GiftPlans.new_definition(lib, name, params["type"]), else: GiftPlans.new_definition(lib, name)
 
     {:noreply,
      socket
@@ -521,19 +601,48 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("set_fusion_target", %{"id" => id, "gift" => gift_name}, socket) do
-    tier = socket.assigns.gifts_by_name[gift_name].tier
+    gift = socket.assigns.gifts_by_name[gift_name]
+    tier = gift.tier
 
     {:noreply,
      update_plan(socket, fn data ->
-       update_definition(data, "tiered_fusions", id, fn definition ->
+       update_definition(data, "fusions", id, fn
+         %{"type" => "fixed"} = definition ->
+           %{definition | "target" => gift_name, "sub_fusions" => auto_sub_fusions(data, id, gift, socket.assigns.gifts_by_id)}
+
+         definition ->
          routes =
            case Routes.valid_for_tier(definition["routes"] || [], tier) do
-             [] -> Routes.defaults(tier)
+             [] -> RouteDefaults.get(tier)
              kept -> kept
            end
 
          %{definition | "target" => gift_name, "routes" => routes}
        end)
+     end)}
+  end
+
+  @impl true
+  def handle_event("set_sub_fusion", %{"def_id" => id, "ingredient" => ingredient} = params, socket) do
+    sub_id = blank_to_nil(params["sub"])
+
+    {:noreply,
+     update_plan(socket, &update_definition(&1, "fusions", id, fn definition ->
+       subs = definition["sub_fusions"] || %{}
+       Map.put(definition, "sub_fusions", if(sub_id, do: Map.put(subs, ingredient, sub_id), else: Map.delete(subs, ingredient)))
+     end))}
+  end
+
+  @impl true
+  def handle_event("create_sub_fusion", %{"def_id" => id, "ingredient" => ingredient}, socket) do
+    tier = socket.assigns.gifts_by_name[ingredient].tier
+    sub = %{GiftPlans.new_definition("fusions", ingredient, "tiered") | "target" => ingredient, "routes" => RouteDefaults.get(tier)}
+
+    {:noreply,
+     update_plan(socket, fn data ->
+       data
+       |> update_in(["library", "fusions"], &(&1 ++ [sub]))
+       |> update_definition("fusions", id, fn definition -> Map.put(definition, "sub_fusions", Map.put(definition["sub_fusions"] || %{}, ingredient, sub["id"])) end)
      end)}
   end
 
@@ -547,14 +656,17 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("gifts_paste", %{"lib" => lib, "def_id" => id}, socket) do
     case socket.assigns.gift_clipboard do
-      %{gifts: gifts} -> {:noreply, update_plan(socket, &update_definition(&1, lib, id, fn definition -> Map.put(definition, "gifts", gifts) end))}
+      %{gifts: gifts} ->
+        gifts = if lib == "keep_lists", do: Enum.reject(gifts, &GiftPlans.parse_tier_entry/1), else: gifts
+        {:noreply, update_plan(socket, &update_definition(&1, lib, id, fn definition -> Map.put(definition, "gifts", gifts) end))}
+
       nil -> {:noreply, socket}
     end
   end
 
   @impl true
   def handle_event("rt_copy", %{"def_id" => id}, socket) do
-    definition = GiftPlans.find_definition(socket.assigns.plan_data, "tiered_fusions", id)
+    definition = GiftPlans.find_definition(socket.assigns.plan_data, "fusions", id)
     target = socket.assigns.gifts_by_name[definition["target"]]
 
     clipboard = %{name: definition["name"], tier: target.tier, routes: definition["routes"] || []}
@@ -567,6 +679,30 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       %{routes: routes} -> {:noreply, update_routes(socket, id, fn _routes -> Routes.copy(routes) end)}
       nil -> {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_event("rt_make_default", %{"def_id" => id}, socket) do
+    definition = GiftPlans.find_definition(socket.assigns.plan_data, "fusions", id)
+    tier = socket.assigns.gifts_by_name[definition["target"]].tier
+
+    case RouteDefaults.put(tier, definition["routes"] || []) do
+      :ok ->
+        {:noreply,
+         socket
+         |> assign(:route_defaults, RouteDefaults.all())
+         |> put_flash(:info, "Saved these routes as the tier #{tier} default.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Couldn't save the tier #{tier} default routes.")}
+    end
+  end
+
+  @impl true
+  def handle_event("rt_use_default", %{"def_id" => id}, socket) do
+    definition = GiftPlans.find_definition(socket.assigns.plan_data, "fusions", id)
+    tier = socket.assigns.gifts_by_name[definition["target"]].tier
+    {:noreply, update_routes(socket, id, fn _routes -> RouteDefaults.get(tier) end)}
   end
 
   @impl true
@@ -616,13 +752,18 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def tab_label(:workflows), do: "Workflows"
   def tab_label(:upties), do: "Upties"
-  def tab_label(:tiered_fusions), do: "Tiered Fusions"
+  def tab_label(:fusions), do: "Fusions"
   def tab_label(:shopping_lists), do: "Shopping Lists"
   def tab_label(:keep_lists), do: "Keep Lists"
   def tab_label(:grace), do: "Grace"
+  def tab_label(:gift_search), do: "Gift Search"
+
+  def accent_tab?(tab), do: tab in [:grace, :gift_search]
+
+  def searchable_gifts(gifts), do: Enum.filter(gifts, &GiftPlans.gift_searchable?/1)
 
   def lib_label("upties"), do: "Uptie"
-  def lib_label("tiered_fusions"), do: "Tiered Fusion"
+  def lib_label("fusions"), do: "Fusion"
   def lib_label("shopping_lists"), do: "Shopping List"
   def lib_label("keep_lists"), do: "Keep List"
 
@@ -666,16 +807,16 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     end
   end
 
-  def step_summary(data, %{"kind" => "tiered_fusion"} = step) do
+  def step_summary(data, %{"kind" => "fusion"} = step) do
     case GiftPlans.definition_for(data, step) do
-      {:ok, defs} -> Enum.map_join(defs, " › ", &(&1["target"] || "(no target)"))
+      {:ok, defs} ->
+        targets = Enum.map_join(defs, " › ", &(&1["target"] || "(no target)"))
+        if is_integer(step["max_retries"]), do: "#{targets} · #{step["max_retries"]} retries", else: targets
       _ -> nil
     end
   end
 
   def step_summary(_data, %{"kind" => "buy_list"} = step), do: "up to #{step["max_items"]}"
-
-  def step_summary(_data, %{"kind" => "fixed_fusion"} = step), do: if(step["buy_missing"], do: "buy missing", else: "owned ingredients only")
 
   def step_summary(_data, %{"kind" => "sell"} = step) do
     tiers = Enum.map_join(step["tiers"] || [], " then ", &"T#{&1}")
@@ -687,7 +828,16 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def step_summary(_data, %{"kind" => kind}) when kind in ~w(heal heal_all revive), do: "costs #{GiftPlans.heal_cost()}"
 
+  def step_summary(data, %{"kind" => "workflow"} = step) do
+    case GiftPlans.definition_for(data, step) do
+      {:ok, workflow} -> "#{Enum.count(workflow["steps"], &(&1["enabled"] != false))} enabled step(s)"
+      _ -> nil
+    end
+  end
+
   def step_summary(_data, _step), do: nil
+
+  def callable_workflows(data, host_id), do: Enum.reject(data["workflows"], &GiftPlans.creates_cycle?(data, host_id, &1["id"]))
 
   def combo_roman(combo), do: Enum.map_join(combo, " ", &gift_tier_roman/1)
 
@@ -704,6 +854,19 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def fusion_target_eligible?(gift), do: gift.tier in 2..4 and GiftPlans.ingredient_ids(gift) == []
 
+  def fixed_target_eligible?(gift), do: GiftPlans.ingredient_ids(gift) != []
+
+  def sub_fusion_options(data, definition, ingredient) do
+    Enum.filter(data["library"]["fusions"], &(&1["target"] == ingredient and &1["id"] != definition["id"]))
+  end
+
+  defp auto_sub_fusions(data, id, gift, gifts_by_id) do
+    for name <- GiftPlans.ingredient_names(gift, gifts_by_id),
+        sub = Enum.find(data["library"]["fusions"], &(&1["target"] == name and &1["id"] != id)),
+        into: %{},
+        do: {name, sub["id"]}
+  end
+
   def uptie_cost_hint(gift, definition) do
     target = definition["target_level"]
     tier = gift && gift.tier
@@ -716,8 +879,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> Enum.join(" · ")
   end
 
-  def child_path("", index), do: "#{index}"
-  def child_path(path, index), do: "#{path}.#{index}"
 
   def fusion_ingredient_ids(gift), do: GiftPlans.ingredient_ids(gift)
 
@@ -771,6 +932,23 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def gift_detail_text(gift, "uptie3", gifts_by_id),
     do: clean_gift_text(gift.uptie3, gifts_by_id) || "No ++ uptie change."
+
+  def obtain_method_text(%{obtain_method: nil}, _gifts_by_id), do: nil
+
+  def obtain_method_text(%{obtain_method: text}, gifts_by_id) do
+    Regex.replace(~r/#?(gift_\w+)#?/, text, fn ref, id ->
+      gift_ref_name(id, gifts_by_id) || String.trim(ref, "#")
+    end)
+  end
+
+  def gift_ref_name("gift_0", _gifts_by_id), do: "unknown gift"
+
+  def gift_ref_name(id, gifts_by_id) do
+    case Map.get(gifts_by_id, id) do
+      %{name: name} -> name
+      nil -> nil
+    end
+  end
 
   def clean_gift_text(nil, _gifts_by_id), do: nil
 
@@ -863,7 +1041,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   defp update_routes(socket, id, fun) do
-    update_plan(socket, &update_definition(&1, "tiered_fusions", id, fn definition -> Map.update(definition, "routes", fun.([]), fun) end))
+    update_plan(socket, &update_definition(&1, "fusions", id, fn definition -> Map.update(definition, "routes", fun.([]), fun) end))
   end
 
   defp update_definition(data, lib, id, fun) do
@@ -878,12 +1056,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp apply_step_params(%{"kind" => "uptie"} = step, p), do: Map.put(step, "max_gifts", max(parse_int(p["max_gifts"], 1), 1))
 
-  defp apply_step_params(%{"kind" => "buy_list"} = step, p) do
-    %{step | "list" => blank_to_nil(p["list"]), "max_items" => max(parse_int(p["max_items"], 1), 1)}
+  defp apply_step_params(%{"kind" => "fusion"} = step, p) do
+    Map.put(step, "max_retries", if(p["max_retries"] in [nil, ""], do: nil, else: max(parse_int(p["max_retries"], 0), 0)))
   end
 
-  defp apply_step_params(%{"kind" => "fixed_fusion"} = step, p) do
-    %{step | "target" => blank_to_nil(p["target"]), "buy_missing" => p["buy_missing"] == "true"}
+  defp apply_step_params(%{"kind" => "buy_list"} = step, p) do
+    %{step | "list" => blank_to_nil(p["list"]), "max_items" => max(parse_int(p["max_items"], 1), 1)}
   end
 
   defp apply_step_params(%{"kind" => "affinity_refresh"} = step, p), do: Map.put(step, "affinity", blank_to_nil(p["affinity"]))
@@ -897,8 +1075,26 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp apply_step_params(%{"kind" => "budget"} = step, p), do: Map.put(step, "amount", parse_int(p["amount"], 0))
   defp apply_step_params(step, _p), do: step
 
+  defp apply_repeat(step, %{"repeat" => repeat}) do
+    case parse_optional_int(repeat) do
+      n when is_integer(n) and n > 0 -> Map.put(step, "repeat", n)
+      _ -> Map.delete(step, "repeat")
+    end
+  end
+
+  defp apply_repeat(step, _p), do: step
+
   defp apply_definition_params("upties", definition, p) do
     %{definition | "name" => p["name"] || definition["name"], "target_level" => parse_int(p["target_level"], 2)}
+  end
+
+  defp apply_definition_params("shopping_lists", definition, p) do
+    done_at = if p["done_at"] in [nil, ""], do: nil, else: max(parse_int(p["done_at"], 1), 1)
+    %{Map.put(definition, "done_at", done_at) | "name" => p["name"] || definition["name"]}
+  end
+
+  defp apply_definition_params("fusions", %{"type" => "fixed"} = definition, p) do
+    %{definition | "name" => p["name"] || definition["name"], "buy_missing" => p["buy_missing"] == "true"}
   end
 
   defp apply_definition_params(_lib, definition, p), do: Map.put(definition, "name", p["name"] || definition["name"])
@@ -909,22 +1105,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     by_key = Map.new(items, &{key_fun.(&1), &1})
     ordered = ids |> Enum.map(&Map.get(by_key, &1)) |> Enum.reject(&is_nil/1)
     ordered ++ Enum.reject(items, &(&1 in ordered))
-  end
-
-  defp parse_path(""), do: []
-  defp parse_path(path), do: path |> String.split(".") |> Enum.map(&String.to_integer/1)
-
-  defp update_node(node, [], fun), do: fun.(node)
-
-  defp update_node(%{"children" => children} = node, [index | rest], fun) do
-    %{node | "children" => List.update_at(children, index, &update_node(&1, rest, fun))}
-  end
-
-  defp remove_node(_tree, []), do: nil
-
-  defp remove_node(tree, path) do
-    {parent_path, [index]} = Enum.split(path, -1)
-    update_node(tree, parent_path, &Map.update!(&1, "children", fn children -> List.delete_at(children, index) end))
   end
 
   defp first_id([%{"id" => id} | _]), do: id
@@ -988,56 +1168,37 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp matches_text_filter?(_gift, ""), do: true
   defp matches_text_filter?(gift, filter), do: String.contains?(String.downcase(gift.name || ""), String.downcase(filter))
 
-  attr :node, :map, required: true
-  attr :path, :string, required: true
-  attr :step_id, :string, required: true
-
-  def condition_node(%{node: %{"children" => _}} = assigns) do
+  def gift_leaf(assigns) do
     ~H"""
-    <div class="border border-base-300 rounded-lg p-1.5 flex flex-col gap-1">
-      <div class="flex items-center gap-1">
-        <button type="button" phx-click="cond_toggle_op" phx-value-step_id={@step_id} phx-value-path={@path}
-                class="btn btn-2xs btn-secondary" title="Toggle AND / OR">
-          <%= String.upcase(@node["op"]) %>
-        </button>
-        <span class="text-[10px] text-base-content/40">
-          <%= if @node["op"] == "and", do: "all of", else: "any of" %>
-        </span>
-        <button type="button" phx-click="cond_add" phx-value-step_id={@step_id} phx-value-path={@path} phx-value-node="leaf"
-                class="btn btn-2xs btn-ghost ml-auto">+ condition</button>
-        <button type="button" phx-click="cond_add" phx-value-step_id={@step_id} phx-value-path={@path} phx-value-node="group"
-                class="btn btn-2xs btn-ghost">+ group</button>
-        <button type="button" phx-click="cond_remove" phx-value-step_id={@step_id} phx-value-path={@path}
-                class="btn btn-2xs btn-ghost text-error" title="Remove group">✕</button>
-      </div>
-      <div class="flex flex-col gap-1 pl-3">
-        <%= for {child, index} <- Enum.with_index(@node["children"]) do %>
-          <.condition_node node={child} path={child_path(@path, index)} step_id={@step_id} />
-        <% end %>
-      </div>
-    </div>
-    """
-  end
-
-  def condition_node(assigns) do
-    ~H"""
-    <form phx-change="cond_update" class="flex items-center gap-1">
-      <input type="hidden" name="step_id" value={@step_id} />
-      <input type="hidden" name="path" value={@path} />
-      <select name="op" class="select select-bordered select-xs">
-        <option value="cost_gte" selected={@node["op"] == "cost_gte"}>cost at least</option>
-        <option value="has_gift" selected={@node["op"] == "has_gift"}>owns gift</option>
-        <option value="missing_gift" selected={@node["op"] == "missing_gift"}>doesn't own gift</option>
-      </select>
-      <%= if @node["op"] == "cost_gte" do %>
+    <select name="op" class="select select-bordered select-xs">
+      <option value="cost_gte" selected={@node["op"] == "cost_gte"}>cost at least</option>
+      <option value="cost_lt" selected={@node["op"] == "cost_lt"}>cost under</option>
+      <option value="has_gift" selected={@node["op"] == "has_gift"}>owns gift</option>
+      <option value="missing_gift" selected={@node["op"] == "missing_gift"}>doesn't own gift</option>
+      <option value="fusions_complete" selected={@node["op"] == "fusions_complete"}>all fusions complete</option>
+      <option value="upties_complete" selected={@node["op"] == "upties_complete"}>all upties complete</option>
+      <option value="fusion_done" selected={@node["op"] == "fusion_done"}>fusion done</option>
+      <option value="uptie_done" selected={@node["op"] == "uptie_done"}>uptie done</option>
+    </select>
+    <%= cond do %>
+      <% @node["op"] in ["cost_gte", "cost_lt"] -> %>
         <input type="number" name="value" value={@node["value"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
-      <% else %>
+      <% @node["op"] in ["fusions_complete", "upties_complete"] -> %>
+        <span class="flex-1"></span>
+      <% @node["op"] == "fusion_done" -> %>
+        <select name="fusion" class="select select-bordered select-xs flex-1 min-w-0">
+          <option value="">pick one</option>
+          <option :for={fusion <- @plan_data["library"]["fusions"]} value={fusion["id"]} selected={@node["fusion"] == fusion["id"]}><%= fusion["name"] %></option>
+        </select>
+      <% @node["op"] == "uptie_done" -> %>
+        <select name="uptie" class="select select-bordered select-xs flex-1 min-w-0">
+          <option value="">pick one</option>
+          <option :for={uptie <- @plan_data["library"]["upties"]} value={uptie["id"]} selected={@node["uptie"] == uptie["id"]}><%= uptie["name"] %></option>
+        </select>
+      <% true -> %>
         <input type="text" name="gift" value={@node["gift"]} list="gift-name-options" phx-debounce="blur"
                placeholder="Gift name" class="input input-bordered input-xs flex-1 min-w-0" />
-      <% end %>
-      <button type="button" phx-click="cond_remove" phx-value-step_id={@step_id} phx-value-path={@path}
-              class="btn btn-2xs btn-ghost text-error" title="Remove condition">✕</button>
-    </form>
+    <% end %>
     """
   end
 
@@ -1114,13 +1275,21 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     <div class="flex flex-col gap-1">
       <div class="flex items-center gap-2">
         <span class="text-xs font-semibold text-base-content/70"><%= lib_label(@lib) %>s</span>
-        <button phx-click="lib_add" phx-value-lib={@lib} class="btn btn-primary btn-xs ml-auto">+ New</button>
+        <%= if @lib == "fusions" do %>
+          <button phx-click="lib_add" phx-value-lib={@lib} phx-value-type="tiered" class="btn btn-primary btn-xs ml-auto">+ Tiered</button>
+          <button phx-click="lib_add" phx-value-lib={@lib} phx-value-type="fixed" class="btn btn-primary btn-xs">+ Fixed</button>
+        <% else %>
+          <button phx-click="lib_add" phx-value-lib={@lib} class="btn btn-primary btn-xs ml-auto">+ New</button>
+        <% end %>
       </div>
       <div :for={definition <- @defs}
            phx-click="lib_select" phx-value-lib={@lib} phx-value-id={definition["id"]}
            class={"flex items-center gap-1 rounded px-2 py-1 cursor-pointer text-xs " <>
              if(definition["id"] == @selected_id, do: "bg-primary/10 border-l-2 border-primary", else: "hover:bg-base-200")}>
         <span class="flex-1 truncate"><%= definition["name"] %></span>
+        <span :if={@lib == "fusions"} class={"badge badge-xs " <> if(GiftPlans.fixed_fusion?(definition), do: "badge-accent", else: "badge-ghost")}>
+          <%= if GiftPlans.fixed_fusion?(definition), do: "fixed", else: "tiered" %>
+        </span>
         <button phx-click="lib_delete" phx-value-lib={@lib} phx-value-id={definition["id"]}
                 data-confirm={"Delete '#{definition["name"]}'? Steps using it will break."}
                 class="btn btn-ghost btn-2xs text-error">✕</button>
@@ -1176,6 +1345,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :lib, :string, required: true
   attr :definition, :map, required: true
   attr :gifts_by_name, :map, required: true
+  attr :selected_gift_name, :any, default: nil
   slot :extra
 
   def gift_order_list(assigns) do
@@ -1187,9 +1357,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
         <span class="text-[10px] text-base-content/40 w-4 text-right"><%= index %></span>
         <% gift = @gifts_by_name[name] %>
-        <img :if={gift} src={gift.image_path} class="w-6 h-6 rounded object-cover" />
-        <span :if={gift} class="badge badge-ghost badge-xs">T<%= gift.tier %></span>
-        <span class="text-[11px] flex-1 truncate"><%= name %></span>
+        <div phx-click={gift && "show_gift"} phx-value-gift={gift && name}
+             class={"flex items-center gap-2 flex-1 min-w-0 " <> if(gift, do: "cursor-pointer", else: "")}>
+          <img :if={gift} src={gift.image_path} class="w-6 h-6 rounded object-cover" />
+          <span :if={gift} class="badge badge-ghost badge-xs">T<%= gift.tier %></span>
+          <span :if={GiftPlans.parse_tier_entry(name)} class="badge badge-secondary badge-xs">any tier</span>
+          <span class={"text-[11px] flex-1 truncate " <> if(gift && @selected_gift_name == name, do: "font-semibold text-primary", else: "")}><%= GiftPlans.entry_label(name) %></span>
+        </div>
         <%= render_slot(@extra, gift) %>
         <button phx-click="lib_toggle_gift" phx-value-lib={@lib} phx-value-id={@definition["id"]} phx-value-gift={name}
                 class="btn btn-ghost btn-2xs px-1">✕</button>
@@ -1284,8 +1458,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
                   <span>Buy: <%= selected.buying_cost || "—" %></span>
                   <span>Sell: <%= selected.selling_cost || "—" %></span>
                 </div>
-                <div :if={selected.obtain_method} class="text-[11px] text-base-content/50 truncate" title={selected.obtain_method}>
-                  <%= selected.obtain_method %>
+                <% obtain = obtain_method_text(selected, @gifts_by_id) %>
+                <div :if={obtain} class="text-[11px] text-base-content/50 truncate" title={obtain}>
+                  <%= obtain %>
                 </div>
               </div>
             </div>
@@ -1312,8 +1487,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
                   <span class="text-[11px] font-medium text-base-content/70">Fixed recipe — requires:</span>
                   <div class="flex flex-wrap gap-1">
                     <%= for ing_id <- fusion_ingredient_ids(selected) do %>
-                      <% ing = Map.get(@gifts_by_id, ing_id) %>
-                      <span class="badge badge-outline badge-xs"><%= (ing && ing.name) || ing_id %></span>
+                      <span class="badge badge-outline badge-xs"><%= gift_ref_name(ing_id, @gifts_by_id) || ing_id %></span>
                     <% end %>
                   </div>
                 <% else %>

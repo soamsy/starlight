@@ -561,7 +561,9 @@ const SortableList = {
       const over = e.target.closest("[data-sort-id]")
       if (!over || over === this.dragging || over.parentElement !== this.el) return
       const rect = over.getBoundingClientRect()
-      const after = e.clientY > rect.top + rect.height / 2
+      const after = this.el.dataset.sortAxis === "x"
+        ? e.clientX > rect.left + rect.width / 2
+        : e.clientY > rect.top + rect.height / 2
       this.el.insertBefore(this.dragging, after ? over.nextSibling : over)
     })
 
