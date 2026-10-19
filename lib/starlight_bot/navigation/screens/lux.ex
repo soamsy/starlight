@@ -14,7 +14,7 @@ defmodule StarlightBot.Navigation.Screens.Lux do
           move_to(:lux_scroll),
           retry_until_arrived([scroll_down(30)], every: 600, tries: 10),
         ]}
-      ])
+      ], wait: 500)
     ]
     transition to: :team_select, do: [reclick_until_gone(:lux_exp_enter)]
   end

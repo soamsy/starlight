@@ -6,13 +6,11 @@ defmodule StarlightBot.Navigation.Screens.DungeonGraph do
     action :reset_view, do: [key(:d), sleep(200), key(:a), sleep(200)]
 
     transition to: :dungeon_graph_node do
-      [
-        custom(&DungeonPathPlanner.navigate_to_next_node/2),
-        key(:d),
-        await(:dungeon_graph_enter, timeout: 3_000),
-        key(:enter),
-        await_any([:event, :team_selector, :team_selector_tall, :team_selector_gone, :shop, :shop_super], timeout: 3_000),
-      ]
+      [custom(&DungeonPathPlanner.navigate_to_next_node/2)]
+    end
+
+    transition to: :dungeon_progress do
+      [retry_until(:dungeon_progress, [click(:dungeon_graph_settings_gear)], every: 1_000, tries: 3)]
     end
   end
 

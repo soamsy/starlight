@@ -15,7 +15,8 @@ defmodule StarlightBot.Navigation.Screens.ExplorationReward do
     transition to: :exploration_reward_claimed do
       [click(:exploration_reward_claim)] ++
         confirm_either(:exploration_reward_claim_confirm, :exploration_reward_claim_confirm_2, @confirm_timeout) ++
-        [reclick_until_gone(:exploration_complete)]
+        [retry_until(any_of([:loading_stage_1, :loading_stage_2]), [click(:exploration_complete)], every: 300, timeout: 15_000)] ++
+        loading()
     end
 
     transition to: :give_up_rewards do
@@ -24,11 +25,9 @@ defmodule StarlightBot.Navigation.Screens.ExplorationReward do
     end
 
     transition to: :exploration_reward_to_window_done do
-      [
-        click(:exploration_reward_to_window),
-        await(:exploration_reward_to_window_confirm, timeout: @confirm_timeout),
-        click(:exploration_reward_to_window_confirm)
-      ] ++ loading()
+      [click(:exploration_reward_to_window)] ++
+        confirm(:exploration_reward_to_window_confirm, timeout: @confirm_timeout) ++
+        loading()
     end
 
     transition to: :exploration_reward_list, do: [click(:exploration_reward_to_list)]
@@ -40,10 +39,7 @@ defmodule StarlightBot.Navigation.Screens.ExplorationReward do
   screen :exploration_reward_list, identity: nil, catch_all: true
 
   defp confirm_either(hook_a, hook_b, timeout) do
-    [
-      await_any([hook_a, hook_b], timeout: timeout),
-      branch([{hook_a, [click(hook_a)]}, {hook_b, [click(hook_b)]}])
-    ]
+    confirm_enter(any_of([hook_a, hook_b]), timeout: timeout)
   end
 
   def confirm_again_and_acquire(_frame, ctx) do

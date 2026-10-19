@@ -1,27 +1,14 @@
 defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   use StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.{Engine, RunMemory}
+  alias StarlightBot.Automation.{Engine, EnkephalinCharger, RunMemory}
   alias StarlightBot.Automation.Scripts.SelectTeamOnScreen
   alias StarlightBot.Automation.SeasonPassCollector
   alias StarlightBot.Ctx
 
   @max_consecutive 10
   @max_navigation_retries 5
-
-  @enkephalin_spend_state_hooks [
-    :charge_enkephalin_tab_lunacy_0_10,
-    :charge_enkephalin_tab_lunacy_1_10,
-    :charge_enkephalin_tab_lunacy_2_10,
-    :charge_enkephalin_tab_lunacy_3_10,
-    :charge_enkephalin_tab_lunacy_4_10
-  ]
-
-  @enkephalin_spend_cost_hooks [
-    :charge_enkephalin_tab_lunacy_cost_26,
-    :charge_enkephalin_tab_lunacy_cost_52,
-    :charge_enkephalin_tab_lunacy_cost_78,
-    :charge_enkephalin_tab_lunacy_cost_104
-  ]
+  @post_battle_settle_tries 4
+  @post_battle_settle_ms 500
 
   def run(
         team_id,
@@ -113,97 +100,8 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
       Ctx.log(ctx, :info, "already at #{home} — assuming enkephalin was already charged, skipping")
       {:ok, home}
     else
-      Ctx.log(ctx, :info, "charging enkephalin (up to #{count} lunacy spend(s))")
-
-      with {:ok, lunacy_tab} <- Engine.goto(home, :charge_enkephalin_lunacy_tab, ctx) do
-        spend_lunacy(count, ctx)
-
-        with {:ok, modules_tab} <- Engine.goto(lunacy_tab, :charge_enkephalin_modules_tab, ctx) do
-          make_enkephalin_modules(ctx)
-          Engine.goto(modules_tab, :home, ctx)
-        end
-      end
+      EnkephalinCharger.charge(home, count, ctx)
     end
-  end
-
-  defp spend_lunacy(0, ctx) do
-    Ctx.log(ctx, :info, "lunacy spend not requested — skipping")
-  end
-
-  defp spend_lunacy(target, ctx) do
-    case detect_enkephalin_spent_count(ctx) do
-      {:ok, spent} when spent >= target ->
-        Ctx.log(ctx, :info, "already spent #{spent}/#{target} today — nothing to do")
-
-      {:ok, spent} ->
-        Ctx.log(ctx, :info, "spent #{spent} so far, spending up to #{target}")
-        run_enkephalin_spend_steps(spent, target, ctx)
-
-      :unknown ->
-        Ctx.log(ctx, :info, "could not determine today's lunacy spend count — skipping")
-    end
-  end
-
-  defp detect_enkephalin_spent_count(ctx) do
-    matched_hooks =
-      Engine.check_all(@enkephalin_spend_state_hooks)
-      |> Enum.filter(fn {_hook, matched?} -> matched? end)
-      |> Enum.map(fn {hook, _matched?} -> hook end)
-
-    case matched_hooks do
-      [hook] ->
-        {:ok, Enum.find_index(@enkephalin_spend_state_hooks, &(&1 == hook))}
-
-      other ->
-        Ctx.log(
-          ctx,
-          :info,
-          "ambiguous lunacy spend state: #{length(other)} state(s) matched: #{Enum.join(other, ", ")}"
-        )
-
-        :unknown
-    end
-  end
-
-  defp run_enkephalin_spend_steps(spent, target, _ctx) when spent >= target, do: :ok
-
-  defp run_enkephalin_spend_steps(spent, target, ctx) do
-    cost_hook = Enum.at(@enkephalin_spend_cost_hooks, spent)
-
-    case Engine.act(enkephalin_spend_steps(cost_hook), ctx) do
-      {:ok, _} ->
-        Ctx.log(ctx, :ok, "spent lunacy (#{spent + 1}/#{target})")
-        run_enkephalin_spend_steps(spent + 1, target, ctx)
-
-      {:error, reason} ->
-        Ctx.log(ctx, :error, "spend lunacy failed at step #{spent + 1}: #{inspect(reason)} — moving on")
-    end
-  end
-
-  defp enkephalin_spend_steps(cost_hook) do
-    [
-      click(:charge_enkephalin_popup_confirm),
-      move_to(:charge_enkephalin_popup_safe_area),
-      await(not_hook(cost_hook), timeout: 3_000),
-    ]
-  end
-
-  defp make_enkephalin_modules(ctx) do
-    Ctx.log(ctx, :info, "making as many enkephalin modules as possible")
-
-    case Engine.act(make_enkephalin_modules_steps(), ctx) do
-      {:ok, _} -> Ctx.log(ctx, :ok, "modules made")
-      {:error, reason} -> Ctx.log(ctx, :error, "make modules failed: #{inspect(reason)}")
-    end
-  end
-
-  defp make_enkephalin_modules_steps do
-    [
-      click(:charge_enkephalin_tab_modules_all),
-      sleep(300),
-      click(:charge_enkephalin_popup_confirm),
-      sleep(1000)
-    ]
   end
 
   defp localize(ctx) do
@@ -255,6 +153,14 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   defp run_batch_with_resume(screen, kind, batch, team_id, ctx, errors \\ 0)
 
   defp run_batch_with_resume(screen, kind, batch, team_id, ctx, errors) do
+    if RunMemory.give_up?(ctx) and not Engine.in_battle?(screen) do
+      gave_up(ctx)
+    else
+      start_or_resume_batch(screen, kind, batch, team_id, ctx, errors)
+    end
+  end
+
+  defp start_or_resume_batch(screen, kind, batch, team_id, ctx, errors) do
     Ctx.log(ctx, :info, "#{kind}: batch of #{batch} consecutive battle(s)")
 
     result =
@@ -265,19 +171,15 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
         with {:ok, screen} <- Engine.goto(screen, lux_screen(kind), ctx),
              :ok <- set_consecutive(kind, batch, ctx),
              {:ok, screen} <- Engine.goto(screen, :team_select, ctx),
-             {:ok, _} <- SelectTeamOnScreen.run(team_id, ctx),
+             {:ok, _} <- SelectTeamOnScreen.run(team_id, "lux", 1, ctx),
              {:ok, screen} <- Engine.goto(screen, :battle, ctx) do
           play_battle_resumable(screen, ctx)
         end
       end
 
     case result do
-      {:ok, screen} when screen in [:lux_exp, :lux_thread] ->
-        {:ok, screen}
-
-      {:ok, screen} ->
-        Ctx.log(ctx, :error, "landed on #{screen} after battle, expected :lux_exp/:lux_thread — stopping")
-        {:error, {:unexpected_post_battle_screen, screen}}
+      {:ok, _screen} = ok ->
+        if RunMemory.give_up?(ctx), do: gave_up(ctx), else: check_post_battle(ok, ctx)
 
       {:battle_lost, resumed_screen} ->
         Ctx.log(ctx, :info, "#{kind}: #{batch} consecutive battle(s) lost while paused — redoing the batch")
@@ -292,6 +194,34 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
       error ->
         recover_from_navigation_error(error, kind, batch, team_id, errors, ctx)
     end
+  end
+
+  defp gave_up(ctx) do
+    Ctx.log(ctx, :error, "gave up (#{inspect(RunMemory.give_up(ctx))}), stopping")
+    {:error, :gave_up}
+  end
+
+  defp check_post_battle(result, ctx), do: check_post_battle(result, @post_battle_settle_tries, ctx)
+
+  defp check_post_battle({:ok, screen}, _tries, _ctx) when screen in [:lux_exp, :lux_thread], do: {:ok, screen}
+
+  defp check_post_battle({:ok, :lux_unknown}, 0, ctx) do
+    Ctx.log(ctx, :info, "still on the luxcavation page without a tab settled, continuing from lux_unknown")
+    {:ok, :lux_unknown}
+  end
+
+  defp check_post_battle({:ok, :lux_unknown}, tries, ctx) do
+    Process.sleep(@post_battle_settle_ms)
+
+    case Engine.localize() do
+      {:ok, screen} -> check_post_battle({:ok, screen}, tries - 1, ctx)
+      :unknown -> check_post_battle({:ok, :lux_unknown}, tries - 1, ctx)
+    end
+  end
+
+  defp check_post_battle({:ok, screen}, _tries, ctx) do
+    Ctx.log(ctx, :error, "landed on #{screen} after battle, expected :lux_exp/:lux_thread — stopping")
+    {:error, {:unexpected_post_battle_screen, screen}}
   end
 
   defp recover_from_navigation_error(error, _kind, _batch, _team_id, errors, ctx) when errors >= @max_navigation_retries do

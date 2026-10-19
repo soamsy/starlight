@@ -54,3 +54,4 @@ erl_crash.dump
 # Leftover untracked dirs from old app names (safe to delete manually)
 /apps/ego_gifts/
 /apps/starlight/
+/md_guide/
