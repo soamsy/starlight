@@ -1,21 +1,28 @@
 defmodule StarlightBot.Navigation.Runner do
+  alias StarlightBot.Automation.RunMemory
   alias StarlightBot.{Ctx, Native, Vision.Capture, Vision.Frame, Vision.HookRegistry, Vision.Matcher}
-  alias StarlightBot.{Input.Keyboard, Input.Mouse, Navigation.Action, Navigation.Catalog, Navigation.Screen}
+  alias StarlightBot.{Input.Keyboard, Input.Mouse, Input.Premove, Navigation.Action, Navigation.Catalog, Navigation.Screen}
 
   @poll_interval_ms 100
   @verify_timeout_ms 1_800
   @refinement_timeout_ms 1_000
+  @fallback_settle_ms 2_000
   @target_area_fraction 0.25
 
   def run_plan([], _ctx), do: {:ok, nil}
 
   def run_plan(transitions, ctx) do
-    Enum.reduce_while(transitions, {:ok, nil}, fn t, {:ok, last_frame} ->
-      Ctx.log(ctx, :info, "→ #{t.to}")
+    upcoming = Enum.map(tl(transitions), & &1.steps) ++ [[]]
 
-      case run_steps(t.steps, last_frame, ctx) do
+    transitions
+    |> Enum.zip(upcoming)
+    |> Enum.reduce_while({:ok, nil}, fn {t, next_steps}, {:ok, last_frame} ->
+      Ctx.log(ctx, :info, "→ #{t.to}")
+      RunMemory.put(ctx, :step, "→ #{t.to}")
+
+      case run_steps(t.steps, last_frame, ctx, next_steps) do
         {:ok, frame} ->
-          case verify_screen(t.to, ctx) do
+          case verify_screen(t.to, ctx, next_steps) do
             :ok -> {:cont, {:ok, frame}}
             {:error, _} = err -> {:halt, err}
           end
@@ -24,6 +31,7 @@ defmodule StarlightBot.Navigation.Runner do
           {:halt, err}
       end
     end)
+    |> tap(fn _ -> RunMemory.put(ctx, :step, nil) end)
     |> case do
       {:ok, _frame} ->
         arrived = List.last(transitions).to
@@ -49,11 +57,16 @@ defmodule StarlightBot.Navigation.Runner do
 
   def run_action(screen_name, %Action{} = action, ctx) do
     Ctx.log(ctx, :info, "action #{action.name}")
+    RunMemory.put(ctx, :step, "action #{action.name}")
 
-    with {:ok, _frame} <- run_steps(action.steps, nil, ctx),
-         :ok <- verify_screen(screen_name, ctx) do
-      {:ok, screen_name}
-    end
+    result =
+      with {:ok, _frame} <- run_steps(action.steps, nil, ctx, []),
+           :ok <- verify_screen(screen_name, ctx) do
+        {:ok, screen_name}
+      end
+
+    RunMemory.put(ctx, :step, nil)
+    result
   end
 
   def check_screens(screens) do
@@ -109,6 +122,41 @@ defmodule StarlightBot.Navigation.Runner do
     Enum.find(screens, match, &(&1.refines == match.name and is_nil(&1.identity_hook)))
   end
 
+  def fallback_screen?(name) do
+    case Catalog.find_screen(name) do
+      %Screen{identity_hook: nil, refines: parent} when not is_nil(parent) -> true
+      _ -> false
+    end
+  end
+
+  def settle_fallback({:ok, name} = ok, recheck, deadline \\ mono() + @fallback_settle_ms) do
+    cond do
+      not fallback_screen?(name) ->
+        ok
+
+      not settles?(name) ->
+        ok
+
+      mono() >= deadline ->
+        ok
+
+      true ->
+        Process.sleep(@poll_interval_ms)
+
+        case recheck.() do
+          {:ok, _} = next -> settle_fallback(next, recheck, deadline)
+          :unknown -> settle_fallback(ok, recheck, deadline)
+        end
+    end
+  end
+
+  defp settles?(name) do
+    case Catalog.find_screen(name) do
+      %Screen{settle: settle} -> settle
+      nil -> true
+    end
+  end
+
   defp resolve_refinement(screens, deadline) do
     case check_screens(screens) do
       {:ok, _} = ok ->
@@ -124,19 +172,22 @@ defmodule StarlightBot.Navigation.Runner do
     end
   end
 
-  def run_steps(steps, ctx), do: run_steps(steps, nil, ctx)
+  def run_steps(steps, ctx), do: run_steps(steps, nil, ctx, [])
 
-  defp run_steps([], last_frame, _ctx), do: {:ok, last_frame}
+  defp run_steps([], last_frame, _ctx, _upcoming), do: {:ok, last_frame}
 
-  defp run_steps([step | rest], last_frame, ctx) do
+  defp run_steps([step | rest], last_frame, ctx, upcoming) do
     cond do
       Ctx.pause_requested?(ctx) ->
         Ctx.log(ctx, :info, "pause requested, stopping before #{inspect(step)}")
         {:error, :window_not_focused}
 
       Capture.focused?() ->
-        case execute_step(step, last_frame, ctx) do
-          {:ok, new_frame} -> run_steps(rest, new_frame, ctx)
+        ahead = rest ++ upcoming
+        maybe_premove(step, ahead, ctx)
+
+        case execute_step(step, last_frame, ctx, ahead) do
+          {:ok, new_frame} -> run_steps(rest, new_frame, ctx, upcoming)
           {:error, _} = err -> err
         end
 
@@ -146,10 +197,26 @@ defmodule StarlightBot.Navigation.Runner do
     end
   end
 
-  defp execute_step({:click, hook_atom}, last_frame, ctx) do
+  defp execute_step({:branch, _clauses, _default_steps} = step, last_frame, ctx, ahead),
+    do: run_branch(step, last_frame, ctx, ahead)
+
+  defp execute_step({:branch, _clauses, _default_steps, _wait_ms} = step, last_frame, ctx, ahead),
+    do: run_branch(step, last_frame, ctx, ahead)
+
+  defp execute_step({:retry_until, hook, steps, timeout_ms, every_ms, tries}, last_frame, ctx, ahead),
+    do: run_retry({:retry_until, hook, steps, timeout_ms, every_ms, tries, nil}, last_frame, ctx, ahead)
+
+  defp execute_step({:retry_until, _, _, _, _, _, _} = step, last_frame, ctx, ahead),
+    do: run_retry(step, last_frame, ctx, ahead)
+
+  defp execute_step(step, last_frame, ctx, _ahead), do: execute_step(step, last_frame, ctx)
+
+  defp execute_step({:click, hook_atom}, last_frame, ctx), do: execute_step({:click, hook_atom, []}, last_frame, ctx)
+
+  defp execute_step({:click, hook_atom, opts}, last_frame, ctx) do
     Ctx.log(ctx, :info, "click #{hook_atom}")
 
-    case do_click(hook_atom, last_frame, ctx) do
+    case do_click(hook_atom, opts, last_frame, ctx) do
       :ok ->
         Ctx.log(ctx, :ok, "clicked #{hook_atom}")
         {:ok, nil}
@@ -172,6 +239,21 @@ defmodule StarlightBot.Navigation.Runner do
         Ctx.log(ctx, :error, "move_to #{hook_atom} failed: #{inspect(reason)}")
         {:error, {:move_to_failed, hook_atom, reason}}
     end
+  end
+
+  defp execute_step({:premove, hook_atom}, last_frame, ctx) do
+    with true <- Premove.enabled?(),
+         {:ok, region} <- resolve_target_region(hook_atom, last_frame),
+         {:ok, {sx, sy}} <- to_screen_point(sample_target_point(region)),
+         {:ok, box} <- to_screen_box(target_box(region)) do
+      Ctx.log(ctx, :info, "premove → #{hook_atom}")
+      Mouse.premove(sx, sy, box)
+    else
+      false -> :ok
+      {:error, reason} -> Ctx.log(ctx, :info, "premove #{hook_atom} skipped: #{inspect(reason)}")
+    end
+
+    {:ok, last_frame}
   end
 
   defp execute_step({:drag, hook_atom, dx, dy, duration_ms}, last_frame, ctx) do
@@ -213,6 +295,10 @@ defmodule StarlightBot.Navigation.Runner do
     fun.(last_frame, ctx)
   end
 
+  defp execute_step({:await, hook_atom, timeout_ms, _opts}, last_frame, ctx) do
+    execute_step({:await, hook_atom, timeout_ms}, last_frame, ctx)
+  end
+
   defp execute_step({:await, hook_atom, timeout_ms}, _last_frame, ctx) do
     Ctx.log(ctx, :info, "await #{inspect(hook_atom)} (#{timeout_ms}ms)")
     deadline = mono() + timeout_ms
@@ -225,7 +311,58 @@ defmodule StarlightBot.Navigation.Runner do
     poll_any(hooks, deadline, ctx)
   end
 
-  defp execute_step({:branch, clauses, default_steps}, last_frame, ctx) do
+  defp execute_step({:sleep, ms}, _last_frame, ctx) do
+    Ctx.log(ctx, :info, "sleep #{ms}ms")
+    Process.sleep(ms)
+    {:ok, nil}
+  end
+
+  defp run_retry({:retry_until, hook, steps, timeout_ms, every_ms, tries, retry_if}, last_frame, ctx, ahead) do
+    verb = retry_verb(steps)
+    bound_desc = if tries, do: "tries #{tries}", else: "timeout #{timeout_ms}ms"
+    Ctx.log(ctx, :info, "#{verb} #{inspect(hook)} (#{bound_desc}, every #{every_ms}ms)")
+
+    case hook_visible?(hook, last_frame) do
+      {true, frame} ->
+        Ctx.log(ctx, :ok, "#{verb} #{inspect(hook)}: already visible")
+        {:ok, frame}
+
+      {false, _} ->
+        bound = if tries, do: {:tries, tries}, else: {:deadline, mono() + timeout_ms}
+
+        loop = %{
+          hook: hook,
+          steps: steps,
+          every_ms: every_ms,
+          bound: bound,
+          retry_if: retry_if,
+          ahead: ahead,
+          started_at: mono()
+        }
+
+        retry_loop(loop, 0, ctx)
+    end
+  end
+
+  defp run_branch({:branch, clauses, default_steps, wait_ms}, _last_frame, ctx, ahead) do
+    Ctx.log(ctx, :info, "branch (waiting up to #{wait_ms}ms)")
+    {frame, matched} = poll_branch(clauses, mono() + wait_ms)
+
+    branch_steps =
+      case matched do
+        {matched_hook, steps} ->
+          Ctx.log(ctx, :ok, "branch matched #{inspect(matched_hook)}")
+          steps
+
+        nil ->
+          Ctx.log(ctx, :info, "branch default after #{wait_ms}ms")
+          default_steps
+      end
+
+    run_steps(branch_steps, frame, ctx, ahead)
+  end
+
+  defp run_branch({:branch, clauses, default_steps}, last_frame, ctx, ahead) do
     Ctx.log(ctx, :info, "branch")
 
     frame = last_frame || elem(grab_frame(), 1)
@@ -246,28 +383,24 @@ defmodule StarlightBot.Navigation.Runner do
         default_steps
       end
 
-    run_steps(branch_steps, frame, ctx)
+    run_steps(branch_steps, frame, ctx, ahead)
   end
 
-  defp execute_step({:sleep, ms}, _last_frame, ctx) do
-    Ctx.log(ctx, :info, "sleep #{ms}ms")
-    Process.sleep(ms)
-    {:ok, nil}
-  end
+  defp poll_branch(clauses, deadline) do
+    frame =
+      case grab_frame() do
+        {:ok, frame} -> frame
+        {:error, _} -> nil
+      end
 
-  defp execute_step({:retry_until, hook, steps, timeout_ms, every_ms, tries}, last_frame, ctx) do
-    verb = retry_verb(steps)
-    bound_desc = if tries, do: "tries #{tries}", else: "timeout #{timeout_ms}ms"
-    Ctx.log(ctx, :info, "#{verb} #{inspect(hook)} (#{bound_desc}, every #{every_ms}ms)")
+    matched = frame && Enum.find(clauses, fn {hook, _} -> hook_matches?(frame, hook) end)
 
-    case hook_visible?(hook, last_frame) do
-      {true, frame} ->
-        Ctx.log(ctx, :ok, "#{verb} #{inspect(hook)}: already visible")
-        {:ok, frame}
-
-      {false, _} ->
-        bound = if tries, do: {:tries, tries}, else: {:deadline, mono() + timeout_ms}
-        retry_loop(hook, steps, every_ms, bound, 0, ctx)
+    cond do
+      matched -> {frame, matched}
+      mono() >= deadline -> {frame, nil}
+      true ->
+        Process.sleep(@poll_interval_ms)
+        poll_branch(clauses, deadline)
     end
   end
 
@@ -330,29 +463,54 @@ defmodule StarlightBot.Navigation.Runner do
     end
   end
 
-  defp retry_loop(hook, steps, every_ms, bound, attempt, ctx) do
-    if retry_exhausted?(bound, attempt) do
-      Ctx.log(ctx, :error, "#{retry_verb(steps)} #{inspect(hook)}: gave up after #{attempt} attempt(s)")
-      {:error, {:retry_exhausted, hook}}
+  defp retry_loop(loop, attempt, ctx) do
+    if retry_exhausted?(loop.bound, attempt) do
+      retry_gave_up(loop, attempt, ctx)
     else
-      case run_steps(steps, nil, ctx) do
+      case run_steps(loop.steps, nil, ctx, []) do
         {:ok, _frame} ->
-          Process.sleep(every_ms)
-
-          case hook_visible?(hook, nil) do
-            {true, frame} ->
-              Ctx.log(ctx, :ok, "#{retry_verb(steps)} #{inspect(hook)}: matched after #{attempt + 1} attempt(s)")
-              {:ok, frame}
-
-            {false, _} ->
-              retry_loop(hook, steps, every_ms, bound, attempt + 1, ctx)
+          if loop.steps != [] and Enum.all?(loop.steps, &self_positioning_step?/1) do
+            premove_toward(loop.hook, loop.ahead, ctx)
           end
+
+          await_retry_window(loop, attempt + 1, ctx)
 
         {:error, _} = err ->
           err
       end
     end
   end
+
+  defp await_retry_window(loop, attempt, ctx) do
+    case poll_until_match(loop.hook, mono() + loop.every_ms) do
+      {:matched, frame} ->
+        Ctx.log(ctx, :ok, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: matched after #{attempt} attempt(s), #{mono() - loop.started_at}ms")
+        {:ok, frame}
+
+      :timeout ->
+        cond do
+          retry_allowed?(loop.retry_if) ->
+            retry_loop(loop, attempt, ctx)
+
+          retry_exhausted?(loop.bound, attempt) ->
+            retry_gave_up(loop, attempt, ctx)
+
+          true ->
+            Ctx.log(ctx, :info, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: #{inspect(loop.retry_if)} gone, waiting instead of retrying")
+            await_retry_window(loop, attempt + 1, ctx)
+        end
+    end
+  end
+
+  defp retry_gave_up(loop, attempt, ctx) do
+    Ctx.log(ctx, :error, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: gave up after #{attempt} attempt(s), #{mono() - loop.started_at}ms")
+    {:error, {:retry_exhausted, loop.hook}}
+  end
+
+  defp retry_allowed?(nil), do: true
+  defp retry_allowed?(retry_if), do: elem(hook_visible?(retry_if, nil), 0)
+
+  defp self_positioning_step?(step), do: elem(step, 0) in [:click, :move_to, :drag, :key, :type, :sleep]
 
   defp retry_exhausted?({:tries, max_tries}, attempt), do: attempt >= max_tries
   defp retry_exhausted?({:deadline, deadline}, _attempt), do: mono() >= deadline
@@ -371,7 +529,7 @@ defmodule StarlightBot.Navigation.Runner do
     end
   end
 
-  defp verify_screen(screen_name, ctx) do
+  defp verify_screen(screen_name, ctx, upcoming \\ []) do
     case Catalog.find_screen(screen_name) do
       nil ->
         Ctx.log(ctx, :ok, "no identity hook for #{screen_name}, skipping verify")
@@ -382,6 +540,7 @@ defmodule StarlightBot.Navigation.Runner do
         :ok
 
       screen ->
+        premove_toward(screen.identity_hook, upcoming, ctx)
         deadline = mono() + @verify_timeout_ms
 
         case poll_until_match(screen.identity_hook, deadline) do
@@ -396,9 +555,11 @@ defmodule StarlightBot.Navigation.Runner do
     end
   end
 
-  defp do_click(hook_atom, last_frame, ctx) do
-    with {:ok, {sx, sy}} <- resolve_screen_point(hook_atom, last_frame, ctx) do
-      Mouse.visual_click(sx, sy)
+  defp do_click(hook_atom, opts, last_frame, _ctx) do
+    with {:ok, region} <- resolve_target_region(hook_atom, last_frame),
+         {:ok, {sx, sy}} <- to_screen_point(sample_target_point(region)),
+         {:ok, box} <- to_screen_box(target_box(region)) do
+      if Premove.enabled?(), do: Mouse.click(sx, sy, Keyword.put(opts, :within, box)), else: Mouse.click(sx, sy, opts)
       :ok
     end
   end
@@ -413,18 +574,79 @@ defmodule StarlightBot.Navigation.Runner do
   defp do_drag(hook_atom, dx, dy, duration_ms, last_frame, ctx) do
     with {:ok, {sx, sy}} <- resolve_screen_point(hook_atom, last_frame, ctx),
          {:ok, scale} <- window_scale() do
-      Mouse.drag({sx, sy}, {sx + round(dx * scale), sy + round(dy * scale)}, duration_ms)
+      Mouse.drag({sx, sy}, {sx + round(dx * scale), sy + round(dy * scale)}, duration_ms: duration_ms)
       :ok
     end
   end
 
-  defp sample_target_point({x, y, w, h}) do
+  defp target_box({x, y, w, h}) do
     scale = :math.sqrt(@target_area_fraction)
     tw = w * scale
     th = h * scale
-    left = x + (w - tw) / 2
-    top = y + (h - th) / 2
+    {x + (w - tw) / 2, y + (h - th) / 2, tw, th}
+  end
+
+  defp sample_target_point(region) do
+    {left, top, tw, th} = target_box(region)
     {left + :rand.uniform() * tw, top + :rand.uniform() * th}
+  end
+
+  defp to_screen_box({nx, ny, nw, nh}) do
+    case Capture.window_rect() do
+      nil -> {:error, :no_window}
+      {wx, wy, ww, _wh} ->
+        scale = ww / 1920.0
+        {:ok, {wx + nx * scale, wy + ny * scale, nw * scale, nh * scale}}
+    end
+  end
+
+  defp maybe_premove(step, ahead, ctx) do
+    case premove_window(step) do
+      {:ok, watched} -> premove_toward(watched, ahead, ctx)
+      :none -> :ok
+    end
+  end
+
+  defp premove_window({:await, spec, _timeout}), do: {:ok, spec}
+  defp premove_window({:await_any, specs, _timeout}), do: {:ok, {:any, specs}}
+  defp premove_window({:retry_until, spec, [], _timeout, _every, _tries}), do: {:ok, spec}
+  defp premove_window({:retry_until, spec, [], _timeout, _every, _tries, _retry_if}), do: {:ok, spec}
+  defp premove_window({:sleep, _ms}), do: {:ok, nil}
+  defp premove_window(_step), do: :none
+
+  defp premove_toward(watched, ahead, ctx) do
+    with true <- Premove.enabled?(),
+         {:ok, hook_atom} <- next_target(ahead),
+         {:ok, hook} <- HookRegistry.find(hook_atom),
+         {_, _, _, _} = region <- fixed_region(hook),
+         {:ok, {sx, sy}} <- to_screen_point(sample_target_point(region)),
+         {:ok, box} <- to_screen_box(target_box(region)) do
+      Ctx.log(ctx, :info, "premove → #{hook_atom} (while waiting on #{inspect(watched)})")
+      Mouse.premove(sx, sy, box)
+    end
+
+    :ok
+  end
+
+  defp next_target([{:click, hook} | _]), do: {:ok, hook}
+  defp next_target([{:click, hook, _opts} | _]), do: {:ok, hook}
+  defp next_target([{:move_to, hook} | _]), do: {:ok, hook}
+  defp next_target([{:premove, hook} | _]), do: {:ok, hook}
+  defp next_target([{:drag, hook, _dx, _dy, _ms} | _]), do: {:ok, hook}
+  defp next_target([{:retry_until, _spec, [_ | _] = steps, _, _, _} | rest]), do: next_target(steps ++ rest)
+  defp next_target([{:retry_until, _spec, [_ | _] = steps, _, _, _, _} | rest]), do: next_target(steps ++ rest)
+  defp next_target([{:branch, [{_spec, steps} | _], _default} | _]), do: next_target(steps)
+  defp next_target([{:branch, [{_spec, steps} | _], _default, _wait_ms} | _]), do: next_target(steps)
+  defp next_target([{kind, _} | rest]) when kind in [:key, :type, :sleep], do: next_target(rest)
+  defp next_target(_steps), do: :none
+
+  defp fixed_region(hook) do
+    cond do
+      hook.click_region -> hook.click_region
+      hook.scan_region -> nil
+      hook.region -> hook.region
+      true -> nil
+    end
   end
 
   defp window_scale do
@@ -442,45 +664,25 @@ defmodule StarlightBot.Navigation.Runner do
   end
 
   defp resolve_screen_point(hook_atom, last_frame, _ctx) do
+    with {:ok, region} <- resolve_target_region(hook_atom, last_frame) do
+      to_screen_point(sample_target_point(region))
+    end
+  end
+
+  defp resolve_target_region(hook_atom, last_frame) do
     with {:ok, hook} <- HookRegistry.find(hook_atom) do
-      fixed_target =
-        cond do
-          hook.click_region -> hook.click_region
-          hook.scan_region -> nil
-          hook.region -> hook.region
-          true -> nil
-        end
+      case fixed_region(hook) do
+        {_, _, _, _} = region ->
+          {:ok, region}
 
-      norm_point =
-        case fixed_target do
-          {_, _, _, _} = region ->
-            sample_target_point(region)
-
-          nil ->
-            frame_for_find = last_frame || elem(grab_frame(), 1)
-
-            if frame_for_find do
-              case Matcher.find(frame_for_find, hook_atom) do
-                {:ok, region} -> sample_target_point(region)
-                _ -> nil
-              end
-            end
-        end
-
-      case norm_point do
         nil ->
-          {:error, :no_target}
+          frame_for_find = last_frame || elem(grab_frame(), 1)
 
-        {nx, ny} ->
-          case Capture.window_rect() do
-            nil ->
-              {:error, :no_window}
-
-            {wx, wy, ww, _wh} ->
-              scale = ww / 1920.0
-              sx = round(wx + nx * scale)
-              sy = round(wy + ny * scale)
-              {:ok, {sx, sy}}
+          with %Frame{} <- frame_for_find,
+               {:ok, region} <- Matcher.find(frame_for_find, hook_atom) do
+            {:ok, region}
+          else
+            _ -> {:error, :no_target}
           end
       end
     end

@@ -44,7 +44,7 @@ defmodule StarlightBot.Automation.EventAdvantage do
 
   defp click_center(x, y, w, h, ctx) do
     case Runner.to_screen_point({x + div(w, 2), y + div(h, 2)}) do
-      {:ok, {sx, sy}} -> Mouse.visual_click(sx, sy)
+      {:ok, {sx, sy}} -> Mouse.click(sx, sy)
       {:error, reason} -> Ctx.log(ctx, :error, "event_advantage: click failed: #{inspect(reason)}")
     end
   end

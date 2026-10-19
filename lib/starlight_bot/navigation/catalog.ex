@@ -87,6 +87,7 @@ defmodule StarlightBot.Navigation.Catalog do
 
   defp escape_key_step?({:key, :esc}), do: true
   defp escape_key_step?({:retry_until, _hook, steps, _timeout_ms, _every_ms, _tries}), do: escape_only_steps?(steps)
+  defp escape_key_step?({:retry_until, _hook, steps, _timeout_ms, _every_ms, _tries, _retry_if}), do: escape_only_steps?(steps)
   defp escape_key_step?(_step), do: false
 
   defp escape_neutral_step?({:sleep, _ms}), do: true

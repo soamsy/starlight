@@ -413,6 +413,7 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
   def phase_label(:idle), do: nil
   def phase_label(:localizing), do: "Localizing…"
   def phase_label(:running), do: "Running…"
+  def phase_label(:paused), do: "Paused"
 
   def log_kind_class(:ok), do: "text-success"
   def log_kind_class(:error), do: "text-error"

@@ -1,7 +1,7 @@
 defmodule StarlightBot.Input.Mouse do
   use GenServer
   require Logger
-  alias StarlightBot.{Native, Input.MovementProfile, Input.PositionSource, Input.Trajectory}
+  alias StarlightBot.{LogStore, Native, Input.MovementProfile, Input.Trajectory}
 
   @btn_left 0x110
   @btn_right 0x111
@@ -9,8 +9,11 @@ defmodule StarlightBot.Input.Mouse do
   @click_hold_sigma 13
   @scroll_click_delay_ms 60
   @scroll_click_delay_sigma 15
+  @drag_settle_ms 50
+  @mouse_down_settle_ms 30
+  @click_settle_ms 0
 
-  defstruct current_pos: {960, 540}, last_velocity: {0.0, 0.0}
+  defstruct current_pos: {960, 540}, last_velocity: {0.0, 0.0}, held: MapSet.new(), premove: nil
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -20,16 +23,16 @@ defmodule StarlightBot.Input.Mouse do
     GenServer.call(__MODULE__, {:move_to, x, y, opts}, 10_000)
   end
 
-  def absolute_click(x, y) do
-    GenServer.call(__MODULE__, {:absolute_click, x, y}, 10_000)
-  end
-
-  def visual_click(x, y) do
-    GenServer.call(__MODULE__, {:visual_click, x, y}, 15_000)
+  def premove(x, y, within) do
+    GenServer.cast(__MODULE__, {:premove, x, y, within})
   end
 
   def click(x, y, opts \\ []) do
-    GenServer.call(__MODULE__, {:click, x, y, :left, opts}, 10_000)
+    GenServer.call(__MODULE__, {:click, x, y, :left, opts}, 15_000)
+  end
+
+  def click_here(button \\ :left) do
+    GenServer.call(__MODULE__, {:click_here, button}, 10_000)
   end
 
   def right_click(x, y, opts \\ []) do
@@ -40,8 +43,8 @@ defmodule StarlightBot.Input.Mouse do
     GenServer.call(__MODULE__, {:double_click, x, y, opts}, 10_000)
   end
 
-  def drag(from, to, duration_ms \\ nil) do
-    GenServer.call(__MODULE__, {:drag, from, to, duration_ms}, 15_000)
+  def drag(from, to, opts \\ []) do
+    GenServer.call(__MODULE__, {:drag, from, to, opts}, 15_000)
   end
 
   def mouse_down(button \\ :left) do
@@ -64,7 +67,7 @@ defmodule StarlightBot.Input.Mouse do
   def init(_opts) do
     Logger.info("Input.Mouse starting — initializing EIS connection", module: __MODULE__)
 
-    case Native.init_input() do
+    case Native.init_input(Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany")) do
       :ok ->
         Logger.info("EIS input device ready", module: __MODULE__)
       {:error, reason} ->
@@ -80,43 +83,46 @@ defmodule StarlightBot.Input.Mouse do
   end
 
   @impl true
+  def handle_call({:click, _x, _y, _button, opts} = msg, from, %{premove: %{} = pm} = state) do
+    state =
+      case Keyword.get(opts, :within) do
+        nil -> halt_premove(state)
+        within -> if inside?(pm.target, within), do: finish_premove(state), else: halt_premove(state)
+      end
+
+    handle_call(msg, from, state)
+  end
+
+  def handle_call(msg, from, %{premove: %{}} = state) do
+    handle_call(msg, from, halt_premove(state))
+  end
+
   def handle_call({:move_to, x, y, opts}, _from, state) do
     {new_state, _waypoints} = execute_move(state, x, y, opts)
     {:reply, :ok, new_state}
   end
 
   @impl true
-  def handle_call({:absolute_click, x, y}, _from, state) do
-    case Native.move_absolute(x * 1.0, y * 1.0) do
-      :ok ->
-        :timer.sleep(50)
-        do_click(:left)
-        {:reply, :ok, %{state | current_pos: {x, y}, last_velocity: {0.0, 0.0}}}
-
-      {:error, _} ->
-        {new_state, _} = execute_move(state, x, y, [])
-        do_click(:left)
-        {:reply, :ok, new_state}
-    end
-  end
-
-  @impl true
-  def handle_call({:visual_click, x, y}, _from, state) do
-    if PositionSource.tracked?() do
-      {cx, cy} = state.current_pos
-      Native.move_absolute(cx * 1.0, cy * 1.0)
-    end
-
-    {new_state, _} = execute_move(state, x, y, [])
-    do_click(:left)
-    {:reply, :ok, new_state}
-  end
-
-  @impl true
   def handle_call({:click, x, y, button, opts}, _from, state) do
-    {new_state, _waypoints} = execute_move(state, x, y, opts)
+    within = Keyword.get(opts, :within)
+
+    new_state =
+      if within != nil and inside?(start_pos(state), within) do
+        LogStore.append(:info, "premove: cursor already on target, clicking in place")
+        state
+      else
+        elem(execute_move(state, x, y, opts), 0)
+      end
+    :timer.sleep(Keyword.get(opts, :settle_ms, @click_settle_ms))
+
     do_click(button)
     {:reply, :ok, new_state}
+  end
+
+  @impl true
+  def handle_call({:click_here, button}, _from, state) do
+    do_click(button)
+    {:reply, :ok, state}
   end
 
   @impl true
@@ -129,10 +135,12 @@ defmodule StarlightBot.Input.Mouse do
   end
 
   @impl true
-  def handle_call({:drag, {fx, fy}, {tx, ty}, duration_ms}, _from, state) do
+  def handle_call({:drag, {fx, fy}, {tx, ty}, opts}, _from, state) do
     {new_state, _} = execute_move(state, fx, fy, [])
+    :timer.sleep(Keyword.get(opts, :settle_ms, @drag_settle_ms))
     Native.button_event(@btn_left, true)
-    {final_state, _} = execute_move(new_state, tx, ty, [duration_override: duration_ms])
+    :timer.sleep(Keyword.get(opts, :mouse_down_settle_ms, @mouse_down_settle_ms))
+    {final_state, _} = execute_move(new_state, tx, ty, [duration_override: Keyword.get(opts, :duration_ms)])
     Native.button_event(@btn_left, false)
     {:reply, :ok, final_state}
   end
@@ -141,7 +149,8 @@ defmodule StarlightBot.Input.Mouse do
   def handle_call({:button, button, pressed}, _from, state) do
     btn_code = if button == :left, do: @btn_left, else: @btn_right
     Native.button_event(btn_code, pressed)
-    {:reply, :ok, state}
+    held = if pressed, do: MapSet.put(state.held, button), else: MapSet.delete(state.held, button)
+    {:reply, :ok, %{state | held: held}}
   end
 
   @impl true
@@ -152,17 +161,85 @@ defmodule StarlightBot.Input.Mouse do
   end
 
   @impl true
+  def handle_cast({:premove, x, y, within}, state) do
+    cond do
+      MapSet.size(state.held) > 0 ->
+        LogStore.append(:info, "premove skipped: mouse button held")
+        {:noreply, state}
+
+      state.premove != nil and inside?(state.premove.target, within) ->
+        {:noreply, state}
+
+      true ->
+        state = halt_premove(state)
+
+        if inside?(start_pos(state), within) do
+          {:noreply, state}
+        else
+          {:noreply, start_premove(state, x, y)}
+        end
+    end
+  end
+
   def handle_cast(:release_all, state) do
     Native.button_event(@btn_left, false)
     Native.button_event(@btn_right, false)
     Native.release_all_inputs([])
-    {:noreply, %{state | last_velocity: {0.0, 0.0}}}
+    {:noreply, %{halt_premove(state) | last_velocity: {0.0, 0.0}, held: MapSet.new()}}
   end
 
-  defp execute_move(state, tx, ty, _opts) do
+  @impl true
+  def handle_info({:premove_tick, ref}, %{premove: %{ref: ref} = pm} = state) do
+    case pm.remaining do
+      [] ->
+        {:noreply, settle(state, pm.target, [pm.prev, pm.last])}
+
+      [{wx, wy, t} = waypoint | rest] ->
+        {px, py, prev_t} = pm.last
+        dx = wx - px
+        dy = wy - py
+        if abs(dx) > 0.1 or abs(dy) > 0.1, do: Native.move_relative(dx, dy)
+        Process.send_after(self(), {:premove_tick, ref}, max(round(t - prev_t), 0))
+        {:noreply, %{state | premove: %{pm | remaining: rest, prev: pm.last, last: waypoint}}}
+    end
+  end
+
+  def handle_info({:premove_tick, _stale_ref}, state), do: {:noreply, state}
+
+  defp start_premove(state, tx, ty) do
+    {fx, fy} = start_pos(state)
+    waypoints = Trajectory.build({fx * 1.0, fy * 1.0}, {tx * 1.0, ty * 1.0}, state.last_velocity, MovementProfile.current())
+    ref = make_ref()
+    send(self(), {:premove_tick, ref})
+
+    %{state | premove: %{ref: ref, target: {tx, ty}, remaining: waypoints, prev: nil, last: {fx * 1.0, fy * 1.0, 0.0}}}
+  end
+
+  defp halt_premove(%{premove: nil} = state), do: state
+
+  defp halt_premove(%{premove: pm} = state) do
+    {lx, ly, _} = pm.last
+    LogStore.append(:info, "premove interrupted with #{length(pm.remaining)} waypoint(s) left")
+    settle(state, {lx, ly}, [pm.prev, pm.last])
+  end
+
+  defp finish_premove(%{premove: pm} = state) do
+    {lx, ly, lt} = pm.last
+    LogStore.append(:info, "premove still in flight, finishing it for the click")
+    play_trajectory({lx, ly}, pm.remaining, lt)
+    settle(state, pm.target, [pm.prev, pm.last | pm.remaining])
+  end
+
+  defp settle(state, pos, played) do
+    %{state | current_pos: pos, last_velocity: terminal_velocity(Enum.reject(played, &is_nil/1)), premove: nil}
+  end
+
+  defp inside?({x, y}, {bx, by, bw, bh}), do: x >= bx and x <= bx + bw and y >= by and y <= by + bh
+
+  defp execute_move(state, tx, ty, opts) do
     {fx, fy} = from_pos = start_pos(state)
     {vx, vy} = state.last_velocity
-    profile = MovementProfile.current()
+    profile = Keyword.get(opts, :duration_mult, MovementProfile.current())
 
     waypoints = Trajectory.build({fx * 1.0, fy * 1.0}, {tx * 1.0, ty * 1.0}, {vx, vy}, profile)
 
@@ -173,28 +250,25 @@ defmodule StarlightBot.Input.Mouse do
   end
 
   defp start_pos(state) do
-    if PositionSource.queried?() do
-      case Native.get_cursor_pos() do
-        {:ok, x, y} ->
-          {x * 1.0, y * 1.0}
+    case Native.get_cursor_pos() do
+      {:ok, x, y} ->
+        {x * 1.0, y * 1.0}
 
-        {:error, reason} ->
-          Logger.warning(
-            "get_cursor_pos failed (#{inspect(reason)}), falling back to tracked position",
-            module: __MODULE__
-          )
+      {:error, reason} ->
+        Logger.warning(
+          "get_cursor_pos failed (#{inspect(reason)}), falling back to tracked position",
+          module: __MODULE__
+        )
 
-          state.current_pos
-      end
-    else
-      state.current_pos
+        state.current_pos
     end
   end
 
-  defp play_trajectory(_prev_pos, []), do: :ok
-  defp play_trajectory(start_pos, waypoints) do
+  defp play_trajectory(start_pos, waypoints, start_t \\ 0.0)
+  defp play_trajectory(_prev_pos, [], _start_t), do: :ok
+  defp play_trajectory(start_pos, waypoints, start_t) do
     {sx, sy} = start_pos
-    Enum.reduce(waypoints, {sx * 1.0, sy * 1.0, 0.0}, fn {wx, wy, t_ms}, {px, py, prev_t} ->
+    Enum.reduce(waypoints, {sx * 1.0, sy * 1.0, start_t}, fn {wx, wy, t_ms}, {px, py, prev_t} ->
       dx = wx - px
       dy = wy - py
       if abs(dx) > 0.1 or abs(dy) > 0.1 do

@@ -46,10 +46,34 @@ defmodule StarlightBot.Navigation.CatalogTest do
     end
   end
 
+  describe "giving up and defeat" do
+    test "any turn screen can leave the battle through the settings popup" do
+      assert {:ok, [%Transition{from: :battle, to: :battle_settings_popup}, %Transition{from: :battle_settings_popup, to: :battle_given_up}]} =
+               Catalog.plan_path(:battle_chain, :battle_given_up)
+    end
+
+    test "any turn screen can retry the battle through the settings popup" do
+      assert {:ok, [%Transition{from: :battle, to: :battle_settings_popup}, %Transition{from: :battle_settings_popup, to: :battle_retried}]} =
+               Catalog.plan_path(:battle_focused, :battle_retried)
+    end
+
+    test "the dungeon graph reaches the window through the dungeon progress popup" do
+      assert {:ok, [%Transition{from: :dungeon_graph, to: :dungeon_progress}, %Transition{from: :dungeon_progress, to: :dungeon_given_up}]} =
+               Catalog.plan_path(:dungeon_graph, :dungeon_given_up)
+    end
+
+    test "the defeat screen is its own battle screen with retry and stage select actions" do
+      assert %{refines: nil, identity_hook: :battle_defeat_retry} = Catalog.find_screen(:battle_defeat)
+      assert StarlightBot.Automation.Engine.in_battle?(:battle_defeat)
+      assert Catalog.find_action(:battle_defeat, :retry)
+      assert Catalog.find_action(:battle_defeat, :to_stage_select)
+    end
+  end
+
   describe "refinements_of/1" do
     test "returns the direct refinements of a screen" do
       names = Catalog.refinements_of(:home) |> Enum.map(& &1.name) |> Enum.sort()
-      assert names == [:home_drive, :home_unknown, :home_window]
+      assert names == [:home_dispense, :home_drive, :home_extract, :home_sinners, :home_theater, :home_unknown, :home_window]
     end
 
     test "a screen with no refinements returns an empty list" do
@@ -141,6 +165,12 @@ defmodule StarlightBot.Navigation.CatalogTest do
       for screen <- Catalog.all_screens(), not is_nil(screen.refines) do
         assert MapSet.member?(screen_names, screen.refines),
                "#{inspect(screen.name)} refines #{inspect(screen.refines)}, which isn't a registered screen"
+      end
+    end
+
+    test "no transition or action has a step list nested inside its steps" do
+      for %{steps: steps} = entry <- Catalog.all_transitions() ++ Catalog.all_actions() do
+        refute Enum.any?(steps, &is_list/1), "#{inspect(entry)} has a nested step list (missing ++?)"
       end
     end
 

@@ -15,10 +15,11 @@ defmodule StarlightBot.Navigation.DSL do
     identity = Keyword.fetch!(opts, :identity)
     refines = Keyword.get(opts, :refines)
     catch_all = Keyword.get(opts, :catch_all, false)
+    settle = Keyword.get(opts, :settle, true)
 
     quote do
       @current_screen_name unquote(name)
-      @nav_screens {unquote(name), unquote(identity), unquote(refines), unquote(catch_all)}
+      @nav_screens {unquote(name), unquote(identity), unquote(refines), unquote(catch_all), unquote(settle)}
       unquote(body)
     end
   end
@@ -33,10 +34,11 @@ defmodule StarlightBot.Navigation.DSL do
     identity = Keyword.fetch!(opts, :identity)
     refines = Keyword.get(opts, :refines)
     catch_all = Keyword.get(opts, :catch_all, false)
+    settle = Keyword.get(opts, :settle, true)
 
     quote do
       @current_screen_name unquote(name)
-      @nav_screens {unquote(name), unquote(identity), unquote(refines), unquote(catch_all)}
+      @nav_screens {unquote(name), unquote(identity), unquote(refines), unquote(catch_all), unquote(settle)}
     end
   end
 
@@ -78,7 +80,12 @@ defmodule StarlightBot.Navigation.DSL do
 
   def click(hook) when is_atom(hook), do: {:click, hook}
 
+  def click(hook, []) when is_atom(hook), do: {:click, hook}
+  def click(hook, opts) when is_atom(hook) and is_list(opts), do: {:click, hook, opts}
+
   def move_to(hook) when is_atom(hook), do: {:move_to, hook}
+
+  def premove(hook) when is_atom(hook), do: {:premove, hook}
 
   def drag(hook, dx, dy, duration_ms \\ nil)
       when is_atom(hook) and is_number(dx) and is_number(dy) do
@@ -100,16 +107,25 @@ defmodule StarlightBot.Navigation.DSL do
   def custom(fun) when is_function(fun, 2), do: {:custom, fun}
 
   def await(hook, opts \\ []) when is_atom(hook) or is_tuple(hook) do
-    {:await, hook, Keyword.get(opts, :timeout, 5_000)}
+    timeout = Keyword.get(opts, :timeout, 5_000)
+
+    case Keyword.get(opts, :premove, true) do
+      true -> {:await, hook, timeout}
+      false -> {:await, hook, timeout, premove: false}
+    end
   end
 
   def await_any(hooks, opts \\ []) when is_list(hooks) do
     {:await_any, hooks, Keyword.get(opts, :timeout, 5_000)}
   end
 
-  def branch(clauses) when is_list(clauses) do
+  def branch(clauses, opts \\ []) when is_list(clauses) do
     {default, checks} = Keyword.pop(clauses, :default, [])
-    {:branch, checks, default}
+
+    case Keyword.get(opts, :wait) do
+      nil -> {:branch, checks, default}
+      wait_ms when is_integer(wait_ms) and wait_ms > 0 -> {:branch, checks, default, wait_ms}
+    end
   end
 
   def sleep(ms) when is_integer(ms), do: {:sleep, ms}
@@ -138,10 +154,17 @@ defmodule StarlightBot.Navigation.DSL do
 
   def retry_until(hook, steps, opts \\ [])
       when (is_atom(hook) or is_tuple(hook)) and is_list(steps) do
-    timeout_ms = Keyword.get(opts, :timeout, 5_000)
-    every_ms = Keyword.get(opts, :every, 500)
+    timeout_ms = Keyword.get(opts, :timeout, 3_000)
+    every_ms = Keyword.get(opts, :every, 400)
     tries = Keyword.get(opts, :tries)
-    {:retry_until, hook, steps, timeout_ms, every_ms, tries}
+
+    case {steps, Keyword.get(opts, :retry_if)} do
+      {[_ | _], retry_if} when not is_nil(retry_if) ->
+        {:retry_until, hook, steps, timeout_ms, every_ms, tries, retry_if}
+
+      _ ->
+        {:retry_until, hook, steps, timeout_ms, every_ms, tries}
+    end
   end
 
   def retry_until_gone(hook, steps, opts \\ [])
@@ -159,11 +182,39 @@ defmodule StarlightBot.Navigation.DSL do
     retry_until(not_hook(hook), [click(hook)], opts)
   end
 
+  @spec confirm(atom()) :: [
+          {:sleep, integer()}
+          | {:await, atom() | tuple(), any()}
+          | {:await, atom() | tuple(), any(), [{any(), any()}, ...]}
+          | {:retry_until, atom() | tuple(), maybe_improper_list(), any(), any(), any()}
+          | {:retry_until, atom() | tuple(), nonempty_maybe_improper_list(), any(), any(), any(),
+             any()},
+          ...
+        ]
+  def confirm(hook, opts \\ []) when is_atom(hook) do
+    [await(hook, opts), reclick_until_gone(hook, opts)]
+  end
+
+  def confirm_enter(hook, opts \\ []) when is_atom(hook) or is_tuple(hook) do
+    hook_settle_ms = Keyword.get(opts, :hook_settle_ms, 350)
+    [sleep(hook_settle_ms), await(hook, opts), retry_until(not_hook(hook), [key(:enter)], opts)]
+  end
+
   defmacro retry_until_arrived(steps, opts \\ []) do
     quote do
       case StarlightBot.Navigation.Catalog.find_screen(@current_transition_to) do
         %StarlightBot.Navigation.Screen{identity_hook: hook} when not is_nil(hook) ->
-          StarlightBot.Navigation.DSL.retry_until(hook, unquote(steps), unquote(opts))
+          origin_identity =
+            case StarlightBot.Navigation.Catalog.find_screen(@current_screen_name) do
+              %StarlightBot.Navigation.Screen{identity_hook: origin} -> origin
+              nil -> nil
+            end
+
+          StarlightBot.Navigation.DSL.retry_until(
+            hook,
+            unquote(steps),
+            Keyword.put_new(unquote(opts), :retry_if, origin_identity)
+          )
 
         _ ->
           raise ArgumentError,
@@ -204,12 +255,13 @@ defmodule StarlightBot.Navigation.DSL do
 
     screen_list =
       Macro.escape(
-        Enum.map(raw_screens, fn {name, identity, refines, catch_all} ->
+        Enum.map(raw_screens, fn {name, identity, refines, catch_all, settle} ->
           %StarlightBot.Navigation.Screen{
             name: name,
             identity_hook: identity,
             refines: refines,
-            catch_all: catch_all
+            catch_all: catch_all,
+            settle: settle
           }
         end)
       )

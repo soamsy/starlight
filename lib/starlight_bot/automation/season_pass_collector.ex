@@ -59,13 +59,9 @@ defmodule StarlightBot.Automation.SeasonPassCollector do
   defp claim_all(ctx) do
     with {:ok, _} <-
            Engine.act(
-             [
-               retry_until_gone(:season_pass_missions_tab, [click(:season_pass_battle_pass)]),
-               await(:season_pass_claim_all, timeout: @claim_all_confirm_timeout),
-               click(:season_pass_claim_all),
-               await(:season_pass_claim_all_confirm, timeout: @claim_all_confirm_timeout),
-               click(:season_pass_claim_all_confirm)
-             ],
+             [retry_until_gone(:season_pass_missions_tab, [click(:season_pass_battle_pass)])] ++
+               confirm(:season_pass_claim_all, timeout: @claim_all_confirm_timeout) ++
+               confirm(:season_pass_claim_all_confirm, timeout: @claim_all_confirm_timeout),
              ctx
            ) do
       :ok
@@ -85,7 +81,7 @@ defmodule StarlightBot.Automation.SeasonPassCollector do
 
   defp click_rect({x, y, w, h}, ctx) do
     case Runner.to_screen_point({x + div(w, 2), y + div(h, 2)}) do
-      {:ok, {sx, sy}} -> Mouse.visual_click(sx, sy)
+      {:ok, {sx, sy}} -> Mouse.click(sx, sy)
       {:error, reason} -> Ctx.log(ctx, :error, "season_pass_collector: click failed: #{inspect(reason)}")
     end
   end

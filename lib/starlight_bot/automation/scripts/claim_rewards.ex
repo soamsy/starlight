@@ -4,6 +4,7 @@ defmodule StarlightBot.Automation.Scripts.ClaimRewards do
   alias StarlightBot.Ctx
 
   @arrival_timeout 600_000
+  @settle_check_ms 800
 
   def run(config, ctx \\ Ctx.new())
 
@@ -27,7 +28,7 @@ defmodule StarlightBot.Automation.Scripts.ClaimRewards do
   end
 
   defp ensure_on_reward_screen(ctx) do
-    if Engine.check(:exploration_reward) do
+    if Engine.check_within(:exploration_reward, @settle_check_ms) do
       :ok
     else
       Ctx.log(ctx, :info, "opening rewards popup")
@@ -40,7 +41,7 @@ defmodule StarlightBot.Automation.Scripts.ClaimRewards do
   end
 
   defp resolve_action(:claim, ctx) do
-    if Engine.check(:exploration_reward_no_bp) do
+    if Engine.check_within(:exploration_reward_no_bp, @settle_check_ms) do
       Ctx.log(ctx, :info, "no rewards worth claiming — giving up instead")
       :give_up
     else
@@ -63,7 +64,7 @@ defmodule StarlightBot.Automation.Scripts.ClaimRewards do
   end
 
   defp apply_action(:to_window, _weekly_bonus?, ctx) do
-    if Engine.check(:exploration_reward_to_window) do
+    if Engine.check_within(:exploration_reward_to_window, @settle_check_ms) do
       Ctx.log(ctx, :info, "heading to window, abandoning rewards")
       Engine.goto(:exploration_reward, :exploration_reward_to_window_done, ctx) |> tag(:to_window)
     else
@@ -73,7 +74,7 @@ defmodule StarlightBot.Automation.Scripts.ClaimRewards do
   end
 
   defp apply_action(:to_list, weekly_bonus?, ctx) do
-    if Engine.check(:exploration_reward_to_list) do
+    if Engine.check_within(:exploration_reward_to_list, @settle_check_ms) do
       Ctx.log(ctx, :info, "heading to list")
       Engine.goto(:exploration_reward, :exploration_reward_list, ctx) |> tag(:to_list)
     else

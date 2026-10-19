@@ -10,8 +10,17 @@ defmodule StarlightBot.Navigation.DSLTest do
       assert DSL.click(:home_lunacy) == {:click, :home_lunacy}
     end
 
+    test "click/2 carries movement opts" do
+      assert DSL.click(:home_lunacy, duration_mult: 0.5) == {:click, :home_lunacy, [duration_mult: 0.5]}
+      assert DSL.click(:home_lunacy, []) == {:click, :home_lunacy}
+    end
+
     test "move_to/1" do
       assert DSL.move_to(:home_lunacy) == {:move_to, :home_lunacy}
+    end
+
+    test "premove/1" do
+      assert DSL.premove(:home_lunacy) == {:premove, :home_lunacy}
     end
 
     test "drag/3-4 defaults duration to nil, dx/dy positive is right/down" do
@@ -43,20 +52,51 @@ defmodule StarlightBot.Navigation.DSLTest do
       assert DSL.custom(fun) == {:custom, fun}
     end
 
-    test "await/1-2 defaults to a 5s timeout and accepts atom/any_of/not_hook specs" do
-      assert DSL.await(:foo) == {:await, :foo, 5_000}
+    test "await/1-2 has a positive default timeout and accepts atom/any_of/not_hook specs" do
+      assert {:await, :foo, timeout} = DSL.await(:foo)
+      assert is_integer(timeout) and timeout > 0
       assert DSL.await(:foo, timeout: 100) == {:await, :foo, 100}
-      assert DSL.await(DSL.any_of([:a, :b])) == {:await, {:any, [:a, :b]}, 5_000}
-      assert DSL.await(DSL.not_hook(:a)) == {:await, {:not, :a}, 5_000}
+      assert {:await, {:any, [:a, :b]}, ^timeout} = DSL.await(DSL.any_of([:a, :b]))
+      assert {:await, {:not, :a}, ^timeout} = DSL.await(DSL.not_hook(:a))
     end
 
-    test "await_any/1-2 defaults to a 5s timeout" do
-      assert DSL.await_any([:a, :b]) == {:await_any, [:a, :b], 5_000}
+    test "await/2 with premove: false tags the step" do
+      assert DSL.await(:foo, timeout: 100, premove: false) == {:await, :foo, 100, premove: false}
+      assert DSL.await(:foo, premove: true) == DSL.await(:foo)
+    end
+
+    test "confirm/1-2 awaits the hook, then reclicks it until gone with nothing in between" do
+      assert [await, reclick] = DSL.confirm(:a)
+      assert await == DSL.await(:a)
+      assert reclick == DSL.reclick_until_gone(:a)
+
+      opts = [timeout: 100, premove: false]
+      assert [await, reclick] = DSL.confirm(:a, opts)
+      assert await == DSL.await(:a, opts)
+      assert reclick == DSL.reclick_until_gone(:a, opts)
+    end
+
+    test "confirm_enter/1-2 awaits either hook, then presses enter until both are gone with nothing in between" do
+      spec = DSL.any_of([:a, :b])
+
+      assert [_, await, retry] = DSL.confirm_enter(spec, timeout: 100)
+      assert await == DSL.await(spec, timeout: 100)
+      assert retry == DSL.retry_until(DSL.not_hook(spec), [DSL.key(:enter)], timeout: 100)
+    end
+
+    test "await_any/1-2 has a positive default timeout" do
+      assert {:await_any, [:a, :b], timeout} = DSL.await_any([:a, :b])
+      assert is_integer(timeout) and timeout > 0
       assert DSL.await_any([:a, :b], timeout: 250) == {:await_any, [:a, :b], 250}
     end
 
     test "branch/1 splits out :default and keeps declaration order for checks" do
       assert DSL.branch(a: [1], b: [2], default: [9]) == {:branch, [a: [1], b: [2]], [9]}
+    end
+
+    test "branch/2 with wait: carries how long to keep looking before the default" do
+      assert DSL.branch([a: [1], default: [9]], wait: 500) == {:branch, [a: [1]], [9], 500}
+      assert DSL.branch([a: [1]], []) == DSL.branch(a: [1])
     end
 
     test "branch/1 with no :default clause yields an empty fallback" do
@@ -72,29 +112,28 @@ defmodule StarlightBot.Navigation.DSLTest do
       assert DSL.not_hook(DSL.not_hook(:a)) == {:not, {:not, :a}}
     end
 
-    test "retry_until/3 defaults to a 5s timeout, 500ms interval, and no fixed tries" do
-      assert DSL.retry_until(:a, [DSL.click(:a)]) ==
-               {:retry_until, :a, [{:click, :a}], 5_000, 500, nil}
+    test "retry_until/3 has positive default timeout and interval, and no fixed tries" do
+      assert {:retry_until, :a, [{:click, :a}], timeout, every, nil} = DSL.retry_until(:a, [DSL.click(:a)])
+      assert is_integer(timeout) and timeout > 0
+      assert is_integer(every) and every > 0
 
       assert DSL.retry_until(:a, [DSL.click(:a)], timeout: 2_000, every: 200) ==
                {:retry_until, :a, [{:click, :a}], 2_000, 200, nil}
     end
 
     test "retry_until/3 with :tries carries the fixed attempt count instead" do
-      assert DSL.retry_until(:a, [DSL.click(:a)], tries: 3) ==
-               {:retry_until, :a, [{:click, :a}], 5_000, 500, 3}
-
-      assert DSL.retry_until(:a, [DSL.click(:a)], every: 200, tries: 3) ==
-               {:retry_until, :a, [{:click, :a}], 5_000, 200, 3}
+      assert DSL.retry_until(:a, [DSL.click(:a)], timeout: 2_000, every: 200, tries: 3) ==
+               {:retry_until, :a, [{:click, :a}], 2_000, 200, 3}
     end
 
     test "wait_until/1-2 is retry_until/3 with an empty step list" do
-      assert DSL.wait_until(:a) == {:retry_until, :a, [], 5_000, 500, nil}
+      assert DSL.wait_until(:a) == DSL.retry_until(:a, [])
+      assert DSL.wait_until(:a, retry_if: :b) == DSL.retry_until(:a, [])
+      assert {:retry_until, :a, [{:click, :a}], _timeout, _every, nil, :b} = DSL.retry_until(:a, [{:click, :a}], retry_if: :b)
     end
 
     test "reclick_until_gone/1-2 retries a click against the negated hook" do
-      assert DSL.reclick_until_gone(:a) ==
-               {:retry_until, {:not, :a}, [{:click, :a}], 5_000, 500, nil}
+      assert DSL.reclick_until_gone(:a) == DSL.retry_until(DSL.not_hook(:a), [DSL.click(:a)])
     end
 
     test "await_then_gone/1-2 awaits the hook, then awaits its negation" do
@@ -196,8 +235,8 @@ defmodule StarlightBot.Navigation.DSLTest do
       to_drive = Enum.find(transitions, &(&1.from == :home_window and &1.to == :home_drive))
       to_window = Enum.find(transitions, &(&1.from == :home_drive and &1.to == :home_window))
 
-      assert to_drive.steps == [{:retry_until, :home_drive_selected, [{:click, :home_drive_unselected}], 5_000, 500, nil}]
-      assert to_window.steps == [{:retry_until, :home_window_selected, [{:click, :home_window_unselected}], 5_000, 500, nil}]
+      assert [{:retry_until, :home_drive_selected, [{:click, :home_drive_unselected}], _, _, nil, :home_window_selected}] = to_drive.steps
+      assert [{:retry_until, :home_window_selected, [{:click, :home_window_unselected}], _, _, nil, :home_drive_selected}] = to_window.steps
     end
 
     test "raises when the transition target has no identity hook to retry against" do
