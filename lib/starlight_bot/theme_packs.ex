@@ -16,11 +16,17 @@ defmodule StarlightBot.ThemePacks do
           tip: t.tip,
           event_ids: t.event_ids,
           image_path: t.image_path,
-          hook_name: t.hook_name
+          hook_name: t.hook_name,
+          search_hook_name: t.search_hook_name
         }
     )
   rescue
     _ -> []
+  end
+
+  def set_search_hook(id, hook_name) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    Repo.update_all(from(t in "theme_packs", where: t.id == ^id), set: [search_hook_name: hook_name, updated_at: now])
   end
 
   @doc "Decode a normal_floors/hard_floors JSON string column into a list of floor integers."

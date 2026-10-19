@@ -2,23 +2,68 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
   use StarlightBotWeb, :live_view
 
   require Logger
-  alias StarlightBot.{ThemePacks, Vision.Capture, Vision.Matcher}
+  alias StarlightBot.{Ctx, Hooks, ThemePacks, Vision.Capture, Vision.Matcher}
+  alias StarlightBot.Automation.Scripts.ThemePackSelector
+
+  @countdown_secs 2
+  @log_limit 1000
 
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
      socket
      |> assign(:theme_packs, ThemePacks.list_theme_packs())
+     |> assign(:hook_names, Enum.map(Hooks.list_hooks(), & &1.name))
      |> assign(:filter, "")
      |> assign(:scan_status, :idle)
      |> assign(:scan_matched_ids, nil)
      |> assign(:scan_results, [])
-     |> assign(:scan_total_ms, nil)}
+     |> assign(:scan_total_ms, nil)
+     |> assign(:search_pack_id, nil)
+     |> assign(:search_status, :idle)
+     |> assign(:countdown, nil)
+     |> assign(:search_log, [])}
   end
 
   @impl true
   def handle_event("filter_theme_packs", %{"value" => val}, socket) do
     {:noreply, assign(socket, :filter, val)}
+  end
+
+  @impl true
+  def handle_event("set_search_hook", %{"pack_id" => pack_id, "value" => value}, socket) do
+    hook_name = String.trim(value)
+
+    cond do
+      hook_name == "" ->
+        ThemePacks.set_search_hook(pack_id, nil)
+        {:noreply, assign(socket, :theme_packs, ThemePacks.list_theme_packs())}
+
+      hook_name in socket.assigns.hook_names ->
+        ThemePacks.set_search_hook(pack_id, hook_name)
+        {:noreply, assign(socket, :theme_packs, ThemePacks.list_theme_packs())}
+
+      true ->
+        {:noreply, put_flash(socket, :error, "No hook named #{hook_name}.")}
+    end
+  end
+
+  @impl true
+  def handle_event("test_search", _params, %{assigns: %{search_status: status}} = socket)
+      when status in [:counting_down, :running] do
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("test_search", %{"pack_id" => pack_id}, socket) do
+    Process.send_after(self(), :countdown_tick, 1_000)
+
+    {:noreply,
+     socket
+     |> assign(:search_pack_id, pack_id)
+     |> assign(:search_status, :counting_down)
+     |> assign(:countdown, @countdown_secs)
+     |> assign(:search_log, [])}
   end
 
   @impl true
@@ -54,6 +99,33 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
   end
 
   @impl true
+  def handle_info(:countdown_tick, %{assigns: %{countdown: 1}} = socket) do
+    start_search(Enum.find(socket.assigns.theme_packs, &(&1.id == socket.assigns.search_pack_id)))
+    {:noreply, socket |> assign(:search_status, :running) |> assign(:countdown, nil)}
+  end
+
+  @impl true
+  def handle_info(:countdown_tick, socket) do
+    Process.send_after(self(), :countdown_tick, 1_000)
+    {:noreply, assign(socket, :countdown, socket.assigns.countdown - 1)}
+  end
+
+  @impl true
+  def handle_info({:search_log, kind, text}, socket) do
+    {:noreply, update(socket, :search_log, &Enum.take([%{kind: kind, text: text} | &1], @log_limit))}
+  end
+
+  @impl true
+  def handle_info({:search_result, result}, socket) do
+    socket = assign(socket, :search_status, :idle)
+
+    case result do
+      {:ok, _} -> {:noreply, put_flash(socket, :info, "Theme pack search finished.")}
+      {:error, reason} -> {:noreply, put_flash(socket, :error, "Theme pack search failed: #{inspect(reason)}")}
+    end
+  end
+
+  @impl true
   def handle_info({:scan_result, {:ok, results, total_ms}}, socket) do
     matched_ids = results |> Enum.filter(& &1.matched) |> MapSet.new(& &1.id)
 
@@ -82,6 +154,15 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
      socket
      |> assign(:scan_status, :idle)
      |> put_flash(:error, "Scan failed: #{inspect(reason)}")}
+  end
+
+  defp start_search(pack) do
+    me = self()
+
+    Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn ->
+      ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:search_log, kind, text}) end)
+      send(me, {:search_result, ThemePackSelector.search_replace(pack, ctx)})
+    end)
   end
 
   defp scan_all(theme_packs, frame) do

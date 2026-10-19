@@ -30,6 +30,12 @@
         />
       </div>
 
+      <datalist id="theme-pack-hook-names">
+        <%= for name <- @hook_names do %>
+          <option value={name} />
+        <% end %>
+      </datalist>
+
       <div class="flex-1 min-h-0 overflow-y-auto">
         <div class="grid grid-cols-6 gap-3">
           <%= for pack <- filtered_theme_packs(@theme_packs, @filter, @scan_matched_ids, @scan_results) do %>
@@ -58,6 +64,28 @@
               </div>
 
               <div class="text-[11px] text-center truncate mt-1" title={pack.name_en}><%= pack.name_en %></div>
+              <div class="text-[10px] text-base-content/50 truncate" title={pack.hook_name}>
+                select: <%= pack.hook_name || "none" %>
+              </div>
+              <label class="flex items-center gap-1 text-[10px] text-base-content/50">
+                search:
+                <input type="text" list="theme-pack-hook-names" value={pack.search_hook_name}
+                       phx-blur="set_search_hook" phx-value-pack_id={pack.id}
+                       placeholder="none"
+                       class="input input-bordered input-xs h-5 min-h-0 px-1 flex-1 min-w-0 text-[10px]" />
+              </label>
+              <button phx-click="test_search" phx-value-pack_id={pack.id}
+                      disabled={is_nil(pack.search_hook_name) or @search_status != :idle}
+                      class="btn btn-xs btn-outline mt-1">
+                <%= cond do %>
+                  <% @search_pack_id == pack.id and @search_status == :counting_down -> %>
+                    Alt-tab… <%= @countdown %>
+                  <% @search_pack_id == pack.id and @search_status == :running -> %>
+                    <span class="loading loading-spinner loading-xs"></span> Searching
+                  <% true -> %>
+                    Test search
+                <% end %>
+              </button>
             </div>
           <% end %>
         </div>
@@ -65,6 +93,23 @@
 
     </div>
   </div>
+
+  <%= if @search_log != [] do %>
+    <div class="card bg-base-100 shadow-lg flex flex-col shrink-0">
+      <div class="card-body p-3 flex flex-col gap-1">
+        <h3 class="card-title text-base">Search Log</h3>
+        <div class="overflow-y-auto max-h-48 font-mono text-[11px]">
+          <%= for entry <- @search_log do %>
+            <div class={case entry.kind do
+                          :error -> "text-error"
+                          :ok -> "text-success"
+                          _ -> "text-base-content/70"
+                        end}><%= entry.text %></div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  <% end %>
 
   <%= if @scan_results != [] do %>
     <div class="card bg-base-100 shadow-lg flex flex-col shrink-0">

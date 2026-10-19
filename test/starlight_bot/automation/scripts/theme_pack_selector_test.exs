@@ -48,6 +48,90 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
     end
   end
 
+  describe "expected_pack_count/1" do
+    test "base of 3 with no pack-count graces" do
+      assert ThemePackSelector.expected_pack_count([]) == 3
+      assert ThemePackSelector.expected_pack_count([%{"index" => 1}, %{"index" => 6, "enhance" => 2}]) == 3
+    end
+
+    test "each of graces 0, 2, 9 adds one, in either pick shape" do
+      assert ThemePackSelector.expected_pack_count([%{"index" => 0}]) == 4
+      assert ThemePackSelector.expected_pack_count([2, %{"index" => 9, "enhance" => 1}]) == 5
+    end
+
+    test "caps at 5" do
+      assert ThemePackSelector.expected_pack_count([%{"index" => 0}, %{"index" => 2}, %{"index" => 9}]) == 5
+    end
+  end
+
+  describe "refresh_budget/1" do
+    test "one refresh without Interstellar Travel" do
+      assert ThemePackSelector.refresh_budget([]) == 1
+      assert ThemePackSelector.refresh_budget([%{"index" => 0}, %{"index" => 9, "enhance" => 2}]) == 1
+    end
+
+    test "Interstellar Travel adds 2, 3 or 4 by enhance level" do
+      assert ThemePackSelector.refresh_budget([%{"index" => 2, "enhance" => 0}]) == 3
+      assert ThemePackSelector.refresh_budget([2]) == 3
+      assert ThemePackSelector.refresh_budget([%{"index" => 2, "enhance" => 1}]) == 4
+      assert ThemePackSelector.refresh_budget([%{"index" => 0}, %{"index" => 2, "enhance" => 2}]) == 5
+    end
+  end
+
+  describe "scroll_plan/1" do
+    test "fast steps stop one row short of the bottom, then settled steps" do
+      assert ThemePackSelector.scroll_plan(5) == {0, 3}
+      assert ThemePackSelector.scroll_plan(10) == {0, 3}
+      assert ThemePackSelector.scroll_plan(13) == {1, 3}
+      assert ThemePackSelector.scroll_plan(21) == {3, 3}
+    end
+
+    test "unknown pane size settles every step" do
+      assert ThemePackSelector.scroll_plan(nil) == {0, 16}
+    end
+  end
+
+  describe "floor_pool/3" do
+    test "keeps packs eligible on the floor for the mode" do
+      packs = [pack("thm_a", [1, 2], [3]), pack("thm_b", [2], []), pack("thm_c", [], [1, 2])]
+
+      assert ThemePackSelector.floor_pool(packs, "normal", 2) |> Enum.map(& &1.id) == ["thm_a", "thm_b"]
+      assert ThemePackSelector.floor_pool(packs, "hard", 2) |> Enum.map(& &1.id) == ["thm_c"]
+      assert ThemePackSelector.floor_pool(packs, "hard", 4) == []
+    end
+  end
+
+  describe "search_target/6" do
+    setup do
+      packs = [pack("thm_a", [1, 2], [1, 2]), pack("thm_b", [1, 2], [1, 2]), pack("thm_c", [1, 2], [1, 2])]
+
+      plan = %{
+        "search_floors" => [2],
+        "packs" => %{
+          "thm_a" => %{"normal" => %{"priority" => "hunt"}},
+          "thm_b" => %{"normal" => %{"priority" => "hunt"}}
+        }
+      }
+
+      %{packs: packs, plan: plan}
+    end
+
+    test "picks the first hunt pack in list order", %{packs: packs, plan: plan} do
+      assert %{id: "thm_a"} = ThemePackSelector.search_target(plan, packs, "normal", 2, [], fn _ -> true end)
+    end
+
+    test "nil when the floor isn't a search floor", %{packs: packs, plan: plan} do
+      assert ThemePackSelector.search_target(plan, packs, "normal", 1, [], fn _ -> true end) == nil
+      assert ThemePackSelector.search_target(Map.delete(plan, "search_floors"), packs, "normal", 2, [], fn _ -> true end) == nil
+    end
+
+    test "skips visited packs and packs without a usable search hook", %{packs: packs, plan: plan} do
+      assert %{id: "thm_b"} = ThemePackSelector.search_target(plan, packs, "normal", 2, ["thm_a"], fn _ -> true end)
+      assert %{id: "thm_b"} = ThemePackSelector.search_target(plan, packs, "normal", 2, [], &(&1.id != "thm_a"))
+      assert ThemePackSelector.search_target(plan, packs, "normal", 2, ["thm_a", "thm_b"], fn _ -> true end) == nil
+    end
+  end
+
   describe "pick_winner/5" do
     test "returns :none for no matches" do
       assert ThemePackSelector.pick_winner([], %{}, %{}, "hard", 1) == :none
