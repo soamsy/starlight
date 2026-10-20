@@ -21,7 +21,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   @shop_screens [:shop, :shop_super | @shop_popup_screens]
   @team_select_screens [:team_select, :team_selector, :team_selector_tall, :team_selector_gone]
   @in_dungeon_screens [
-    :team_selector_md, :grace, :cabinet_ego_gifts, :gift_search, :ego_gift_get, :theme_pack, :dungeon_graph,
+    :team_selector_md, :grace, :grace_confirm, :cabinet_ego_gifts, :gift_search, :ego_gift_get, :theme_pack, :dungeon_graph,
     :event, :shop, :shop_super, :cabinet_reward, :mounting_trials, :encounter_reward, :battle_over_confirm
   ] ++ @team_select_screens ++ @shop_popup_screens
   @recovery_kept_screens @in_dungeon_screens ++ [:md_door_unknown, :md_door_enter_popup, :md_door_progress, :md_door_forfeit]
@@ -386,6 +386,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
       screen == :grace ->
         apply_grace_picks(grace_picks, run_state, ctx)
+
+      screen == :grace_confirm ->
+        Engine.goto(:grace_confirm, :cabinet_ego_gifts, ctx) |> continue_after(run_state)
 
       screen == :cabinet_ego_gifts ->
         apply_affinity_and_select_gift(affinity, run_state, ctx)

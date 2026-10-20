@@ -6,6 +6,19 @@ defmodule StarlightBot.Navigation.Screens.Grace do
   end
 
   screen :grace_confirm, identity: :grace_popup_confirm, refines: :grace do
-    transition to: :cabinet_ego_gifts, do: [reclick_until_gone(:grace_popup_confirm)]
+    transition to: :cabinet_ego_gifts do
+      [
+        premove(:grace_popup_confirm),
+        branch(
+          [
+            {:grace_convert_starlight_checked,
+             [retry_until(:grace_convert_starlight_unchecked, [click(:grace_convert_starlight_checked)], every: 600)]},
+            {:grace_convert_starlight_unchecked, []}
+          ],
+          wait: 1_500
+        ),
+        reclick_until_gone(:grace_popup_confirm)
+      ]
+    end
   end
 end
