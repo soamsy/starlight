@@ -43,6 +43,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:weekly_bonus, true)
      |> assign(:collect_enkephalin, false)
      |> assign(:collect_xp, false)
+     |> assign(:capture_ego_gifts, false)
      |> assign(:enkephalin_convert_count, "0")
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)}
@@ -536,9 +537,11 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
         do: " + enkephalin before each run (#{Map.get(config, :enkephalin_convert_count, 0)}x lunacy)",
         else: ""
 
-    xp = if Map.get(config, :collect_xp?, false), do: " + battle pass xp after each run", else: ""
+    xp = if Map.get(config, :collect_xp?, false), do: " + battle pass xp after all runs", else: ""
 
-    "mirror dungeon: #{run_count} run(s)#{cycle}#{suffix}#{enkephalin}#{xp}"
+    capture = if Map.get(config, :capture_ego_gifts?, false), do: " + ego gift captures", else: ""
+
+    "mirror dungeon: #{run_count} run(s)#{cycle}#{suffix}#{enkephalin}#{xp}#{capture}"
   end
 
   def pending_action_label(:resume_mirror_dungeon), do: "resume mirror dungeon"

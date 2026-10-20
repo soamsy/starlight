@@ -389,7 +389,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp detect_inventory_gifts(frame, region, ctx) do
-    case EgoGiftDetector.detect(frame.mat, region, classifier_conf: @min_classifier_conf) do
+    case EgoGiftDetector.detect(frame.mat, region, classifier_conf: @min_classifier_conf, capture_tag: :shop_inventory) do
       {:ok, results} ->
         results
         |> Enum.filter(&item_large_enough?/1)
@@ -522,7 +522,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp detect_shelf_items(frame, region, ctx) do
-    case EgoGiftDetector.detect(frame.mat, region, classifier_conf: @min_classifier_conf) do
+    case EgoGiftDetector.detect(frame.mat, region, classifier_conf: @min_classifier_conf, capture_tag: :shop_shelf) do
       {:ok, results} ->
         results
         |> Enum.filter(&item_large_enough?/1)

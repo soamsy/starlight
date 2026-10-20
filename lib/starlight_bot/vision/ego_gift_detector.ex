@@ -1,6 +1,7 @@
 defmodule StarlightBot.Vision.EgoGiftDetector do
   use GenServer
   require Logger
+  alias StarlightBot.Vision.EgoGiftCapture
 
   @color_bgr2rgb 4  # cv_COLOR_BGR2RGB
   @border_constant 0  # cv_BORDER_CONSTANT
@@ -13,6 +14,7 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
   @default_det_iou 0.45
   @default_cls_topk 3
   @default_cls_conf 0.83
+  @capture_det_conf 0.1
 
   def start_link(_), do: GenServer.start_link(__MODULE__, [], name: __MODULE__)
 
@@ -93,12 +95,23 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
       topk = Keyword.get(opts, :topk, @default_cls_topk)
       min_cls_conf = Keyword.get(opts, :classifier_conf, @default_cls_conf)
 
-      boxes = run_detector(state.detector_net, crop, det_conf, iou, imgsz)
+      capture_tag = Keyword.get(opts, :capture_tag)
+      capturing? = capture_tag != nil and EgoGiftCapture.enabled?()
+      scan_conf = if capturing?, do: min(det_conf, @capture_det_conf), else: det_conf
+
+      classified =
+        state.detector_net
+        |> run_detector(crop, scan_conf, iou, imgsz)
+        |> Enum.map(fn box ->
+          %{box: box, preds: run_classifier(state.classifier_net, state.classes, crop_box(crop, box), topk)}
+        end)
+
+      if capturing?, do: EgoGiftCapture.record(capture_tag, crop, {x0, y0, x1 - x0, y1 - y0}, classified)
 
       results =
-        Enum.map(boxes, fn box ->
-          sub_crop = crop_box(crop, box)
-          preds = run_classifier(state.classifier_net, state.classes, sub_crop, topk)
+        classified
+        |> Enum.filter(&(&1.box.confidence > det_conf))
+        |> Enum.map(fn %{box: box, preds: preds} ->
           top = List.first(preds)
           accepted? = top != nil and top.confidence >= min_cls_conf
 

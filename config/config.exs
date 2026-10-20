@@ -9,7 +9,9 @@ config :starlight_bot,
   ecto_repos: [StarlightBot.Repo],
   movement_profile: :human,
   game_window_title: "LimbusCompany",
-  game_window_class: "LimbusCompany"
+  game_window_class: "LimbusCompany",
+  ego_gift_ml_dir: Path.expand("~/pkg/EgoGiftML"),
+  hook_image_dir: Path.expand("../priv/hooks", __DIR__)
 
 config :logger, level: :debug
 

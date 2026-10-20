@@ -134,7 +134,13 @@
         <label class="flex items-center gap-2">
           <input type="checkbox" name="collect_xp" value="true" checked={@collect_xp}
                  class="checkbox checkbox-sm" />
-          <span class="text-sm">Collect battle pass xp after each run</span>
+          <span class="text-sm">Collect battle pass xp after all runs</span>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="capture_ego_gifts" value="true" checked={@capture_ego_gifts}
+                 class="checkbox checkbox-sm" />
+          <span class="text-sm">Save ego gift captures to EgoGiftML</span>
         </label>
 
         <%= if @collect_enkephalin do %>

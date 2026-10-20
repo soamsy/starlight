@@ -40,7 +40,7 @@ defmodule StarlightBot.Automation.RewardHelpers do
   end
 
   defp classify_and_record(frame, region, ctx) do
-    case EgoGiftDetector.detect(frame.mat, region) do
+    case EgoGiftDetector.detect(frame.mat, region, capture_tag: :ego_gift_get) do
       {:ok, []} ->
         Ctx.log(ctx, :info, "ego gift scan: nothing detected in #{inspect(region)}")
 

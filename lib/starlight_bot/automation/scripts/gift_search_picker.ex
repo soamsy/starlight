@@ -79,7 +79,7 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
   defp scan_pass(tab, wanted, picked, seen, ctx, pass) do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, region} <- scan_region(ctx),
-         {:ok, items} <- EgoGiftDetector.detect(frame.mat, region) do
+         {:ok, items} <- EgoGiftDetector.detect(frame.mat, region, capture_tag: :gift_search) do
       items = Enum.filter(items, &(&1.gift_id && &1.w * &1.h >= @min_item_area_px))
       picked = Enum.reduce(items, picked, &click_if_wanted(&1, wanted, &2, ctx))
       visible = MapSet.new(items, & &1.gift_id)

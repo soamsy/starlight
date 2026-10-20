@@ -8,7 +8,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   alias StarlightBot.{GiftPlans, Teams}
   alias StarlightBot.Navigation.{Catalog, Runner, Screen}
   alias StarlightBot.Navigation.Screens.Shop
-  alias StarlightBot.Vision.Capture
+  alias StarlightBot.Vision.{Capture, EgoGiftCapture}
 
   @max_dispatch_iterations 2_000
   @max_consecutive_errors 5
@@ -37,6 +37,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       when is_integer(run_count) and run_count >= 0 and is_boolean(wb) do
     {:ok, run_memory} = RunMemory.start_link()
     ctx = %{ctx | run_memory: run_memory}
+    if Map.get(config, :capture_ego_gifts?, false), do: EgoGiftCapture.enable()
 
     result =
       with {:ok, teams} <- prepare_teams(team_ids, ctx),
@@ -50,6 +51,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       end
 
     RunMemory.stop(ctx)
+    EgoGiftCapture.disable()
     result
   end
 
