@@ -940,7 +940,10 @@ defmodule StarlightBot.Automation.Shop.Ops do
           {:ok, clicked_ids(state_after)}
 
         (not fuse_scrollable?() or Engine.check(@fuse_scroll_bottom_hook)) and dismissed? ->
-          {:error, {:missing_ingredients, missing_ingredient_names(state_after, ctx)}}
+          names = missing_ingredient_names(state_after, ctx)
+          RunMemory.add_unfusable_gifts(ctx, missing_ingredient_ids(state_after))
+          Ctx.log(ctx, :info, "shop fuse: #{Enum.join(names, ", ")} never showed up in the fuse window, leaving it out of tiered fusions for the rest of the run")
+          {:error, {:missing_ingredients, names}}
 
         not fuse_scrollable?() or Engine.check(@fuse_scroll_bottom_hook) ->
           Ctx.log(ctx, :info, "shop fuse: ingredients missing, dismissing info popups and rescanning")

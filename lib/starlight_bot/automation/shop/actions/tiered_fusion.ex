@@ -110,7 +110,14 @@ defmodule StarlightBot.Automation.Shop.Actions.TieredFusion do
   defp finish([], reason, state), do: {:failed, reason, state}
   defp finish(progress, reason, state), do: {:partial, Enum.join(progress, "; ") <> "; then " <> reason, state}
 
-  defp fodder(state, ctx), do: GiftPlans.fodder(RunMemory.ego_gifts(ctx), state.protected, state.gifts_by_id)
+  defp fodder(state, ctx) do
+    unfusable = RunMemory.unfusable_gifts(ctx)
+
+    ctx
+    |> RunMemory.ego_gifts()
+    |> GiftPlans.fodder(state.protected, state.gifts_by_id)
+    |> Enum.reject(&MapSet.member?(unfusable, &1.id))
+  end
 
   defp owned_names(ctx), do: RunMemory.ego_gifts(ctx) |> Map.values() |> MapSet.new(& &1.name)
 end

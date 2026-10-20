@@ -102,6 +102,10 @@ defmodule StarlightBot.Automation.RunMemory do
     gifts_after
   end
 
+  def unfusable_gifts(ctx), do: get(ctx, :unfusable_gifts, MapSet.new())
+
+  def add_unfusable_gifts(ctx, gift_ids), do: update(ctx, :unfusable_gifts, MapSet.new(), &MapSet.union(&1, MapSet.new(gift_ids)))
+
   defp log_inventory(ctx, change, gifts), do: Ctx.log(ctx, :info, "inventory: #{change}, now #{map_size(gifts)} gift(s)")
 
   def team(ctx), do: get(ctx, :team, nil)
