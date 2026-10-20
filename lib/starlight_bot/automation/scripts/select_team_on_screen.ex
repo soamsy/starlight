@@ -5,10 +5,16 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   alias StarlightBot.{BattleStrategies, Strategies, Teams}
   alias StarlightBot.BattleStrategies.Resolver
 
-  @max_scroll_attempts 12
-  @scroll_to_top_clicks 60
-  @scroll_down_clicks 8
-  @scroll_settle_ms 500
+  @max_sweep_scrolls 14
+  @scroll_clicks 8
+  @hefty_scroll_clicks @scroll_clicks * 2
+  @scroll_settle_ms 400
+  @click_settle_ms 100
+  @scroll_down_available :team_selector_scroll_down_available
+  @scroll_up_available %{
+    team_selector: :team_selector_short_scroll_up_available,
+    team_selector_tall: :team_selector_tall_scroll_up_available
+  }
 
   def run(team_id, venue, floor, ctx \\ Ctx.new()) when is_integer(team_id) do
     with {:ok, team} <- fetch_team(team_id, ctx),
@@ -191,13 +197,17 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
       {selector, top_team} = selector_pair()
       Ctx.log(ctx, :info, "looking for #{hook} in team selector (#{selector})")
 
-      case Engine.act(find_and_select_steps(hook, selector), ctx) do
-        {:ok, _} ->
-          Ctx.log(ctx, :ok, "selected #{hook}")
-          {:ok, hook}
+      with true <- find_team(hook, selector, ctx),
+           {:ok, _} <- Engine.act([click(hook, settle_ms: @click_settle_ms), sleep(@click_settle_ms)], ctx) do
+        Ctx.log(ctx, :ok, "selected #{hook}")
+        {:ok, hook}
+      else
+        false ->
+          Ctx.log(ctx, :error, "#{hook} not found after sweeping the whole list — falling back to top team")
+          select_top_team(ctx, top_team)
 
         {:error, reason} ->
-          Ctx.log(ctx, :error, "#{hook} not found: #{inspect(reason)} — falling back to top team")
+          Ctx.log(ctx, :error, "#{hook} click failed: #{inspect(reason)} — falling back to top team")
           select_top_team(ctx, top_team)
       end
     end
@@ -211,25 +221,38 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     end
   end
 
-  defp find_and_select_steps(hook, selector) do
-    [
-      branch([
-        {hook, [click(hook)]},
-        {:default,
-         [
-           move_to(selector),
-           scroll_up(@scroll_to_top_clicks),
-           sleep(@scroll_settle_ms),
-           retry_until(
-             hook,
-             [move_to(selector), scroll_down(@scroll_down_clicks)],
-             every: @scroll_settle_ms,
-             tries: @max_scroll_attempts
-           ),
-           click(hook),
-         ]},
-      ])
-    ]
+  defp find_team(hook, selector, ctx) do
+    Engine.check(hook) or
+      (Engine.check(@scroll_down_available) and scroll_and_check(hook, selector, :down, @hefty_scroll_clicks, ctx)) or
+      sweep(hook, selector, :up, ctx) or
+      sweep(hook, selector, :down, ctx)
+  end
+
+  defp sweep(hook, selector, direction, ctx, scrolls \\ 0) do
+    cond do
+      scrolls >= @max_sweep_scrolls ->
+        Ctx.log(ctx, :info, "team selector: #{scrolls} scrolls #{direction} without reaching the end")
+        false
+
+      not Engine.check(scroll_available_hook(selector, direction)) ->
+        Ctx.log(ctx, :info, "team selector: reached the #{if direction == :up, do: "top", else: "bottom"} after #{scrolls} scroll(s)")
+        false
+
+      scroll_and_check(hook, selector, direction, @scroll_clicks, ctx) ->
+        true
+
+      true ->
+        sweep(hook, selector, direction, ctx, scrolls + 1)
+    end
+  end
+
+  defp scroll_available_hook(_selector, :down), do: @scroll_down_available
+  defp scroll_available_hook(selector, :up), do: Map.fetch!(@scroll_up_available, selector)
+
+  defp scroll_and_check(hook, selector, direction, clicks, ctx) do
+    scroll = if direction == :up, do: scroll_up(clicks), else: scroll_down(clicks)
+    Engine.act([move_to(selector), scroll, sleep(@scroll_settle_ms)], ctx)
+    Engine.check(hook)
   end
 
   defp select_top_team(ctx, top_team) do
