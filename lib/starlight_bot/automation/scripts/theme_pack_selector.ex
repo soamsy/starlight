@@ -41,18 +41,19 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   @base_refreshes 1
   @interstellar_travel 2
   @interstellar_refresh_bonus 2
+  @perfected_possibility 9
 
   def run(team_id, ctx) do
     team = Teams.get_team(team_id)
     plan_data = fetch_plan_data(team)
     grace_picks = team[:grace_picks] || []
-    limits = %{packs: expected_pack_count(grace_picks), refreshes: refresh_budget(grace_picks)}
     theme_packs = ThemePacks.list_theme_packs()
 
     with {:ok, frame} <- enter(plan_data, ctx) do
       detect_and_update_floor(frame, ctx)
       floor = RunMemory.floor(ctx)
       if floor == 1, do: RunMemory.put(ctx, :visited_packs, [])
+      limits = %{packs: expected_pack_count(grace_picks), refreshes: refresh_budget(grace_picks), exit_to: exit_screen(grace_picks, floor)}
       mode = scheduled_mode(plan_data, ctx)
 
       with {:ok, frame} <- ensure_mode(frame, mode, ctx) do
@@ -121,6 +122,12 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
       pick -> @base_refreshes + @interstellar_refresh_bonus + grace_enhance(pick)
     end
   end
+
+  def exit_screen(grace_picks, 1) do
+    if Enum.any?(grace_picks, &(grace_index(&1) == @perfected_possibility)), do: :cabinet_reward, else: :dungeon_graph
+  end
+
+  def exit_screen(_grace_picks, _floor), do: :dungeon_graph
 
   defp grace_index(%{"index" => index}), do: index
   defp grace_index(index), do: index
@@ -321,14 +328,14 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
       {:ok, pack, rect} ->
         Ctx.log(ctx, :ok, "theme pack selector: selecting #{pack.name_en}")
 
-        case confirm(frame, rect, pack, ctx) do
+        case confirm(frame, rect, pack, limits.exit_to, ctx) do
           :not_pulled when refresh_available? ->
             Ctx.log(ctx, :info, "theme pack selector: couldn't pull #{pack.name_en}, refreshing (#{refreshes_used + 1})")
             refresh_and_attempt(bonus, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used, ctx)
 
           :not_pulled ->
             Ctx.log(ctx, :info, "theme pack selector: couldn't pull #{pack.name_en} and no refresh available, using default pick")
-            leave(ctx)
+            leave(limits.exit_to, ctx)
 
           result ->
             result
@@ -341,14 +348,14 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
       :none when target != nil ->
         Ctx.log(ctx, :info, "theme pack selector: no refreshes left, searching for #{target.name_en}")
 
-        case search_replace(target, ctx, length(pool)) do
+        case search_replace(target, ctx, length(pool), limits.exit_to) do
           {:error, {:search_failed, _reason}} ->
             Ctx.log(ctx, :info, "theme pack selector: rescanning theme packs after failed search")
             plan_without_search = Map.put(plan_data, "search_floors", [])
 
             case await_ready_only(ctx) do
               {:ok, next_frame} -> attempt(next_frame, bonus, hunt, theme_packs, plan_without_search, mode, floor, limits, refreshes_used, ctx)
-              {:error, _} -> leave(ctx)
+              {:error, _} -> leave(limits.exit_to, ctx)
             end
 
           result ->
@@ -357,7 +364,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
       :none ->
         Ctx.log(ctx, :info, "theme pack selector: nothing wanted and no refreshes left — using default pick")
-        leave(ctx)
+        leave(limits.exit_to, ctx)
     end
   end
 
@@ -387,7 +394,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
   defp search_hook_ready?(_pack), do: false
 
-  def search_replace(pack, ctx, pane_packs \\ nil) do
+  def search_replace(pack, ctx, pane_packs \\ nil, exit_to \\ :dungeon_graph) do
     search_hook = safe_to_atom(pack.search_hook_name)
     sleeve_hook = hook_atom(pack)
 
@@ -400,7 +407,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
          :ok <- pull_replaced({x, w}, sleeve_hook, ctx) do
       RunMemory.add_visited_pack(ctx, pack.id)
       RunMemory.add_picked_pack(ctx, pack.name_en)
-      Engine.goto(:theme_pack, :dungeon_graph, ctx)
+      Engine.goto(:theme_pack, exit_to, ctx)
     else
       {:error, reason} ->
         Ctx.log(ctx, :error, "theme pack selector: search for #{pack.name_en} failed (#{inspect(reason)})")
@@ -648,23 +655,23 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     end
   end
 
-  defp confirm(_frame, {x, _y, w, _h}, pack, ctx) do
+  defp confirm(_frame, {x, _y, w, _h}, pack, exit_to, ctx) do
     hook = hook_atom(pack)
 
     case try_pulls(@drag_x_offsets, {x, w}, hook, ctx) do
-      :ok -> pulled(pack, ctx)
-      :failed -> rescan_and_pull(pack, hook, ctx)
+      :ok -> pulled(pack, exit_to, ctx)
+      :failed -> rescan_and_pull(pack, hook, exit_to, ctx)
     end
   end
 
-  defp rescan_and_pull(pack, hook, ctx) do
+  defp rescan_and_pull(pack, hook, exit_to, ctx) do
     Ctx.log(ctx, :info, "theme pack selector: pulls failed, rescanning for #{hook} with cursor at refresh")
 
     with {:ok, frame} <- position_cursor_at_refresh(ctx),
          {:ok, {x, _y, w, _h}} <- Matcher.find(frame, hook) do
       case try_pulls(@drag_x_offsets, {x, w}, hook, ctx) do
         :ok ->
-          pulled(pack, ctx)
+          pulled(pack, exit_to, ctx)
 
         :failed ->
           Ctx.log(ctx, :info, "theme pack selector: pulls failed again after rescan")
@@ -677,10 +684,10 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     end
   end
 
-  defp pulled(pack, ctx) do
+  defp pulled(pack, exit_to, ctx) do
     RunMemory.add_visited_pack(ctx, pack.id)
     RunMemory.add_picked_pack(ctx, pack.name_en)
-    Engine.goto(:theme_pack, :dungeon_graph, ctx)
+    Engine.goto(:theme_pack, exit_to, ctx)
   end
 
   defp try_pulls([], _span, _hook, _ctx), do: :failed
@@ -744,5 +751,5 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     end
   end
 
-  defp leave(ctx), do: Engine.goto(:theme_pack, :dungeon_graph, ctx)
+  defp leave(exit_to, ctx), do: Engine.goto(:theme_pack, exit_to, ctx)
 end
