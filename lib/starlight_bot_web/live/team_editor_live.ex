@@ -1,7 +1,8 @@
 defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{GiftPlans, Strategies, Teams}
+  alias StarlightBot.{GiftPlans, StarlightBudget, Strategies, Teams, ThemePacks}
+  alias StarlightBotWeb.Live.GiftPlanEditorLive
   alias StarlightBot.Navigation.Navigator
 
   @gift_affinities ~w(burn bleed tremor rupture sinking poise charge)
@@ -19,12 +20,14 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:battle_strategies, Strategies.list(:battle_strategies))
      |> assign(:theme_pack_plans, Strategies.list(:theme_pack_plans))
      |> assign(:team_hooks, Teams.team_hooks())
+     |> assign(:theme_packs, ThemePacks.list_theme_packs())
      |> assign(:gift_affinities, @gift_affinities)
      |> assign(:form, blank_form())
      |> assign(:editing_id, nil)
      |> assign(:active, false)
      |> assign(:selected_ids, blank_selected_ids())
      |> assign(:strategy_forms, blank_strategy_forms())
+     |> assign(:budget_inputs, blank_budget_inputs())
      |> assign(:phase, nav.phase)
      |> assign(:log, nav.log)
      |> assign(:pending_action, nil)
@@ -116,6 +119,18 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       |> persist_selected_strategy()
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("budget_change", params, socket) do
+    inputs = %{
+      pack_searches: parse_id(params["pack_searches"]),
+      sinner_bonus: parse_id(params["sinner_bonus"]) || 0,
+      railway_packs: parse_id(params["railway_packs"]),
+      reward_cards: parse_id(params["reward_cards"]) || 0
+    }
+
+    {:noreply, assign(socket, :budget_inputs, inputs)}
   end
 
   @impl true
@@ -244,6 +259,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
           "theme_pack_plan" => team.theme_pack_plan_id
         })
         |> assign(:strategy_forms, blank_strategy_forms())
+        |> assign(:budget_inputs, blank_budget_inputs())
     end
   end
 
@@ -259,6 +275,57 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   defp blank_selected_ids do
     %{"gift_strategy" => nil, "battle_strategy" => nil, "theme_pack_plan" => nil}
   end
+
+  defp blank_budget_inputs do
+    %{pack_searches: 1, sinner_bonus: div(StarlightBudget.max_sinner_bonus(), 2), railway_packs: nil, reward_cards: 0}
+  end
+
+  def starlight_budget(gift_strategies, theme_pack_plans, theme_packs, selected_ids, inputs) do
+    gift_data = strategy_data_for(gift_strategies, selected_ids["gift_strategy"])
+    plan_data = strategy_data_for(theme_pack_plans, selected_ids["theme_pack_plan"])
+    floors = StarlightBudget.floor_rewards(plan_data["mode_schedule"] || [])
+    floor_total = floors |> Enum.map(& &1.starlight) |> Enum.sum()
+    max_pack_searches = StarlightBudget.max_pack_searches(plan_data)
+    pack_searches = min(inputs.pack_searches || max_pack_searches, max_pack_searches)
+    max_railway_packs = length(StarlightBudget.railway_floors(plan_data, theme_packs, ~w(hunt bonus fine)))
+    planned_railway_packs = length(StarlightBudget.railway_floors(plan_data, theme_packs, ~w(hunt bonus)))
+    railway_packs = min(inputs.railway_packs || planned_railway_packs, max_railway_packs)
+    gift_searches = length(gift_data["gift_search"] || [])
+
+    income = %{
+      base: StarlightBudget.base(),
+      sinner_bonus: inputs.sinner_bonus,
+      exploration: StarlightBudget.exploration_gain(floor_total, railway_packs, inputs.sinner_bonus),
+      cards: StarlightBudget.cards_gain(inputs.reward_cards)
+    }
+
+    costs = %{
+      grace: if(gift_data == %{}, do: 0, else: GiftPlanEditorLive.grace_total_cost(GiftPlans.normalize(gift_data))),
+      gift_search: GiftPlans.gift_search_starlight_cost(gift_searches),
+      pack_search: StarlightBudget.pack_search_cost(pack_searches)
+    }
+
+    %{
+      income: income,
+      costs: costs,
+      floors: floors,
+      floor_total: floor_total,
+      railway_packs: railway_packs,
+      max_railway_packs: max_railway_packs,
+      rest_multiplier: StarlightBudget.rest_multiplier_milli(inputs.sinner_bonus) / 1000,
+      reward_cards: inputs.reward_cards,
+      gift_searches: gift_searches,
+      pack_searches: pack_searches,
+      max_pack_searches: max_pack_searches,
+      has_gift_strategy?: gift_data != %{},
+      has_theme_pack_plan?: plan_data != %{},
+      net: Enum.sum(Map.values(income)) - Enum.sum(Map.values(costs))
+    }
+  end
+
+  defp strategy_data_for(strategies, id), do: Enum.find_value(strategies, %{}, &(&1.id == id && &1.data)) || %{}
+
+  def floor_breakdown(floors), do: Enum.map_join(floors, ", ", &"F#{&1.floor} #{&1.mode} #{&1.starlight}")
 
   defp blank_strategy_forms do
     %{"gift_strategy" => false, "theme_pack_plan" => false}

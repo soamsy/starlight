@@ -208,6 +208,92 @@
             </form>
           <% end %>
         </div>
+
+        <div class="divider my-2"></div>
+
+        <% budget = starlight_budget(@gift_strategies, @theme_pack_plans, @theme_packs, @selected_ids, @budget_inputs) %>
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium">Starlight per run</span>
+            <span class="text-[11px] text-base-content/50">floors 1 to 5</span>
+          </div>
+
+          <form phx-change="budget_change" class="flex flex-wrap items-stretch gap-1.5 font-mono">
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="Every run starts with this">
+              <span class="text-[10px] font-sans text-base-content/50">Base</span>
+              <span class="text-sm text-success">+<%= budget.income.base %></span>
+            </div>
+            <span class="self-center text-base-content/40">+</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
+                 title="1 per rest charge, up to 5 per sinner. Also sets the multiplier.">
+              <span class="text-[10px] font-sans text-base-content/50">Rest bonus</span>
+              <span class="text-sm text-success">+<%= budget.income.sinner_bonus %></span>
+              <input type="range" name="sinner_bonus" min="0" max={StarlightBudget.max_sinner_bonus()} step="5" value={budget.income.sinner_bonus}
+                     class="range range-success range-xs" />
+            </div>
+            <span class="self-center text-base-content/40">+ ⌊(</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title={floor_breakdown(budget.floors)}>
+              <span class="text-[10px] font-sans text-base-content/50">
+                Floor clears<%= if not budget.has_theme_pack_plan?, do: " (no plan, all normal)" %>
+              </span>
+              <span class="text-sm"><%= budget.floor_total %></span>
+            </div>
+            <span class="self-center text-base-content/40">+</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
+                 title={"#{StarlightBudget.railway_bonus()} per cleared Line theme pack. Max counts floors where the plan doesn't ban every eligible Line pack."}>
+              <span class="text-[10px] font-sans text-base-content/50">
+                Railway (<%= budget.railway_packs %>/<%= budget.max_railway_packs %>)
+              </span>
+              <span class="text-sm"><%= budget.railway_packs * StarlightBudget.railway_bonus() %></span>
+              <input type="range" name="railway_packs" min="0" max={budget.max_railway_packs} value={budget.railway_packs}
+                     disabled={budget.max_railway_packs == 0} class="range range-xs" />
+            </div>
+            <span class="self-center text-base-content/40">) ×</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="min(2, 1 + 0.017 × rest bonus), rounded down after multiplying">
+              <span class="text-[10px] font-sans text-base-content/50">Rest mult</span>
+              <span class="text-sm"><%= :erlang.float_to_binary(budget.rest_multiplier, decimals: 3) %></span>
+            </div>
+            <span class="self-center text-base-content/40">⌋</span>
+            <div class="rounded-lg bg-base-200 px-2 py-1 flex flex-col justify-center">
+              <span class="text-[10px] font-sans text-base-content/50">Exploration</span>
+              <span class="text-sm text-success">+<%= budget.income.exploration %></span>
+            </div>
+            <span class="self-center text-base-content/40">+</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32">
+              <span class="text-[10px] font-sans text-base-content/50">Encounter Reward Cards (<%= budget.reward_cards %>)</span>
+              <span class="text-sm text-success">+<%= budget.income.cards %></span>
+              <input type="range" name="reward_cards" min="0" max={StarlightBudget.max_reward_cards()} value={budget.reward_cards}
+                     class="range range-success range-xs" />
+            </div>
+            <span class="self-center text-base-content/40">−</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center">
+              <span class="text-[10px] font-sans text-base-content/50">Graces</span>
+              <span class="text-sm text-error"><%= if budget.has_gift_strategy?, do: budget.costs.grace, else: "—" %></span>
+            </div>
+            <span class="self-center text-base-content/40">−</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center">
+              <span class="text-[10px] font-sans text-base-content/50">Gift search (<%= budget.gift_searches %>)</span>
+              <span class="text-sm text-error"><%= if budget.has_gift_strategy?, do: budget.costs.gift_search, else: "—" %></span>
+            </div>
+            <span class="self-center text-base-content/40">−</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
+                 title="20 for the first search in the run, 10 more for each one after">
+              <span class="text-[10px] font-sans text-base-content/50">
+                Pack search (<%= budget.pack_searches %>/<%= budget.max_pack_searches %>)
+              </span>
+              <span class="text-sm text-error"><%= budget.costs.pack_search %></span>
+              <input type="range" name="pack_searches" min="0" max={budget.max_pack_searches} value={budget.pack_searches}
+                     disabled={budget.max_pack_searches == 0} class="range range-error range-xs" />
+            </div>
+            <span class="self-center text-base-content/40">=</span>
+            <div class={"rounded-lg border-2 px-3 py-1 flex flex-col justify-center " <> if(budget.net >= 0, do: "border-success", else: "border-error")}>
+              <span class="text-[10px] font-sans text-base-content/50">Net</span>
+              <span class={"text-lg font-bold " <> if(budget.net >= 0, do: "text-success", else: "text-error")}>
+                <%= if budget.net >= 0, do: "+" %><%= budget.net %>
+              </span>
+            </div>
+          </form>
+        </div>
         <% end %>
       </div>
     </div>
