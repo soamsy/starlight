@@ -5,23 +5,24 @@ defmodule StarlightBot.Automation.Engine do
   alias StarlightBot.Navigation.{Catalog, Runner}
   alias StarlightBot.Vision.Capture
 
-  @localize_max_attempts 5
-  @localize_backoff_ms 500
+  @localize_timeout_ms 31_500
+  @localize_poll_ms 200
   @check_poll_ms 100
 
-  def localize, do: localize(@localize_max_attempts, @localize_backoff_ms)
+  def localize, do: localize(System.monotonic_time(:millisecond) + @localize_timeout_ms)
 
-  defp localize(attempts_left, delay_ms) do
+  defp localize(deadline) do
     case Runner.check_screens(Catalog.all_screens()) do
       {:ok, _screen} = ok ->
         Runner.settle_fallback(ok, fn -> Runner.check_screens(Catalog.all_screens()) end)
 
-      :unknown when attempts_left > 1 ->
-        Process.sleep(delay_ms)
-        localize(attempts_left - 1, delay_ms * 2)
-
       :unknown ->
-        :unknown
+        if System.monotonic_time(:millisecond) >= deadline do
+          :unknown
+        else
+          Process.sleep(@localize_poll_ms)
+          localize(deadline)
+        end
     end
   end
 
@@ -129,7 +130,7 @@ defmodule StarlightBot.Automation.Engine do
   @max_battle_loops 500
   @max_defeat_failures 3
   @hiccup_backoff_ms 500
-  @hiccup_max_attempts 5
+  @hiccup_max_attempts 7
   @give_up_screens [:battle_turn, :battle_chain, :battle_focused, :battle_settings_popup]
 
   def play_battle(from, ctx \\ Ctx.new()) do
