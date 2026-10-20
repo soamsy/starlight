@@ -2,16 +2,18 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   use StarlightBotWeb, :live_view
   alias StarlightBot.Navigation.Navigator
   alias StarlightBotWeb.Live.MirrorDungeonLive
-  alias StarlightBot.Teams
+  alias StarlightBot.{RunnerForms, Teams}
 
   @countdown_secs 2
-  @max_consecutive 10
   @exp_enkephalin_cost 3
   @thread_enkephalin_cost 2
 
   @impl true
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Navigator.subscribe()
+    if connected?(socket) do
+      Navigator.subscribe()
+      RunnerForms.subscribe()
+    end
 
     nav = Navigator.status()
     teams = Teams.list_teams() |> Enum.reject(&(&1.hook in [nil, ""]))
@@ -31,10 +33,11 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:collect_xp, true)
      |> assign(:collect_enkephalin, true)
      |> assign(:enkephalin_convert_count, "0")
-     |> assign(:md_next, nil)
+     |> assign(:md_next, RunnerForms.mirror_dungeon_action())
      |> assign(:queued_next, nav.next_run)
      |> assign(:pending_action, nil)
-     |> assign(:countdown, nil)}
+     |> assign(:countdown, nil)
+     |> restore_form(RunnerForms.get("luxcavation"))}
   end
 
   @impl true
@@ -44,19 +47,8 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   end
 
   @impl true
-  def handle_event("mirror_dungeon_setup", params, socket) do
-    md_next =
-      case MirrorDungeonLive.run_action(params, socket.assigns.teams) do
-        {:ok, action} -> action
-        :error -> nil
-      end
-
-    {:noreply, assign(socket, :md_next, md_next)}
-  end
-
-  @impl true
   def handle_event("run", params, socket) do
-    case run_action(params) do
+    case RunnerForms.luxcavation_action(params) do
       {:ok, lux} ->
         action =
           case {params["then"], socket.assigns.md_next} do
@@ -71,7 +63,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
          put_flash(
            socket,
            :error,
-           "Pick a team, keep consecutive battles at 0-#{@max_consecutive}, and repeats non-negative."
+           "Pick a team, keep consecutive battles at 0-#{RunnerForms.max_lux_consecutive()}, and repeats non-negative."
          )}
     end
   end
@@ -97,21 +89,13 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:thread_repeats, thread_repeats)
      |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
      |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
-     |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))}
+     |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))
+     |> save_form()}
   end
 
   @impl true
-  def handle_event("restore_form", params, socket) do
-    {:noreply,
-     socket
-     |> assign(:team_id, restore_team_id(params, socket.assigns.team_id))
-     |> assign(:exp_consecutive, Map.get(params, "exp_consecutive", socket.assigns.exp_consecutive))
-     |> assign(:exp_repeats, Map.get(params, "exp_repeats", socket.assigns.exp_repeats))
-     |> assign(:thread_consecutive, Map.get(params, "thread_consecutive", socket.assigns.thread_consecutive))
-     |> assign(:thread_repeats, Map.get(params, "thread_repeats", socket.assigns.thread_repeats))
-     |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
-     |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
-     |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))}
+  def handle_event("resume", _, socket) do
+    {:noreply, start_countdown(socket, :resume_luxcavation)}
   end
 
   @impl true
@@ -158,23 +142,9 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:log, nav.log)}
   end
 
-  def run_action(params) do
-    with {team_id, ""} <- Integer.parse(to_string(params["team_id"])),
-         {exp_consecutive, ""} <- Integer.parse(to_string(params["exp_consecutive"])),
-         {exp_repeats, ""} <- Integer.parse(to_string(params["exp_repeats"])),
-         {thread_consecutive, ""} <- Integer.parse(to_string(params["thread_consecutive"])),
-         {thread_repeats, ""} <- Integer.parse(to_string(params["thread_repeats"])),
-         {enkephalin_convert_count, ""} <- Integer.parse(to_string(params["enkephalin_convert_count"] || "0")),
-         true <- exp_consecutive in 0..@max_consecutive and thread_consecutive in 0..@max_consecutive,
-         true <- exp_repeats >= 0 and thread_repeats >= 0,
-         true <- enkephalin_convert_count in 0..4 do
-      {:ok,
-       {:run_luxcavation, team_id, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats,
-        Map.get(params, "collect_xp") == "true", Map.get(params, "collect_enkephalin") == "true", enkephalin_convert_count}}
-    else
-      _ -> :error
-    end
-  end
+  @impl true
+  def handle_info({:runner_form, "mirror_dungeon"}, socket), do: {:noreply, assign(socket, :md_next, RunnerForms.mirror_dungeon_action())}
+  def handle_info({:runner_form, _runner}, socket), do: {:noreply, socket}
 
   defp default_team_id([]), do: nil
   defp default_team_id([%{id: id} | _]), do: id
@@ -186,11 +156,37 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
     end
   end
 
-  defp restore_team_id(params, fallback) do
-    case Map.get(params, "team_id") do
-      nil -> fallback
-      str -> parse_team_id(str, fallback)
-    end
+  defp restore_form(socket, nil), do: assign(socket, :team_hook, resolve_team_hook(socket, nil))
+
+  defp restore_form(socket, params) do
+    socket
+    |> assign(:team_id, parse_team_id(Map.get(params, "team_id", ""), socket.assigns.team_id))
+    |> then(&assign(&1, :team_hook, resolve_team_hook(&1, params["team_hook"])))
+    |> assign(:exp_consecutive, Map.get(params, "exp_consecutive", socket.assigns.exp_consecutive))
+    |> assign(:exp_repeats, Map.get(params, "exp_repeats", socket.assigns.exp_repeats))
+    |> assign(:thread_consecutive, Map.get(params, "thread_consecutive", socket.assigns.thread_consecutive))
+    |> assign(:thread_repeats, Map.get(params, "thread_repeats", socket.assigns.thread_repeats))
+    |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
+    |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
+    |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))
+  end
+
+  defp save_form(socket) do
+    a = socket.assigns
+
+    RunnerForms.put("luxcavation", %{
+      "team_id" => to_string(a.team_id),
+      "team_hook" => a.team_hook,
+      "exp_consecutive" => a.exp_consecutive,
+      "exp_repeats" => a.exp_repeats,
+      "thread_consecutive" => a.thread_consecutive,
+      "thread_repeats" => a.thread_repeats,
+      "collect_xp" => to_string(a.collect_xp),
+      "collect_enkephalin" => to_string(a.collect_enkephalin),
+      "enkephalin_convert_count" => a.enkephalin_convert_count
+    })
+
+    socket
   end
 
   defp start_countdown(socket, action) do
@@ -251,7 +247,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
     end
   end
 
-  def max_consecutive, do: @max_consecutive
+  def max_consecutive, do: RunnerForms.max_lux_consecutive()
   def exp_enkephalin_cost, do: @exp_enkephalin_cost
   def thread_enkephalin_cost, do: @thread_enkephalin_cost
 

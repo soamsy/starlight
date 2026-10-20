@@ -1,7 +1,7 @@
 defmodule StarlightBot.SchedulerTest do
   use ExUnit.Case, async: true
 
-  alias StarlightBot.Scheduler
+  alias StarlightBot.{RunnerForms, Scheduler}
 
   @settings %{window_start: "09:00", window_end: "13:00", last_fired_on: nil}
 
@@ -50,6 +50,9 @@ defmodule StarlightBot.SchedulerTest do
   describe "settings" do
     setup do
       :ok = Ecto.Adapters.SQL.Sandbox.checkout(StarlightBot.Repo)
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      StarlightBot.Repo.insert_all("teams", [%{id: 5, name: "Burn", hooks: ~s(["team_burn"]), inserted_at: now, updated_at: now}])
+      :ok
     end
 
     @attrs %{
@@ -57,40 +60,47 @@ defmodule StarlightBot.SchedulerTest do
       runner: "luxcavation",
       window_start: "22:00",
       window_end: "02:30",
-      mirror_dungeon_action: nil,
-      luxcavation_action: {:run_luxcavation, 7, 1, 2, 3, 1, true, false, 0},
       launch_mode: "steam",
       steam_app_id: "1973530",
       exe_path: "",
       launch_timeout_s: 900
     }
 
-    test "save_settings stores the schedule and get_settings reads it back decoded" do
+    @lux_form %{"team_id" => "7", "exp_consecutive" => "1", "exp_repeats" => "2", "thread_consecutive" => "3", "thread_repeats" => "1", "collect_xp" => "true", "collect_enkephalin" => "false", "enkephalin_convert_count" => "0"}
+    @md_form %{"team_ids" => ["5"], "start_index" => "0", "run_count" => "2", "weekly_bonus" => "true", "collect_xp" => "true"}
+
+    test "save_settings stores the schedule and get_settings reads it back" do
+      RunnerForms.put("luxcavation", @lux_form)
       assert {:ok, settings} = Scheduler.save_settings(@attrs)
       assert settings == Scheduler.get_settings()
       assert %{enabled: true, runner: "luxcavation", window_start: "22:00", window_end: "02:30", launch_timeout_s: 900} = settings
-      assert settings.luxcavation_action == @attrs.luxcavation_action
 
       {:ok, _} = Scheduler.mark_fired(~D[2026-10-18])
       assert Scheduler.get_settings().last_fired_on == ~D[2026-10-18]
     end
 
     test "save_settings rejects a schedule it couldn't run" do
-      assert {:error, "no saved mirror dungeon runner settings to schedule"} = Scheduler.save_settings(%{@attrs | runner: "mirror_dungeon"})
+      assert {:error, "the luxcavation runner page isn't set up to run"} = Scheduler.save_settings(@attrs)
+      RunnerForms.put("luxcavation", @lux_form)
+      assert {:error, "the mirror dungeon runner page isn't set up to run"} = Scheduler.save_settings(%{@attrs | runner: "mirror_dungeon"})
       assert {:error, "times must be HH:MM"} = Scheduler.save_settings(%{@attrs | window_start: "9am"})
       assert {:error, _} = Scheduler.save_settings(%{@attrs | window_end: "22:00"})
       assert {:error, _} = Scheduler.save_settings(%{@attrs | steam_app_id: "limbus"})
       assert {:error, _} = Scheduler.save_settings(%{@attrs | launch_mode: "exe", exe_path: "/nope/LimbusCompany.exe"})
       assert {:error, _} = Scheduler.save_settings(%{@attrs | launch_timeout_s: nil})
     end
-  end
 
-  test "actions survive the JSON round trip" do
-    md = {:run_mirror_dungeon, [5, 10], 3, %{weekly_bonus?: true, collect_enkephalin?: false, collect_xp?: true, enkephalin_convert_count: 2}}
-    lux = {:run_luxcavation, 7, 1, 2, 3, 1, true, false, 0}
+    test "scheduled runs use the runner pages' current forms" do
+      chained = %{@attrs | runner: "luxcavation_then_mirror_dungeon"}
+      assert {:error, "the luxcavation and mirror dungeon runner pages aren't set up to run"} = Scheduler.save_settings(chained)
 
-    assert md |> Scheduler.encode_action() |> Scheduler.decode_action() == md
-    assert lux |> Scheduler.encode_action() |> Scheduler.decode_action() == lux
-    assert Scheduler.decode_action(nil) == nil
+      RunnerForms.put("luxcavation", @lux_form)
+      RunnerForms.put("mirror_dungeon", @md_form)
+      assert {:ok, settings} = Scheduler.save_settings(chained)
+      assert {:luxcavation_then_mirror_dungeon, {:run_luxcavation, %{id: 7, hook: nil}, 1, 2, 3, 1, true, false, 0}, {:run_mirror_dungeon, [%{id: 5, hook: "team_burn"}], 2, _}} = Scheduler.runner_action(settings)
+
+      RunnerForms.put("mirror_dungeon", %{@md_form | "run_count" => "5"})
+      assert {_, _, {:run_mirror_dungeon, [%{id: 5, hook: "team_burn"}], 5, _}} = Scheduler.runner_action(settings)
+    end
   end
 end

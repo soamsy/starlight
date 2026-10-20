@@ -46,8 +46,6 @@
         id="lux-runner-form"
         phx-submit="run"
         phx-change="update_form"
-        phx-hook="LocalStorageForm"
-        data-storage-key="starlight-lux-runner-form"
         class="flex flex-col gap-3">
         <label class="flex flex-col gap-1">
           <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Team</span>
@@ -149,8 +147,7 @@
           </button>
         <% end %>
 
-        <div id="lux-md-setup" phx-hook="StoredFormReader" data-storage-key="starlight-mirror-dungeon-runner-form" data-event="mirror_dungeon_setup"
-             class="text-xs text-base-content/60">
+        <div id="lux-md-setup" class="text-xs text-base-content/60">
           <%= cond do %>
             <% @queued_next -> %>
               Queued next: <%= MirrorDungeonLive.pending_action_label(@queued_next) %>

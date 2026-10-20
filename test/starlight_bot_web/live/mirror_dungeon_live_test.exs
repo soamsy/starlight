@@ -2,6 +2,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
   use ExUnit.Case, async: true
 
   import Phoenix.LiveViewTest, only: [render_component: 2]
+  alias StarlightBot.RunnerForms
   alias StarlightBotWeb.Live.MirrorDungeonLive, as: Live
 
   @teams [%{id: 5, name: "Burn"}, %{id: 10, name: "Saikai"}]
@@ -10,6 +11,10 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     %Phoenix.LiveView.Socket{
       assigns: %{__changed__: %{}, flash: %{}, teams: @teams, team_ids: team_ids, start_index: 0, run_count: "1", weekly_bonus: true, collect_enkephalin: false, collect_xp: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil}
     }
+  end
+
+  setup do
+    :ok = Ecto.Adapters.SQL.Sandbox.checkout(StarlightBot.Repo)
   end
 
   defp event(socket, name, params) do
@@ -35,10 +40,19 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     assert socket.assigns.team_ids == [10]
   end
 
-  test "restoring a saved form reads the team_ids[] list" do
-    socket = event(socket([5]), "restore_form", %{"team_ids[]" => ["10", "5"], "run_count" => "4", "weekly_bonus" => "true"})
-    assert socket.assigns.team_ids == [10, 5]
+  test "restoring a saved form reads its team list and hooks" do
+    socket = Live.restore_form(socket([@burn]), %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "run_count" => "4", "weekly_bonus" => "true"})
+    assert socket.assigns.picks == [@saikai_pierce, @burn]
     assert socket.assigns.run_count == "4"
+    assert Live.restore_form(socket, nil) == socket
+  end
+
+  test "every form change is saved, and the saved form makes the same run" do
+    event(socket([@burn]), "update_form", %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "start_index" => "1", "run_count" => "3", "collect_xp" => "true"})
+
+    saved = RunnerForms.get("mirror_dungeon")
+    assert %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "start_index" => "1", "run_count" => "3", "collect_xp" => "true", "weekly_bonus" => "false"} = saved
+    assert {:ok, {:run_mirror_dungeon, [@burn, @saikai_pierce], 3, %{collect_xp?: true}}} = RunnerForms.mirror_dungeon_action(saved, @teams)
   end
 
   test "running queues the whole cycle" do
@@ -92,7 +106,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
   end
 
   test "restoring a saved form keeps the starter when it's still in range" do
-    socket = event(socket([5]), "restore_form", %{"team_ids[]" => ["10", "5"], "start_index" => "1", "run_count" => "4"})
+    socket = Live.restore_form(socket([@burn]), %{"team_ids" => ["10", "5"], "start_index" => "1", "run_count" => "4"})
     assert socket.assigns.start_index == 1
     socket = event(socket, "update_form", %{"team_ids" => ["10"], "start_index" => "1", "run_count" => "4"})
     assert socket.assigns.start_index == 0

@@ -87,10 +87,17 @@ defmodule StarlightBot.Scheduler.Server do
   defp maybe_fire(state) do
     with {:due, date, end_at} <- Scheduler.due(Scheduler.local_now(), state.settings),
          false <- retry_pending?(state),
-         true <- navigator_idle?(),
-         action when action != nil <- Scheduler.runner_action(state.settings) do
+         true <- navigator_idle?() do
       settings = state.settings
-      start_task(state, "starting the scheduled #{runner_label(settings.runner)} run", fn -> fire_task(settings, action, date, end_at) end)
+
+      case Scheduler.runner_action(settings) do
+        nil ->
+          missing = Scheduler.missing_runner_settings(settings.runner)
+          add_event(state, :error, "#{Scheduler.missing_message(missing)}, can't start the scheduled run")
+
+        action ->
+          start_task(state, "starting the scheduled #{runner_label(settings.runner)} run", fn -> fire_task(settings, action, date, end_at) end)
+      end
     else
       _ -> state
     end

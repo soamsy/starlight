@@ -45,21 +45,21 @@
           </select>
         </label>
 
-        <div id="scheduler-md-form" phx-hook="StoredFormReader" data-storage-key="starlight-mirror-dungeon-runner-form" data-event="mirror_dungeon_form"></div>
-        <div id="scheduler-lux-form" phx-hook="StoredFormReader" data-storage-key="starlight-lux-runner-form" data-event="luxcavation_form"></div>
-
         <div class="flex flex-col gap-1 text-xs text-base-content/60">
-          <%= if @form["runner"] == "mirror_dungeon" do %>
-            <span>Scheduled: <%= action_label(@settings.mirror_dungeon_action, @teams) %></span>
-            <%= if @form_md_action && @form_md_action != @settings.mirror_dungeon_action do %>
-              <span class="text-warning">Saving updates it to the Mirror Dungeon page's current setup: <%= action_label(@form_md_action, @teams) %></span>
-            <% end %>
-          <% else %>
-            <span>Scheduled: <%= action_label(@settings.luxcavation_action, @teams) %></span>
-            <%= if @form_lux_action && @form_lux_action != @settings.luxcavation_action do %>
-              <span class="text-warning">Saving updates it to the Luxcavation page's current setup: <%= action_label(@form_lux_action, @teams) %></span>
-            <% end %>
+          <%= if @form["runner"] in ["luxcavation", "luxcavation_then_mirror_dungeon"] do %>
+            <span class={if is_nil(@lux_action), do: "text-warning"}>
+              <.link navigate={~p"/luxcavation"} class="link">Luxcavation page</.link>: <%= action_label(@lux_action, @teams) %>
+            </span>
           <% end %>
+          <%= if @form["runner"] == "luxcavation_then_mirror_dungeon" do %>
+            <span>Then, if luxcavation finishes:</span>
+          <% end %>
+          <%= if @form["runner"] in ["mirror_dungeon", "luxcavation_then_mirror_dungeon"] do %>
+            <span class={if is_nil(@md_action), do: "text-warning"}>
+              <.link navigate={~p"/mirror-dungeon"} class="link">Mirror Dungeon page</.link>: <%= action_label(@md_action, @teams) %>
+            </span>
+          <% end %>
+          <span class="text-base-content/50">Scheduled runs use whatever those pages are set to when the run starts.</span>
         </div>
 
         <div class="flex flex-col gap-1">

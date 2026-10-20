@@ -2,7 +2,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   use StarlightBotWeb, :live_view
   alias StarlightBot.Automation.{EnkephalinCharger, RunMemory}
   alias StarlightBot.Navigation.{Navigator, RunSplits, ScreenTimes}
-  alias StarlightBot.{RunHistory, Teams}
+  alias StarlightBot.{RunHistory, RunnerForms, Teams}
   alias StarlightBotWeb.Live.LuxcavationLive
 
   @countdown_secs 2
@@ -46,7 +46,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:capture_ego_gifts, false)
      |> assign(:enkephalin_convert_count, "0")
      |> assign(:pending_action, nil)
-     |> assign(:countdown, nil)}
+     |> assign(:countdown, nil)
+     |> restore_form(RunnerForms.get("mirror_dungeon"))}
   end
 
   @impl true
@@ -57,7 +58,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   @impl true
   def handle_event("run", params, socket) do
-    case run_action(params, socket.assigns.teams) do
+    case RunnerForms.mirror_dungeon_action(params, socket.assigns.teams) do
       {:ok, action} -> {:noreply, start_countdown(socket, action)}
       :error -> {:noreply, put_flash(socket, :error, "Pick at least one team and enter a non-negative run count.")}
     end
@@ -65,48 +66,35 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   @impl true
   def handle_event("update_form", %{"run_count" => run_count} = params, socket) do
-    team_ids = parse_team_ids(params["team_ids"], socket.assigns.teams, socket.assigns.team_ids)
+    picks = RunnerForms.parse_team_picks(params["team_ids"], params["team_hooks"], socket.assigns.teams, socket.assigns.picks)
 
     {:noreply,
      socket
-     |> assign(:team_ids, team_ids)
-     |> assign(:start_index, parse_start_index(params["start_index"], team_ids))
+     |> assign(:picks, picks)
+     |> assign(:start_index, RunnerForms.parse_start_index(params["start_index"], picks))
      |> assign(:run_count, run_count)
      |> assign(:weekly_bonus, Map.get(params, "weekly_bonus") == "true")
      |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
      |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
-     |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))}
-  end
-
-  @impl true
-  def handle_event("restore_form", params, socket) do
-    team_ids = parse_team_ids(params["team_ids[]"], socket.assigns.teams, socket.assigns.team_ids)
-
-    {:noreply,
-     socket
-     |> assign(:team_ids, team_ids)
-     |> assign(:start_index, parse_start_index(params["start_index"], team_ids))
-     |> assign(:run_count, Map.get(params, "run_count", socket.assigns.run_count))
-     |> assign(:weekly_bonus, Map.get(params, "weekly_bonus") == "true")
-     |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
-     |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
-     |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))}
+     |> assign(:capture_ego_gifts, Map.get(params, "capture_ego_gifts") == "true")
+     |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))
+     |> save_form()}
   end
 
   @impl true
   def handle_event("add_cycle_team", _, socket) do
-    {:noreply, assign(socket, :team_ids, socket.assigns.team_ids ++ Enum.take(socket.assigns.team_ids, -1))}
+    {:noreply, socket |> assign(:picks, socket.assigns.picks ++ Enum.take(socket.assigns.picks, -1)) |> save_form()}
   end
 
   @impl true
   def handle_event("remove_cycle_team", %{"index" => index}, socket) do
-    %{team_ids: team_ids, start_index: start} = socket.assigns
+    %{picks: picks, start_index: start} = socket.assigns
     index = String.to_integer(index)
 
-    if length(team_ids) > 1 do
-      team_ids = List.delete_at(team_ids, index)
-      start = if index < start, do: start - 1, else: min(start, length(team_ids) - 1)
-      {:noreply, socket |> assign(:team_ids, team_ids) |> assign(:start_index, start)}
+    if length(picks) > 1 do
+      picks = List.delete_at(picks, index)
+      start = if index < start, do: start - 1, else: min(start, length(picks) - 1)
+      {:noreply, socket |> assign(:picks, picks) |> assign(:start_index, start) |> save_form()}
     else
       {:noreply, socket}
     end
@@ -114,19 +102,20 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   @impl true
   def handle_event("set_cycle_start", %{"index" => index}, socket) do
-    {:noreply, assign(socket, :start_index, parse_start_index(index, socket.assigns.team_ids))}
+    {:noreply, socket |> assign(:start_index, RunnerForms.parse_start_index(index, socket.assigns.picks)) |> save_form()}
   end
 
   @impl true
   def handle_event("reorder_cycle", %{"ids" => ids}, socket) do
-    %{team_ids: team_ids, start_index: start} = socket.assigns
+    %{picks: picks, start_index: start} = socket.assigns
     order = Enum.map(ids, &String.to_integer/1)
 
-    if Enum.sort(order) == Enum.to_list(0..(length(team_ids) - 1)//1) do
+    if Enum.sort(order) == Enum.to_list(0..(length(picks) - 1)//1) do
       {:noreply,
        socket
-       |> assign(:team_ids, Enum.map(order, &Enum.at(team_ids, &1)))
-       |> assign(:start_index, Enum.find_index(order, &(&1 == start)))}
+       |> assign(:picks, Enum.map(order, &Enum.at(picks, &1)))
+       |> assign(:start_index, Enum.find_index(order, &(&1 == start)))
+       |> save_form()}
     else
       {:noreply, socket}
     end
@@ -475,44 +464,38 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     end
   end
 
-  def run_action(params, teams) do
-    team_ids = parse_team_ids(params["team_ids"] || params["team_ids[]"], teams)
-    start = parse_start_index(params["start_index"], team_ids)
-    team_ids = Enum.drop(team_ids, start) ++ Enum.take(team_ids, start)
+  def restore_form(socket, nil), do: socket
 
-    with [_ | _] <- team_ids,
-         {run_count, ""} <- Integer.parse(to_string(params["run_count"])),
-         true <- run_count >= 0,
-         {convert_count, ""} <- Integer.parse(to_string(params["enkephalin_convert_count"] || "0")),
-         true <- convert_count in 0..EnkephalinCharger.max_convert_count() do
-      config = %{
-        weekly_bonus?: Map.get(params, "weekly_bonus") == "true",
-        collect_enkephalin?: Map.get(params, "collect_enkephalin") == "true",
-        collect_xp?: Map.get(params, "collect_xp") == "true",
-        enkephalin_convert_count: convert_count
-      }
+  def restore_form(socket, params) do
+    picks = RunnerForms.parse_team_picks(params["team_ids"], params["team_hooks"], socket.assigns.teams, socket.assigns.picks)
 
-      {:ok, {:run_mirror_dungeon, team_ids, run_count, config}}
-    else
-      _ -> :error
-    end
+    socket
+    |> assign(:picks, picks)
+    |> assign(:start_index, RunnerForms.parse_start_index(params["start_index"], picks))
+    |> assign(:run_count, Map.get(params, "run_count", socket.assigns.run_count))
+    |> assign(:weekly_bonus, Map.get(params, "weekly_bonus") == "true")
+    |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
+    |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
+    |> assign(:capture_ego_gifts, Map.get(params, "capture_ego_gifts") == "true")
+    |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))
   end
 
-  def parse_team_ids(values, teams, fallback \\ []) do
-    known = MapSet.new(teams, & &1.id)
+  defp save_form(socket) do
+    a = socket.assigns
 
-    values
-    |> List.wrap()
-    |> Enum.flat_map(fn value ->
-      case Integer.parse(to_string(value)) do
-        {id, ""} -> if MapSet.member?(known, id), do: [id], else: []
-        _ -> []
-      end
-    end)
-    |> case do
-      [] -> fallback
-      ids -> ids
-    end
+    RunnerForms.put("mirror_dungeon", %{
+      "team_ids" => Enum.map(a.picks, &to_string(&1.id)),
+      "team_hooks" => Enum.map(a.picks, & &1.hook),
+      "start_index" => to_string(a.start_index),
+      "run_count" => a.run_count,
+      "weekly_bonus" => to_string(a.weekly_bonus),
+      "collect_enkephalin" => to_string(a.collect_enkephalin),
+      "collect_xp" => to_string(a.collect_xp),
+      "capture_ego_gifts" => to_string(a.capture_ego_gifts),
+      "enkephalin_convert_count" => a.enkephalin_convert_count
+    })
+
+    socket
   end
 
   defp start_countdown(socket, action) do

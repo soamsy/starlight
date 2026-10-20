@@ -626,23 +626,13 @@ const LocalStorageForm = {
   }
 }
 
-const StoredFormReader = {
-  mounted() {
-    const saved = localStorage.getItem(this.el.dataset.storageKey)
-    if (!saved) return
-    try {
-      this.pushEvent(this.el.dataset.event, JSON.parse(saved))
-    } catch (e) {}
-  }
-}
-
 // --- LiveSocket setup ---
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, StoredFormReader }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList }
 })
 
 liveSocket.connect()

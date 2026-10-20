@@ -1,6 +1,6 @@
 defmodule StarlightBot.Scheduler do
   import Ecto.Query
-  alias StarlightBot.Repo
+  alias StarlightBot.{Repo, RunnerForms}
 
   @topic "scheduler"
   @runners ~w(luxcavation_then_mirror_dungeon mirror_dungeon luxcavation)
@@ -10,8 +10,6 @@ defmodule StarlightBot.Scheduler do
     :runner,
     :window_start,
     :window_end,
-    :mirror_dungeon_action,
-    :luxcavation_action,
     :launch_mode,
     :steam_app_id,
     :exe_path,
@@ -31,8 +29,6 @@ defmodule StarlightBot.Scheduler do
     from(s in "scheduler_settings", where: s.id == 1, select: map(s, ^@fields))
     |> Repo.one()
     |> Map.update!(:enabled, &(&1 in [true, 1]))
-    |> Map.update!(:mirror_dungeon_action, &decode_action/1)
-    |> Map.update!(:luxcavation_action, &decode_action/1)
     |> Map.update!(:last_fired_on, &parse_date/1)
   end
 
@@ -61,15 +57,13 @@ defmodule StarlightBot.Scheduler do
          true <- attrs.launch_mode != "steam" or Regex.match?(~r/^\d+$/, attrs.steam_app_id) || {:error, "Steam app id must be a number"},
          true <- attrs.launch_mode != "exe" or File.regular?(attrs.exe_path) || {:error, "executable path doesn't point at a file"},
          true <- is_integer(attrs.launch_timeout_s) and attrs.launch_timeout_s > 0 || {:error, "launch timeout must be a positive number of seconds"},
-         true <- runner_action(attrs) != nil || {:error, "no saved #{attrs.runner |> String.replace("_", " ")} runner settings to schedule"} do
+         [] <- missing_runner_settings(attrs.runner) do
       {:ok,
        [
          enabled: if(attrs.enabled, do: 1, else: 0),
          runner: attrs.runner,
          window_start: attrs.window_start,
          window_end: attrs.window_end,
-         mirror_dungeon_action: encode_action(attrs.mirror_dungeon_action),
-         luxcavation_action: encode_action(attrs.luxcavation_action),
          launch_mode: attrs.launch_mode,
          steam_app_id: attrs.steam_app_id,
          exe_path: attrs.exe_path,
@@ -78,11 +72,35 @@ defmodule StarlightBot.Scheduler do
     else
       {:error, _} = error -> error
       :error -> {:error, "times must be HH:MM"}
+      missing when is_list(missing) -> {:error, missing_message(missing)}
     end
   end
 
-  def runner_action(%{runner: "mirror_dungeon", mirror_dungeon_action: action}), do: action
-  def runner_action(%{runner: "luxcavation", luxcavation_action: action}), do: action
+  def missing_runner_settings(runner) do
+    for {part, label, action_fun} <- [
+          {"luxcavation", "luxcavation", &RunnerForms.luxcavation_action/0},
+          {"mirror_dungeon", "mirror dungeon", &RunnerForms.mirror_dungeon_action/0}
+        ],
+        part in runner_parts(runner),
+        is_nil(action_fun.()),
+        do: label
+  end
+
+  def missing_message([one]), do: "the #{one} runner page isn't set up to run"
+  def missing_message(missing), do: "the #{Enum.join(missing, " and ")} runner pages aren't set up to run"
+
+  defp runner_parts("luxcavation_then_mirror_dungeon"), do: ["luxcavation", "mirror_dungeon"]
+  defp runner_parts(runner), do: [runner]
+
+  def runner_action(%{runner: "mirror_dungeon"}), do: RunnerForms.mirror_dungeon_action()
+  def runner_action(%{runner: "luxcavation"}), do: RunnerForms.luxcavation_action()
+
+  def runner_action(%{runner: "luxcavation_then_mirror_dungeon"}) do
+    with lux when lux != nil <- RunnerForms.luxcavation_action(),
+         md when md != nil <- RunnerForms.mirror_dungeon_action() do
+      {:luxcavation_then_mirror_dungeon, lux, md}
+    end
+  end
 
   def parse_time(value) when is_binary(value) do
     case Time.from_iso8601(value <> ":00") do
@@ -134,32 +152,6 @@ defmodule StarlightBot.Scheduler do
   end
 
   def local_now, do: NaiveDateTime.from_erl!(:calendar.local_time())
-
-  def encode_action(nil), do: nil
-
-  def encode_action({:run_mirror_dungeon, team_ids, run_count, config}),
-    do: Jason.encode!(%{kind: "mirror_dungeon", team_ids: team_ids, run_count: run_count, config: config})
-
-  def encode_action({:run_luxcavation, team_id, exp_c, exp_r, thread_c, thread_r, collect_xp?, collect_enkephalin?, convert}),
-    do: Jason.encode!(%{kind: "luxcavation", args: [team_id, exp_c, exp_r, thread_c, thread_r, collect_xp?, collect_enkephalin?, convert]})
-
-  def decode_action(nil), do: nil
-
-  def decode_action(json) when is_binary(json) do
-    case Jason.decode!(json) do
-      %{"kind" => "mirror_dungeon", "team_ids" => team_ids, "run_count" => run_count, "config" => config} ->
-        {:run_mirror_dungeon, team_ids, run_count,
-         %{
-           weekly_bonus?: config["weekly_bonus?"],
-           collect_enkephalin?: config["collect_enkephalin?"],
-           collect_xp?: config["collect_xp?"],
-           enkephalin_convert_count: config["enkephalin_convert_count"]
-         }}
-
-      %{"kind" => "luxcavation", "args" => args} ->
-        List.to_tuple([:run_luxcavation | args])
-    end
-  end
 
   defp parse_date(nil), do: nil
   defp parse_date(value), do: Date.from_iso8601!(value)

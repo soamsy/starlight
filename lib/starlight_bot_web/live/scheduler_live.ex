@@ -1,8 +1,8 @@
 defmodule StarlightBotWeb.Live.SchedulerLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.{GameWindow, Scheduler, Teams}
+  alias StarlightBot.{GameWindow, RunnerForms, Scheduler, Teams}
   alias StarlightBot.Scheduler.Server
-  alias StarlightBotWeb.Live.{LuxcavationLive, MirrorDungeonLive}
+  alias StarlightBotWeb.Live.MirrorDungeonLive
 
   @clock_tick_ms 30_000
 
@@ -10,6 +10,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Scheduler.subscribe()
+      RunnerForms.subscribe()
       Process.send_after(self(), :clock_tick, @clock_tick_ms)
     end
 
@@ -20,38 +21,26 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
 
     {:ok,
      socket
-     |> assign(:teams, Teams.list_teams() |> Enum.reject(&(&1.hook in [nil, ""])))
-     |> assign(:form_md_action, nil)
-     |> assign(:form_lux_action, nil)
+     |> assign(:teams, Teams.list_teams() |> Enum.reject(&(&1.hooks == [])))
+     |> assign_runner_actions()
      |> assign(:now, Scheduler.local_now())
      |> assign_status(status)
      |> assign(:form, form_values(status.settings))}
   end
 
   @impl true
-  def handle_event("mirror_dungeon_form", params, socket) do
-    {:noreply, assign(socket, :form_md_action, ok_or_nil(MirrorDungeonLive.run_action(params, socket.assigns.teams)))}
-  end
-
-  def handle_event("luxcavation_form", params, socket) do
-    {:noreply, assign(socket, :form_lux_action, ok_or_nil(LuxcavationLive.run_action(params)))}
-  end
-
   def handle_event("update_form", params, socket) do
     {:noreply, assign(socket, :form, Map.merge(socket.assigns.form, form_params(params)))}
   end
 
   def handle_event("save", params, socket) do
     form = Map.merge(socket.assigns.form, form_params(params))
-    settings = socket.assigns.settings
 
     attrs = %{
       enabled: form["enabled"] == "true",
       runner: form["runner"],
       window_start: String.slice(form["window_start"], 0, 5),
       window_end: String.slice(form["window_end"], 0, 5),
-      mirror_dungeon_action: socket.assigns.form_md_action || settings.mirror_dungeon_action,
-      luxcavation_action: socket.assigns.form_lux_action || settings.luxcavation_action,
       launch_mode: form["launch_mode"],
       steam_app_id: String.trim(form["steam_app_id"]),
       exe_path: String.trim(form["exe_path"]),
@@ -87,6 +76,8 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
 
   def handle_info({:scheduler_settings, settings}, socket), do: {:noreply, assign(socket, :settings, settings)}
 
+  def handle_info({:runner_form, _runner}, socket), do: {:noreply, assign_runner_actions(socket)}
+
   def handle_info(:clock_tick, socket) do
     Process.send_after(self(), :clock_tick, @clock_tick_ms)
     {:noreply, assign(socket, :now, Scheduler.local_now())}
@@ -98,6 +89,12 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     |> assign(:activity, status.activity)
     |> assign(:retry_after_ms, status.retry_after_ms)
     |> assign(:events, status.events)
+  end
+
+  defp assign_runner_actions(socket) do
+    socket
+    |> assign(:md_action, RunnerForms.mirror_dungeon_action())
+    |> assign(:lux_action, RunnerForms.luxcavation_action())
   end
 
   defp form_values(settings) do
@@ -119,9 +116,6 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     |> Map.put("enabled", Map.get(params, "enabled", "false"))
   end
 
-  defp ok_or_nil({:ok, action}), do: action
-  defp ok_or_nil(:error), do: nil
-
   defp parse_int(value) do
     case Integer.parse(to_string(value)) do
       {n, ""} -> n
@@ -129,7 +123,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     end
   end
 
-  def action_label(nil, _teams), do: "nothing saved yet"
+  def action_label(nil, _teams), do: "not set up yet"
   def action_label({:run_mirror_dungeon, _, _, _} = action, _teams), do: MirrorDungeonLive.pending_action_label(action)
 
   def action_label({:run_luxcavation, team_id, exp_c, exp_r, thread_c, thread_r, _xp?, _enkephalin?, _convert}, teams) do
