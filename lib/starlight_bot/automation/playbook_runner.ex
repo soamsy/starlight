@@ -121,7 +121,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     scan = if Enum.any?(BattleStrategies.flatten_actions(actions), &needs_tray?/1), do: scan(ctx), else: :skip
     RunMemory.put(ctx, :target_panned?, false)
 
-    with {:ok, state} <- run_actions(merge_keys(actions), %{kind: kind, scan: scan}, ctx),
+    with {:ok, state} <- run_actions(actions |> merge_keys() |> commit_trailing_damage_rate(), %{kind: kind, scan: scan}, ctx),
          :ok <- ensure_started(state, kind, ctx) do
       RunMemory.put_battle_turn(ctx, turn + 1)
       {:ok, nil}
@@ -150,8 +150,18 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp merge_keys([%{"type" => "win_rate"}, %{"type" => "commit"} | rest]),
     do: [%{"type" => "win_rate_commit"} | merge_keys(rest)]
 
+  defp merge_keys([%{"type" => "damage_rate"}, %{"type" => "commit"} | rest]),
+    do: [%{"type" => "damage_rate_commit"} | merge_keys(rest)]
+
   defp merge_keys([action | rest]), do: [action | merge_keys(rest)]
   defp merge_keys([]), do: []
+
+  defp commit_trailing_damage_rate(actions) do
+    case List.last(actions) do
+      %{"type" => "damage_rate"} -> List.replace_at(actions, -1, %{"type" => "damage_rate_commit"})
+      _ -> actions
+    end
+  end
 
   defp run_actions([], _turn, _ctx), do: {:ok, :pending}
 
@@ -207,6 +217,18 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp run_action(%{"type" => "win_rate_commit"}, %{kind: kind}, ctx) do
     if press_until([:p, :enter], @turn_started, @turn_start_timeout_ms, kind, ctx), do: :started, else: :pending
+  end
+
+  defp run_action(%{"type" => "damage_rate_commit"}, turn, ctx) do
+    with {:ok, _} <- press([:p, :p, :enter], ctx),
+         true <- await(@turn_started, @turn_start_timeout_ms) do
+      :started
+    else
+      _ ->
+        Ctx.log(ctx, :info, "playbook: quick p p enter didn't start the turn, falling back to cycling damage")
+        run_action(%{"type" => "damage_rate"}, turn, ctx)
+        run_action(%{"type" => "commit"}, turn, ctx)
+    end
   end
 
   defp run_action(%{"type" => "win_rate"}, %{kind: kind}, ctx) do
