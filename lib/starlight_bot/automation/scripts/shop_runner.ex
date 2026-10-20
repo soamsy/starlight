@@ -41,6 +41,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     end
 
     Ops.forget_shelf(ctx)
+    Ops.reset_chance_comet(ctx)
     RunMemory.put_cost(ctx, nil)
     Ops.detect_and_update_cost(ctx)
 

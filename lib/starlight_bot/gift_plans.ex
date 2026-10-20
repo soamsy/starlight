@@ -14,6 +14,7 @@ defmodule StarlightBot.GiftPlans do
   @skill_replace_cost 50
   @uptie_step_costs %{1 => [50, 100], 2 => [60, 120], 3 => [75, 150], 4 => [100, 200]}
   @default_grace_indexes [0, 2, 3, 7]
+  @chance_comet 8
   @gift_search_max 3
   @gift_search_starlight_costs [70, 160, 270]
   @shop_tiers 1..4

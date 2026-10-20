@@ -81,7 +81,12 @@ defmodule StarlightBot.Automation.Shop.Actions.FixedFusion do
   end
 
   defp fuse(target, ingredient_ids, progress, state, ctx) do
-    fusion_target = %{gift_name: target.name, affinity: target.affinity, fixed_id: target.id}
+    fusion_target = %{
+      gift_name: target.name,
+      affinity: target.affinity,
+      fixed_id: target.id,
+      chance_comet?: Ops.chance_comet_ready?(state.plan, target.tier || 0, ctx)
+    }
 
     case Ops.perform_fusion(fusion_target, {:strict, ingredient_ids}, ctx) do
       :ok -> {:done, Enum.join(progress ++ ["fused #{target.name}"], "; "), state}

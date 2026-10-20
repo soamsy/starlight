@@ -3,6 +3,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   alias StarlightBot.Automation.{Engine, RewardHelpers, RunMemory}
   alias StarlightBot.Ctx
   alias StarlightBot.EgoGifts
+  alias StarlightBot.GiftPlans
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.Teams
   alias StarlightBot.Vision.{Capture, EgoGiftDetector, HookRegistry, Matcher, NumberScanner}
@@ -15,6 +16,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @uptie_2_hook :shop_sell_popup_uptie_2
   @uptie_1_hook :shop_sell_popup_uptie_1
   @purchase_result_timeout 5_000
+  @extra_gift_get_timeout 1_500
+  @chance_comet_min_tier 3
   @normal_shelf_hooks [:shop_shelf_row_1, :shop_shelf_row_2]
   @super_shelf_hooks [:shop_super_shelf_row_1, :shop_super_shelf_row_2]
 
@@ -96,6 +99,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @shelf_key :shop_shelf
   @unaffordable_key :shop_unaffordable
   @fuse_affinity_key :fuse_affinity
+  @chance_comet_used_key :shop_chance_comet_used
   @fuse_change_affinity_hook :shop_fuse_popup_empty_result
   @max_escape_attempts 10
   @escape_settle_ms 400
@@ -744,7 +748,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
          :ok <- confirm_fuse(ctx),
          Enum.each(consumed_ids, &RunMemory.remove_ego_gift(ctx, &1)),
          {:ok, _} <-
-           Engine.act([await(:ego_gift_get), RewardHelpers.record_ego_gift_items_step(), RewardHelpers.dismiss_ego_gift_get_step()], ctx) do
+           Engine.act([await(:ego_gift_get), RewardHelpers.record_ego_gift_items_step(), RewardHelpers.dismiss_ego_gift_get_step()], ctx),
+         {:ok, _} <- collect_chance_comet_gift(target, ctx) do
       rescan_fuse_inventory(target, consumed_ids, ctx)
       :ok
     else
@@ -754,6 +759,24 @@ defmodule StarlightBot.Automation.Shop.Ops do
         err
     end
   end
+
+  def chance_comet_ready?(plan, result_tier, ctx) do
+    result_tier >= @chance_comet_min_tier and GiftPlans.chance_comet?(plan) and not RunMemory.get(ctx, @chance_comet_used_key, false)
+  end
+
+  def reset_chance_comet(ctx), do: RunMemory.put(ctx, @chance_comet_used_key, false)
+
+  defp collect_chance_comet_gift(%{chance_comet?: true}, ctx) do
+    if Engine.check_within(:ego_gift_get, @extra_gift_get_timeout) do
+      Ctx.log(ctx, :info, "shop fuse: Chance Comet extra ego gift, collecting it")
+      RunMemory.put(ctx, @chance_comet_used_key, true)
+      Engine.act([RewardHelpers.record_ego_gift_items_step(), RewardHelpers.dismiss_ego_gift_get_step()], ctx)
+    else
+      {:ok, nil}
+    end
+  end
+
+  defp collect_chance_comet_gift(_target, _ctx), do: {:ok, nil}
 
   defp rescan_fuse_inventory(target, consumed_ids, ctx) do
     with {:ok, _} <- Engine.act([await_any([@fuse_popup_hook, @fuse_open_hook])], ctx),

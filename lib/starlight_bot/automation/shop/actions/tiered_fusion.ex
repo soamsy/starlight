@@ -64,7 +64,9 @@ defmodule StarlightBot.Automation.Shop.Actions.TieredFusion do
     {:ok, picks} = FusionPlanner.pick_fodder(fodder, combo)
     label = "T#{tier} from #{Combos.combo_key(combo)}"
 
-    case Ops.perform_fusion(%{gift_name: "#{label} toward #{target.name}", affinity: target.affinity}, {:strict, Enum.map(picks, & &1.id)}, ctx) do
+    fusion_target = %{gift_name: "#{label} toward #{target.name}", affinity: target.affinity, chance_comet?: Ops.chance_comet_ready?(state.plan, tier, ctx)}
+
+    case Ops.perform_fusion(fusion_target, {:strict, Enum.map(picks, & &1.id)}, ctx) do
       :ok ->
         progress = progress ++ ["fused #{label}"]
         misses = if tier == target.tier and not MapSet.member?(owned_names(ctx), target.name), do: misses + 1, else: misses
