@@ -118,6 +118,27 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.protected_set(data, top, []) == MapSet.new(["Fiery Down", "Glimpse of Flames"])
     end
 
+    test "a between-repeats workflow counts as called: cycles, protection, issues and imports see it" do
+      data =
+        update_in(nested_plan()["workflows"], fn [a, b, c, d] ->
+          [a, b, c, Map.put(d, "steps", [%{"id" => "st_d", "kind" => "refresh", "enabled" => true, "repeat" => 2, "between" => "wf_c"}])]
+        end)
+
+      d = GiftPlans.find_workflow(data, "wf_d")
+      assert GiftPlans.called_workflows(d) == ["wf_c"]
+      assert GiftPlans.creates_cycle?(data, "wf_c", "wf_d")
+      assert data |> GiftPlans.expand_steps(d) |> Enum.map(& &1["id"]) == ["st_d", "st_c"]
+      assert GiftPlans.protected_set(data, d, []) == MapSet.new(["Glimpse of Flames"])
+
+      gone = put_in(data, ["workflows", Access.at(3), "steps", Access.at(0), "between"], "wf_gone")
+      assert Enum.any?(GiftPlans.issues(gone), &(&1 =~ "D: step 1 (Refresh) runs a deleted workflow between repeats."))
+
+      imported = GiftPlans.import_workflows(GiftPlans.blank(), data, ["wf_d"], "Src")
+      [copy_c] = Enum.filter(imported["workflows"], &(&1["name"] == "C"))
+      [copy_d] = Enum.filter(imported["workflows"], &(&1["name"] == "D"))
+      assert hd(copy_d["steps"])["between"] == copy_c["id"]
+    end
+
     test "issues flag a cycle and a missing workflow" do
       data = nested_plan()
       looped = update_in(data, ["workflows"], &Enum.map(&1, fn

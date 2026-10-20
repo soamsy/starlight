@@ -167,13 +167,15 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     end)
   end
 
+  defp run_repeated(%{"kind" => "if"} = step, state, mode, ctx), do: run_step(step, state, mode, ctx)
+
   defp run_repeated(step, state, mode, ctx) do
     case step["repeat"] do
       extra when is_integer(extra) and extra > 0 ->
         first_run_key = "#{state.label_prefix}(1/#{extra + 1}) #{step["id"]}"
 
         if Map.has_key?(state.done, first_run_key) or condition_met?(step, state, ctx),
-          do: repeat_step(Map.delete(step, "condition"), state, mode, ctx, 1, extra + 1),
+          do: repeat_step(Map.delete(step, "condition"), step["condition"], state, mode, ctx, 1, extra + 1),
           else: run_step(step, state, mode, ctx)
 
       _ ->
@@ -195,7 +197,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     %{wallet: wallet(state, ctx), owned: owned_names(inventory), inventory: inventory, plan: state.plan, gifts: state.gifts_by_name, refreshes: state.refreshes}
   end
 
-  defp repeat_step(step, state, mode, ctx, run, total) when is_integer(run) and is_integer(total) do
+  defp repeat_step(step, condition, state, mode, ctx, run, total) when is_integer(run) and is_integer(total) do
     prefix = state.label_prefix
     state = run_step(step, %{state | label_prefix: "#{prefix}(#{run}/#{total}) "}, mode, ctx)
     state = %{state | label_prefix: prefix}
@@ -207,6 +209,51 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       milestone_reached?(step, state, ctx) -> state
       true -> continue_after_between(step, condition, state, mode, ctx, run, total)
     end
+  end
+
+  defp continue_after_between(%{"between" => id} = step, condition, state, mode, ctx, run, total) when is_binary(id) do
+    prefix = state.label_prefix
+    between = %{"id" => "#{step["id"]}:between", "kind" => "workflow", "workflow" => id, "condition" => condition}
+    nested = %{state | label_prefix: "#{prefix}(between #{run}/#{total - 1}) "}
+    before = length(state.steps)
+    state = %{run_step(between, nested, mode, ctx) | label_prefix: prefix}
+    failed? = state.steps |> Enum.drop(before) |> Enum.any?(&(&1.outcome == :failed))
+
+    if state.left or failed? or Map.get(state.done, step_key(between, nested)) in [:skipped, :failed],
+      do: state,
+      else: repeat_step(step, condition, state, mode, ctx, run + 1, total)
+  end
+
+  defp continue_after_between(step, condition, state, mode, ctx, run, total), do: repeat_step(step, condition, state, mode, ctx, run + 1, total)
+
+  defp milestone_reached?(%{"kind" => "milestone", "milestone" => id}, state, ctx) when is_binary(id),
+    do: GiftPlans.milestone_reached?(state.plan, id, condition_env(state, ctx))
+
+  defp milestone_reached?(_step, _state, _ctx), do: false
+
+  defp run_step(%{"kind" => "if"} = step, state, mode, ctx) do
+    label = state.label_prefix <> GiftPlans.step_label(state.plan, step)
+    key = step_key(step, state)
+    branch_key = key <> " branch"
+
+    branch =
+      case Map.get(state.done, branch_key) do
+        nil -> if condition_met?(step, state, ctx), do: "then", else: "else"
+        chosen -> chosen
+      end
+
+    steps = Enum.filter(step[branch] || [], &(&1["enabled"] != false))
+    state = %{state | done: Map.put(state.done, branch_key, branch)}
+    reason = if branch == "then", do: "condition met", else: "condition not met"
+    condition = GiftPlans.condition_label(step["condition"], state.plan) || "always"
+
+    state =
+      if Map.has_key?(state.done, key),
+        do: state,
+        else: record(state, step, label, :done, "#{reason} (#{condition}), running #{branch}: #{length(steps)} step(s)", ctx)
+
+    finished = run_steps(steps, %{state | label_prefix: "#{label} › #{branch} › "}, mode, ctx)
+    %{finished | label_prefix: state.label_prefix}
   end
 
   defp run_step(%{"kind" => "workflow"} = step, state, mode, ctx) do

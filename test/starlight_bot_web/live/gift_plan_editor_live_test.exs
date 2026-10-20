@@ -235,23 +235,73 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert render(socket) =~ "Upties, in order:"
   end
 
-  test "gift lists can be copied and pasted across shopping lists and keep lists", %{socket: socket} do
+  test "a repeated step can run another workflow between repeats, but not one that leads back", %{socket: socket} do
+    socket = socket |> event("add_step", %{"kind" => "refresh"}) |> event("add_workflow", %{})
+    [standard, between] = saved(socket)["workflows"]
+    socket = event(socket, "select_workflow", %{"id" => standard["id"]})
+    [step] = steps(socket)
+
+    socket = event(socket, "update_step", %{"step_id" => step["id"], "step" => %{"repeat" => "2", "between" => between["id"]}})
+    assert %{"repeat" => 2, "between" => between_id} = hd(steps(socket))
+    assert between_id == between["id"]
+    html = render(event(socket, "toggle_step", %{"id" => step["id"]}))
+    assert html =~ "Between repeats run"
+    assert html =~ "↻ Workflow 2"
+
+    socket = socket |> event("select_workflow", %{"id" => between["id"]}) |> event("add_step", %{"kind" => "refresh"})
+    [inner] = Enum.at(saved(socket)["workflows"], 1)["steps"]
+    socket = event(socket, "update_step", %{"step_id" => inner["id"], "step" => %{"repeat" => "1", "between" => standard["id"]}})
+    refute Map.has_key?(hd(Enum.at(saved(socket)["workflows"], 1)["steps"]), "between")
+
+    socket = socket |> event("select_workflow", %{"id" => standard["id"]}) |> event("update_step", %{"step_id" => step["id"], "step" => %{"repeat" => "2", "between" => ""}})
+    refute Map.has_key?(hd(steps(socket)), "between")
+  end
+
+  test "If steps hold Then and Else steps that can be added, edited, dragged and copied", %{socket: socket} do
+    socket = event(socket, "add_step", %{"kind" => "if"})
+    [if_step] = steps(socket)
+    then_scope = "#{if_step["id"]}:then"
+    else_scope = "#{if_step["id"]}:else"
+
     socket =
       socket
-      |> event("lib_add", %{"lib" => "shopping_lists"})
-      |> then(fn s -> event(s, "lib_toggle_gift", %{"lib" => "shopping_lists", "id" => s.assigns.selected_def["shopping_lists"], "gift" => "Ing B"}) end)
-      |> then(fn s -> event(s, "lib_toggle_gift", %{"lib" => "shopping_lists", "id" => s.assigns.selected_def["shopping_lists"], "gift" => "Ing A"}) end)
-      |> then(fn s -> event(s, "gifts_copy", %{"lib" => "shopping_lists", "def_id" => s.assigns.selected_def["shopping_lists"]}) end)
+      |> event("set_add_target", %{"scope" => then_scope})
+      |> event("add_step", %{"kind" => "affinity_refresh"})
+      |> event("set_add_target", %{"scope" => else_scope})
+      |> event("add_step", %{"kind" => "refresh"})
 
-    keep_id = hd(saved(socket)["library"]["keep_lists"])["id"]
-    socket = event(socket, "gifts_paste", %{"lib" => "keep_lists", "def_id" => keep_id})
+    assert render(socket) =~ "Adding into If cost &gt;= 0 › else"
+    socket = event(socket, "set_add_target", %{"scope" => else_scope})
+    socket = event(socket, "add_step", %{"kind" => "leave"})
 
-    library = saved(socket)["library"]
-    assert hd(library["keep_lists"])["gifts"] == ["Ing B", "Ing A"]
+    [%{"kind" => "if", "then" => [affinity], "else" => [refresh]}, %{"kind" => "leave"}] = steps(socket)
 
-    for tab <- ~w(shopping_lists keep_lists) do
-      assert render(event(socket, "set_tab", %{"tab" => tab})) =~ "2 gift(s)"
-    end
+    socket =
+      socket
+      |> event("update_step", %{"step_id" => affinity["id"], "step" => %{"affinity" => "poise"}})
+      |> event("toggle_step_enabled", %{"id" => refresh["id"]})
+      |> event("cond_update", %{"step_id" => if_step["id"], "path" => "0", "op" => "cost_gte", "value" => "150"})
+
+    [%{"then" => [%{"affinity" => "poise"}], "else" => [%{"enabled" => false}]} = updated, _] = steps(socket)
+    assert GiftPlans.condition_label(updated["condition"]) == "cost >= 150"
+
+    socket = event(socket, "cond_update", %{"step_id" => if_step["id"], "path" => "0", "op" => "refreshes_lt", "value" => "2"})
+    assert GiftPlans.condition_label(hd(steps(socket))["condition"]) == "refreshes < 2"
+    assert render(event(socket, "toggle_step", %{"id" => if_step["id"]})) =~ "refreshes this shop under"
+    socket = event(socket, "cond_update", %{"step_id" => if_step["id"], "path" => "0", "op" => "cost_gte", "value" => "150"})
+
+    html = render(event(socket, "toggle_step", %{"id" => if_step["id"]}))
+    assert html =~ "Then" and html =~ "Else" and html =~ "Exactly one branch runs"
+
+    socket = event(socket, "move_step_to", %{"scope" => else_scope, "id" => affinity["id"], "ids" => [refresh["id"], affinity["id"]]})
+    [%{"then" => [], "else" => [_, %{"kind" => "affinity_refresh"}]}, _] = steps(socket)
+
+    socket = event(socket, "duplicate_step", %{"id" => if_step["id"]})
+    [first, copy, _leave] = steps(socket)
+    assert copy["id"] != first["id"] and hd(copy["else"])["id"] != hd(first["else"])["id"]
+
+    socket = socket |> event("delete_step", %{"id" => refresh["id"]}) |> event("move_step", %{"id" => affinity["id"], "dir" => "up"})
+    assert [%{"else" => [%{"kind" => "affinity_refresh"}]}, _, _] = steps(socket)
   end
 
   test "heal, heal all, and revive steps", %{socket: socket} do

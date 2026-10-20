@@ -548,8 +548,55 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def called_workflows(workflow) do
-    for %{"kind" => "workflow", "workflow" => id} <- workflow["steps"] || [], is_binary(id), uniq: true, do: id
+    steps = all_steps(workflow["steps"])
+    runs = for %{"kind" => "workflow", "workflow" => id} <- steps, is_binary(id), do: id
+    betweens = for %{"between" => id} <- steps, is_binary(id), do: id
+    Enum.uniq(runs ++ betweens)
   end
+
+  def all_steps(steps), do: Enum.flat_map(steps || [], fn step -> [step | Enum.flat_map(branches(step), &all_steps(step[&1]))] end)
+
+  def branches(%{"kind" => "if"}), do: ["then", "else"]
+  def branches(_step), do: []
+
+  def find_step(steps, id), do: Enum.find(all_steps(steps), &(&1["id"] == id))
+
+  def update_step_in(steps, id, fun) do
+    Enum.map(steps, fn
+      %{"id" => ^id} = step -> fun.(step)
+      step -> update_branches(step, &update_step_in(&1, id, fun))
+    end)
+  end
+
+  def remove_step(steps, id), do: steps |> Enum.reject(&(&1["id"] == id)) |> Enum.map(&update_branches(&1, fn list -> remove_step(list, id) end))
+
+  def update_step_list(steps, "", fun), do: fun.(steps)
+
+  def update_step_list(steps, scope, fun) do
+    [id, branch] = String.split(scope, ":")
+    update_step_in(steps, id, &Map.put(&1, branch, fun.(&1[branch] || [])))
+  end
+
+  def update_containing_list(steps, id, fun) do
+    if Enum.any?(steps, &(&1["id"] == id)),
+      do: fun.(steps),
+      else: Enum.map(steps, &update_branches(&1, fn list -> update_containing_list(list, id, fun) end))
+  end
+
+  def move_step(steps, id, scope, ids) do
+    step = find_step(steps, id)
+    host = if scope == "", do: nil, else: scope |> String.split(":") |> hd()
+
+    if is_nil(step) or (host && (host == id or find_step(Enum.flat_map(branches(step), &(step[&1] || [])), host))) do
+      steps
+    else
+      steps |> remove_step(id) |> update_step_list(scope, &reorder_by_keys(&1 ++ [step], ids, fn s -> s["id"] end))
+    end
+  end
+
+  def fresh_step_ids(step), do: step |> Map.put("id", new_id("st")) |> update_branches(&Enum.map(&1, fn child -> fresh_step_ids(child) end))
+
+  defp update_branches(step, fun), do: Enum.reduce(branches(step), step, fn branch, step -> Map.put(step, branch, fun.(step[branch] || [])) end)
 
   def reachable_workflows(data, id), do: reach(data, called_workflows(find_workflow(data, id) || %{}), MapSet.new())
 
@@ -587,7 +634,7 @@ defmodule StarlightBot.GiftPlans do
           workflow
           | "id" => wf_map[workflow["id"]],
             "name" => name,
-            "steps" => Enum.map(workflow["steps"], &remap_step(&1, wf_map, ref_map))
+            "steps" => Enum.map(workflow["steps"], &remap_tree(&1, wf_map, ref_map))
         }
         |> Map.put("keep", ref_map[{"lists", workflow["keep"]}])
       end)
@@ -599,7 +646,7 @@ defmodule StarlightBot.GiftPlans do
     keep = if workflow["keep"], do: [{"lists", workflow["keep"]}], else: []
 
     keep ++
-      Enum.flat_map(workflow["steps"], fn step ->
+      Enum.flat_map(all_steps(workflow["steps"]), fn step ->
         case library_ref(step["kind"]) do
           {lib, field} -> for id <- List.wrap(step[field]), is_binary(id), do: {lib, id}
           nil -> []
@@ -650,6 +697,16 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
+  defp remap_tree(step, wf_map, ref_map) do
+    step
+    |> remap_step(wf_map, ref_map)
+    |> remap_between(wf_map)
+    |> update_branches(&Enum.map(&1, fn child -> remap_tree(child, wf_map, ref_map) end))
+  end
+
+  defp remap_between(%{"between" => id} = step, wf_map) when is_binary(id), do: %{step | "between" => wf_map[id]}
+  defp remap_between(step, _wf_map), do: step
+
   defp remap_ref(ids, lib, ref_map) when is_list(ids), do: for(id <- ids, ref_map[{lib, id}], do: ref_map[{lib, id}])
   defp remap_ref(id, lib, ref_map), do: ref_map[{lib, id}]
 
@@ -659,8 +716,10 @@ defmodule StarlightBot.GiftPlans do
 
   def expand_steps(data, workflow), do: expand_steps(data, workflow, [workflow["id"]])
 
-  defp expand_steps(data, workflow, stack) do
-    workflow["steps"]
+  defp expand_steps(data, workflow, stack), do: expand_list(data, workflow["steps"], stack)
+
+  defp expand_list(data, steps, stack) do
+    steps
     |> Enum.filter(&(&1["enabled"] != false))
     |> Enum.flat_map(fn
       %{"kind" => "workflow", "workflow" => id} = step ->
@@ -669,10 +728,22 @@ defmodule StarlightBot.GiftPlans do
           nil -> [step]
         end
 
+      %{"kind" => "if"} = step ->
+        [step | Enum.flat_map(branches(step), &expand_list(data, step[&1] || [], stack))]
+
       step ->
-        [step]
+        [step | expand_between(data, step, stack)]
     end)
   end
+
+  defp expand_between(data, %{"between" => id}, stack) when is_binary(id) do
+    case find_workflow(data, id) do
+      %{} = between -> if id in stack, do: [], else: expand_steps(data, between, [id | stack])
+      nil -> []
+    end
+  end
+
+  defp expand_between(_data, _step, _stack), do: []
 
   def workflow_for_floor(data, floor) when is_integer(floor) do
     data["floor_schedule"]
@@ -1091,7 +1162,7 @@ defmodule StarlightBot.GiftPlans do
 
     broken =
       workflow["steps"]
-      |> Enum.with_index(1)
+      |> numbered_steps("")
       |> Enum.flat_map(fn {step, i} ->
         prefix = "#{workflow["name"]}: step #{i} (#{kind_label(step["kind"])})"
 
@@ -1103,9 +1174,27 @@ defmodule StarlightBot.GiftPlans do
           {_kind, {:error, :missing_definition}} -> ["#{prefix} references a deleted definition."]
           {_kind, {:error, :no_definitions}} -> ["#{prefix} has no definitions selected."]
           _ -> []
-        end
+        end ++ between_issues(data, workflow, step, prefix)
       end)
 
     keep ++ broken
   end
+
+  defp numbered_steps(steps, prefix) do
+    steps
+    |> Enum.with_index(1)
+    |> Enum.flat_map(fn {step, i} ->
+      number = prefix <> to_string(i)
+      [{step, number} | Enum.flat_map(branches(step), &numbered_steps(step[&1] || [], "#{number} › #{&1} "))]
+    end)
+  end
+
+  defp between_issues(data, workflow, %{"between" => id}, prefix) when is_binary(id) do
+    case find_workflow(data, id) do
+      nil -> ["#{prefix} runs a deleted workflow between repeats."]
+      between -> if creates_cycle?(data, workflow["id"], id), do: ["#{prefix} runs #{between["name"]} between repeats, which leads back to #{workflow["name"]}."], else: []
+    end
+  end
+
+  defp between_issues(_data, _workflow, _step, _prefix), do: []
 end

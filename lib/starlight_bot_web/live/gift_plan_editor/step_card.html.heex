@@ -1,0 +1,259 @@
+<% broken = step_broken?(@plan_data, @step) %>
+<% expanded = @expanded_step_id == @step["id"] %>
+<div data-sort-id={@step["id"]}
+     class={"rounded-lg border p-1.5 flex flex-col gap-1 " <>
+       cond do
+         broken -> "border-error bg-error/5"
+         @step["enabled"] == false -> "border-base-300 opacity-50"
+         expanded -> "border-primary"
+         true -> "border-base-300"
+       end}>
+  <div class="flex items-center gap-1.5">
+    <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
+    <span class="text-[10px] text-base-content/40 w-4 text-right"><%= @index %></span>
+    <input type="checkbox" class="checkbox checkbox-xs" checked={@step["enabled"] != false}
+           phx-click="toggle_step_enabled" phx-value-id={@step["id"]} title="Enabled" />
+    <button type="button" phx-click="toggle_step" phx-value-id={@step["id"]} class="flex-1 min-w-0 text-left flex flex-col">
+      <span class={"text-xs font-medium truncate " <> if(broken, do: "text-error", else: "")}>
+        <%= GiftPlans.step_label(@plan_data, @step) %>
+        <span :if={@step["repeat"]} class="badge badge-accent badge-xs ml-1">×<%= @step["repeat"] + 1 %></span>
+        <% between = @step["repeat"] && GiftPlans.find_workflow(@plan_data, @step["between"]) %>
+        <span :if={between} class="badge badge-ghost badge-xs ml-1">↻ <%= between["name"] %></span>
+      </span>
+      <span :if={summary = step_summary(@plan_data, @step)} class="text-[10px] text-base-content/60 truncate"><%= summary %></span>
+      <span :if={label = GiftPlans.condition_label(@step["condition"], @plan_data)} class="text-[10px] text-secondary truncate">if <%= label %></span>
+    </button>
+    <button type="button" phx-click="move_step" phx-value-id={@step["id"]} phx-value-dir="up" class="btn btn-ghost btn-2xs px-1">↑</button>
+    <button type="button" phx-click="move_step" phx-value-id={@step["id"]} phx-value-dir="down" class="btn btn-ghost btn-2xs px-1">↓</button>
+    <button type="button" phx-click="duplicate_step" phx-value-id={@step["id"]} class="btn btn-ghost btn-2xs">Dup</button>
+    <button type="button" phx-click="delete_step" phx-value-id={@step["id"]} class="btn btn-ghost btn-2xs text-error">✕</button>
+  </div>
+
+  <%= if expanded do %>
+    <div class="border-t border-base-300 pt-2 mt-1 flex flex-col gap-3 pl-8">
+      <form phx-change="update_step" class="flex items-end gap-2 flex-wrap">
+        <input type="hidden" name="step_id" value={@step["id"]} />
+        <label :if={@step["kind"] != "if"} class="flex flex-col gap-0.5">
+          <span class="text-[11px] text-base-content/60">Repeat (extra runs)</span>
+          <input type="number" min="0" name="step[repeat]" value={@step["repeat"]} placeholder="0" phx-debounce="400" class="input input-bordered input-xs w-20" />
+        </label>
+        <label :if={@step["repeat"] && @step["kind"] != "if"} class="flex flex-col gap-0.5"
+               title="Runs between repeats, never before the first or after the last. Before each run the step's condition is checked again; if it fails, or the workflow fails a step or leaves the shop, the step stops repeating.">
+          <span class="text-[11px] text-base-content/60">Between repeats run</span>
+          <select name="step[between]" class="select select-bordered select-xs">
+            <option value="">nothing</option>
+            <option :for={wf <- callable_workflows(@plan_data, @workflow["id"])} value={wf["id"]} selected={@step["between"] == wf["id"]}><%= wf["name"] %></option>
+          </select>
+        </label>
+        <%= case @step["kind"] do %>
+          <% "if" -> %>
+            <span class="text-[11px] text-base-content/50 mb-1">
+              Checks the condition once, then runs the Then steps if it holds and the Else steps if it doesn't. Exactly one branch runs.
+              An Exit Workflow step inside a branch exits the whole workflow, the same as outside the If.
+            </span>
+          <% "uptie" -> %>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">Max gifts</span>
+              <input type="number" min="1" name="step[max_gifts]" value={@step["max_gifts"]} phx-debounce="400" class="input input-bordered input-xs w-16" />
+            </label>
+            <span class="text-[11px] text-base-content/50 mb-1">
+              Walks the upties in order, skipping gifts not owned or already at target. Stops after max gifts,
+              or as soon as the next uptie's full cost can't be paid. Never upties partway.
+            </span>
+          <% "fusion" -> %>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">Retries after a miss (blank: no limit)</span>
+              <input type="number" min="0" name="step[max_retries]" value={@step["max_retries"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
+            </label>
+            <span class="text-[11px] text-base-content/50">
+              A miss is a final fusion that doesn't give the target. Once the retries run out, this step stops; it doesn't move on to the next fusion.
+              Retries only count tiered fusions, including ones used to get a fixed fusion's ingredients.
+              Works on the first fusion in the list whose target isn't owned yet. Later fusions wait until earlier ones are done,
+              so duplicate this step further down the workflow to keep working through the list.
+            </span>
+          <% "milestone" -> %>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">Milestone</span>
+              <select name="step[milestone]" class="select select-bordered select-xs">
+                <option value="">pick one</option>
+                <option :for={m <- @plan_data["milestones"]} value={m["id"]} selected={@step["milestone"] == m["id"]}><%= m["name"] %></option>
+              </select>
+            </label>
+            <span class="text-[11px] text-base-content/50">
+              Skips if the milestone is reached. Otherwise works its entries, included milestones first, in passes:
+              upties in order (stops at the first it can't afford), buys any wanted list gift, uptie gift or fusion target
+              on the shelf, fixed fusions, then tiered fusions from T4 down, then upties again. An item it can't do is skipped,
+              not the whole pass. Within a group, once enough entries are done or partway, the rest are dropped.
+              Optionals go last in their pass and only run when it's free: an owned gift below target for upties, on the shelf
+              with nothing required there for buys, every ingredient owned for fixed fusions, every required fusion done for tiered.
+            </span>
+          <% "buy_list" -> %>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">List</span>
+              <select name="step[list]" class="select select-bordered select-xs">
+                <option value="">pick one</option>
+                <option :for={d <- @plan_data["library"]["lists"]} value={d["id"]} selected={@step["list"] == d["id"]}><%= d["name"] %></option>
+              </select>
+            </label>
+            <label class="flex flex-col gap-0.5" title="Skips once this many owned gifts match the list, counting Any-tier entries. Blank never stops.">
+              <span class="text-[11px] text-base-content/60">Stop once owning (blank: never)</span>
+              <input type="number" min="1" name="step[done_at]" value={@step["done_at"]} placeholder="never" phx-debounce="400" class="input input-bordered input-xs w-20" />
+            </label>
+            <span class="text-[11px] text-base-content/50 mb-1">Buys one gift per run. Use repeat to buy more.</span>
+          <% "affinity_refresh" -> %>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">Affinity</span>
+              <select name="step[affinity]" class="select select-bordered select-xs">
+                <option value="">pick one</option>
+                <option :for={affinity <- affinities()} value={affinity} selected={@step["affinity"] == affinity}><%= affinity %></option>
+              </select>
+            </label>
+          <% "sell" -> %>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">Sell from</span>
+              <select name="step[list]" class="select select-bordered select-xs">
+                <option value="">tiers below</option>
+                <option :for={d <- @plan_data["library"]["lists"]} value={d["id"]} selected={@step["list"] == d["id"]}><%= d["name"] %></option>
+              </select>
+            </label>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">Stop once cost reaches (blank: never)</span>
+              <input type="number" name="step[stop_at_cost]" value={@step["stop_at_cost"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
+            </label>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">Max items sold</span>
+              <input type="number" min="1" name="step[max_items]" value={@step["max_items"]} phx-debounce="400" class="input input-bordered input-xs w-20" />
+            </label>
+          <% "skill_replace" -> %>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">Sinner</span>
+              <select name="step[sinner]" class="select select-bordered select-xs">
+                <option value="">pick one</option>
+                <option :for={sinner <- @sinners} value={sinner} selected={@step["sinner"] == sinner}><%= sinner_label(sinner) %></option>
+              </select>
+            </label>
+          <% kind when kind in ~w(heal revive) -> %>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">Sinner</span>
+              <select name="step[sinner]" class="select select-bordered select-xs">
+                <option value="">pick one</option>
+                <option :for={sinner <- @sinners} value={sinner} selected={@step["sinner"] == sinner}><%= sinner_label(sinner) %></option>
+              </select>
+            </label>
+            <span class="text-[11px] text-base-content/50 mb-1">
+              <%= if kind == "heal",
+                    do: "Heals this sinner for about 50% HP and 45 SP.",
+                    else: "Revives this sinner if they died." %>
+              Costs <%= GiftPlans.heal_cost() %>.
+            </span>
+          <% "heal_all" -> %>
+            <span class="text-[11px] text-base-content/50">
+              Heals every sinner for about 15% HP and 15 SP. Heal Sinner restores much more to one sinner (about 50% HP and 45 SP).
+              Costs <%= GiftPlans.heal_cost() %>.
+            </span>
+          <% "workflow" -> %>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">Workflow</span>
+              <select name="step[workflow]" class="select select-bordered select-xs">
+                <option value="">pick one</option>
+                <option :for={wf <- callable_workflows(@plan_data, @workflow["id"])} value={wf["id"]} selected={@step["workflow"] == wf["id"]}><%= wf["name"] %></option>
+              </select>
+            </label>
+            <span class="text-[11px] text-base-content/50 mb-1">
+              Runs that workflow's enabled steps here, in order. Its keep list is ignored; this workflow's keep list still applies.
+              Workflows that would lead back here aren't listed.
+            </span>
+          <% "bail" -> %>
+            <span class="text-[11px] text-base-content/50 mb-1">
+              Stops this workflow here; its remaining steps don't run. Inside a Run Workflow step, only that workflow stops and the one that called it carries on.
+              Add a condition to only exit sometimes.
+            </span>
+          <% "leave" -> %>
+            <span class="text-[11px] text-base-content/50 mb-1">
+              Leaves the shop here; nothing after it runs, including the rest of any workflow that called this one.
+              Add a condition to only leave sometimes.
+            </span>
+          <% "budget" -> %>
+            <label class="flex flex-col gap-0.5">
+              <span class="text-[11px] text-base-content/60">Add to reserve (negative subtracts)</span>
+              <input type="number" name="step[amount]" value={@step["amount"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
+            </label>
+          <% _ -> %>
+            <span class="text-[11px] text-base-content/50">No settings. One refresh per step.</span>
+        <% end %>
+      </form>
+
+      <%= if @step["kind"] == "sell" and is_nil(@step["list"]) do %>
+        <div class="flex items-center gap-1 flex-wrap">
+          <span class="text-[11px] text-base-content/60">Tiers, first sold first:</span>
+          <div id={"sell-tiers-#{@step["id"]}"} phx-hook="SortableList" data-sort-event="reorder_step_field"
+               data-sort-scope={"#{@step["id"]}:tiers"} class="flex items-center gap-1">
+            <span :for={tier <- @step["tiers"] || []} data-sort-id={tier} class="badge badge-secondary badge-sm gap-1">
+              <span data-sort-handle class="cursor-grab">⠿</span>T<%= tier %>
+              <button type="button" phx-click="toggle_step_list_item" phx-value-id={@step["id"]} phx-value-field="tiers" phx-value-item={tier}>✕</button>
+            </span>
+          </div>
+          <button :for={tier <- Enum.reject(1..4, &(&1 in (@step["tiers"] || [])))} type="button"
+                  phx-click="toggle_step_list_item" phx-value-id={@step["id"]} phx-value-field="tiers" phx-value-item={tier}
+                  class="btn btn-outline btn-2xs">+ T<%= tier %></button>
+        </div>
+      <% end %>
+
+      <.step_definition_list :if={@step["kind"] == "uptie"} step={@step} field="upties"
+                             defs={@plan_data["library"]["upties"]} label="Upties, in order:" />
+      <.step_definition_list :if={@step["kind"] == "fusion"} step={@step} field="fusions"
+                             defs={@plan_data["library"]["fusions"]} label="Fusions, in order:" />
+
+      <%= if @step["kind"] == "skill_replace" do %>
+        <div class="flex items-center gap-1 flex-wrap">
+          <span class="text-[11px] text-base-content/60">Accepted offers, preferred first:</span>
+          <div id={"skill-options-#{@step["id"]}"} phx-hook="SortableList" data-sort-event="reorder_step_field"
+               data-sort-scope={"#{@step["id"]}:options"} class="flex items-center gap-1">
+            <span :for={option <- @step["options"] || []} data-sort-id={option} class="badge badge-secondary badge-sm gap-1">
+              <span data-sort-handle class="cursor-grab">⠿</span><%= skill_option_label(option) %>
+              <button type="button" phx-click="toggle_step_list_item" phx-value-id={@step["id"]} phx-value-field="options" phx-value-item={option}>✕</button>
+            </span>
+          </div>
+          <button :for={option <- Enum.reject(GiftPlans.skill_options(), &(&1 in (@step["options"] || [])))} type="button"
+                  phx-click="toggle_step_list_item" phx-value-id={@step["id"]} phx-value-field="options" phx-value-item={option}
+                  class="btn btn-outline btn-2xs">+ <%= skill_option_label(option) %></button>
+        </div>
+      <% end %>
+
+      <div class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-base-content/70"><%= if @step["kind"] == "if", do: "Condition", else: "Run only if" %></span>
+        <%= if @step["condition"] do %>
+          <.condition_node node={@step["condition"]} path="" values={%{"step_id" => @step["id"]}} leaf={&gift_leaf(Map.merge(&1, %{plan_data: @plan_data, milestone_host: nil}))} />
+        <% else %>
+          <button type="button" phx-click="cond_add" phx-value-step_id={@step["id"]} phx-value-path="" phx-value-node="leaf"
+                  class="btn btn-ghost btn-xs self-start">+ Add condition</button>
+        <% end %>
+      </div>
+
+      <form :if={length(@plan_data["workflows"]) > 1} phx-change="copy_step" class="flex items-center gap-1">
+        <input type="hidden" name="step_id" value={@step["id"]} />
+        <select name="workflow" class="select select-bordered select-xs">
+          <option value="" selected>Copy to workflow…</option>
+          <option :for={wf <- Enum.reject(@plan_data["workflows"], &(&1["id"] == @workflow["id"]))} value={wf["id"]}><%= wf["name"] %></option>
+        </select>
+      </form>
+    </div>
+  <% end %>
+
+  <div :if={@step["kind"] == "if"} class="pl-6 flex flex-col gap-1">
+    <%= for branch <- GiftPlans.branches(@step) do %>
+      <% scope = "#{@step["id"]}:#{branch}" %>
+      <div class="flex items-center gap-2">
+        <span class="text-[11px] font-semibold text-base-content/60"><%= if branch == "then", do: "Then", else: "Else" %></span>
+        <button type="button" phx-click="set_add_target" phx-value-scope={scope}
+                class={"btn btn-2xs " <> if(@add_target == scope, do: "btn-primary", else: "btn-ghost")}
+                title="Point the step palette at this branch">
+          <%= if @add_target == scope, do: "adding here", else: "+ add here" %>
+        </button>
+        <span :if={(@step[branch] || []) == []} class="text-[11px] text-base-content/40 italic">Empty. Drag steps in, or use + add here.</span>
+      </div>
+      <.step_list steps={@step[branch] || []} scope={scope} workflow={@workflow} plan_data={@plan_data}
+                  expanded_step_id={@expanded_step_id} sinners={@sinners} add_target={@add_target} />
+    <% end %>
+  </div>
+</div>

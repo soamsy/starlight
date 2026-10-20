@@ -558,43 +558,62 @@ const PriorityClipboard = {
   }
 }
 
+let sortDrag = null
+
+const eventElement = (e) => (e.target instanceof Element ? e.target : e.target.parentElement)
+
 const SortableList = {
   mounted() {
     this.el.addEventListener("mousedown", (e) => {
-      const handle = e.target.closest("[data-sort-handle]")
+      const handle = eventElement(e)?.closest("[data-sort-handle]")
       if (!handle) return
       const item = handle.closest("[data-sort-id]")
       if (item && item.parentElement === this.el) item.draggable = true
     })
 
     this.el.addEventListener("dragstart", (e) => {
-      const item = e.target.closest("[data-sort-id]")
+      const item = eventElement(e)?.closest("[data-sort-id]")
       if (!item || item.parentElement !== this.el) return
-      this.dragging = item
+      sortDrag = { item, source: this.el }
       item.classList.add("opacity-40")
       e.dataTransfer.effectAllowed = "move"
     })
 
     this.el.addEventListener("dragover", (e) => {
-      if (!this.dragging) return
+      if (!sortDrag || !this.accepts(sortDrag)) return
       e.preventDefault()
-      const over = e.target.closest("[data-sort-id]")
-      if (!over || over === this.dragging || over.parentElement !== this.el) return
+      e.stopPropagation()
+      const over = eventElement(e)?.closest("[data-sort-id]")
+      if (!over && !Array.from(this.el.children).some(c => c.dataset.sortId)) {
+        this.el.appendChild(sortDrag.item)
+        return
+      }
+      if (!over || over === sortDrag.item || over.parentElement !== this.el) return
       const rect = over.getBoundingClientRect()
       const after = this.el.dataset.sortAxis === "x"
         ? e.clientX > rect.left + rect.width / 2
         : e.clientY > rect.top + rect.height / 2
-      this.el.insertBefore(this.dragging, after ? over.nextSibling : over)
+      this.el.insertBefore(sortDrag.item, after ? over.nextSibling : over)
     })
 
     this.el.addEventListener("dragend", () => {
-      if (!this.dragging) return
-      this.dragging.classList.remove("opacity-40")
-      this.dragging.draggable = false
-      this.dragging = null
+      if (!sortDrag || sortDrag.item.parentElement !== this.el) return
+      const { item, source } = sortDrag
+      sortDrag = null
+      item.classList.remove("opacity-40")
+      item.draggable = false
       const ids = Array.from(this.el.children).filter(c => c.dataset.sortId).map(c => c.dataset.sortId)
-      this.pushEvent(this.el.dataset.sortEvent, { scope: this.el.dataset.sortScope || "", ids })
+      const scope = this.el.dataset.sortScope || ""
+      if (source === this.el) this.pushEvent(this.el.dataset.sortEvent, { scope, ids })
+      else this.pushEvent(this.el.dataset.sortMoveEvent, { scope, from: source.dataset.sortScope || "", id: item.dataset.sortId, ids })
     })
+  },
+
+  accepts({ item, source }) {
+    if (item.contains(this.el)) return false
+    if (source === this.el) return true
+    const shared = this.el.dataset.sortShared
+    return !!shared && shared === source.dataset.sortShared && !("sortStay" in item.dataset) && !!this.el.dataset.sortMoveEvent
   }
 }
 

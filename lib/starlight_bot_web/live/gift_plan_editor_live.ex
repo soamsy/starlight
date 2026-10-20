@@ -13,8 +13,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @gift_sorts ~w(default name tier affinity)
   @uptie_views ~w(base uptie2 uptie3)
   @stat_codes %{"cp" => "Clash Power", "fc" => "Final Power", "bc" => "Base Power", "cg" => "Coin Count"}
-  @palette_kinds ~w(refresh affinity_refresh sell skill_replace heal heal_all revive budget bail leave)
-  @library_kinds [{"upties", "uptie"}, {"fusions", "fusion"}, {"shopping_lists", "buy_list"}]
+  @palette_kinds ~w(if refresh affinity_refresh sell skill_replace heal heal_all revive budget bail leave)
+  @library_kinds [{"upties", "uptie"}, {"fusions", "fusion"}, {"lists", "buy_list"}]
   @default_leaf %{"op" => "cost_gte", "value" => 0}
 
   @graces [
@@ -307,7 +307,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("select_workflow", %{"id" => id}, socket) do
-    {:noreply, socket |> assign(:selected_workflow_id, id) |> assign(:expanded_step_id, nil)}
+    {:noreply, socket |> assign(:selected_workflow_id, id) |> assign(:expanded_step_id, nil) |> assign(:add_target, "")}
   end
 
   @impl true
@@ -333,7 +333,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           workflow
           | "id" => GiftPlans.new_id("wf"),
             "name" => "#{workflow["name"]} (copy)",
-            "steps" => Enum.map(workflow["steps"], &Map.put(&1, "id", GiftPlans.new_id("st")))
+            "steps" => Enum.map(workflow["steps"], &GiftPlans.fresh_step_ids/1)
         }
 
         {:noreply,
@@ -397,7 +397,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       {:noreply, put_flash(socket, :error, "That would make the workflow run itself.")}
     else
       step = "workflow" |> GiftPlans.new_step(socket.assigns.plan_data) |> Map.put("workflow", child)
-      {:noreply, socket |> update_selected_steps(&(&1 ++ [step])) |> assign(:expanded_step_id, step["id"])}
+      {:noreply, add_to_target(socket, step)}
     end
   end
 
@@ -419,10 +419,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           GiftPlans.new_step(kind, socket.assigns.plan_data)
       end
 
-    {:noreply,
-     socket
-     |> update_selected_steps(&(&1 ++ [step]))
-     |> assign(:expanded_step_id, step["id"])}
+    {:noreply, add_to_target(socket, step)}
+  end
+
+  @impl true
+  def handle_event("set_add_target", %{"scope" => scope}, socket) do
+    {:noreply, assign(socket, :add_target, if(socket.assigns.add_target == scope, do: "", else: scope))}
   end
 
   @impl true
@@ -438,12 +440,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     if child && GiftPlans.creates_cycle?(socket.assigns.plan_data, socket.assigns.selected_workflow_id, child) do
       {:noreply, put_flash(socket, :error, "That would make the workflow run itself.")}
     else
-      {:noreply, update_step(socket, id, &(&1 |> Map.put("workflow", child) |> apply_repeat(params)))}
+      update_step_with_between(socket, id, params, &(&1 |> Map.put("workflow", child) |> apply_repeat(params)))
     end
   end
 
   def handle_event("update_step", %{"step_id" => id, "step" => params}, socket) do
-    {:noreply, update_step(socket, id, &(&1 |> apply_step_params(params) |> apply_repeat(params)))}
+    update_step_with_between(socket, id, params, &(&1 |> apply_step_params(params) |> apply_repeat(params)))
   end
 
   @impl true
@@ -457,42 +459,50 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
     {:noreply,
      update_selected_steps(socket, fn steps ->
-       index = Enum.find_index(steps, &(&1["id"] == id))
-       target = index + offset
+       GiftPlans.update_containing_list(steps, id, fn steps ->
+         index = Enum.find_index(steps, &(&1["id"] == id))
+         target = index + offset
 
-       if target < 0 or target >= length(steps) do
-         steps
-       else
-         {step, rest} = List.pop_at(steps, index)
-         List.insert_at(rest, target, step)
-       end
+         if target < 0 or target >= length(steps) do
+           steps
+         else
+           {step, rest} = List.pop_at(steps, index)
+           List.insert_at(rest, target, step)
+         end
+       end)
      end)}
   end
 
   @impl true
-  def handle_event("reorder_steps", %{"ids" => ids}, socket) do
-    {:noreply, update_selected_steps(socket, &reorder_by_ids(&1, ids, fn step -> step["id"] end))}
+  def handle_event("reorder_steps", %{"ids" => ids} = params, socket) do
+    {:noreply, update_selected_steps(socket, &GiftPlans.update_step_list(&1, params["scope"] || "", fn steps -> reorder_by_ids(steps, ids, fn step -> step["id"] end) end))}
+  end
+
+  @impl true
+  def handle_event("move_step_to", %{"scope" => scope, "id" => id, "ids" => ids}, socket) do
+    {:noreply, update_selected_steps(socket, &GiftPlans.move_step(&1, id, scope, ids))}
   end
 
   @impl true
   def handle_event("duplicate_step", %{"id" => id}, socket) do
     {:noreply,
      update_selected_steps(socket, fn steps ->
-       index = Enum.find_index(steps, &(&1["id"] == id))
-       copy = steps |> Enum.at(index) |> Map.put("id", GiftPlans.new_id("st"))
-       List.insert_at(steps, index + 1, copy)
+       GiftPlans.update_containing_list(steps, id, fn steps ->
+         index = Enum.find_index(steps, &(&1["id"] == id))
+         copy = steps |> Enum.at(index) |> GiftPlans.fresh_step_ids()
+         List.insert_at(steps, index + 1, copy)
+       end)
      end)}
   end
 
   @impl true
   def handle_event("delete_step", %{"id" => id}, socket) do
-    {:noreply, update_selected_steps(socket, fn steps -> Enum.reject(steps, &(&1["id"] == id)) end)}
+    {:noreply, update_selected_steps(socket, &GiftPlans.remove_step(&1, id))}
   end
 
   @impl true
   def handle_event("copy_step", %{"step_id" => id, "workflow" => workflow_id}, socket) when workflow_id != "" do
-    step = socket |> selected_steps() |> Enum.find(&(&1["id"] == id))
-    copy = Map.put(step, "id", GiftPlans.new_id("st"))
+    copy = socket |> selected_steps() |> GiftPlans.find_step(id) |> GiftPlans.fresh_step_ids()
 
     {:noreply,
      socket
@@ -997,6 +1007,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     end
   end
 
+  def step_summary(_data, %{"kind" => "if"} = step), do: "then #{length(step["then"] || [])} · else #{length(step["else"] || [])}"
+
   def step_summary(_data, _step), do: nil
 
   def callable_workflows(data, host_id), do: Enum.reject(data["workflows"], &GiftPlans.creates_cycle?(data, host_id, &1["id"]))
@@ -1200,8 +1212,31 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     update_plan(socket, &update_workflow(&1, socket.assigns.selected_workflow_id, fn workflow -> Map.update!(workflow, "steps", fun) end))
   end
 
-  defp update_step(socket, id, fun) do
-    update_selected_steps(socket, fn steps -> Enum.map(steps, &if(&1["id"] == id, do: fun.(&1), else: &1)) end)
+  defp update_step(socket, id, fun), do: update_selected_steps(socket, &GiftPlans.update_step_in(&1, id, fun))
+
+  defp add_to_target(socket, step) do
+    target = add_target(socket.assigns)
+
+    socket
+    |> update_selected_steps(&GiftPlans.update_step_list(&1, target, fn steps -> steps ++ [step] end))
+    |> assign(:expanded_step_id, step["id"])
+  end
+
+  def add_target_label(data, workflow, target) do
+    [id, branch] = String.split(target, ":")
+    step = GiftPlans.find_step(workflow["steps"], id)
+    "If #{GiftPlans.condition_label(step["condition"], data) || "always"} › #{branch}"
+  end
+
+  def add_target(%{add_target: ""}), do: ""
+
+  def add_target(assigns) do
+    [id, _branch] = String.split(assigns.add_target, ":")
+    if GiftPlans.find_step(selected_workflow(assigns)["steps"], id), do: assigns.add_target, else: ""
+  end
+
+  defp update_condition(socket, %{"milestone_id" => id}, fun) do
+    update_milestone(socket, id, fn milestone -> Map.put(milestone, "condition", milestone["condition"] |> fun.() |> GiftPlans.prune_condition()) end)
   end
 
   defp update_condition(socket, %{"step_id" => id}, fun) do
@@ -1246,6 +1281,25 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp apply_step_params(%{"kind" => kind} = step, p) when kind in ["heal", "revive"], do: Map.put(step, "sinner", blank_to_nil(p["sinner"]))
   defp apply_step_params(%{"kind" => "budget"} = step, p), do: Map.put(step, "amount", parse_int(p["amount"], 0))
   defp apply_step_params(step, _p), do: step
+
+  defp update_step_with_between(socket, id, params, fun) do
+    between = blank_to_nil(params["between"])
+
+    if between && GiftPlans.creates_cycle?(socket.assigns.plan_data, socket.assigns.selected_workflow_id, between) do
+      {:noreply, put_flash(socket, :error, "That would make the workflow run itself.")}
+    else
+      {:noreply, update_step(socket, id, &(&1 |> fun.() |> apply_between(params)))}
+    end
+  end
+
+  defp apply_between(step, %{"between" => between}) do
+    case blank_to_nil(between) do
+      nil -> Map.delete(step, "between")
+      id -> Map.put(step, "between", id)
+    end
+  end
+
+  defp apply_between(step, _p), do: step
 
   defp apply_repeat(step, %{"repeat" => repeat}) do
     case parse_optional_int(repeat) do
