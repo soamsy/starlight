@@ -42,10 +42,32 @@ defmodule StarlightBot.Automation.RunMemory do
 
     gifts_after =
       update(ctx, :ego_gifts, %{}, fn gifts ->
-        Map.update(gifts, gift_id, %{name: gift_name, uptie: 0}, &%{&1 | name: gift_name})
+        Map.update(gifts, gift_id, %{name: gift_name, uptie: 0, count: 1}, &%{&1 | name: gift_name})
       end)
 
     unless Map.has_key?(before, gift_id), do: log_inventory(ctx, "+ #{gift_name} (#{gift_id})", gifts_after)
+    gifts_after
+  end
+
+  def ego_gift_count(ctx, gift_id) do
+    case ego_gifts(ctx)[gift_id] do
+      nil -> 0
+      gift -> gift.count
+    end
+  end
+
+  def observe_ego_gift_count(ctx, gift_id, gift_name, count) do
+    add_ego_gift(ctx, gift_id, gift_name)
+    if count > ego_gift_count(ctx, gift_id), do: set_ego_gift_count(ctx, gift_id, count), else: ego_gifts(ctx)
+  end
+
+  def set_ego_gift_count(ctx, gift_id, count) do
+    old_count = ego_gift_count(ctx, gift_id)
+    gifts_after = update(ctx, :ego_gifts, %{}, &Map.update!(&1, gift_id, fn gift -> %{gift | count: count} end))
+
+    if count != old_count,
+      do: log_inventory(ctx, "#{gifts_after[gift_id].name || gift_id} count #{old_count} -> #{count}", gifts_after)
+
     gifts_after
   end
 
@@ -54,7 +76,7 @@ defmodule StarlightBot.Automation.RunMemory do
 
     gifts_after =
       update(ctx, :ego_gifts, %{}, fn gifts ->
-        Map.update(gifts, gift_id, %{name: nil, uptie: uptie}, &%{&1 | uptie: max(&1.uptie, uptie)})
+        Map.update(gifts, gift_id, %{name: nil, uptie: uptie, count: 1}, &%{&1 | uptie: max(&1.uptie, uptie)})
       end)
 
     new_uptie = gifts_after[gift_id].uptie
@@ -67,7 +89,15 @@ defmodule StarlightBot.Automation.RunMemory do
 
   def remove_ego_gift(ctx, gift_id) do
     removed = ego_gifts(ctx)[gift_id]
-    gifts_after = update(ctx, :ego_gifts, %{}, &Map.delete(&1, gift_id))
+
+    gifts_after =
+      update(ctx, :ego_gifts, %{}, fn gifts ->
+        case gifts[gift_id] do
+          %{count: count} = gift when count > 1 -> Map.put(gifts, gift_id, %{gift | count: count - 1})
+          _ -> Map.delete(gifts, gift_id)
+        end
+      end)
+
     if removed, do: log_inventory(ctx, "- #{removed.name || gift_id} (#{gift_id})", gifts_after)
     gifts_after
   end

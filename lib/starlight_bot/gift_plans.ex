@@ -416,7 +416,7 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def fodder(owned, protected, gifts_by_id) do
-    for {id, %{uptie: uptie}} <- owned,
+    for {id, %{uptie: uptie, count: count}} <- owned,
         gift = gifts_by_id[id],
         gift && gift.tier in 1..4 && (uptie || 0) < 1 && not MapSet.member?(protected, gift.name) do
       %{id: id, name: gift.name, tier: gift.tier, uptie: uptie, selling_cost: gift.selling_cost || 0}

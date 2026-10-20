@@ -1,6 +1,7 @@
 defmodule StarlightBot.Automation.Shop.Actions.TieredFusion do
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Automation.Shop.Ops
+  alias StarlightBot.EgoGifts
   alias StarlightBot.GiftPlans
   alias StarlightBot.GiftPlans.{Combos, FusionPlanner}
 

@@ -1,6 +1,7 @@
 defmodule StarlightBot.Automation.Shop.Actions.BuyList do
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Automation.Shop.Ops
+  alias StarlightBot.EgoGifts
   alias StarlightBot.GiftPlans
 
   def run(step, list, state, ctx) do
@@ -34,7 +35,7 @@ defmodule StarlightBot.Automation.Shop.Actions.BuyList do
     owned = RunMemory.ego_gifts(ctx)
 
     items
-    |> Enum.reject(&Map.has_key?(owned, &1.gift_id))
+    |> Enum.reject(&(Map.has_key?(owned, &1.gift_id) and not EgoGifts.stackable?(&1.gift_name)))
     |> Enum.uniq_by(& &1.gift_id)
     |> Enum.map(&{&1, GiftPlans.list_rank(wanted, state.gifts_by_id[&1.gift_id] || %{name: &1.gift_name, tier: nil})})
     |> Enum.reject(fn {_item, rank} -> is_nil(rank) end)

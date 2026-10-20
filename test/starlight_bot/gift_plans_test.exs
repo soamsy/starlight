@@ -309,12 +309,12 @@ defmodule StarlightBot.GiftPlansTest do
       ]
 
       owned = %{
-        "g1" => %{name: "Keep Me", uptie: 0},
-        "g2" => %{name: "Junk T1", uptie: 0},
-        "g3" => %{name: "Pricey T1", uptie: 0},
-        "g4" => %{name: "Junk T2", uptie: 0},
-        "g5" => %{name: "Wealth", uptie: 0},
-        "g6" => %{name: "Uptied T1", uptie: 1}
+        "g1" => %{name: "Keep Me", uptie: 0, count: 1},
+        "g2" => %{name: "Junk T1", uptie: 0, count: 1},
+        "g3" => %{name: "Pricey T1", uptie: 0, count: 1},
+        "g4" => %{name: "Junk T2", uptie: 0, count: 1},
+        "g5" => %{name: "Wealth", uptie: 0, count: 1},
+        "g6" => %{name: "Uptied T1", uptie: 1, count: 1}
       }
 
       %{gifts: gifts, owned: owned, by_id: Map.new(gifts, &{&1.id, &1}), by_name: Map.new(gifts, &{&1.name, &1})}
@@ -323,6 +323,12 @@ defmodule StarlightBot.GiftPlansTest do
     test "fodder/3 drops protected gifts, uptied gifts and tiers outside 1 to 4", %{owned: owned, by_id: by_id} do
       names = owned |> GiftPlans.fodder(MapSet.new(["Keep Me"]), by_id) |> Enum.map(& &1.name) |> Enum.sort()
       assert names == ["Junk T1", "Junk T2", "Pricey T1"]
+    end
+
+    test "fodder/3 lists a stacked gift once per copy", %{by_id: by_id} do
+      owned = %{"g2" => %{name: "Junk T1", uptie: 0, count: 2}, "g4" => %{name: "Junk T2", uptie: 0, count: 1}}
+      names = owned |> GiftPlans.fodder(MapSet.new(), by_id) |> Enum.map(& &1.name) |> Enum.sort()
+      assert names == ["Junk T1", "Junk T1", "Junk T2"]
     end
 
     test "sell_order/2 follows tier priority, then highest price", %{owned: owned, by_id: by_id} do

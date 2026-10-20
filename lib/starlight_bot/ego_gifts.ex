@@ -2,6 +2,9 @@ defmodule StarlightBot.EgoGifts do
   import Ecto.Query
   alias StarlightBot.Repo
 
+  def stackable?(name) when is_binary(name), do: String.contains?(name, "Vestige")
+  def stackable?(_name), do: false
+
   def buying_cost_for(gift_id) when is_binary(gift_id) do
     Repo.one(from g in "ego_gifts", where: g.id == ^gift_id, select: g.buying_cost)
   rescue

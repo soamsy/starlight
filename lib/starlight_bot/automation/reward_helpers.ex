@@ -2,6 +2,7 @@ defmodule StarlightBot.Automation.RewardHelpers do
   import StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Ctx
+  alias StarlightBot.EgoGifts
   alias StarlightBot.Input.Mouse
   alias StarlightBot.Navigation.{Catalog, Runner}
   alias StarlightBot.Vision.{Capture, EgoGiftDetector, HookRegistry, Matcher}
@@ -55,7 +56,8 @@ defmodule StarlightBot.Automation.RewardHelpers do
           "ego gift scan: #{length(results)} detection(s), #{length(candidates)} above #{@min_ego_gift_item_area_px}px"
         )
 
-        Enum.each(candidates, &record_ego_gift_result(&1, ctx))
+        frame_counts = Enum.frequencies_by(candidates, & &1.gift_id)
+        Enum.each(candidates, &record_ego_gift_result(&1, frame_counts, ctx))
 
       {:error, reason} ->
         Ctx.log(ctx, :error, "ego gift classify failed for #{inspect(region)}: #{inspect(reason)}")
@@ -64,13 +66,16 @@ defmodule StarlightBot.Automation.RewardHelpers do
 
   defp item_large_enough?(%{w: w, h: h}), do: w * h >= @min_ego_gift_item_area_px
 
-  defp record_ego_gift_result(%{gift_id: nil} = result, ctx) do
+  defp record_ego_gift_result(%{gift_id: nil} = result, _frame_counts, ctx) do
     Ctx.log(ctx, :info, "ego gift scan: unclassified item (top guess: #{top_guess(result)})")
   end
 
-  defp record_ego_gift_result(%{gift_id: gift_id, gift_name: gift_name, classifier_confidence: conf}, ctx) do
+  defp record_ego_gift_result(%{gift_id: gift_id, gift_name: gift_name, classifier_confidence: conf}, frame_counts, ctx) do
     already_known? = Map.has_key?(RunMemory.ego_gifts(ctx), gift_id)
-    RunMemory.add_ego_gift(ctx, gift_id, gift_name)
+
+    if EgoGifts.stackable?(gift_name),
+      do: RunMemory.observe_ego_gift_count(ctx, gift_id, gift_name, frame_counts[gift_id]),
+      else: RunMemory.add_ego_gift(ctx, gift_id, gift_name)
 
     if already_known? do
       Ctx.log(ctx, :info, "ego gift scan: saw #{gift_name} again (#{pct(conf)})")

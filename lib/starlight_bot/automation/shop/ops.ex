@@ -340,8 +340,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
   def check_inventory(ctx, keep_open? \\ false) do
     case open_sell_popup(ctx) do
       {:ok, _} = ok ->
-        scan_visible_inventory(ctx)
-        continue_scrolling_inventory(ctx, 0)
+        stack_counts = continue_scrolling_inventory(ctx, 0, scan_visible_inventory(ctx))
+        Enum.each(stack_counts, fn {gift_id, count} -> RunMemory.set_ego_gift_count(ctx, gift_id, count) end)
         log_inventory(ctx)
         if keep_open?, do: ok, else: close_sell_popup(ctx)
 
@@ -350,26 +350,27 @@ defmodule StarlightBot.Automation.Shop.Ops do
     end
   end
 
-  defp continue_scrolling_inventory(ctx, pass) when pass >= @max_sell_scroll_passes do
+  defp continue_scrolling_inventory(ctx, pass, stack_counts) when pass >= @max_sell_scroll_passes do
     Ctx.log(ctx, :error, "shop sell inventory scan: hit #{@max_sell_scroll_passes} scroll passes without reaching the bottom")
+    stack_counts
   end
 
-  defp continue_scrolling_inventory(ctx, pass) do
+  defp continue_scrolling_inventory(ctx, pass, stack_counts) do
     checks = Engine.check_all(@sell_scroll_hooks)
     scrollable? = checks[@sell_scroll_top_hook] or checks[@sell_scroll_bottom_hook] or checks[@sell_scroll_track_hook]
 
     cond do
       not scrollable? ->
-        :ok
+        stack_counts
 
       checks[@sell_scroll_bottom_hook] ->
-        :ok
+        stack_counts
 
       true ->
         scroll_and_settle(@sell_inventory_hook, scroll_down(@sell_scroll_clicks), ctx)
 
-        scan_visible_inventory(ctx)
-        continue_scrolling_inventory(ctx, pass + 1)
+        frame_counts = scan_visible_inventory(ctx)
+        continue_scrolling_inventory(ctx, pass + 1, Map.merge(stack_counts, frame_counts, fn _id, a, b -> max(a, b) end))
     end
   end
 
@@ -380,8 +381,14 @@ defmodule StarlightBot.Automation.Shop.Ops do
       Enum.each(gifts, &record_inventory_item(&1, ctx))
       assign_uptie_level(frame, gifts, @uptie_2_hook, 2, ctx)
       assign_uptie_level(frame, gifts, @uptie_1_hook, 1, ctx)
+
+      gifts
+      |> Enum.filter(&EgoGifts.stackable?(&1.gift_name))
+      |> Enum.frequencies_by(& &1.gift_id)
     else
-      {:error, reason} -> Ctx.log(ctx, :error, "shop sell inventory scan: #{inspect(reason)}")
+      {:error, reason} ->
+        Ctx.log(ctx, :error, "shop sell inventory scan: #{inspect(reason)}")
+        %{}
     end
   end
 
@@ -450,7 +457,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp log_inventory(ctx) do
-    names = RunMemory.ego_gifts(ctx) |> Map.values() |> Enum.map(& &1.name) |> Enum.sort()
+    names = RunMemory.ego_gifts(ctx) |> Map.values() |> Enum.map(&if(&1.count > 1, do: "#{&1.name} x#{&1.count}", else: &1.name)) |> Enum.sort()
     Ctx.log(ctx, :ok, "shop sell inventory: #{length(names)} item(s) owned: #{Enum.join(names, ", ")}")
   end
 
@@ -484,12 +491,14 @@ defmodule StarlightBot.Automation.Shop.Ops do
     RunMemory.put(ctx, @unaffordable_key, %{})
   end
 
+  defp forget_slot_purchases(ctx), do: RunMemory.update(ctx, @purchased_key, [], &Enum.filter(&1, fn entry -> is_binary(entry) end))
+
   def shelf_items(ctx) do
     close_fuse_popup(ctx)
 
     with {:ok, scanned} <- scanned_shelf(ctx) do
       purchased = RunMemory.get(ctx, @purchased_key, [])
-      {bought, items} = Enum.split_with(scanned, &(&1.gift_id in purchased))
+      {bought, items} = Enum.split_with(scanned, &(purchase_key(&1) in purchased))
 
       if bought != [],
         do: Ctx.log(ctx, :info, "shop shelf: ignoring already-bought " <> Enum.map_join(Enum.uniq_by(bought, & &1.gift_id), ", ", & &1.gift_name))
@@ -696,12 +705,18 @@ defmodule StarlightBot.Automation.Shop.Ops do
 
   defp click_to_buy(%{gift_name: gift_name} = item, ctx) do
     Ctx.log(ctx, :info, "shop: buying #{gift_name}")
+    owned_before = RunMemory.ego_gift_count(ctx, item.gift_id)
 
     with {:ok, _} <- RewardHelpers.click_rect({round(item.x), round(item.y), round(item.w), round(item.h)}, ctx),
          {:ok, outcome} <- await_purchase_result(ctx) do
-      if outcome == :confirm, do: RunMemory.update(ctx, @purchased_key, [], &[item.gift_id | &1])
+      if outcome == :confirm, do: RunMemory.update(ctx, @purchased_key, [], &[purchase_key(item) | &1])
       if outcome == :insufficient_funds, do: remember_unaffordable(item, ctx)
-      finish_purchase(outcome, gift_name, ctx)
+      result = finish_purchase(outcome, gift_name, ctx)
+
+      if result == {:ok, :bought} and EgoGifts.stackable?(gift_name) and RunMemory.ego_gift_count(ctx, item.gift_id) > 0,
+        do: RunMemory.set_ego_gift_count(ctx, item.gift_id, owned_before + 1)
+
+      result
     end
   end
 
@@ -879,7 +894,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     if click_fixed_shortcut(target, ctx) do
       {:ok, ingredient_ids}
     else
-      select_fuse_pass({:strict, MapSet.new(ingredient_ids), MapSet.new()}, ctx, 0, false)
+      select_fuse_pass({:strict, Enum.frequencies(ingredient_ids), %{}}, ctx, 0, false)
     end
   end
 
@@ -943,11 +958,11 @@ defmodule StarlightBot.Automation.Shop.Ops do
     end
   end
 
-  defp missing_ingredient_names({:strict, needed, clicked}, ctx) do
+  defp missing_ingredient_names(state, ctx) do
     owned = RunMemory.ego_gifts(ctx)
 
-    needed
-    |> MapSet.difference(clicked)
+    state
+    |> missing_ingredient_ids()
     |> Enum.map(fn id ->
       case owned do
         %{^id => %{name: name}} -> name
@@ -956,9 +971,13 @@ defmodule StarlightBot.Automation.Shop.Ops do
     end)
   end
 
-  defp fuse_selection_done?({:strict, needed, clicked}), do: MapSet.subset?(needed, clicked)
+  defp missing_ingredient_ids({:strict, needed, clicked}) do
+    for {id, n} <- needed, Map.get(clicked, id, 0) < n, do: id
+  end
 
-  defp clicked_ids({_kind, _needed, clicked}), do: MapSet.to_list(clicked)
+  defp fuse_selection_done?(state), do: missing_ingredient_ids(state) == []
+
+  defp clicked_ids({_kind, _needed, clicked}), do: Enum.flat_map(clicked, fn {id, n} -> List.duplicate(id, n) end)
 
   defp fuse_scrollable? do
     @fuse_scroll_hooks
@@ -1003,14 +1022,18 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp click_matching_fuse_items({:strict, needed, clicked}, gifts, ctx) do
+    ordered = bottom_up_right_to_left(gifts)
+    visible = Enum.frequencies_by(ordered, & &1.gift_id)
+
+    takeable =
+      for {id, n} <- needed, not Map.has_key?(clicked, id), Map.get(visible, id, 0) >= n, into: %{}, do: {id, n}
+
     clicked_after =
-      gifts
-      |> bottom_up_right_to_left()
-      |> Enum.reduce(clicked, fn item, acc ->
-        if MapSet.member?(needed, item.gift_id) and not MapSet.member?(acc, item.gift_id) do
+      Enum.reduce(ordered, clicked, fn item, acc ->
+        if Map.get(acc, item.gift_id, 0) < Map.get(takeable, item.gift_id, 0) do
           click_item_rect(item, ctx)
           Engine.act([sleep(@fuse_item_click_settle_ms)], ctx)
-          MapSet.put(acc, item.gift_id)
+          Map.update(acc, item.gift_id, 1, &(&1 + 1))
         else
           acc
         end
