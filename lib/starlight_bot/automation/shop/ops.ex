@@ -85,7 +85,9 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @replace_confirm_timeout 1_500
   @replace_close_timeout 5_000
   @replace_click_offset_px 150
-  @refresh_settle_ms 500
+  @new_shelf_timeout_ms 2_000
+  @new_shelf_poll_ms 100
+  @shelf_settle_timeout_ms 1_000
   @fuse_dismiss_offset_px 15
   @fuse_item_click_settle_ms 200
   @purchased_key :shop_purchased
@@ -452,9 +454,11 @@ defmodule StarlightBot.Automation.Shop.Ops do
     if Engine.check(:shop_refresh_disabled) do
       {:error, :refresh_disabled}
     else
-      with {:ok, _} <- Engine.run_action(:shop, :refresh_shelf, ctx),
-           {:ok, _} = ok <- Engine.act([sleep(@refresh_settle_ms)], ctx) do
+      with {:ok, before} <- settled_shelf_scan(ctx),
+           {:ok, _} = ok <- Engine.run_action(:shop, :refresh_shelf, ctx) do
         forget_shelf(ctx)
+        forget_slot_purchases(ctx)
+        await_new_shelf(before, ctx)
         ok
       end
     end
@@ -487,8 +491,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   defp scanned_shelf(ctx) do
     case RunMemory.get(ctx, @shelf_key, nil) do
       nil ->
-        with {:ok, frame} <- Capture.grab_frame() do
-          scanned = Enum.flat_map(shelf_hooks(), &detect_row(frame, &1, ctx))
+        with {:ok, scanned} <- settled_shelf_scan(ctx) do
           log_shelf_scan(scanned, ctx)
           RunMemory.put(ctx, @shelf_key, scanned)
           {:ok, scanned}
@@ -498,6 +501,72 @@ defmodule StarlightBot.Automation.Shop.Ops do
         Ctx.log(ctx, :info, "shop shelf: no refresh since the last scan, reusing it")
         {:ok, scanned}
     end
+  end
+
+  defp settled_shelf_scan(ctx) do
+    settled_shelf_scan(nil, System.monotonic_time(:millisecond) + @shelf_settle_timeout_ms, ctx)
+  end
+
+  defp settled_shelf_scan(previous, deadline, ctx) do
+    with {:ok, frame} <- Capture.grab_frame() do
+      scanned = Enum.flat_map(shelf_hooks(), &detect_row(frame, &1, ctx))
+
+      cond do
+        previous != nil and shelf_signature(scanned) == shelf_signature(previous) ->
+          {:ok, scanned}
+
+        System.monotonic_time(:millisecond) >= deadline ->
+          Ctx.log(ctx, :info, "shop shelf: scans still changing after #{@shelf_settle_timeout_ms}ms, using the last one")
+          {:ok, scanned}
+
+        true ->
+          Process.sleep(@new_shelf_poll_ms)
+          settled_shelf_scan(scanned, deadline, ctx)
+      end
+    end
+  end
+
+  defp await_new_shelf(before, ctx) do
+    started_at = System.monotonic_time(:millisecond)
+    before_ids = MapSet.new(before, & &1.gift_id)
+    poll_new_shelf(before_ids, nil, started_at, started_at + @new_shelf_timeout_ms, ctx)
+  end
+
+  defp poll_new_shelf(before_ids, previous, started_at, deadline, ctx) do
+    scanned =
+      case Capture.grab_frame() do
+        {:ok, frame} -> Enum.flat_map(shelf_hooks(), &detect_row(frame, &1, ctx))
+        {:error, _} -> []
+      end
+
+    signature = shelf_signature(scanned)
+    new_items? = not MapSet.subset?(MapSet.new(scanned, & &1.gift_id), before_ids)
+
+    cond do
+      new_items? and signature == previous ->
+        Ctx.log(ctx, :info, "shop shelf: new shelf settled #{System.monotonic_time(:millisecond) - started_at}ms after refresh")
+        log_shelf_scan(scanned, ctx)
+        RunMemory.put(ctx, @shelf_key, scanned)
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        Ctx.log(ctx, :info, "shop shelf: no settled new shelf within #{@new_shelf_timeout_ms}ms of refresh, moving on")
+
+      true ->
+        Process.sleep(@new_shelf_poll_ms)
+        poll_new_shelf(before_ids, signature, started_at, deadline, ctx)
+    end
+  end
+
+  defp shelf_signature(items) do
+    items
+    |> Enum.map(&{&1.gift_id, shelf_slot(&1)})
+    |> Enum.sort()
+  end
+
+  defp shelf_slot(item), do: {round(item.x / 50), round(item.y / 50)}
+
+  defp purchase_key(item) do
+    if EgoGifts.stackable?(item.gift_name), do: {item.gift_id, shelf_slot(item)}, else: item.gift_id
   end
 
   defp log_shelf_scan(scanned, ctx) do
@@ -661,6 +730,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   def perform_fusion(target, click_plan, ctx) do
+    forget_shelf(ctx)
+
     with {:ok, _} <- ensure_fuse_popup(ctx),
          :ok <- select_affinity(target, ctx),
          {:ok, consumed_ids} <- select_fuse_ingredients(target, click_plan, ctx),
@@ -1045,19 +1116,20 @@ defmodule StarlightBot.Automation.Shop.Ops do
   def keyword_refresh(affinity, ctx) do
     with {:ok, affinity_hook} <- affinity_hook(affinity),
          false <- Engine.check(:shop_keyword_refresh_disabled),
+         {:ok, before} <- settled_shelf_scan(ctx),
          {:ok, _} <-
            Engine.act(
              [
-               click(:shop_keyword_refresh),
-               await(:shop_keyword_refresh_popup),
+               retry_until(:shop_keyword_refresh_popup, [click(:shop_keyword_refresh)], every: 1_500, tries: 3),
                click(affinity_hook),
                click(:shop_keyword_refresh_popup_confirm),
-               await(not_hook(:shop_keyword_refresh_popup)),
-               sleep(@refresh_settle_ms)
+               await(not_hook(:shop_keyword_refresh_popup))
              ],
              ctx
            ) do
       forget_shelf(ctx)
+      forget_slot_purchases(ctx)
+      await_new_shelf(before, ctx)
       :ok
     else
       true -> {:error, :keyword_refresh_disabled}
