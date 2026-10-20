@@ -376,6 +376,18 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   end
 
   @impl true
+  def handle_event("reorder_pins", %{"scope" => scope, "ids" => ids}, socket) do
+    [turn, action_id] = String.split(scope, "|")
+    order = Enum.map(ids, &String.to_integer/1)
+
+    {:noreply,
+     update_action(socket, String.to_integer(turn), action_id, fn action ->
+       pins = action["pins"]
+       if Enum.sort(order) == Enum.to_list(0..(length(pins) - 1)//1), do: Map.put(action, "pins", Enum.map(order, &Enum.at(pins, &1))), else: action
+     end)}
+  end
+
+  @impl true
   def handle_event("remove_pin", %{"turn" => turn, "action" => action_id, "index" => index}, socket) do
     index = String.to_integer(index)
     {:noreply, update_action(socket, String.to_integer(turn), action_id, &Map.update!(&1, "pins", fn pins -> List.delete_at(pins, index) end))}
@@ -673,8 +685,12 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
         </div>
 
         <%= if Map.has_key?(@action, "pins") do %>
+          <div id={"pins-#{@turn}-#{@action["id"]}"} phx-hook="SortableList" data-sort-event="reorder_pins"
+               data-sort-scope={"#{@turn}|#{@action["id"]}"} class="flex flex-col gap-1"
+               title="When pins cover the same slot, the first pin wins. Drag ⠿ to reorder.">
           <%= for {pin, pin_index} <- Enum.with_index(@action["pins"]) do %>
-            <div class="flex items-center gap-2 pl-4">
+            <div data-sort-id={pin_index} class="flex items-center gap-2 pl-4">
+              <span data-sort-handle class="cursor-grab text-base-content/40 select-none">⠿</span>
               <span class="text-base-content/60">pin</span>
               <.sinner_picker holder={pin} prefix={"pins[#{pin_index}]"} profiles={@profiles} turn={@turn} action_id={@action["id"]} pin={pin_index} />
               <span class="text-base-content/60">skill</span>
@@ -693,6 +709,8 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
                       class="btn btn-2xs btn-ghost text-error">✕</button>
             </div>
           <% end %>
+          </div>
+          <span :if={length(@action["pins"]) > 1} class="text-[11px] text-base-content/50 pl-4">When pins cover the same slot, the first pin wins.</span>
           <button type="button" phx-click="add_pin" phx-value-turn={@turn} phx-value-action={@action["id"]}
                   class="btn btn-2xs btn-ghost self-start ml-4">+ pin</button>
         <% end %>

@@ -786,7 +786,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     Enum.reduce(pins, %{}, fn pin, acc ->
       case action_columns(pin, frame, tray, profiles, ctx) do
         {:ok, columns} ->
-          Map.merge(acc, pin_rows(pin, columns, classified, ctx))
+          Map.merge(pin_rows(pin, columns, classified, ctx), acc)
 
         :skip ->
           acc

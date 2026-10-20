@@ -155,6 +155,19 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLiveTest do
     [chain_action] = actions(socket, chain["id"])
     assert hd(chain_action["pins"])["priority"] == %{"order" => ["wrath", "s2"], "min" => 1, "max" => 4}
     assert render(socket) =~ ~s(name="pins[0][keep_max]")
+
+    socket =
+      socket
+      |> event("add_pin", %{"turn" => "1", "action" => chain_action["id"]})
+      |> event("update_action", %{"turn" => "1", "action" => chain_action["id"], "pins" => %{"0" => pin_params, "1" => %{"pick" => "all", "row" => "top"}}})
+      |> event("reorder_pins", %{"scope" => "1|#{chain_action["id"]}", "ids" => ["1", "0"]})
+
+    [chain_action] = actions(socket, chain["id"])
+    assert Enum.map(chain_action["pins"], & &1["row"]) == ["top", "priority"]
+    assert render(socket) =~ "the first pin wins"
+
+    socket = event(socket, "reorder_pins", %{"scope" => "1|#{chain_action["id"]}", "ids" => ["0"]})
+    assert Enum.map(hd(actions(socket, chain["id"]))["pins"], & &1["row"]) == ["top", "priority"]
   end
 
   test "an if nested in an else branch acts as else-if, with one chain per path", %{socket: socket} do
