@@ -5,6 +5,12 @@ defmodule StarlightBot.Hooks do
   alias StarlightBot.Repo
   alias StarlightBot.Vision.HookRegistry
 
+  def image_path(name) when is_binary(name) do
+    if Regex.match?(~r/\A[a-z0-9_]+\z/, name) do
+      Path.join(Application.fetch_env!(:starlight_bot, :hook_image_dir), name <> ".png")
+    end
+  end
+
   @doc "List all hooks (metadata only, no image binary) ordered by name."
   def list_hooks do
     Repo.all(
@@ -42,7 +48,8 @@ defmodule StarlightBot.Hooks do
 
   @doc "Map of hook name => updated_at for hooks that have a template image, used to version thumbnail URLs."
   def hook_thumbnails do
-    Repo.all(from h in "hooks", where: not is_nil(h.image), select: {h.name, h.updated_at})
+    Repo.all(from h in "hooks", select: {h.name, h.updated_at})
+    |> Enum.filter(fn {name, _} -> File.exists?(image_path(name)) end)
     |> Map.new()
   rescue
     _ -> %{}
@@ -50,7 +57,12 @@ defmodule StarlightBot.Hooks do
 
   @doc "Template image binary for a hook, or nil if the hook or image is missing."
   def get_hook_image(name) when is_binary(name) do
-    Repo.one(from h in "hooks", where: h.name == ^name, select: h.image)
+    with path when is_binary(path) <- image_path(name),
+         {:ok, png} <- File.read(path) do
+      png
+    else
+      _ -> nil
+    end
   end
 
   @doc "Get a single hook by name, including image binary. Returns nil if not found."
@@ -60,7 +72,6 @@ defmodule StarlightBot.Hooks do
         where: h.name == ^name,
         select: %{
           name: h.name,
-          image: h.image,
           region_x: h.region_x,
           region_y: h.region_y,
           region_w: h.region_w,
@@ -84,6 +95,10 @@ defmodule StarlightBot.Hooks do
           notes: h.notes
         }
     )
+    |> case do
+      nil -> nil
+      hook -> Map.put(hook, :image, get_hook_image(name))
+    end
   rescue
     _ -> nil
   end
@@ -96,7 +111,12 @@ defmodule StarlightBot.Hooks do
   """
   def save_hook(%{name: name} = attrs) when is_binary(name) and name != "" do
     exists = Repo.one(from h in "hooks", where: h.name == ^name, select: h.name)
-    if exists, do: update_hook(attrs), else: insert_hook(attrs)
+
+    cond do
+      is_nil(image_path(name)) -> {:error, :invalid_name}
+      exists -> update_hook(attrs)
+      true -> insert_hook(attrs)
+    end
   end
 
   def save_hook(_), do: {:error, :name_required}
@@ -106,6 +126,7 @@ defmodule StarlightBot.Hooks do
     {n, _} = Repo.delete_all(from h in "hooks", where: h.name == ^name)
 
     if n > 0 do
+      File.rm(image_path(name))
       :ets.delete(:hook_registry, String.to_atom(name))
       {:ok, name}
     else
@@ -122,18 +143,19 @@ defmodule StarlightBot.Hooks do
       when is_binary(old_name) and is_binary(new_name) and old_name != new_name and new_name != "" do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-    {n, _} =
-      Repo.update_all(
-        from(h in "hooks", where: h.name == ^old_name),
-        set: [name: new_name, updated_at: now]
-      )
-
-    if n > 0 do
+    with new_path when is_binary(new_path) <- image_path(new_name) || {:error, :invalid_name},
+         {n, _} when n > 0 <-
+           Repo.update_all(
+             from(h in "hooks", where: h.name == ^old_name),
+             set: [name: new_name, updated_at: now]
+           ) do
+      File.rename(image_path(old_name), new_path)
       :ets.delete(:hook_registry, String.to_atom(old_name))
       HookRegistry.invalidate(String.to_atom(new_name))
       {:ok, new_name}
     else
-      {:error, :not_found}
+      {:error, :invalid_name} = error -> error
+      _ -> {:error, :not_found}
     end
   rescue
     e ->
@@ -185,10 +207,11 @@ defmodule StarlightBot.Hooks do
     {n, _} =
       Repo.update_all(
         from(h in "hooks", where: h.name == ^name),
-        set: [image: png_binary, updated_at: now]
+        set: [updated_at: now]
       )
 
     if n > 0 do
+      write_image!(name, png_binary)
       HookRegistry.invalidate(String.to_atom(name))
       {:ok, name}
     else
@@ -223,13 +246,18 @@ defmodule StarlightBot.Hooks do
   defp feature_channel_value(v) when v in [nil, "", "gray"], do: nil
   defp feature_channel_value(v), do: v
 
+  defp write_image!(name, png) do
+    path = image_path(name)
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, png)
+  end
+
   defp insert_hook(attrs) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     name = attrs[:name] || attrs.name
 
     row = %{
       name: name,
-      image: attrs[:image] || attrs.image,
       region_x: attrs[:region_x],
       region_y: attrs[:region_y],
       region_w: attrs[:region_w],
@@ -257,6 +285,7 @@ defmodule StarlightBot.Hooks do
 
     case Repo.insert_all("hooks", [row]) do
       {1, _} ->
+        if image = attrs[:image] || attrs.image, do: write_image!(name, image)
         HookRegistry.invalidate(String.to_atom(name))
         {:ok, name}
 
@@ -276,12 +305,6 @@ defmodule StarlightBot.Hooks do
     if is_nil(Repo.one(from h in "hooks", where: h.name == ^name, select: h.name)) do
       {:error, :not_found}
     else
-      image_update =
-        case attrs[:image] || attrs.image do
-          nil -> []
-          img -> [image: img]
-        end
-
       rx = attrs[:region_x]
       ry = attrs[:region_y]
       rw = attrs[:region_w]
@@ -350,8 +373,7 @@ defmodule StarlightBot.Hooks do
         end
 
       updates =
-        image_update ++
-          region_update ++
+        region_update ++
           click_update ++
           scan_update ++
           color_update ++
@@ -368,6 +390,7 @@ defmodule StarlightBot.Hooks do
       {n, _} = Repo.update_all(from(h in "hooks", where: h.name == ^name), set: updates)
 
       if n > 0 do
+        if image = attrs[:image] || attrs.image, do: write_image!(name, image)
         HookRegistry.invalidate(String.to_atom(name))
         {:ok, name}
       else

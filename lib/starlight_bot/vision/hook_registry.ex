@@ -2,6 +2,7 @@ defmodule StarlightBot.Vision.HookRegistry do
   use GenServer
   require Logger
   import Ecto.Query
+  alias StarlightBot.Hooks
   alias StarlightBot.Vision.Hook
 
   @table :hook_registry
@@ -54,7 +55,6 @@ defmodule StarlightBot.Vision.HookRegistry do
           from h in "hooks",
             select: %{
               name: h.name,
-              image: h.image,
               region_x: h.region_x,
               region_y: h.region_y,
               region_w: h.region_w,
@@ -101,7 +101,6 @@ defmodule StarlightBot.Vision.HookRegistry do
             where: h.name == ^name_str,
             select: %{
               name: h.name,
-              image: h.image,
               region_x: h.region_x,
               region_y: h.region_y,
               region_w: h.region_w,
@@ -140,20 +139,20 @@ defmodule StarlightBot.Vision.HookRegistry do
     end
   end
 
-  defp insert_row(%{image: nil} = row) do
-    Logger.debug("HookRegistry: skipping #{inspect(row.name)} — no image saved yet", module: __MODULE__)
-  end
-
   defp insert_row(row) do
-    try do
-      hook = Hook.from_db_row(row)
-      :ets.insert(@table, {hook.name, hook})
-    rescue
-      e ->
-        Logger.warning(
-          "HookRegistry: failed to decode hook #{inspect(row.name)}: #{Exception.message(e)}",
-          module: __MODULE__
-        )
+    if File.exists?(Hooks.image_path(row.name)) do
+      try do
+        hook = Hook.from_db_row(row)
+        :ets.insert(@table, {hook.name, hook})
+      rescue
+        e ->
+          Logger.warning(
+            "HookRegistry: failed to decode hook #{inspect(row.name)}: #{Exception.message(e)}",
+            module: __MODULE__
+          )
+      end
+    else
+      Logger.debug("HookRegistry: skipping #{inspect(row.name)} — no image saved yet", module: __MODULE__)
     end
   end
 end
