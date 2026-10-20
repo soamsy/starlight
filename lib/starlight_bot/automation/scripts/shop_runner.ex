@@ -104,6 +104,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       protected: GiftPlans.protected_set(plan, workflow, gifts),
       sell_popup_open: false,
       heal_menu_open: false,
+      last_heal: nil,
       call_stack: [workflow["id"]],
       label_prefix: "",
       bailed: false,

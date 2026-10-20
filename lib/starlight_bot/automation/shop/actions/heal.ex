@@ -3,6 +3,10 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.GiftPlans
 
+  @heal_settle_ms 500
+  @heal_settle_poll_ms 100
+  @first_check_settle_ms 500
+
   def run(%{"kind" => kind, "sinner" => nil}, _definition, state, _ctx) when kind in ["heal", "revive"],
     do: {:failed, "no sinner selected", state}
 
@@ -36,14 +40,14 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
   def run(step, _definition, state, ctx) do
     target = if step["kind"] == "heal", do: step["sinner"], else: :all
 
-    with false <- target != :all and Ops.sinner_full_sp?(target) == true,
+    with false <- target != :all and settled_full?(target, state),
          {:ok, state} <- open_menu(state, ctx),
          {:ok, healed} <- Ops.heal(target, ctx) do
       spend(ctx)
-      {:done, heal_message(target, healed), state}
+      {:done, heal_message(target, healed), %{state | last_heal: {healed, now()}}}
     else
       true ->
-        {:skipped, "#{target} already has full SP", state}
+        {:skipped, "#{target} already has full HP and SP", state}
 
       {:error, :heal_disabled} ->
         Ops.recover_to_shop(ctx)
@@ -55,6 +59,25 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
       {:error, reason} -> {:failed, inspect(reason), state}
     end
   end
+
+  defp settled_full?(sinner, %{last_heal: {healed, healed_at}}) when healed == sinner or healed == :all,
+    do: poll_full(sinner, healed_at + @heal_settle_ms)
+
+  defp settled_full?(sinner, _state), do: poll_full(sinner, now() + @first_check_settle_ms)
+
+  defp poll_full(sinner, deadline) do
+    cond do
+      full?(sinner) -> true
+      now() >= deadline -> false
+      true ->
+        Process.sleep(@heal_settle_poll_ms)
+        poll_full(sinner, deadline)
+    end
+  end
+
+  defp full?(sinner), do: Ops.sinner_full?(sinner, :sp) == true and Ops.sinner_full?(sinner, :hp) == true
+
+  defp now, do: System.monotonic_time(:millisecond)
 
   defp heal_message(:all, :all), do: "healed every sinner"
   defp heal_message(target, target), do: "healed #{target}"

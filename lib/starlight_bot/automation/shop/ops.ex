@@ -78,6 +78,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
   @heal_confirm_timeout 1_500
+  @heal_select_retry_ms 500
+  @heal_result_timeout 5_000
   @replace_popup_hook :shop_replace_popup
   @replace_confirm_hook :shop_replace_popup_confirm
   @replace_are_you_sure_hook :shop_replace_popup_are_you_sure
@@ -165,7 +167,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
          {:ok, _} <- Engine.act([click(:shop_heal_greatly_heal)], ctx) do
       case find_healable(sinner, ctx) do
         nil -> {:error, :no_sinner_healable}
-        healed -> with :ok <- finish_heal([click(:shop_heal_confirm)], ctx), do: {:ok, healed}
+        healed -> with :ok <- finish_heal([], ctx), do: {:ok, healed}
       end
     end
   end
@@ -216,8 +218,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
     end
   end
 
-  def sinner_full_sp?(sinner) do
-    hook = :"shop_heal_full_sp_#{String.replace(sinner, "_", "")}"
+  def sinner_full?(sinner, stat) do
+    hook = :"shop_heal_full_#{stat}_#{String.replace(sinner, "_", "")}"
 
     case HookRegistry.find(hook) do
       {:ok, _} -> Engine.check(hook)
@@ -230,8 +232,9 @@ defmodule StarlightBot.Automation.Shop.Ops do
       finish_heal(
         [
           click(:shop_heal_revive),
-          click(sinner_heal_hook(sinner))
-        ] ++ confirm(:shop_heal_confirm, timeout: @heal_confirm_timeout),
+          click(sinner_heal_hook(sinner)),
+          await(:shop_heal_confirm, timeout: @heal_confirm_timeout)
+        ],
         ctx
       )
     end
@@ -253,7 +256,10 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp finish_heal(steps, ctx) do
-    case Engine.act(steps ++ confirm(:shop_heal_heal_again), ctx) do
+    select_until_healed =
+      retry_until(:shop_heal_heal_again, [branch([{:shop_heal_confirm, [click(:shop_heal_confirm)]}])], every: @heal_select_retry_ms, timeout: @heal_result_timeout)
+
+    case Engine.act(steps ++ [select_until_healed | confirm(:shop_heal_heal_again)], ctx) do
       {:ok, _} -> :ok
       {:error, _} = err -> err
     end
