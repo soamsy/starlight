@@ -124,12 +124,12 @@ defmodule StarlightBot.Automation.GiftPicker do
     end
   end
 
-  defp click_slots(slots, pick_delay_ms, ctx) do
+  defp click_slots(slots, count, pick_delay_ms, ctx) do
     Enum.reduce_while(slots, {:ok, []}, fn %{center: {cx, cy}, rect: rect} = slot, {:ok, clicked} ->
       case RewardHelpers.click_rect({round(cx), round(cy), 0, 0}, ctx) do
         {:ok, _} ->
           Ctx.log(ctx, :ok, "gift picker: clicked #{slot.gift_name}")
-          Process.sleep(pick_delay_ms)
+          if length(clicked) + 1 < count, do: Process.sleep(pick_delay_ms)
           {:cont, {:ok, clicked ++ [rect]}}
 
         {:error, _} = err ->
@@ -145,11 +145,11 @@ defmodule StarlightBot.Automation.GiftPicker do
 
     case RewardHelpers.select_best_available_gift(tier_hooks, fallback_hook, ctx, exclude: clicked) do
       {:ok, {:clicked, rect}} ->
-        Process.sleep(pick_delay_ms)
+        if remaining > 1, do: Process.sleep(pick_delay_ms)
         fallback(remaining - 1, clicked ++ [rect], tier_hooks, fallback_hook, pick_delay_ms, ctx)
 
       {:ok, :fallback} ->
-        Process.sleep(pick_delay_ms)
+        if remaining > 1, do: Process.sleep(pick_delay_ms)
         fallback(remaining - 1, clicked, tier_hooks, fallback_hook, pick_delay_ms, ctx)
 
       {:error, _} = err ->

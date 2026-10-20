@@ -6,7 +6,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   alias StarlightBot.Navigation.{DSL, Runner}
   alias StarlightBot.Vision.{Capture, EnemyTargets, HookRegistry, Matcher, SinColor, SkillTray}
 
-  @key_gap_ms 100
+  @key_gap_ms 50
   @poll_ms 100
   @turn_start_timeout_ms 2_000
   @combat_ready_timeout_ms 3_000

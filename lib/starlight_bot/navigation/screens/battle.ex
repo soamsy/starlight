@@ -108,7 +108,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
       {:loading_stage_2, loading() ++ after_loading()},
       confirm_battle_clause(),
       {:battle_defeat_retry, []},
-      {:default, [sleep(1_000)]}
+      {:default, [sleep(100)]}
     ]
   end
 

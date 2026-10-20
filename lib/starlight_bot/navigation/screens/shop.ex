@@ -42,10 +42,7 @@ defmodule StarlightBot.Navigation.Screens.Shop do
     end
 
     action :refresh_shelf do
-      [
-        click(:shop_refresh),
-        sleep(400),
-      ]
+      [click(:shop_refresh)]
     end
   end
 

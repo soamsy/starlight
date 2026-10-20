@@ -156,7 +156,7 @@ defmodule StarlightBot.Navigation.DSL do
 
   def loading(opts \\ []) do
     opts = Keyword.merge([appear_timeout: 10_000, gone_timeout: 20_000], opts)
-    await_then_gone(:loading_stage_2, opts) ++ [sleep(1000)]
+    await_then_gone(:loading_stage_2, opts) ++ [sleep(400)]
   end
 
   def retry_until(hook, steps, opts \\ [])

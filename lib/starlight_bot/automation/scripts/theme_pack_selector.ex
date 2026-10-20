@@ -8,7 +8,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   alias StarlightBot.Input.Mouse
   alias StarlightBot.{Strategies, Teams, ThemePacks}
 
-  @entry_settle_ms 400
+  @mode_poll_budget_ms 400
   @ready_poll_every_ms 100
   @ready_poll_tries 10
   @mode_switch_poll_tries 6
@@ -68,15 +68,12 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
   defp enter(plan_data, ctx) do
     Engine.act([premove(:theme_pack_select_refresh)], ctx)
-    deadline = System.monotonic_time(:millisecond) + @entry_settle_ms
-
-    case poll_mode_frame(deadline) do
+    case poll_mode_frame(System.monotonic_time(:millisecond) + @mode_poll_budget_ms) do
       {:ok, frame} ->
         detect_and_update_floor(frame, ctx)
         mode = scheduled_mode(plan_data, ctx)
 
         if current_mode(frame) == mode do
-          Process.sleep(max(deadline - System.monotonic_time(:millisecond), 0))
           poll_hooks([:theme_pack_select_ready], @ready_poll_tries, ctx)
         else
           with {:ok, _frame} <- ensure_mode(frame, mode, ctx), do: await_ready_only(ctx)
@@ -149,7 +146,6 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
   defp await_ready_only(ctx) do
     Engine.act([premove(:theme_pack_select_refresh)], ctx)
-    Process.sleep(@entry_settle_ms)
     poll_hooks([:theme_pack_select_ready], @ready_poll_tries, ctx)
   end
 
@@ -497,7 +493,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
     steps =
       [click(:theme_pack_search_popup_black_confirm, settle_ms: 50)] ++
-      confirm_enter(:theme_pack_search_popup_white_confirm, hook_settle_ms: 450)
+      confirm_enter(:theme_pack_search_popup_white_confirm)
 
     with {:ok, _} <- Engine.act(steps, ctx), do: :ok
   end
