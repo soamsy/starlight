@@ -112,7 +112,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   def recover_to_shop(ctx) do
     if Engine.check(:shop_heal_menu), do: close_heal_menu(ctx)
     RunMemory.put(ctx, @fuse_affinity_key, nil)
-    escape_to_shop(ctx, 0)
+    escape_to_shop(ctx, if(Engine.check(:shop_uptie_popup), do: 1, else: 0))
   end
 
   def fuse_popup_open?, do: Engine.check(@fuse_popup_hook)
@@ -136,7 +136,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
       {:ok, nil}
     else
       escape_step = if rem(attempt, 2) == 0, do: key(:esc), else: click(:safe_corner)
-      Engine.act([escape_step, sleep(@escape_settle_ms)], ctx)
+      Engine.act([escape_step, branch([{:shop, []}], wait: @escape_settle_ms)], ctx)
       escape_to_shop(ctx, attempt + 1)
     end
   end
