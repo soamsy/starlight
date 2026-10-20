@@ -29,6 +29,8 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   @clear_graph_timeout_ms 8_000
   @clear_graph_poll_ms 100
   @settle_check_ms 800
+  @next_screen_wait_ms 15_000
+  @next_screen_poll_ms 100
   @cabinet_available_hooks [cabinet_ego_gift_available_3: 3, cabinet_ego_gift_available_2: 2, cabinet_ego_gift_available_1: 1]
 
   def run(team_ids, run_count, config, ctx \\ Ctx.new())
@@ -425,7 +427,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         Engine.goto(:cabinet_reward, :cabinet_reward_over, ctx) |> continue_at(run_state)
 
       screen == :mounting_trials ->
-        Engine.goto(:mounting_trials, :mounting_trials_over, ctx) |> continue_at(run_state)
+        Engine.goto(:mounting_trials, :mounting_trials_over, ctx) |> continue_to_theme_pack(run_state, ctx)
 
       screen == :encounter_reward ->
         Engine.goto(:encounter_reward, :encounter_reward_over, ctx) |> continue_at(run_state)
@@ -470,7 +472,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         Engine.goto(:cabinet_ego_gifts, :ego_gift_get, ctx)
       end
 
-    continue_after(result, run_state)
+    if gift_search_names(ctx) == [],
+      do: continue_to_theme_pack(result, run_state, ctx),
+      else: continue_to(result, :gift_search, run_state, ctx)
   end
 
   defp gift_search_names(ctx) do
@@ -487,7 +491,44 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         names -> GiftSearchPicker.run(names, ctx)
       end
 
-    continue_after(result, run_state)
+    continue_to_theme_pack(result, run_state, ctx)
+  end
+
+  defp continue_to_theme_pack(result, run_state, ctx), do: continue_to(result, :theme_pack, run_state, ctx)
+
+  defp continue_to({:ok, _}, screen, run_state, ctx) do
+    %Screen{identity_hook: hook} = Catalog.find_screen(screen)
+
+    case await_screen(hook, System.monotonic_time(:millisecond) + @next_screen_wait_ms, ctx) do
+      :arrived -> {:continue, run_state, screen}
+      :timeout -> {:continue, run_state}
+      {:error, _} = err -> continue_after(err, run_state)
+    end
+  end
+
+  defp continue_to(result, _screen, run_state, _ctx), do: continue_after(result, run_state)
+
+  defp await_screen(hook, deadline, ctx) do
+    seen = Engine.check_all([hook, :ego_gift_get, :cabinet_reward])
+
+    cond do
+      seen[hook] ->
+        :arrived
+
+      seen[:ego_gift_get] ->
+        with {:ok, _} <- Engine.goto(:ego_gift_get, :ego_gift_over, ctx), do: await_screen(hook, deadline, ctx)
+
+      seen[:cabinet_reward] ->
+        :timeout
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        Ctx.log(ctx, :info, "mirror dungeon runner: #{hook} didn't show within #{@next_screen_wait_ms}ms, re-localizing")
+        :timeout
+
+      true ->
+        Process.sleep(@next_screen_poll_ms)
+        await_screen(hook, deadline, ctx)
+    end
   end
 
   defp select_cabinet_gifts(ctx) do
