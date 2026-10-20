@@ -194,8 +194,10 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   defp loop(run_count, run_state, iterations, errors, cycle, config, ctx, known_screen \\ nil)
 
-  defp loop(run_count, _run_state, _iterations, _errors, _cycle, _config, ctx, _known_screen)
+  defp loop(run_count, _run_state, _iterations, _errors, _cycle, config, ctx, _known_screen)
        when run_count <= 0 do
+    if Map.get(config, :collect_xp?, false), do: collect_season_pass(ctx)
+
     case localize(ctx) do
       {:ok, screen} -> Engine.goto(screen, :home, ctx)
       {:error, _} = err -> err
@@ -269,8 +271,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   end
 
   defp finish_run(run_count, own_run?, cycle, config, ctx) do
-    RunMemory.put(ctx, :ego_gifts, %{})
-    if Map.get(config, :collect_xp?, false), do: collect_season_pass(ctx)
+    RunMemory.merge(ctx, %{ego_gifts: %{}, unfusable_gifts: MapSet.new()})
 
     cycle =
       if run_count > 1 do
