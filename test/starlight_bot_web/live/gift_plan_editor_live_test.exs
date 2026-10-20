@@ -43,6 +43,16 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert keys.(3) == ~w(2-2-2 4-1 3-2-1 3-3 4-2 3-2-2 2-2-1 2-1-1-1 1-1-1-1-1 3-2 3-1-1)
   end
 
+  test "the shop pane opens on the top milestone, or the first non-empty library without milestones", %{socket: socket} do
+    [%{"id" => shop_id}] = saved(socket)["milestones"]
+    assert socket.assigns.shop_lib == "milestones"
+    assert socket.assigns.selected_milestone_id == shop_id
+
+    socket = socket |> event("lib_add", %{"lib" => "upties"}) |> event("delete_milestone", %{"id" => shop_id})
+    socket = event(socket, "select_plan", %{"id" => to_string(socket.assigns.editing_id)})
+    assert socket.assigns.shop_lib == "upties"
+  end
+
   test "a new plan starts as a valid v2 plan", %{socket: socket} do
     assert saved(socket)["version"] == 3
     assert GiftPlans.issues(saved(socket)) == []
@@ -87,12 +97,18 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert hd(saved(socket)["library"]["fusions"])["routes"] |> Enum.at(1) |> Map.get("subgoals") == %{"3" => []}
     assert [%{"kind" => "uptie", "upties" => [^uptie_id], "max_gifts" => 1}, %{"kind" => "fusion", "fusions" => [^fusion_id]}] = steps(socket)
     assert hd(saved(socket)["library"]["upties"])["gift"] == "Fiery Down"
+    assert hd(saved(socket)["library"]["upties"])["name"] == "Fiery Down"
+    assert hd(saved(socket)["library"]["fusions"])["name"] == "Glimpse of Flames"
 
-    for tab <- ~w(workflows upties fusions shopping_lists keep_lists grace gift_search) do
+    for tab <- ~w(workflows shop grace gift_search) do
       assert is_binary(socket |> event("set_tab", %{"tab" => tab}) |> render())
     end
 
-    html = render(event(socket, "set_tab", %{"tab" => "fusions"}))
+    for lib <- ~w(upties lists fusions) do
+      assert is_binary(socket |> event("set_tab", %{"tab" => "shop"}) |> event("lib_select", %{"lib" => lib, "id" => socket.assigns.selected_def[lib]}) |> render())
+    end
+
+    html = render(event(socket, "set_tab", %{"tab" => "shop"}))
     assert html =~ "super only"
     assert html =~ "Sub-goal: make T3s"
     assert html =~ "+ add T2 route"
@@ -187,7 +203,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert Enum.map(dest["routes"], & &1["combo"]) == [[3, 3, 2], [4, 2, 2], [4, 4]]
     assert Enum.map(dest["routes"], & &1["id"]) -- Enum.map(source["routes"], & &1["id"]) == Enum.map(dest["routes"], & &1["id"])
     assert hd(dest["routes"])["subgoals"]["3"] |> hd() |> Map.get("id") != hd(source["routes"])["subgoals"]["3"] |> hd() |> Map.get("id")
-    assert render(event(socket, "set_tab", %{"tab" => "fusions"})) =~ "3 route(s)"
+    assert render(event(socket, "set_tab", %{"tab" => "shop"})) =~ "3 route(s)"
   end
 
   test "uptie and fusion steps hold an ordered list of definitions", %{socket: socket} do
@@ -329,7 +345,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert GiftPlans.find_definition(saved(socket), "fusions", fixed_id)["sub_fusions"] == %{"Ing B" => ing_b_id}
     assert GiftPlans.issues(saved(socket), socket.assigns.gifts_by_name) == []
 
-    html = render(event(socket, "set_tab", %{"tab" => "fusions"}))
+    html = render(event(socket, "set_tab", %{"tab" => "shop"}))
     assert html =~ "fuse via Ing B"
     assert html =~ "+ Fixed"
   end
@@ -390,5 +406,89 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
       |> event("import_workflows", %{"workflow" => wf_id})
 
     assert Enum.map(saved(socket)["workflows"], & &1["name"]) == ["Standard", "Standard (Source)"]
+  end
+
+  test "milestones: new upties and fusions join the top one, entries reorder, group, include, and conditions skip cycles", %{socket: socket} do
+    [%{"id" => shop_id, "name" => "Shop Done"}] = saved(socket)["milestones"]
+
+    socket = socket |> event("add_milestone", %{}) |> event("move_milestone", %{"id" => shop_id, "dir" => "down"})
+    [%{"id" => top_id}, %{"id" => ^shop_id}] = saved(socket)["milestones"]
+
+    socket = socket |> event("lib_add", %{"lib" => "upties"}) |> event("lib_add", %{"lib" => "fusions", "type" => "tiered"}) |> event("lib_add", %{"lib" => "lists"})
+    uptie_id = socket.assigns.selected_def["upties"]
+    fusion_id = socket.assigns.selected_def["fusions"]
+    list_id = socket.assigns.selected_def["lists"]
+    uptie_ref = GiftPlans.entry_ref("upties", uptie_id)
+    gift_ref = GiftPlans.entry_ref("lists", list_id, "Fiery Down")
+
+    assert Enum.map(GiftPlans.milestone_entries(saved(socket), top_id), & &1.ref) == [uptie_ref, GiftPlans.entry_ref("fusions", fusion_id)]
+    assert GiftPlans.milestone_entries(saved(socket), shop_id) == []
+
+    socket =
+      socket
+      |> event("lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down"})
+      |> event("toggle_milestone", %{"lib" => "upties", "id" => uptie_id, "milestone" => shop_id})
+
+    assert GiftPlans.assignments(saved(socket), gift_ref) == %{}
+
+    socket =
+      socket
+      |> event("toggle_milestone", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down", "milestone" => shop_id})
+      |> event("reorder_milestone_blocks", %{"scope" => shop_id, "ids" => [GiftPlans.entry_key(gift_ref), GiftPlans.entry_key(uptie_ref)]})
+
+    assert Enum.map(GiftPlans.milestone_entries(saved(socket), shop_id), & &1.ref) == [gift_ref, uptie_ref]
+
+    keep_entry = %{"milestone_id" => shop_id, "lib" => "lists", "def_id" => list_id, "gift" => "Fiery Down"}
+    uptie_entry = %{"milestone_id" => shop_id, "lib" => "upties", "def_id" => uptie_id}
+
+    socket =
+      socket
+      |> event("set_entry_group", Map.put(keep_entry, "group", "new"))
+      |> event("set_entry_group", Map.put(uptie_entry, "group", "A"))
+      |> event("set_group_min", %{"milestone_id" => shop_id, "group" => "A", "min" => "2"})
+
+    assert [%{group: "A"}, %{group: "A"}] = GiftPlans.milestone_entries(saved(socket), shop_id)
+
+    socket = event(socket, "set_entry_group", Map.put(uptie_entry, "group", "optional"))
+    assert [%{group: "A"}, %{optional: true, ref: ^uptie_ref}] = GiftPlans.milestone_entries(saved(socket), shop_id)
+    assert render(event(socket, "set_tab", %{"tab" => "shop"}) |> event("select_milestone", %{"id" => shop_id})) =~ ~s(value="optional" selected)
+    socket = event(socket, "set_entry_group", Map.put(uptie_entry, "group", "A"))
+
+    socket = event(socket, "move_milestone_entry", %{"scope" => shop_id, "id" => GiftPlans.entry_key(uptie_ref), "ids" => [GiftPlans.entry_key(uptie_ref), "group:A"]})
+    assert [%{group: nil, ref: ^uptie_ref}, %{group: "A"}] = GiftPlans.milestone_entries(saved(socket), shop_id)
+    socket = event(socket, "move_milestone_entry", %{"scope" => "#{shop_id}|A", "id" => GiftPlans.entry_key(uptie_ref), "ids" => [GiftPlans.entry_key(gift_ref), GiftPlans.entry_key(uptie_ref)]})
+    assert [%{group: "A", ref: ^gift_ref}, %{group: "A", ref: ^uptie_ref}] = GiftPlans.milestone_entries(saved(socket), shop_id)
+    assert GiftPlans.group_min(Enum.at(saved(socket)["milestones"], 1), "A") == 2
+    assert render(event(socket, "set_tab", %{"tab" => "shop"}) |> event("select_milestone", %{"id" => shop_id})) =~ "Group A: at least"
+
+    socket = event(socket, "lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down"})
+    assert GiftPlans.assignments(saved(socket), gift_ref) == %{}
+
+    socket = event(socket, "include_milestone", %{"milestone_id" => shop_id, "sub" => top_id})
+    assert GiftPlans.assignments(saved(socket), GiftPlans.entry_ref("milestones", top_id)) == %{shop_id => nil}
+    socket = event(socket, "include_milestone", %{"milestone_id" => top_id, "sub" => shop_id})
+    assert GiftPlans.milestone_entries(saved(socket), top_id) |> Enum.all?(&(&1.lib != "milestones"))
+
+    socket =
+      socket
+      |> event("cond_add", %{"milestone_id" => top_id, "path" => "", "node" => "leaf"})
+      |> event("cond_update", %{"milestone_id" => top_id, "path" => "0", "op" => "milestone", "milestone" => shop_id})
+
+    assert Enum.at(saved(socket)["milestones"], 0)["condition"] == %{"op" => "and", "children" => [%{"op" => "cost_gte", "value" => 0}]}
+    assert Live.milestone_options(saved(socket), top_id) == []
+
+    socket = event(socket, "add_step", %{"kind" => "milestone", "ref" => shop_id})
+    [step] = steps(socket)
+    assert step["milestone"] == shop_id
+    socket = event(socket, "update_step", %{"step_id" => step["id"], "step" => %{"milestone" => top_id}})
+    assert hd(steps(socket))["milestone"] == top_id
+    assert render(event(socket, "set_tab", %{"tab" => "workflows"})) =~ "Work on Milestone"
+
+    socket = event(socket, "lib_delete", %{"lib" => "upties", "id" => uptie_id})
+    assert GiftPlans.milestone_entries(saved(socket), shop_id) |> Enum.map(& &1.lib) == ["milestones"]
+
+    socket = event(socket, "delete_milestone", %{"id" => top_id})
+    assert GiftPlans.milestone_entries(saved(socket), shop_id) == []
+    assert socket.assigns.selected_milestone_id == shop_id
   end
 end

@@ -261,6 +261,234 @@ defmodule StarlightBot.GiftPlansTest do
     end
   end
 
+  describe "milestones" do
+    defp ref(lib, id, gift \\ nil), do: GiftPlans.entry_ref(lib, id, gift)
+
+    defp milestone_plan do
+      %{
+        "milestones" => [
+          %{"id" => "ms_shop", "name" => "Shop Done", "condition" => %{"op" => "cost_gte", "value" => 100}, "blocks" => [
+            %{"type" => "entry", "ref" => ref("fusions", "fu_1")},
+            %{"type" => "entry", "ref" => ref("upties", "up_1")},
+            %{"type" => "entry", "ref" => ref("fusions", "fu_3")},
+            %{"type" => "entry", "ref" => ref("lists", "kp_1", "K1")},
+            %{"type" => "entry", "ref" => ref("lists", "kp_1", "Gone")}
+          ]},
+          %{"id" => "ms_late", "name" => "Late", "condition" => %{"op" => "milestone", "milestone" => "ms_shop"}, "blocks" => [
+            %{"type" => "entry", "ref" => ref("upties", "up_1")}
+          ]}
+        ],
+        "library" => %{
+          "fusions" => [
+            %{"id" => "fu_1", "name" => "Make Top", "target" => "Top"},
+            %{"id" => "fu_2", "name" => "Make Other", "target" => "Other"},
+            %{"id" => "fu_3", "name" => "Unset", "target" => nil}
+          ],
+          "upties" => [%{"id" => "up_1", "gift" => "A", "target_level" => 2}],
+          "lists" => [%{"id" => "kp_1", "name" => "Keep", "gifts" => ["K1", "K2", "tier:3"]}]
+        }
+      }
+    end
+
+    defp env(owned, uptie \\ 2, wallet \\ 100) do
+      %{plan: nil, wallet: wallet, owned: MapSet.new(owned), inventory: %{1 => %{name: "A", uptie: uptie}}}
+    end
+
+    defp reached?(plan, id, env), do: GiftPlans.eval_condition(%{"op" => "milestone", "milestone" => id}, %{env | plan: plan})
+
+    test "a milestone needs its fusions, upties at target, list gifts, and its own condition" do
+      plan = milestone_plan()
+
+      assert reached?(plan, "ms_shop", env(["Top", "A", "K1"]))
+      refute reached?(plan, "ms_shop", env(["Top", "A", "K1"], 2, 99))
+      refute reached?(plan, "ms_shop", env(["Top", "A"]))
+      refute reached?(plan, "ms_shop", env(["A", "K1"]))
+      refute reached?(plan, "ms_shop", env(["Top", "A", "K1"], 1))
+      assert reached?(plan, "ms_late", env(["Top", "A", "K1"]))
+      refute reached?(plan, "ms_late", env(["Top", "A", "K1"], 2, 0))
+      refute reached?(plan, "ms_gone", env(["Top", "A", "K1"]))
+      assert GiftPlans.condition_label(%{"op" => "milestone", "milestone" => "ms_shop"}, plan) == "milestone Shop Done reached"
+      assert Enum.map(GiftPlans.milestone_entries(plan, "ms_shop"), & &1.ref["id"]) == ["fu_1", "up_1", "fu_3", "kp_1"]
+    end
+
+    test "grouped entries need at least the group's count met, ungrouped ones all" do
+      plan =
+        milestone_plan()
+        |> GiftPlans.set_entry_group("ms_shop", ref("fusions", "fu_1"), "new")
+        |> GiftPlans.set_entry_group("ms_shop", ref("lists", "kp_1", "K1"), "A")
+        |> GiftPlans.add_entry("ms_shop", ref("lists", "kp_1", "K2"))
+        |> GiftPlans.set_entry_group("ms_shop", ref("lists", "kp_1", "K2"), "A")
+        |> put_in(["milestones", Access.at(0), "condition"], nil)
+
+      [%{"type" => "group", "letter" => "A", "refs" => refs}, %{"ref" => %{"id" => "up_1"}}, %{"ref" => %{"id" => "fu_3"}}, %{"ref" => %{"gift" => "Gone"}}] =
+        hd(plan["milestones"])["blocks"]
+      assert Enum.map(refs, &(&1["gift"] || &1["id"])) == ["fu_1", "K1", "K2"]
+      assert GiftPlans.next_group_letter(hd(plan["milestones"])) == "B"
+
+      assert reached?(plan, "ms_shop", env(["A", "K2"]))
+      refute reached?(plan, "ms_shop", env(["A"]))
+      refute reached?(plan, "ms_shop", env(["K2"], 0))
+
+      two = GiftPlans.set_group_min(plan, "ms_shop", "A", 2)
+      refute reached?(two, "ms_shop", env(["A", "K2"]))
+      assert reached?(two, "ms_shop", env(["A", "K2", "Top"]))
+
+      four = GiftPlans.set_group_min(plan, "ms_shop", "A", 4)
+      assert Enum.any?(GiftPlans.issues(Map.merge(plan(), four)), &(&1 =~ "group A needs 4 but only has 3"))
+
+      back = GiftPlans.set_entry_group(plan, "ms_shop", ref("lists", "kp_1", "K1"), nil)
+      assert Enum.map(hd(back["milestones"])["blocks"], &GiftPlans.block_key/1) == ["group:A", "lists|kp_1|K1", "upties|up_1|", "fusions|fu_3|", "lists|kp_1|Gone"]
+
+      reordered = GiftPlans.reorder_group(plan, "ms_shop", "A", ["lists|kp_1|K2", "fusions|fu_1|"])
+      assert Enum.map(hd(hd(reordered["milestones"])["blocks"])["refs"], &GiftPlans.entry_key/1) == ["lists|kp_1|K2", "fusions|fu_1|", "lists|kp_1|K1"]
+    end
+
+    test "move_entry/5 drags entries into and out of groups, dropping emptied groups" do
+      plan = GiftPlans.set_entry_group(milestone_plan(), "ms_shop", ref("fusions", "fu_1"), "new")
+      keys = fn plan -> plan["milestones"] |> hd() |> Map.get("blocks") |> Enum.map(&{GiftPlans.block_key(&1), Enum.map(GiftPlans.block_refs(&1), fn r -> GiftPlans.entry_key(r) end)}) end
+
+      into = GiftPlans.move_entry(plan, "ms_shop", "upties|up_1|", "A", ["upties|up_1|", "fusions|fu_1|"])
+      assert keys.(into) == [{"group:A", ["upties|up_1|", "fusions|fu_1|"]}, {"fusions|fu_3|", ["fusions|fu_3|"]}, {"lists|kp_1|K1", ["lists|kp_1|K1"]}, {"lists|kp_1|Gone", ["lists|kp_1|Gone"]}]
+
+      out = GiftPlans.move_entry(plan, "ms_shop", "fusions|fu_1|", nil, ["upties|up_1|", "fusions|fu_1|", "group:A", "fusions|fu_3|"])
+      assert Enum.map(keys.(out), &elem(&1, 0)) == ["upties|up_1|", "fusions|fu_1|", "fusions|fu_3|", "lists|kp_1|K1", "lists|kp_1|Gone"]
+
+      included = GiftPlans.add_entry(plan, "ms_shop", ref("milestones", "ms_late"))
+      assert GiftPlans.move_entry(included, "ms_shop", "milestones|ms_late|", "A", []) == included
+      assert GiftPlans.move_entry(plan, "ms_shop", "fusions|fu_gone|", nil, []) == plan
+    end
+
+    test "included milestones count as required and their entries are worked first" do
+      plan =
+        milestone_plan()
+        |> GiftPlans.add_entry("ms_late", ref("milestones", "ms_shop"))
+        |> GiftPlans.add_entry("ms_late", ref("fusions", "fu_2"))
+        |> put_in(["milestones", Access.at(1), "condition"], nil)
+
+      assert Enum.map(GiftPlans.work_entries(plan, "ms_late"), &GiftPlans.entry_key(&1.ref)) ==
+               ["fusions|fu_1|", "upties|up_1|", "fusions|fu_3|", "lists|kp_1|K1", "fusions|fu_2|"]
+
+      refute reached?(plan, "ms_late", env(["Top", "A", "Other"]))
+      assert reached?(plan, "ms_late", env(["Top", "A", "K1", "Other"]))
+      assert GiftPlans.milestone_cycle?(plan, "ms_shop", "ms_late")
+    end
+
+    test "entries stop being needed once done, or once their group has enough done or partway" do
+      plan = GiftPlans.set_entry_group(milestone_plan(), "ms_shop", ref("upties", "up_1"), "new")
+      plan = GiftPlans.set_entry_group(plan, "ms_shop", ref("lists", "kp_1", "K1"), "A")
+      needed = fn env -> plan |> GiftPlans.work_entries("ms_shop") |> Enum.filter(&GiftPlans.entry_needed?(plan, &1, %{env | plan: plan})) |> Enum.map(&GiftPlans.entry_key(&1.ref)) end
+
+      assert needed.(%{env(["Top"]) | inventory: %{}}) == ["upties|up_1|", "lists|kp_1|K1"]
+      assert needed.(env(["Top"], 0)) == ["upties|up_1|"]
+      assert needed.(env(["Top", "K1"], 1)) == ["upties|up_1|"]
+      assert needed.(env(["Top", "K1"], 2)) == []
+      assert needed.(%{env(["Top", "K1"]) | inventory: %{}}) == []
+    end
+
+    test "a partway uptie or fixed fusion holds its group open until it finishes" do
+      plan =
+        milestone_plan()
+        |> put_in(["library", "fusions", Access.at(1)], %{"id" => "fu_2", "name" => "Make Other", "type" => "fixed", "target" => "Other"})
+        |> GiftPlans.add_entry("ms_shop", ref("fusions", "fu_2"))
+        |> GiftPlans.set_entry_group("ms_shop", ref("upties", "up_1"), "new")
+        |> GiftPlans.set_entry_group("ms_shop", ref("lists", "kp_1", "K1"), "A")
+        |> GiftPlans.set_entry_group("ms_shop", ref("fusions", "fu_2"), "A")
+
+      gifts = %{"Other" => %{name: "Other", ingredients: "g_ing1,g_ing2"}}
+      entry = fn plan, key -> Enum.find(GiftPlans.work_entries(plan, "ms_shop"), &(GiftPlans.entry_key(&1.ref) == key)) end
+      base = Map.put(%{env(["Top", "K1"]) | plan: plan, inventory: %{}}, :gifts, gifts)
+
+      assert reached?(plan, "ms_shop", base)
+      assert GiftPlans.entry_status(plan, entry.(plan, "fusions|fu_2|"), base) == :open
+      assert GiftPlans.entry_status(plan, entry.(plan, "fusions|fu_2|"), %{base | inventory: %{"g_ing1" => %{name: "Ing", uptie: 0}}}) == :partial
+      refute reached?(plan, "ms_shop", %{base | inventory: %{"g_ing1" => %{name: "Ing", uptie: 0}}})
+      refute reached?(plan, "ms_shop", %{base | inventory: %{1 => %{name: "A", uptie: 1}}})
+      assert reached?(plan, "ms_shop", %{base | inventory: %{1 => %{name: "A", uptie: 2}}})
+      assert GiftPlans.entry_status(plan, entry.(plan, "fusions|fu_2|"), Map.delete(%{base | inventory: %{"g_ing1" => %{name: "Ing", uptie: 0}}}, :gifts)) == :open
+    end
+
+    test "optional entries never hold a milestone back and are never needed" do
+      plan = GiftPlans.set_entry_group(milestone_plan(), "ms_shop", ref("lists", "kp_1", "K1"), "optional")
+      [k1] = Enum.filter(GiftPlans.milestone_entries(plan, "ms_shop"), &(&1.gift == "K1"))
+
+      assert k1.optional and is_nil(k1.group)
+      assert GiftPlans.assignments(plan, ref("lists", "kp_1", "K1")) == %{"ms_shop" => "optional"}
+      assert reached?(plan, "ms_shop", env(["Top", "A"]))
+      refute GiftPlans.entry_needed?(plan, k1, %{env(["Top", "A"]) | plan: plan})
+
+      grouped = GiftPlans.move_entry(plan, "ms_shop", "lists|kp_1|K1", nil, [])
+      assert GiftPlans.set_entry_group(plan, "ms_shop", ref("lists", "kp_1", "K1"), nil) |> GiftPlans.milestone_entries("ms_shop") |> Enum.all?(&(not &1.optional))
+      assert grouped |> GiftPlans.milestone_entries("ms_shop") |> Enum.all?(&(not &1.optional))
+
+      included = GiftPlans.add_entry(plan, "ms_shop", ref("milestones", "ms_late"))
+      assert GiftPlans.set_entry_group(included, "ms_shop", ref("milestones", "ms_late"), "optional") == included
+    end
+
+    test "tier and affinity list entries join milestones as optional only and are never protected by them" do
+      plan = put_in(milestone_plan(), ["library", "lists", Access.at(0), "gifts"], ["K1", "K2", "tier:3", "affinity:burn:2"])
+      tier_ref = ref("lists", "kp_1", "tier:3")
+      plan = plan |> GiftPlans.add_entry("ms_shop", tier_ref) |> GiftPlans.add_entry("ms_shop", ref("lists", "kp_1", "affinity:burn:2"))
+
+      assert [true, true] = for(e <- GiftPlans.milestone_entries(plan, "ms_shop"), GiftPlans.pattern_ref?(e.ref), do: e.optional)
+      assert GiftPlans.set_entry_group(plan, "ms_shop", tier_ref, nil) == plan
+      assert GiftPlans.set_entry_group(plan, "ms_shop", tier_ref, "new") == plan
+      assert GiftPlans.move_entry(GiftPlans.set_entry_group(plan, "ms_shop", ref("fusions", "fu_1"), "new"), "ms_shop", "lists|kp_1|tier:3", "A", []) ==
+               GiftPlans.set_entry_group(plan, "ms_shop", ref("fusions", "fu_1"), "new")
+      assert reached?(plan, "ms_shop", env(["Top", "A", "K1"]))
+
+      workflow = %{"id" => "wf_m", "keep" => nil, "steps" => [%{"id" => "st_m", "kind" => "milestone", "milestone" => "ms_shop", "enabled" => true}]}
+      assert GiftPlans.protected_set(Map.merge(plan(), plan), workflow, []) == MapSet.new(["Top", "A", "K1"])
+    end
+
+    test "a cycle between milestones evaluates false and is flagged" do
+      plan = put_in(milestone_plan(), ["milestones", Access.at(0), "condition"], %{"op" => "milestone", "milestone" => "ms_late"})
+
+      assert GiftPlans.milestone_cycle?(plan, "ms_shop", "ms_late")
+      assert GiftPlans.milestone_cycle?(milestone_plan(), "ms_shop", "ms_shop")
+      refute GiftPlans.milestone_cycle?(milestone_plan(), "ms_late", "ms_shop")
+      refute reached?(plan, "ms_shop", env(["Top", "A", "K1"]))
+      assert Enum.any?(GiftPlans.issues(Map.merge(plan(), plan)), &(&1 =~ "Milestone Shop Done: depends on Late"))
+    end
+
+    test "removing a milestone or a referenced thing drops its entries" do
+      plan = GiftPlans.add_entry(milestone_plan(), "ms_late", ref("milestones", "ms_shop"))
+      data = GiftPlans.remove_milestone(plan, "ms_shop")
+      assert Enum.map(data["milestones"], & &1["id"]) == ["ms_late"]
+      assert Enum.map(hd(data["milestones"])["blocks"], &GiftPlans.block_key/1) == ["upties|up_1|"]
+
+      data = GiftPlans.drop_refs_everywhere(plan, &(&1["lib"] == "upties"))
+      assert GiftPlans.assignments(data, ref("upties", "up_1")) == %{}
+      assert GiftPlans.assignments(plan, ref("upties", "up_1")) == %{"ms_shop" => nil, "ms_late" => nil}
+    end
+
+    test "a Work on Milestone step protects everything the milestone works on" do
+      plan = Map.merge(plan(), milestone_plan())
+      workflow = %{"id" => "wf_m", "keep" => nil, "steps" => [%{"id" => "st_m", "kind" => "milestone", "milestone" => "ms_shop", "enabled" => true}]}
+
+      assert GiftPlans.protected_set(plan, workflow, []) == MapSet.new(["Top", "A", "K1"])
+      assert GiftPlans.step_label(plan, hd(workflow["steps"])) == "Work on Milestone · Shop Done"
+      assert GiftPlans.definition_for(plan, %{"kind" => "milestone", "milestone" => "ms_gone"}) == {:error, :missing_definition}
+    end
+
+    test "new plans start with Shop Done, and older plans get it on normalize" do
+      assert [%{"name" => "Shop Done", "condition" => nil, "blocks" => []}] = GiftPlans.blank()["milestones"]
+      assert [%{"name" => "Shop Done"}] = GiftPlans.normalize(Map.delete(GiftPlans.blank(), "milestones"))["milestones"]
+      assert GiftPlans.normalize(%{GiftPlans.blank() | "milestones" => []})["milestones"] == []
+    end
+  end
+
+  test "refresh count conditions read the shop's refreshes, counting none when unknown" do
+    under = %{"op" => "refreshes_lt", "value" => 2}
+    at_least = %{"op" => "refreshes_gte", "value" => 2}
+
+    assert GiftPlans.eval_condition(under, %{refreshes: 1})
+    refute GiftPlans.eval_condition(under, %{refreshes: 2})
+    assert GiftPlans.eval_condition(at_least, %{refreshes: 2})
+    assert GiftPlans.eval_condition(under, %{})
+    assert GiftPlans.condition_label(under) == "refreshes < 2"
+    assert GiftPlans.condition_label(at_least) == "refreshes >= 2"
+  end
+
   test "prune_condition/1 drops empty groups and collapses an empty root to nil" do
     assert GiftPlans.prune_condition(%{"op" => "and", "children" => []}) == nil
 

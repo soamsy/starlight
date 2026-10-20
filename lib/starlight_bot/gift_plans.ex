@@ -74,7 +74,8 @@ defmodule StarlightBot.GiftPlans do
       "gift_search" => [],
       "library" => %{"lists" => [keep], "upties" => [], "fusions" => []},
       "workflows" => [workflow],
-      "floor_schedule" => [%{"from_floor" => 1, "workflow" => workflow["id"]}]
+      "floor_schedule" => [%{"from_floor" => 1, "workflow" => workflow["id"]}],
+      "milestones" => [new_milestone("Shop Done")]
     }
   end
 
@@ -89,7 +90,8 @@ defmodule StarlightBot.GiftPlans do
       "gift_search" => data["gift_search"] || [],
       "library" => Map.new(@library_keys, &{&1, library[&1] || []}),
       "workflows" => data["workflows"] || [],
-      "floor_schedule" => data["floor_schedule"] || []
+      "floor_schedule" => data["floor_schedule"] || [],
+      "milestones" => data["milestones"] || [new_milestone("Shop Done")]
     }
   end
 
@@ -99,8 +101,324 @@ defmodule StarlightBot.GiftPlans do
     prefix <> "_" <> Base.encode32(:crypto.strong_rand_bytes(4), case: :lower, padding: false)
   end
 
-  def new_definition("keep_lists", name), do: %{"id" => new_id("kp"), "name" => name, "gifts" => []}
-  def new_definition("shopping_lists", name), do: %{"id" => new_id("sl"), "name" => name, "gifts" => []}
+  def new_milestone(name), do: %{"id" => new_id("ms"), "name" => name, "condition" => nil, "blocks" => []}
+
+  def find_milestone(data, id), do: Enum.find(data["milestones"] || [], &(&1["id"] == id))
+
+  def entry_ref(lib, id, gift \\ nil)
+  def entry_ref("lists", id, gift), do: %{"lib" => "lists", "id" => id, "gift" => gift}
+  def entry_ref(lib, id, _gift), do: %{"lib" => lib, "id" => id}
+
+  def entry_key(ref), do: Enum.join([ref["lib"], ref["id"], ref["gift"] || ""], "|")
+
+  def block_key(%{"type" => "group", "letter" => letter}), do: "group:" <> letter
+  def block_key(%{"ref" => ref}), do: entry_key(ref)
+
+  def block_refs(%{"type" => "group", "refs" => refs}), do: refs
+  def block_refs(%{"ref" => ref}), do: [ref]
+
+  def milestone_refs(milestone), do: Enum.flat_map(milestone["blocks"] || [], &block_refs/1)
+
+  def milestone_entries(data, id) do
+    case find_milestone(data, id) do
+      nil ->
+        []
+
+      milestone ->
+        for block <- milestone["blocks"] || [],
+            ref <- block_refs(block),
+            definition = resolve_ref(data, ref),
+            do: %{
+              lib: ref["lib"],
+              definition: definition,
+              gift: ref["gift"],
+              group: if(block["type"] == "group", do: block["letter"]),
+              optional: block["optional"] == true,
+              ref: ref,
+              milestone: id
+            }
+    end
+  end
+
+  defp resolve_ref(data, %{"lib" => "milestones", "id" => id}), do: find_milestone(data, id)
+
+  defp resolve_ref(data, %{"lib" => "lists", "id" => id, "gift" => gift}) do
+    case find_definition(data, "lists", id) do
+      %{"gifts" => gifts} = list -> if gift in gifts, do: list
+      nil -> nil
+    end
+  end
+
+  defp resolve_ref(data, %{"lib" => lib, "id" => id}), do: find_definition(data, lib, id)
+
+  def assignments(data, ref) do
+    key = entry_key(ref)
+
+    for milestone <- data["milestones"] || [], block <- milestone["blocks"] || [], Enum.any?(block_refs(block), &(entry_key(&1) == key)), into: %{} do
+      {milestone["id"], block_placement(block)}
+    end
+  end
+
+  defp block_placement(%{"type" => "group", "letter" => letter}), do: letter
+  defp block_placement(%{"optional" => true}), do: "optional"
+  defp block_placement(_block), do: nil
+
+  def group_letters(milestone), do: for(%{"type" => "group", "letter" => letter} <- milestone["blocks"] || [], do: letter)
+
+  def next_group_letter(milestone) do
+    used = group_letters(milestone)
+    Enum.find(Enum.map(?A..?Z, &<<&1>>), &(&1 not in used))
+  end
+
+  def group_min(milestone, letter) do
+    case Enum.find(milestone["blocks"] || [], &(&1["type"] == "group" and &1["letter"] == letter)) do
+      %{"min" => min} when is_integer(min) -> min
+      _ -> 1
+    end
+  end
+
+  def update_milestone(data, id, fun) do
+    Map.update!(data, "milestones", fn milestones -> Enum.map(milestones, &if(&1["id"] == id, do: fun.(&1), else: &1)) end)
+  end
+
+  def add_entry(data, id, ref) do
+    block = if pattern_ref?(ref), do: %{"type" => "entry", "ref" => ref, "optional" => true}, else: %{"type" => "entry", "ref" => ref}
+
+    update_milestone(data, id, fn milestone ->
+      if Enum.any?(milestone_refs(milestone), &(entry_key(&1) == entry_key(ref))),
+        do: milestone,
+        else: Map.put(milestone, "blocks", (milestone["blocks"] || []) ++ [block])
+    end)
+  end
+
+  def pattern_ref?(%{"lib" => "lists", "gift" => gift}) when is_binary(gift), do: pattern_entry?(gift)
+  def pattern_ref?(_ref), do: false
+
+  def fixed_placement?(ref), do: ref["lib"] == "milestones" or pattern_ref?(ref)
+
+  def remove_entry(data, id, ref), do: update_milestone(data, id, &drop_refs(&1, fn other -> entry_key(other) == entry_key(ref) end))
+
+  def drop_refs_everywhere(data, drop?) do
+    Map.update!(data, "milestones", fn milestones -> Enum.map(milestones, &drop_refs(&1, drop?)) end)
+  end
+
+  defp drop_refs(milestone, drop?) do
+    blocks =
+      Enum.flat_map(milestone["blocks"] || [], fn
+        %{"type" => "group", "refs" => refs} = group ->
+          case Enum.reject(refs, drop?) do
+            [] -> []
+            kept -> [%{group | "refs" => kept}]
+          end
+
+        %{"ref" => ref} = block ->
+          if drop?.(ref), do: [], else: [block]
+      end)
+
+    Map.put(milestone, "blocks", blocks)
+  end
+
+  def set_entry_group(data, id, ref, group) do
+    key = entry_key(ref)
+
+    update_milestone(data, id, fn milestone ->
+      blocks = milestone["blocks"] || []
+      index = Enum.find_index(blocks, fn block -> Enum.any?(block_refs(block), &(entry_key(&1) == key)) end)
+      current = index && block_placement(Enum.at(blocks, index))
+      letter = if group == "new", do: next_group_letter(milestone), else: group
+
+      if is_nil(index) or letter == current or (group == "new" and is_nil(letter)) or (ref["lib"] == "milestones" and letter != nil) or
+           (pattern_ref?(ref) and letter != "optional") do
+        milestone
+      else
+        stripped = drop_refs(milestone, &(entry_key(&1) == key))["blocks"]
+        slot = if length(stripped) == length(blocks), do: index + 1, else: index
+
+        blocks =
+          cond do
+            is_nil(letter) -> List.insert_at(stripped, slot, %{"type" => "entry", "ref" => ref})
+            letter == "optional" -> List.insert_at(stripped, slot, %{"type" => "entry", "ref" => ref, "optional" => true})
+            letter in group_letters(%{"blocks" => stripped}) -> Enum.map(stripped, &if(&1["letter"] == letter, do: Map.update!(&1, "refs", fn refs -> refs ++ [ref] end), else: &1))
+            true -> List.insert_at(stripped, slot, %{"type" => "group", "letter" => letter, "min" => 1, "refs" => [ref]})
+          end
+
+        Map.put(milestone, "blocks", blocks)
+      end
+    end)
+  end
+
+  def move_entry(data, id, key, letter, keys) do
+    case find_milestone(data, id) && Enum.find(milestone_refs(find_milestone(data, id)), &(entry_key(&1) == key)) do
+      nil ->
+        data
+
+      ref ->
+        if is_binary(letter) and fixed_placement?(ref) do
+          data
+        else
+          data
+          |> update_milestone(id, fn milestone ->
+            stripped = drop_refs(milestone, &(entry_key(&1) == key))
+
+            blocks =
+              if letter in group_letters(stripped),
+                do: Enum.map(stripped["blocks"], &if(&1["letter"] == letter, do: Map.update!(&1, "refs", fn refs -> refs ++ [ref] end), else: &1)),
+                else: stripped["blocks"] ++ [%{"type" => "entry", "ref" => ref}]
+
+            Map.put(stripped, "blocks", blocks)
+          end)
+          |> then(&if(letter, do: reorder_group(&1, id, letter, keys), else: reorder_blocks(&1, id, keys)))
+        end
+    end
+  end
+
+  def set_group_min(data, id, letter, min) do
+    update_milestone(data, id, fn milestone ->
+      Map.update(milestone, "blocks", [], fn blocks ->
+        Enum.map(blocks, &if(&1["type"] == "group" and &1["letter"] == letter, do: Map.put(&1, "min", max(min, 1)), else: &1))
+      end)
+    end)
+  end
+
+  def reorder_blocks(data, id, keys) do
+    update_milestone(data, id, fn milestone -> Map.update(milestone, "blocks", [], &reorder_by_keys(&1, keys, fn block -> block_key(block) end)) end)
+  end
+
+  def reorder_group(data, id, letter, keys) do
+    update_milestone(data, id, fn milestone ->
+      Map.update(milestone, "blocks", [], fn blocks ->
+        Enum.map(blocks, &if(&1["type"] == "group" and &1["letter"] == letter, do: Map.update!(&1, "refs", fn refs -> reorder_by_keys(refs, keys, fn ref -> entry_key(ref) end) end), else: &1))
+      end)
+    end)
+  end
+
+  defp reorder_by_keys(items, keys, key_fun) do
+    by_key = Map.new(items, &{key_fun.(&1), &1})
+    ordered = keys |> Enum.map(&by_key[&1]) |> Enum.reject(&is_nil/1)
+    ordered ++ Enum.reject(items, &(&1 in ordered))
+  end
+
+  def remove_milestone(data, id) do
+    data
+    |> Map.update!("milestones", fn milestones -> Enum.reject(milestones, &(&1["id"] == id)) end)
+    |> drop_refs_everywhere(&(&1["lib"] == "milestones" and &1["id"] == id))
+  end
+
+  defp entry_configured?(%{lib: "fusions", definition: definition}), do: is_binary(definition["target"])
+  defp entry_configured?(%{lib: "upties", definition: definition}), do: is_binary(definition["gift"])
+  defp entry_configured?(_entry), do: true
+
+  def entry_status(data, %{lib: "milestones", definition: milestone}, env), do: if(milestone_reached?(data, milestone["id"], env), do: :done, else: :open)
+
+  def entry_status(_data, %{lib: "fusions", definition: definition}, env) do
+    cond do
+      fusion_done?(definition, Map.get(env, :owned, MapSet.new())) -> :done
+      fixed_fusion?(definition) and ingredient_owned?(definition, env) -> :partial
+      true -> :open
+    end
+  end
+
+  def entry_status(_data, %{lib: "upties", definition: definition}, env) do
+    inventory = Map.get(env, :inventory, %{})
+
+    cond do
+      uptie_done?(definition, inventory) -> :done
+      Enum.any?(inventory, fn {_id, entry} -> entry.name == definition["gift"] end) -> :partial
+      true -> :open
+    end
+  end
+
+  def entry_status(_data, %{lib: "lists", gift: gift}, env), do: if(MapSet.member?(Map.get(env, :owned, MapSet.new()), gift), do: :done, else: :open)
+
+  defp ingredient_owned?(definition, env) do
+    case Map.get(env, :gifts, %{})[definition["target"]] do
+      nil -> false
+      target -> Enum.any?(ingredient_ids(target), &Map.has_key?(Map.get(env, :inventory, %{}), &1))
+    end
+  end
+
+  def entry_needed?(_data, %{optional: true}, _env), do: false
+
+  def entry_needed?(data, entry, env) do
+    entry_configured?(entry) and
+      case entry_status(data, entry, env) do
+        :done -> false
+        :partial -> true
+        :open -> is_nil(entry.group) or group_committed(data, entry.milestone, entry.group, env) < group_min(find_milestone(data, entry.milestone), entry.group)
+      end
+  end
+
+  defp group_committed(data, id, letter, env) do
+    data
+    |> milestone_entries(id)
+    |> Enum.filter(&(&1.group == letter and entry_configured?(&1)))
+    |> Enum.count(&(entry_status(data, &1, env) != :open))
+  end
+
+  defp group_ok?(entries, milestone, letter, data, env) do
+    statuses = entries |> Enum.filter(&entry_configured?/1) |> Enum.map(&entry_status(data, &1, env))
+    :partial not in statuses and Enum.count(statuses, &(&1 == :done)) >= group_min(milestone, letter)
+  end
+
+  def work_entries(data, id), do: data |> collect_work(id, []) |> Enum.uniq_by(&entry_key(&1.ref))
+
+  defp collect_work(data, id, stack) do
+    if id in stack do
+      []
+    else
+      entries = milestone_entries(data, id)
+      {subs, own} = Enum.split_with(entries, &(&1.lib == "milestones"))
+      Enum.flat_map(subs, &collect_work(data, &1.definition["id"], [id | stack])) ++ own
+    end
+  end
+
+  def called_milestones(milestone) do
+    conditions = for %{"op" => "milestone", "milestone" => id} <- Conditions.leaves(milestone["condition"]), is_binary(id), do: id
+    included = for %{"lib" => "milestones", "id" => id} <- milestone_refs(milestone), do: id
+    Enum.uniq(conditions ++ included)
+  end
+
+  def reachable_milestones(data, id), do: reach_milestones(data, called_milestones(find_milestone(data, id) || %{}), MapSet.new())
+
+  defp reach_milestones(_data, [], seen), do: seen
+
+  defp reach_milestones(data, [id | rest], seen) do
+    if MapSet.member?(seen, id) do
+      reach_milestones(data, rest, seen)
+    else
+      next = called_milestones(find_milestone(data, id) || %{})
+      reach_milestones(data, next ++ rest, MapSet.put(seen, id))
+    end
+  end
+
+  def milestone_cycle?(data, host_id, child_id), do: child_id == host_id or MapSet.member?(reachable_milestones(data, child_id), host_id)
+
+  def milestone_reached?(data, id, env) do
+    stack = Map.get(env, :milestone_stack, [])
+
+    case find_milestone(data, id) do
+      nil ->
+        false
+
+      milestone ->
+        if id in stack do
+          false
+        else
+          env = Map.put(env, :milestone_stack, [id | stack])
+
+          data
+          |> milestone_entries(id)
+          |> Enum.reject(& &1.optional)
+          |> Enum.group_by(& &1.group)
+          |> Enum.all?(fn
+            {nil, entries} -> entries |> Enum.filter(&entry_configured?/1) |> Enum.all?(&(entry_status(data, &1, env) == :done))
+            {letter, entries} -> group_ok?(entries, milestone, letter, data, env)
+          end) and eval_condition(milestone["condition"], env)
+        end
+    end
+  end
+
+  def new_definition("lists", name), do: %{"id" => new_id("ls"), "name" => name, "gifts" => []}
 
   def new_definition("upties", name) do
     %{"id" => new_id("up"), "name" => name, "gift" => nil, "target_level" => 2}
@@ -119,6 +437,15 @@ defmodule StarlightBot.GiftPlans do
   def new_step(kind, data) when kind in @step_kinds do
     %{"id" => new_id("st"), "kind" => kind, "enabled" => true, "condition" => nil}
     |> Map.merge(step_defaults(kind, data))
+  end
+
+  defp step_defaults("if", _data), do: %{"condition" => Conditions.add(nil, "", %{"op" => "cost_gte", "value" => 0}), "then" => [], "else" => []}
+
+  defp step_defaults("milestone", data) do
+    case data["milestones"] do
+      [%{"id" => id} | _] -> %{"milestone" => id}
+      _ -> %{"milestone" => nil}
+    end
   end
 
   defp step_defaults("uptie", data), do: %{"upties" => List.wrap(first_id(data, "upties")), "max_gifts" => 1}
@@ -188,6 +515,16 @@ defmodule StarlightBot.GiftPlans do
       workflow -> {:ok, workflow}
     end
   end
+
+  def definition_for(data, %{"kind" => "milestone"} = step) do
+    case find_milestone(data, step["milestone"]) do
+      nil -> {:error, :missing_definition}
+      milestone -> {:ok, milestone}
+    end
+  end
+
+  def definition_for(data, %{"kind" => "sell", "list" => id}) when is_binary(id), do: resolve_refs(data, "lists", id)
+  def definition_for(_data, %{"kind" => "sell"}), do: {:ok, nil}
 
   def definition_for(data, %{"kind" => kind} = step) do
     case library_ref(kind) do
@@ -376,6 +713,16 @@ defmodule StarlightBot.GiftPlans do
     for id <- step["upties"] || [], definition = find_definition(data, "upties", id), do: definition["gift"]
   end
 
+  defp step_protected(%{"kind" => "milestone", "milestone" => id}, data, by_name, by_id) when is_binary(id) do
+    data
+    |> work_entries(id)
+    |> Enum.flat_map(fn
+      %{lib: "fusions", definition: definition} -> fusion_protected(definition, data, by_name, by_id, [])
+      %{lib: "upties", definition: definition} -> [definition["gift"]]
+      %{lib: "lists", gift: gift} -> if(pattern_entry?(gift), do: [], else: [gift])
+    end)
+  end
+
   defp step_protected(_step, _data, _by_name, _by_id), do: []
 
   defp fusion_protected(%{"type" => "fixed"} = definition, data, by_name, by_id, seen) do
@@ -519,6 +866,7 @@ defmodule StarlightBot.GiftPlans do
   defp eval_leaf(%{"op" => "upties_complete"}, %{plan: plan, inventory: inventory}), do: upties_complete?(plan, inventory)
   defp eval_leaf(%{"op" => "fusion_done"} = leaf, %{plan: plan, owned: owned}), do: fusion_done?(find_definition(plan, "fusions", leaf["fusion"]), owned)
   defp eval_leaf(%{"op" => "uptie_done"} = leaf, %{plan: plan, inventory: inventory}), do: uptie_done?(find_definition(plan, "upties", leaf["uptie"]), inventory)
+  defp eval_leaf(%{"op" => "milestone"} = leaf, %{plan: plan} = env), do: milestone_reached?(plan, leaf["milestone"], env)
 
   def fusions_complete?(data, owned) do
     fusions = data["library"]["fusions"]
@@ -558,6 +906,17 @@ defmodule StarlightBot.GiftPlans do
   defp leaf_label(%{"op" => "upties_complete"}, _data), do: "all upties complete"
   defp leaf_label(%{"op" => "fusion_done"} = leaf, data), do: "fusion #{definition_name(data, "fusions", leaf["fusion"])} done"
   defp leaf_label(%{"op" => "uptie_done"} = leaf, data), do: "uptie #{definition_name(data, "upties", leaf["uptie"])} done"
+  defp leaf_label(%{"op" => "milestone"} = leaf, data), do: "milestone #{milestone_name(data, leaf["milestone"])} reached"
+
+  defp milestone_name(_data, nil), do: "(none picked)"
+  defp milestone_name(nil, id), do: id
+
+  defp milestone_name(data, id) do
+    case find_milestone(data, id) do
+      nil -> "(deleted)"
+      milestone -> milestone["name"]
+    end
+  end
 
   defp definition_name(_data, _lib, nil), do: "(none picked)"
   defp definition_name(nil, _lib, id), do: id
@@ -569,6 +928,8 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
+  def kind_label("if"), do: "If"
+  def kind_label("milestone"), do: "Work on Milestone"
   def kind_label("uptie"), do: "Uptie"
   def kind_label("fusion"), do: "Fusion"
   def kind_label("buy_list"), do: "Buy from list"
@@ -595,6 +956,13 @@ defmodule StarlightBot.GiftPlans do
     case definition_for(data, step) do
       {:ok, workflow} -> workflow["name"]
       _ -> if step["workflow"], do: "(missing workflow)", else: "(no workflow)"
+    end
+  end
+
+  defp step_subject(data, %{"kind" => "milestone"} = step) do
+    case definition_for(data, step) do
+      {:ok, milestone} -> milestone["name"]
+      _ -> if step["milestone"], do: "(missing milestone)", else: "(no milestone)"
     end
   end
 
@@ -626,7 +994,25 @@ defmodule StarlightBot.GiftPlans do
     schedule_issues(data) ++
       gift_search_issues(data, gifts_by_name) ++
       Enum.flat_map(data["workflows"], &workflow_issues(data, &1)) ++
-      Enum.flat_map(data["library"]["fusions"], &fusion_issues(data, &1, gifts_by_name))
+      Enum.flat_map(data["library"]["fusions"], &fusion_issues(data, &1, gifts_by_name)) ++
+      Enum.flat_map(data["milestones"] || [], &milestone_issues(data, &1))
+  end
+
+  defp milestone_issues(data, milestone) do
+    refs =
+      for id <- called_milestones(milestone) do
+        case find_milestone(data, id) do
+          nil -> "Milestone #{milestone["name"]}: uses a deleted milestone."
+          other -> if milestone_cycle?(data, milestone["id"], id), do: "Milestone #{milestone["name"]}: depends on #{other["name"]}, which leads back to it."
+        end
+      end
+
+    groups =
+      for %{"type" => "group", "letter" => letter, "refs" => refs} <- milestone["blocks"] || [], group_min(milestone, letter) > length(refs) do
+        "Milestone #{milestone["name"]}: group #{letter} needs #{group_min(milestone, letter)} but only has #{length(refs)}."
+      end
+
+    Enum.reject(refs, &is_nil/1) ++ groups
   end
 
   defp fusion_issues(data, %{"type" => "fixed"} = fusion, gifts_by_name) do

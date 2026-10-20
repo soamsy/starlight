@@ -412,299 +412,361 @@
                       No other workflow can run here without leading back to this one.
                     </span>
                   </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-xs font-semibold text-base-content/70"><%= GiftPlans.kind_label("milestone") %></span>
+                    <button :for={m <- @plan_data["milestones"]} phx-click="add_step" phx-value-kind="milestone" phx-value-ref={m["id"]}
+                            disabled={is_nil(workflow)} class="btn btn-outline btn-xs justify-start truncate">+ <%= m["name"] %></button>
+                    <span :if={@plan_data["milestones"] == []} class="text-[11px] text-base-content/40 italic">None. Define one in the Shop tab.</span>
+                  </div>
                   <div :for={{lib, kind} <- library_kinds()} class="flex flex-col gap-1">
                     <span class="text-xs font-semibold text-base-content/70"><%= GiftPlans.kind_label(kind) %></span>
                     <button :for={d <- @plan_data["library"][lib]} phx-click="add_step" phx-value-kind={kind} phx-value-ref={d["id"]}
                             disabled={is_nil(workflow)} class="btn btn-outline btn-xs justify-start truncate">+ <%= d["name"] %></button>
                     <span :if={@plan_data["library"][lib] == []} class="text-[11px] text-base-content/40 italic">
-                      None. Define one in the <%= tab_label(String.to_existing_atom(lib)) %> tab.
+                      None. Define one in the Shop tab.
                     </span>
                   </div>
                 </div>
               </div>
             <% end %>
 
-            <%= if @active_tab == :upties do %>
-              <div class="grid grid-cols-[14rem_1fr] gap-3 flex-1 min-h-0">
-                <.library_list lib="upties" defs={@plan_data["library"]["upties"]} selected_id={@selected_def["upties"]} />
-                <div class="flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
-                  <%= if d = selected_definition(assigns, "upties") do %>
-                    <form phx-change="lib_update" class="flex items-end gap-2 flex-wrap">
-                      <input type="hidden" name="lib" value="upties" />
-                      <input type="hidden" name="def_id" value={d["id"]} />
-                      <label class="flex flex-col gap-0.5">
-                        <span class="text-[11px] text-base-content/60">Name</span>
-                        <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
-                      </label>
-                      <label class="flex flex-col gap-0.5">
-                        <span class="text-[11px] text-base-content/60">Target</span>
-                        <select name="def[target_level]" class="select select-bordered select-xs">
-                          <option value="2" selected={d["target_level"] == 2}>+2</option>
-                          <option value="1" selected={d["target_level"] == 1}>+1</option>
-                        </select>
-                      </label>
-                    </form>
-                    <%= if gift = d["gift"] && @gifts_by_name[d["gift"]] do %>
-                      <div class="flex items-center gap-2">
-                        <img src={gift.image_path} class="w-10 h-10 rounded object-cover" />
-                        <div class="flex flex-col">
-                          <span class="text-sm font-semibold"><%= gift.name %></span>
-                          <span class="text-[11px] text-base-content/60">Tier <%= gift.tier %> · <%= uptie_cost_hint(gift, d) %> (estimates)</span>
-                        </div>
-                      </div>
-                    <% else %>
-                      <div class="text-xs text-base-content/50">Pick the gift to uptie in the browser below.</div>
-                    <% end %>
-                    <span class="text-[11px] text-base-content/50">
-                      Upties this gift to +<%= d["target_level"] %> in one go. If the full cost can't be paid, the uptie step stops here instead of upgrading partway.
-                    </span>
-                    <div class="divider my-0"></div>
-                    <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
-                                  gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
-                                  selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
-                      <:form :let={gift}>
-                        <button phx-click="set_uptie_gift" phx-value-id={d["id"]} phx-value-gift={gift.name}
-                                class={"btn btn-sm " <> if(gift.name == d["gift"], do: "btn-primary", else: "btn-outline")}>
-                          <%= if gift.name == d["gift"], do: "Uptie target", else: "Uptie this gift" %>
-                        </button>
-                      </:form>
-                    </.gift_browser>
-                  <% else %>
-                    <div class="text-xs text-base-content/40 italic">Create an uptie definition to edit it here.</div>
-                  <% end %>
+            <%= if @active_tab == :shop do %>
+              <div class="grid grid-cols-[16rem_1fr] gap-3 flex-1 min-h-0">
+                <div class="flex flex-col gap-4 overflow-y-auto min-h-0 pr-1">
+                  <div class="flex flex-col gap-1">
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs font-semibold text-base-content/70">Milestones</span>
+                      <button phx-click="add_milestone" class="btn btn-primary btn-xs ml-auto">+ New</button>
+                    </div>
+                    <div :for={m <- @plan_data["milestones"]}
+                         phx-click="select_milestone" phx-value-id={m["id"]}
+                         class={"flex items-center gap-1 rounded px-2 py-1 cursor-pointer text-xs " <>
+                           if(@shop_lib == "milestones" && m["id"] == @selected_milestone_id, do: "bg-primary/10 border-l-2 border-primary", else: "hover:bg-base-200")}>
+                      <span class="flex-1 truncate"><%= m["name"] %></span>
+                      <button phx-click="move_milestone" phx-value-id={m["id"]} phx-value-dir="up" class="btn btn-ghost btn-2xs px-1">↑</button>
+                      <button phx-click="move_milestone" phx-value-id={m["id"]} phx-value-dir="down" class="btn btn-ghost btn-2xs px-1">↓</button>
+                      <button phx-click="delete_milestone" phx-value-id={m["id"]} data-confirm={"Delete milestone '#{m["name"]}'?"}
+                              class="btn btn-ghost btn-2xs text-error">✕</button>
+                    </div>
+                    <div :if={@plan_data["milestones"] == []} class="text-[11px] text-base-content/40 italic">None yet.</div>
+                    <span class="text-[11px] text-base-content/50">New fusions and upties are assigned to the top milestone.</span>
+                  </div>
+                  <.library_list lib="fusions" defs={@plan_data["library"]["fusions"]} selected_id={@shop_lib == "fusions" && @selected_def["fusions"]} />
+                  <.library_list lib="upties" defs={@plan_data["library"]["upties"]} selected_id={@shop_lib == "upties" && @selected_def["upties"]} />
+                  <.library_list lib="lists" defs={@plan_data["library"]["lists"]} selected_id={@shop_lib == "lists" && @selected_def["lists"]} roles={&list_roles(@plan_data, &1)} />
                 </div>
-              </div>
-            <% end %>
-
-            <%= if @active_tab == :fusions do %>
-              <div class="grid grid-cols-[14rem_1fr] gap-3 flex-1 min-h-0">
-                <.library_list lib="fusions" defs={@plan_data["library"]["fusions"]} selected_id={@selected_def["fusions"]} />
                 <div class="flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
-                  <%= if d = selected_definition(assigns, "fusions") do %>
-                    <% target = d["target"] && @gifts_by_name[d["target"]] %>
-                    <% fixed = GiftPlans.fixed_fusion?(d) %>
-                    <form phx-change="lib_update" class="flex items-end gap-2">
-                      <input type="hidden" name="lib" value="fusions" />
-                      <input type="hidden" name="def_id" value={d["id"]} />
-                      <label class="flex flex-col gap-0.5">
-                        <span class="text-[11px] text-base-content/60">Name</span>
-                        <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
-                      </label>
-                      <label :if={fixed} class="flex items-center gap-1 cursor-pointer mb-1">
-                        <input type="hidden" name="def[buy_missing]" value="false" />
-                        <input type="checkbox" name="def[buy_missing]" value="true" checked={d["buy_missing"] != false} class="checkbox checkbox-xs" />
-                        <span class="text-xs">buy missing ingredients from the shelf</span>
-                      </label>
-                    </form>
-
-                    <%= if fixed do %>
-                      <%= if target do %>
-                        <div class="flex items-center gap-2">
-                          <img src={target.image_path} class="w-10 h-10 rounded object-cover" />
-                          <div class="flex flex-col">
-                            <span class="text-sm font-semibold"><%= target.name %></span>
-                            <span class="text-[11px] text-base-content/60">Tier <%= target.tier %> · fixed recipe · done once owned</span>
-                          </div>
-                        </div>
-                        <span class="text-[11px] text-base-content/60">
-                          Ingredients. A missing one is bought from the shelf first (if allowed above), otherwise fused with its sub-fusion.
-                          The target, every ingredient, and each sub-fusion's target are protected.
+                  <%= case @shop_lib do %>
+                    <% "milestones" -> %>
+                      <% milestone = selected_milestone(assigns) %>
+                      <%= if milestone do %>
+                        <% entries = Map.new(GiftPlans.milestone_entries(@plan_data, milestone["id"]), &{GiftPlans.entry_key(&1.ref), &1}) %>
+                        <% letters = GiftPlans.group_letters(milestone) %>
+                        <form phx-change="update_milestone" class="flex items-end gap-2">
+                          <input type="hidden" name="milestone_id" value={milestone["id"]} />
+                          <label class="flex flex-col gap-0.5">
+                            <span class="text-[11px] text-base-content/60">Name</span>
+                            <input type="text" name="name" value={milestone["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
+                          </label>
+                        </form>
+                        <span class="text-[11px] text-base-content/50">
+                          Reached once every required entry is done, each group has enough entries done and none partway, and the condition below holds.
+                          A fusion is done when its target is owned, an uptie when its gift is at the target level, a list gift when it's owned,
+                          an included milestone when it's reached. An uptie whose gift is owned below target, or a fixed fusion with an ingredient owned,
+                          is partway: it counts toward its group's total, and the group waits for it to finish.
+                          Optional entries never hold the milestone back; "Work on Milestone" tries them last in each pass when the chance is there. Add entries from the fusions, upties and item lists below in the sidebar. Drag to set priority for "Work on Milestone",
+                          and drag entries into or out of a group. Make a new group from an entry's dropdown.
                         </span>
+                        <div id={"milestone-blocks-#{milestone["id"]}"} phx-hook="SortableList" data-sort-event="reorder_milestone_blocks"
+                             data-sort-move-event="move_milestone_entry" data-sort-shared={"milestone-#{milestone["id"]}"}
+                             data-sort-scope={milestone["id"]} class="flex flex-col gap-1">
+                          <%= for block <- milestone["blocks"] || [] do %>
+                            <%= if block["type"] == "group" do %>
+                              <% members = Enum.flat_map(block["refs"], &List.wrap(entries[GiftPlans.entry_key(&1)])) %>
+                              <% need = GiftPlans.group_min(milestone, block["letter"]) %>
+                              <div data-sort-id={GiftPlans.block_key(block)} data-sort-stay class="border border-base-300 rounded-lg p-1.5 flex flex-col gap-1 bg-base-100">
+                                <div class="flex items-center gap-2">
+                                  <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
+                                  <span class="text-[11px] font-medium text-base-content/70">Group <%= block["letter"] %>: at least</span>
+                                  <form phx-change="set_group_min">
+                                    <input type="hidden" name="milestone_id" value={milestone["id"]} />
+                                    <input type="hidden" name="group" value={block["letter"]} />
+                                    <input type="number" name="min" min="1" max={length(members)} value={need} phx-debounce="400" class="input input-bordered input-xs w-14" />
+                                  </form>
+                                  <span class="text-[11px] text-base-content/70">of <%= length(members) %></span>
+                                  <span :if={length(members) == 1} class="badge badge-warning badge-xs">one entry, acts as required</span>
+                                  <span :if={need > length(members)} class="badge badge-error badge-xs">can never be met</span>
+                                </div>
+                                <div id={"milestone-group-#{milestone["id"]}-#{block["letter"]}"} phx-hook="SortableList" data-sort-event="reorder_milestone_group"
+                                     data-sort-move-event="move_milestone_entry" data-sort-shared={"milestone-#{milestone["id"]}"}
+                                     data-sort-scope={"#{milestone["id"]}|#{block["letter"]}"} class="flex flex-col gap-1 pl-4">
+                                  <.milestone_entry_row :for={entry <- members} entry={entry} milestone_id={milestone["id"]} letters={letters} gifts_by_name={@gifts_by_name} />
+                                </div>
+                              </div>
+                            <% else %>
+                              <.milestone_entry_row :for={entry <- List.wrap(entries[GiftPlans.block_key(block)])} entry={entry} milestone_id={milestone["id"]} letters={letters} gifts_by_name={@gifts_by_name} />
+                            <% end %>
+                          <% end %>
+                        </div>
+                        <div :if={map_size(entries) == 0} class="text-[11px] text-base-content/40 italic">No entries yet.</div>
+                        <form :if={(subs = includable_milestones(@plan_data, milestone["id"])) != []} phx-change="include_milestone">
+                          <input type="hidden" name="milestone_id" value={milestone["id"]} />
+                          <select name="sub" class="select select-bordered select-xs">
+                            <option value="" selected>+ include a milestone…</option>
+                            <option :for={sub <- subs} value={sub["id"]}><%= sub["name"] %></option>
+                          </select>
+                        </form>
                         <div class="flex flex-col gap-1">
-                          <%= for ingredient <- GiftPlans.ingredient_names(target, @gifts_by_id) do %>
-                            <% ing = ingredient && @gifts_by_name[ingredient] %>
-                            <% options = sub_fusion_options(@plan_data, d, ingredient) %>
-                            <div class="flex items-center gap-2 bg-base-200 rounded px-1 py-0.5">
-                              <button type="button" phx-click="show_gift" phx-value-gift={ingredient} disabled={is_nil(ing)}
-                                      class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer">
-                                <img :if={ing} src={ing.image_path} class="w-6 h-6 rounded object-cover" />
-                                <span :if={ing} class="badge badge-ghost badge-xs">T<%= ing.tier %></span>
-                                <span class="text-[11px] truncate"><%= ingredient || "unknown gift" %></span>
-                              </button>
-                              <form :if={ing} phx-change="set_sub_fusion">
-                                <input type="hidden" name="def_id" value={d["id"]} />
-                                <input type="hidden" name="ingredient" value={ingredient} />
-                                <select name="sub" class="select select-bordered select-xs">
-                                  <option value="">buy only</option>
-                                  <option :for={sub <- options} value={sub["id"]} selected={(d["sub_fusions"] || %{})[ingredient] == sub["id"]}>
-                                    fuse via <%= sub["name"] %>
-                                  </option>
-                                </select>
-                              </form>
-                              <button :if={ing && options == [] && GiftPlans.ingredient_ids(ing) == []} type="button"
-                                      phx-click="create_sub_fusion" phx-value-def_id={d["id"]} phx-value-ingredient={ingredient}
-                                      class="btn btn-ghost btn-2xs">+ tiered route</button>
-                            </div>
+                          <span class="text-[11px] font-medium text-base-content/70">And only if</span>
+                          <%= if milestone["condition"] do %>
+                            <.condition_node node={milestone["condition"]} path="" values={%{"milestone_id" => milestone["id"]}}
+                                             leaf={&gift_leaf(Map.merge(&1, %{plan_data: @plan_data, milestone_host: milestone["id"]}))} />
+                          <% else %>
+                            <button type="button" phx-click="cond_add" phx-value-milestone_id={milestone["id"]} phx-value-path="" phx-value-node="leaf"
+                                    class="btn btn-ghost btn-xs self-start">+ Add condition</button>
                           <% end %>
                         </div>
                       <% else %>
-                        <div class="text-xs text-base-content/50">Pick a target in the browser below: a gift with a fixed recipe.</div>
+                        <div class="text-xs text-base-content/40 italic">Create a milestone to edit it here.</div>
                       <% end %>
-                    <% end %>
+                    <% "fusions" -> %>
+                      <%= if d = selected_definition(assigns, "fusions") do %>
+                        <% target = d["target"] && @gifts_by_name[d["target"]] %>
+                        <% fixed = GiftPlans.fixed_fusion?(d) %>
+                        <form phx-change="lib_update" class="flex items-end gap-2">
+                          <input type="hidden" name="lib" value="fusions" />
+                          <input type="hidden" name="def_id" value={d["id"]} />
+                          <label class="flex flex-col gap-0.5">
+                            <span class="text-[11px] text-base-content/60">Name</span>
+                            <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
+                          </label>
+                          <label :if={fixed} class="flex items-center gap-1 cursor-pointer mb-1">
+                            <input type="hidden" name="def[buy_missing]" value="false" />
+                            <input type="checkbox" name="def[buy_missing]" value="true" checked={d["buy_missing"] != false} class="checkbox checkbox-xs" />
+                            <span class="text-xs">buy missing ingredients from the shelf</span>
+                          </label>
+                        </form>
+                        <.milestone_picker milestones={@plan_data["milestones"]} assigned={GiftPlans.assignments(@plan_data, GiftPlans.entry_ref("fusions", d["id"]))} lib="fusions" def_id={d["id"]} />
 
-                    <%= if target && not fixed do %>
-                      <div class="flex items-center gap-2">
-                        <img src={target.image_path} class="w-10 h-10 rounded object-cover" />
-                        <div class="flex flex-col">
-                          <span class="text-sm font-semibold"><%= target.name %></span>
-                          <span class="text-[11px] text-base-content/60">Tier <%= target.tier %> · <%= target.affinity %> · done once owned</span>
-                        </div>
-                      </div>
-
-                      <div class="flex flex-col gap-1">
-                        <span class="text-[11px] text-base-content/60">
-                          Routes, tried in order. Each picks a combo from the valid pool and can buy missing ingredients up to a tier,
-                          demand leftover unprotected items before fusing, and fuse sub-goals for its ingredient tiers.
-                          Normal shops skip combos marked super only.
-                        </span>
-                        <div class="flex items-center gap-2">
-                          <button type="button" phx-click="rt_copy" phx-value-def_id={d["id"]} class="btn btn-xs">Copy routes</button>
-                          <button type="button" phx-click="rt_paste" phx-value-def_id={d["id"]} class="btn btn-xs"
-                                  disabled={is_nil(@route_clipboard) or @route_clipboard.tier != target.tier}
-                                  data-confirm="Replace all routes with the copied ones?">Paste routes</button>
-                          <span :if={@route_clipboard} class="text-[11px] text-base-content/60">
-                            Clipboard: <%= @route_clipboard.name %> (T<%= @route_clipboard.tier %>, <%= length(@route_clipboard.routes) %> route(s))
-                          </span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                          <button type="button" phx-click="rt_use_default" phx-value-def_id={d["id"]} class="btn btn-xs"
-                                  data-confirm={"Replace all routes with the tier #{target.tier} default?"}>Use T<%= target.tier %> default</button>
-                          <button type="button" phx-click="rt_make_default" phx-value-def_id={d["id"]} class="btn btn-xs"
-                                  data-confirm={"Make these routes the tier #{target.tier} default for new fusions in every plan?"}>Set as T<%= target.tier %> default</button>
-                          <span class="text-[11px] text-base-content/60">
-                            <%= case @route_defaults[target.tier] do %>
-                              <% nil -> %>No saved T<%= target.tier %> default
-                              <% routes -> %>T<%= target.tier %> default: <%= Enum.map_join(routes, ", ", &Routes.label/1) %>
-                            <% end %>
-                          </span>
-                        </div>
-                        <.route_list def_id={d["id"]} routes={d["routes"] || []} tier={target.tier} />
-                      </div>
-                    <% end %>
-                    <div :if={is_nil(target) and not fixed} class="text-xs text-base-content/50">Pick a target in the browser below: a Tier 2 to 4 gift without a fixed recipe.</div>
-
-                    <div class="divider my-0"></div>
-                    <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
-                                  gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
-                                  selected_gift_name={@selected_gift_name} uptie_view={@uptie_view} show_fusion_info={true}>
-                      <:form :let={gift}>
-                        <%= if (if fixed, do: fixed_target_eligible?(gift), else: fusion_target_eligible?(gift)) do %>
-                          <button phx-click="set_fusion_target" phx-value-id={d["id"]} phx-value-gift={gift.name}
-                                  class={"btn btn-sm " <> if(d["target"] == gift.name, do: "btn-primary", else: "btn-outline")}>
-                            <%= if d["target"] == gift.name, do: "Current target", else: "Set as target" %>
-                          </button>
-                        <% else %>
-                          <span class="text-[11px] text-base-content/50">
-                            <%= if fixed,
-                                  do: "Not a fixed fusion target (needs a fixed recipe).",
-                                  else: "Not a tiered fusion target (needs Tier 2 to 4 and no fixed recipe)." %>
-                          </span>
+                        <%= if fixed do %>
+                          <%= if target do %>
+                            <div class="flex items-center gap-2">
+                              <img src={target.image_path} class="w-10 h-10 rounded object-cover" />
+                              <div class="flex flex-col">
+                                <span class="text-sm font-semibold"><%= target.name %></span>
+                                <span class="text-[11px] text-base-content/60">Tier <%= target.tier %> · fixed recipe · done once owned</span>
+                              </div>
+                            </div>
+                            <span class="text-[11px] text-base-content/60">
+                              Ingredients. A missing one is bought from the shelf first (if allowed above), otherwise fused with its sub-fusion.
+                              The target, every ingredient, and each sub-fusion's target are protected.
+                            </span>
+                            <div class="flex flex-col gap-1">
+                              <%= for ingredient <- GiftPlans.ingredient_names(target, @gifts_by_id) do %>
+                                <% ing = ingredient && @gifts_by_name[ingredient] %>
+                                <% options = sub_fusion_options(@plan_data, d, ingredient) %>
+                                <div class="flex items-center gap-2 bg-base-200 rounded px-1 py-0.5">
+                                  <button type="button" phx-click="show_gift" phx-value-gift={ingredient} disabled={is_nil(ing)}
+                                          class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer">
+                                    <img :if={ing} src={ing.image_path} class="w-6 h-6 rounded object-cover" />
+                                    <span :if={ing} class="badge badge-ghost badge-xs">T<%= ing.tier %></span>
+                                    <span class="text-[11px] truncate"><%= ingredient || "unknown gift" %></span>
+                                  </button>
+                                  <form :if={ing} phx-change="set_sub_fusion">
+                                    <input type="hidden" name="def_id" value={d["id"]} />
+                                    <input type="hidden" name="ingredient" value={ingredient} />
+                                    <select name="sub" class="select select-bordered select-xs">
+                                      <option value="">buy only</option>
+                                      <option :for={sub <- options} value={sub["id"]} selected={(d["sub_fusions"] || %{})[ingredient] == sub["id"]}>
+                                        fuse via <%= sub["name"] %>
+                                      </option>
+                                    </select>
+                                  </form>
+                                  <button :if={ing && options == [] && GiftPlans.ingredient_ids(ing) == []} type="button"
+                                          phx-click="create_sub_fusion" phx-value-def_id={d["id"]} phx-value-ingredient={ingredient}
+                                          class="btn btn-ghost btn-2xs">+ tiered route</button>
+                                </div>
+                              <% end %>
+                            </div>
+                          <% else %>
+                            <div class="text-xs text-base-content/50">Pick a target in the browser below: a gift with a fixed recipe.</div>
+                          <% end %>
                         <% end %>
-                      </:form>
-                    </.gift_browser>
-                  <% else %>
-                    <div class="text-xs text-base-content/40 italic">Create a fusion definition to edit it here.</div>
-                  <% end %>
-                </div>
-              </div>
-            <% end %>
 
-            <%= if @active_tab == :shopping_lists do %>
-              <div class="grid grid-cols-[14rem_1fr] gap-3 flex-1 min-h-0">
-                <.library_list lib="shopping_lists" defs={@plan_data["library"]["shopping_lists"]} selected_id={@selected_def["shopping_lists"]} />
-                <div class="flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
-                  <%= if d = selected_definition(assigns, "shopping_lists") do %>
-                    <form phx-change="lib_update" class="flex items-end gap-2">
-                      <input type="hidden" name="lib" value="shopping_lists" />
-                      <input type="hidden" name="def_id" value={d["id"]} />
-                      <label class="flex flex-col gap-0.5">
-                        <span class="text-[11px] text-base-content/60">Name</span>
-                        <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
-                      </label>
-                      <label class="flex flex-col gap-0.5" title="Buy steps on this list skip once this many owned gifts match it, and never buy past it. Blank means never done.">
-                        <span class="text-[11px] text-base-content/60">Done at owning</span>
-                        <input type="number" name="def[done_at]" min="1" value={d["done_at"]} placeholder="never" phx-debounce="400" class="input input-bordered input-xs w-20" />
-                      </label>
-                      <span class="text-[11px] text-base-content/50 mb-1">
-                        Total if bought: <%= d["gifts"] |> Enum.map(&((@gifts_by_name[&1] && @gifts_by_name[&1].buying_cost) || 0)) |> Enum.sum() %> cost
-                      </span>
-                    </form>
-                    <span class="text-[11px] text-base-content/50">Buy steps take shelf matches in this order. An "Any T3" entry matches every T3 on the shelf.</span>
-                    <div class="flex items-center gap-1">
-                      <span class="text-[11px] text-base-content/60">Any tier:</span>
-                      <% entries = d["gifts"] %>
-                      <button :for={tier <- GiftPlans.shop_tiers()} phx-click="lib_toggle_gift" phx-value-lib="shopping_lists"
-                              phx-value-id={d["id"]} phx-value-gift={GiftPlans.tier_entry(tier)}
-                              class={"btn btn-2xs " <> if(GiftPlans.tier_entry(tier) in entries, do: "btn-secondary", else: "btn-outline")}>
-                        T<%= tier %>
-                      </button>
-                    </div>
-                    <.gift_clipboard lib="shopping_lists" definition={d} clipboard={@gift_clipboard} />
-                    <.gift_order_list lib="shopping_lists" definition={d} gifts_by_name={@gifts_by_name} selected_gift_name={@selected_gift_name}>
-                      <:extra :let={gift}>
-                        <span :if={gift} class="text-[10px] text-base-content/50">Buy <%= gift.buying_cost || "?" %></span>
-                      </:extra>
-                    </.gift_order_list>
-                    <div class="divider my-0"></div>
-                    <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
-                                  gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
-                                  selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
-                      <:form :let={gift}>
-                        <button phx-click="lib_toggle_gift" phx-value-lib="shopping_lists" phx-value-id={d["id"]} phx-value-gift={gift.name}
-                                class={"btn btn-sm " <> if(gift.name in d["gifts"], do: "btn-primary", else: "btn-outline")}>
-                          <%= if gift.name in d["gifts"], do: "Remove from list", else: "Add to list" %>
-                        </button>
-                      </:form>
-                    </.gift_browser>
-                  <% else %>
-                    <div class="text-xs text-base-content/40 italic">Create a shopping list to edit it here.</div>
-                  <% end %>
-                </div>
-              </div>
-            <% end %>
+                        <%= if target && not fixed do %>
+                          <div class="flex items-center gap-2">
+                            <img src={target.image_path} class="w-10 h-10 rounded object-cover" />
+                            <div class="flex flex-col">
+                              <span class="text-sm font-semibold"><%= target.name %></span>
+                              <span class="text-[11px] text-base-content/60">Tier <%= target.tier %> · <%= target.affinity %> · done once owned</span>
+                            </div>
+                          </div>
 
-            <%= if @active_tab == :keep_lists do %>
-              <div class="grid grid-cols-[14rem_1fr] gap-3 flex-1 min-h-0">
-                <.library_list lib="keep_lists" defs={@plan_data["library"]["keep_lists"]} selected_id={@selected_def["keep_lists"]} />
-                <div class="flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
-                  <%= if d = selected_definition(assigns, "keep_lists") do %>
-                    <form phx-change="lib_update" class="flex items-end gap-2">
-                      <input type="hidden" name="lib" value="keep_lists" />
-                      <input type="hidden" name="def_id" value={d["id"]} />
-                      <label class="flex flex-col gap-0.5">
-                        <span class="text-[11px] text-base-content/60">Name</span>
-                        <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
-                      </label>
-                      <% users = workflows_using_keep(@plan_data, d["id"]) %>
-                      <span class="text-[11px] text-base-content/50 mb-1">
-                        <%= if users == [], do: "Not used by any workflow", else: "Used by: #{Enum.join(users, ", ")}" %>
-                      </span>
-                    </form>
-                    <.gift_clipboard lib="keep_lists" definition={d} clipboard={@gift_clipboard} />
-                    <div class="flex flex-wrap gap-1">
-                      <div :for={name <- d["gifts"]} class={"flex items-center gap-1 rounded px-1 py-0.5 " <>
-                             if(@selected_gift_name == name, do: "bg-primary/15 ring-1 ring-primary", else: "bg-base-200")}>
-                        <button type="button" phx-click="show_gift" phx-value-gift={name} class="flex items-center gap-1 cursor-pointer">
-                          <img :if={gift = @gifts_by_name[name]} src={gift.image_path} class="w-5 h-5 rounded object-cover" />
-                          <span class="text-[11px]"><%= name %></span>
-                        </button>
-                        <button phx-click="lib_toggle_gift" phx-value-lib="keep_lists" phx-value-id={d["id"]} phx-value-gift={name} class="btn btn-ghost btn-2xs px-1">✕</button>
-                      </div>
-                      <span :if={d["gifts"] == []} class="text-[11px] text-base-content/40 italic">No gifts kept.</span>
-                    </div>
-                    <div class="divider my-0"></div>
-                    <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
-                                  gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
-                                  selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
-                      <:form :let={gift}>
-                        <button phx-click="lib_toggle_gift" phx-value-lib="keep_lists" phx-value-id={d["id"]} phx-value-gift={gift.name}
-                                class={"btn btn-sm " <> if(gift.name in d["gifts"], do: "btn-primary", else: "btn-outline")}>
-                          <%= if gift.name in d["gifts"], do: "Kept, click to remove", else: "Keep this gift" %>
-                        </button>
-                      </:form>
-                    </.gift_browser>
-                  <% else %>
-                    <div class="text-xs text-base-content/40 italic">Create a keep list to edit it here.</div>
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[11px] text-base-content/60">
+                              Routes, tried in order. Each picks a combo from the valid pool and can buy missing ingredients up to a tier,
+                              demand leftover unprotected items before fusing, and fuse sub-goals for its ingredient tiers.
+                              Normal shops skip combos marked super only.
+                            </span>
+                            <div class="flex items-center gap-2">
+                              <button type="button" phx-click="rt_copy" phx-value-def_id={d["id"]} class="btn btn-xs">Copy routes</button>
+                              <button type="button" phx-click="rt_paste" phx-value-def_id={d["id"]} class="btn btn-xs"
+                                      disabled={is_nil(@route_clipboard) or @route_clipboard.tier != target.tier}
+                                      data-confirm="Replace all routes with the copied ones?">Paste routes</button>
+                              <span :if={@route_clipboard} class="text-[11px] text-base-content/60">
+                                Clipboard: <%= @route_clipboard.name %> (T<%= @route_clipboard.tier %>, <%= length(@route_clipboard.routes) %> route(s))
+                              </span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <button type="button" phx-click="rt_use_default" phx-value-def_id={d["id"]} class="btn btn-xs"
+                                      data-confirm={"Replace all routes with the tier #{target.tier} default?"}>Use T<%= target.tier %> default</button>
+                              <button type="button" phx-click="rt_make_default" phx-value-def_id={d["id"]} class="btn btn-xs"
+                                      data-confirm={"Make these routes the tier #{target.tier} default for new fusions in every plan?"}>Set as T<%= target.tier %> default</button>
+                              <span class="text-[11px] text-base-content/60">
+                                <%= case @route_defaults[target.tier] do %>
+                                  <% nil -> %>No saved T<%= target.tier %> default
+                                  <% routes -> %>T<%= target.tier %> default: <%= Enum.map_join(routes, ", ", &Routes.label/1) %>
+                                <% end %>
+                              </span>
+                            </div>
+                            <.route_list def_id={d["id"]} routes={d["routes"] || []} tier={target.tier} />
+                          </div>
+                        <% end %>
+                        <div :if={is_nil(target) and not fixed} class="text-xs text-base-content/50">Pick a target in the browser below: a Tier 2 to 4 gift without a fixed recipe.</div>
+
+                        <div class="divider my-0"></div>
+                        <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
+                                      gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
+                                      selected_gift_name={@selected_gift_name} uptie_view={@uptie_view} show_fusion_info={true}>
+                          <:form :let={gift}>
+                            <%= if (if fixed, do: fixed_target_eligible?(gift), else: fusion_target_eligible?(gift)) do %>
+                              <button phx-click="set_fusion_target" phx-value-id={d["id"]} phx-value-gift={gift.name}
+                                      class={"btn btn-sm " <> if(d["target"] == gift.name, do: "btn-primary", else: "btn-outline")}>
+                                <%= if d["target"] == gift.name, do: "Current target", else: "Set as target" %>
+                              </button>
+                            <% else %>
+                              <span class="text-[11px] text-base-content/50">
+                                <%= if fixed,
+                                      do: "Not a fixed fusion target (needs a fixed recipe).",
+                                      else: "Not a tiered fusion target (needs Tier 2 to 4 and no fixed recipe)." %>
+                              </span>
+                            <% end %>
+                          </:form>
+                        </.gift_browser>
+                      <% else %>
+                        <div class="text-xs text-base-content/40 italic">Create a fusion definition to edit it here.</div>
+                      <% end %>
+                    <% "upties" -> %>
+                      <%= if d = selected_definition(assigns, "upties") do %>
+                        <form phx-change="lib_update" class="flex items-end gap-2 flex-wrap">
+                          <input type="hidden" name="lib" value="upties" />
+                          <input type="hidden" name="def_id" value={d["id"]} />
+                          <label class="flex flex-col gap-0.5">
+                            <span class="text-[11px] text-base-content/60">Name</span>
+                            <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
+                          </label>
+                          <label class="flex flex-col gap-0.5">
+                            <span class="text-[11px] text-base-content/60">Target</span>
+                            <select name="def[target_level]" class="select select-bordered select-xs">
+                              <option value="2" selected={d["target_level"] == 2}>+2</option>
+                              <option value="1" selected={d["target_level"] == 1}>+1</option>
+                            </select>
+                          </label>
+                        </form>
+                        <.milestone_picker milestones={@plan_data["milestones"]} assigned={GiftPlans.assignments(@plan_data, GiftPlans.entry_ref("upties", d["id"]))} lib="upties" def_id={d["id"]} />
+                        <%= if gift = d["gift"] && @gifts_by_name[d["gift"]] do %>
+                          <div class="flex items-center gap-2">
+                            <img src={gift.image_path} class="w-10 h-10 rounded object-cover" />
+                            <div class="flex flex-col">
+                              <span class="text-sm font-semibold"><%= gift.name %></span>
+                              <span class="text-[11px] text-base-content/60">Tier <%= gift.tier %> · <%= uptie_cost_hint(gift, d) %> (estimates)</span>
+                            </div>
+                          </div>
+                        <% else %>
+                          <div class="text-xs text-base-content/50">Pick the gift to uptie in the browser below.</div>
+                        <% end %>
+                        <span class="text-[11px] text-base-content/50">
+                          Upties this gift to +<%= d["target_level"] %> in one go. If the full cost can't be paid, the uptie step stops here instead of upgrading partway.
+                        </span>
+                        <div class="divider my-0"></div>
+                        <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
+                                      gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
+                                      selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
+                          <:form :let={gift}>
+                            <button phx-click="set_uptie_gift" phx-value-id={d["id"]} phx-value-gift={gift.name}
+                                    class={"btn btn-sm " <> if(gift.name == d["gift"], do: "btn-primary", else: "btn-outline")}>
+                              <%= if gift.name == d["gift"], do: "Uptie target", else: "Uptie this gift" %>
+                            </button>
+                          </:form>
+                        </.gift_browser>
+                      <% else %>
+                        <div class="text-xs text-base-content/40 italic">Create an uptie definition to edit it here.</div>
+                      <% end %>
+                    <% "lists" -> %>
+                      <%= if d = selected_definition(assigns, "lists") do %>
+                        <form phx-change="lib_update" class="flex items-end gap-2">
+                          <input type="hidden" name="lib" value="lists" />
+                          <input type="hidden" name="def_id" value={d["id"]} />
+                          <label class="flex flex-col gap-0.5">
+                            <span class="text-[11px] text-base-content/60">Name</span>
+                            <input type="text" name="def[name]" value={d["name"]} phx-debounce="400" class="input input-bordered input-xs w-48" />
+                          </label>
+                          <span class="text-[11px] text-base-content/50 mb-1">
+                            Total if bought: <%= d["gifts"] |> Enum.map(&((@gifts_by_name[&1] && @gifts_by_name[&1].buying_cost) || 0)) |> Enum.sum() %> cost
+                          </span>
+                        </form>
+                        <% users = workflows_using_keep(@plan_data, d["id"]) %>
+                        <span class="text-[11px] text-base-content/50">
+                          <%= if users == [], do: "Not the keep list of any workflow.", else: "Keep list of: #{Enum.join(users, ", ")}." %>
+                          Buy steps take shelf matches in this order. As a keep list, every gift on it is protected from selling and fusing.
+                          An "Any T3" entry matches every T3, and an "Any burn T2, T3" entry matches every burn gift of those tiers.
+                          Any-tier and any-affinity entries can go on milestones as optional buys.
+                        </span>
+                        <div class="flex items-center gap-1">
+                          <span class="text-[11px] text-base-content/60">Any tier:</span>
+                          <% entries = d["gifts"] %>
+                          <button :for={tier <- GiftPlans.shop_tiers()} phx-click="lib_toggle_gift" phx-value-lib="lists"
+                                  phx-value-id={d["id"]} phx-value-gift={GiftPlans.tier_entry(tier)}
+                                  class={"btn btn-2xs " <> if(GiftPlans.tier_entry(tier) in entries, do: "btn-secondary", else: "btn-outline")}>
+                            T<%= tier %>
+                          </button>
+                        </div>
+                        <form phx-submit="lib_add_affinity" class="flex items-center gap-1 flex-wrap">
+                          <input type="hidden" name="def_id" value={d["id"]} />
+                          <span class="text-[11px] text-base-content/60">Any affinity:</span>
+                          <select name="affinity" class="select select-bordered select-xs">
+                            <option value="">pick one</option>
+                            <option :for={affinity <- affinities()} value={affinity}><%= affinity %></option>
+                          </select>
+                          <label :for={tier <- GiftPlans.shop_tiers()} class="flex items-center gap-0.5 cursor-pointer">
+                            <input type="checkbox" name="tiers[]" value={tier} class="checkbox checkbox-xs" />
+                            <span class="text-[11px]">T<%= tier %></span>
+                          </label>
+                          <button type="submit" class="btn btn-2xs btn-outline">+ add</button>
+                          <span class="text-[11px] text-base-content/40">No tiers ticked means every tier.</span>
+                        </form>
+                        <.gift_clipboard lib="lists" definition={d} clipboard={@gift_clipboard} />
+                        <.gift_order_list lib="lists" definition={d} gifts_by_name={@gifts_by_name} selected_gift_name={@selected_gift_name}>
+                          <:extra :let={entry}>
+                            <.milestone_picker :if={entry.gift || GiftPlans.pattern_entry?(entry.name)} milestones={@plan_data["milestones"]} assigned={GiftPlans.assignments(@plan_data, GiftPlans.entry_ref("lists", d["id"], entry.name))}
+                                               lib="lists" def_id={d["id"]} gift={entry.name} />
+                            <span :if={entry.gift} class="text-[10px] text-base-content/50">Buy <%= entry.gift.buying_cost || "?" %></span>
+                          </:extra>
+                        </.gift_order_list>
+                        <div class="divider my-0"></div>
+                        <.gift_browser gifts={@gifts} gifts_by_id={@gifts_by_id} gift_filter={@gift_filter} gift_tier_filter={@gift_tier_filter}
+                                      gift_affinity_filter={@gift_affinity_filter} gift_sort={@gift_sort}
+                                      selected_gift_name={@selected_gift_name} uptie_view={@uptie_view}>
+                          <:form :let={gift}>
+                            <button phx-click="lib_toggle_gift" phx-value-lib="lists" phx-value-id={d["id"]} phx-value-gift={gift.name}
+                                    class={"btn btn-sm " <> if(gift.name in d["gifts"], do: "btn-primary", else: "btn-outline")}>
+                              <%= if gift.name in d["gifts"], do: "Remove from list", else: "Add to list" %>
+                            </button>
+                          </:form>
+                        </.gift_browser>
+                      <% else %>
+                        <div class="text-xs text-base-content/40 italic">Pick a list on the left, or create one.</div>
+                      <% end %>
                   <% end %>
                 </div>
               </div>

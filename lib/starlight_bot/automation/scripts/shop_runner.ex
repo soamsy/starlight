@@ -10,6 +10,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     "refresh" => Actions.Refresh,
     "buy_list" => Actions.BuyList,
     "fusion" => Actions.Fusion,
+    "milestone" => Actions.Milestone,
     "sell" => Actions.Sell,
     "uptie" => Actions.Uptie,
     "affinity_refresh" => Actions.AffinityRefresh,
@@ -20,6 +21,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
   }
   @previews %{
     "fusion" => Actions.Fusion,
+    "milestone" => Actions.Milestone,
     "sell" => Actions.Sell,
     "uptie" => Actions.Uptie,
     "skill_replace" => Actions.SkillReplace,
@@ -202,7 +204,8 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       run >= total -> state
       state.bailed or state.left -> state
       List.last(state.steps).outcome == :failed -> state
-      true -> repeat_step(step, state, mode, ctx, run + 1, total)
+      milestone_reached?(step, state, ctx) -> state
+      true -> continue_after_between(step, condition, state, mode, ctx, run, total)
     end
   end
 
