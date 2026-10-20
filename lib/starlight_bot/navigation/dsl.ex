@@ -1,4 +1,11 @@
 defmodule StarlightBot.Navigation.DSL do
+  @confirm_enter_rounds 5
+  @confirm_steady_ms 120
+  @confirm_steady_timeout_ms 1_500
+  @confirm_gone_hold_ms 250
+  @confirm_gone_window_ms 700
+  @confirm_poll_ms 30
+
   defmacro __using__(_) do
     quote do
       import StarlightBot.Navigation.DSL
@@ -196,8 +203,64 @@ defmodule StarlightBot.Navigation.DSL do
   end
 
   def confirm_enter(hook, opts \\ []) when is_atom(hook) or is_tuple(hook) do
-    hook_settle_ms = Keyword.get(opts, :hook_settle_ms, 350)
-    [sleep(hook_settle_ms), await(hook, opts), retry_until(not_hook(hook), [key(:enter)], opts)]
+    [await(hook, opts), custom(fn _frame, ctx -> press_enter_until_gone(hook, ctx) end)]
+  end
+
+  defp press_enter_until_gone(hook, ctx) do
+    now = System.monotonic_time(:millisecond)
+    hold_visible(hook, nil, now + @confirm_steady_timeout_ms)
+    enter_until_gone(hook, @confirm_enter_rounds, ctx)
+  end
+
+  defp enter_until_gone(hook, 0, ctx) do
+    StarlightBot.Ctx.log(ctx, :error, "confirm_enter #{inspect(hook)}: still there after #{@confirm_enter_rounds} enter presses")
+    {:error, {:retry_exhausted, hook}}
+  end
+
+  defp enter_until_gone(hook, rounds, ctx) do
+    with {:ok, _} <- StarlightBot.Navigation.Runner.run_steps([key(:enter)], ctx) do
+      now = System.monotonic_time(:millisecond)
+
+      if stays_gone?(hook, nil, now + @confirm_gone_window_ms) do
+        {:ok, nil}
+      else
+        StarlightBot.Ctx.log(ctx, :info, "confirm_enter #{inspect(hook)}: still there, pressing enter again")
+        enter_until_gone(hook, rounds - 1, ctx)
+      end
+    end
+  end
+
+  defp hold_visible(hook, visible_since, deadline) do
+    now = System.monotonic_time(:millisecond)
+
+    cond do
+      visible_since && now - visible_since >= @confirm_steady_ms -> :ok
+      now >= deadline -> :timeout
+      true ->
+        visible_since = if hook_visible?(hook), do: visible_since || now, else: nil
+        Process.sleep(@confirm_poll_ms)
+        hold_visible(hook, visible_since, deadline)
+    end
+  end
+
+  defp stays_gone?(hook, gone_since, deadline) do
+    now = System.monotonic_time(:millisecond)
+
+    cond do
+      gone_since && now - gone_since >= @confirm_gone_hold_ms -> true
+      now >= deadline -> false
+      true ->
+        gone_since = if hook_visible?(hook), do: nil, else: gone_since || now
+        Process.sleep(@confirm_poll_ms)
+        stays_gone?(hook, gone_since, deadline)
+    end
+  end
+
+  defp hook_visible?(hook) do
+    case StarlightBot.Vision.Capture.grab_frame() do
+      {:ok, frame} -> StarlightBot.Navigation.Runner.hook_matches?(frame, hook)
+      {:error, _} -> false
+    end
   end
 
   defmacro retry_until_arrived(steps, opts \\ []) do

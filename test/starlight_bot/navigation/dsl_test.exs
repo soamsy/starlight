@@ -76,12 +76,12 @@ defmodule StarlightBot.Navigation.DSLTest do
       assert reclick == DSL.reclick_until_gone(:a, opts)
     end
 
-    test "confirm_enter/1-2 awaits either hook, then presses enter until both are gone with nothing in between" do
+    test "confirm_enter/1-2 awaits either hook, then presses enter until both stay gone" do
       spec = DSL.any_of([:a, :b])
 
-      assert [_, await, retry] = DSL.confirm_enter(spec, timeout: 100)
+      assert [await, {:custom, enter_until_gone}] = DSL.confirm_enter(spec, timeout: 100)
       assert await == DSL.await(spec, timeout: 100)
-      assert retry == DSL.retry_until(DSL.not_hook(spec), [DSL.key(:enter)], timeout: 100)
+      assert is_function(enter_until_gone, 2)
     end
 
     test "await_any/1-2 has a positive default timeout" do
