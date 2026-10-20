@@ -18,7 +18,11 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @slot_click_settle_ms 150
   @ego_menu_timeout_ms 2_000
   @ego_menu_settle_ms 300
-  @corrode_hold_ms 1_500
+  @ego_card_timeout_ms 1_500
+  @ego_card_poll_ms 50
+  @ego_card_still_px 2
+  @overclock_timeout_ms 3_000
+  @overclock_release_settle_ms 50
   @ego_close_timeout_ms 1_500
   @ego_reclick_wait_ms 100
   @target_tries 3
@@ -42,6 +46,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   @turn_started DSL.any_of([:battle_pause_button, DSL.not_hook(:battle_turn)])
   @ego_menu :battle_ego_resistances
+  @ego_warning :battle_ego_warning
   @hover_label :enemy_target_hovering_label
 
   def play_chain_turn(_last_frame, ctx), do: play_turn("chain", ctx)
@@ -363,7 +368,6 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     Mouse.mouse_up()
 
     if opened? do
-      Process.sleep(@ego_menu_settle_ms)
       pick_ego_card(action, ctx)
     else
       Ctx.log(ctx, :error, "playbook: EGO menu didn't open, skipping")
@@ -373,36 +377,58 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp pick_ego_card(action, ctx) do
     hook = :"battle_ego_#{action["grade"]}"
 
-    with {:ok, frame} <- Capture.grab_frame(),
-         [_ | _] = cards <- Matcher.find_all(frame, hook),
-         {x, y, w, h} = Enum.min_by(cards, &elem(&1, 0)),
-         {:ok, {cx, cy}} <- Runner.to_screen_point({x + w / 2, y + h / 2}) do
-      if action["corrode"] do
-        Mouse.move_to(cx, cy)
-        Mouse.mouse_down()
-        Process.sleep(@corrode_hold_ms)
-        Mouse.mouse_up()
-        Process.sleep(@ego_menu_settle_ms)
-      end
+    deadline = System.monotonic_time(:millisecond) + @ego_card_timeout_ms
+
+    with {:ok, {x, _y, w, _h}} <- await_still_card(hook, nil, deadline),
+         {:ok, %{region: {_wx, wy, _ww, wh}}} <- HookRegistry.find(@ego_warning),
+         {:ok, {cx, cy}} <- Runner.to_screen_point({x + w / 2, wy + wh / 2}) do
+      if action["corrode"], do: overclock(cx, cy, ctx)
 
       Mouse.click(cx, cy)
+      Process.sleep(@ego_reclick_wait_ms)
 
-      unless action["corrode"] do
-        Process.sleep(@ego_reclick_wait_ms)
-
-        unless await(DSL.not_hook(@ego_menu), 0) do
-          Ctx.log(ctx, :info, "playbook: EGO menu still open after the first click, clicking the card again")
-          Mouse.click(cx, cy)
-        end
+      unless await(DSL.not_hook(@ego_menu), 0) do
+        Ctx.log(ctx, :info, "playbook: EGO menu still open after the first click, clicking the card again")
+        Mouse.click(cx, cy)
       end
 
       unless await(DSL.not_hook(@ego_menu), @ego_close_timeout_ms) do
         close_ego_menu(ctx, "EGO choice didn't take (not enough resources?)")
       end
     else
-      [] -> close_ego_menu(ctx, "no #{action["grade"]} EGO card found")
+      :not_found -> close_ego_menu(ctx, "no #{action["grade"]} EGO card found")
       {:error, reason} -> close_ego_menu(ctx, "EGO card pick failed: #{inspect(reason)}")
     end
+  end
+
+  defp await_still_card(hook, previous, deadline) do
+    card =
+      case Capture.grab_frame() do
+        {:ok, frame} -> frame |> Matcher.find_all(hook) |> Enum.min_by(&elem(&1, 0), fn -> nil end)
+        {:error, _} -> nil
+      end
+
+    cond do
+      card && previous && card_still?(card, previous) -> {:ok, card}
+      System.monotonic_time(:millisecond) >= deadline -> if card, do: {:ok, card}, else: :not_found
+      true ->
+        Process.sleep(@ego_card_poll_ms)
+        await_still_card(hook, card, deadline)
+    end
+  end
+
+  defp card_still?({x, y, _w, _h}, {px, py, _pw, _ph}), do: abs(x - px) <= @ego_card_still_px and abs(y - py) <= @ego_card_still_px
+
+  defp overclock(cx, cy, ctx) do
+    Mouse.move_to(cx, cy)
+    Mouse.mouse_down()
+    warned? = await(@ego_warning, @overclock_timeout_ms)
+    Mouse.mouse_up()
+    Process.sleep(@overclock_release_settle_ms)
+
+    if warned?,
+      do: Ctx.log(ctx, :info, "playbook: overclock applied, confirming"),
+      else: Ctx.log(ctx, :error, "playbook: no overclock warning after #{@overclock_timeout_ms}ms, confirming anyway")
   end
 
   defp close_ego_menu(ctx, reason) do
