@@ -53,7 +53,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
     end
   end
 
-  screen :battle_playing, identity: :battle_pause_button, refines: :battle do
+  screen :battle_playing, identity: any_of([:battle_pause_button, :battle_playing_graph]), refines: :battle do
     transition to: :battle_turn_or_over do
       wait_for_user_input_state()
     end
@@ -75,10 +75,10 @@ defmodule StarlightBot.Navigation.Screens.Battle do
           {:default,
             [
               move_to(:battle_safe_click_spot),
-              wait_until(not_hook(:battle_pause_button), timeout: 250_000),
+              wait_until(not_hook(any_of([:battle_pause_button, :battle_playing_graph])), timeout: 250_000),
               hold_mouse_during([
                 wait_until(
-                  any_of([:battle_turn, :loading_stage_1, :loading_stage_2, :battle_over_black_confirm, :battle_defeat_retry, :battle_pause_button, :event]),
+                  any_of([:battle_turn, :loading_stage_1, :loading_stage_2, :battle_over_black_confirm, :battle_defeat_retry, :battle_pause_button, :battle_playing_graph, :event]),
                   timeout: 25_000
                 )
               ]),
