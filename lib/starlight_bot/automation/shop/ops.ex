@@ -27,7 +27,10 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @sell_scroll_hooks [@sell_scroll_top_hook, @sell_scroll_bottom_hook, @sell_scroll_track_hook]
   @sell_scroll_clicks 4
   @sell_scroll_settle_ms 400
-  @max_sell_scroll_passes 20
+  @scroll_poll_ms 50
+  @scroll_still_threshold 1.0
+  @max_sell_scroll_passes 10
+  @max_gift_search_passes 8
   @scroll_to_top_clicks 12
   @uptie_commit_result_ms 1_500
   @uptie_2_selected_ms 600
@@ -72,7 +75,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @fuse_item_1_empty_hook :shop_fuse_popup_item_1_empty
   @fuse_confirm_hook :shop_fuse_popup_confirm
   @fuse_confirm_confirm_hook :shop_fuse_popup_confirm_confirm
-  @max_fuse_scroll_passes 20
+  @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
   @heal_confirm_timeout 1_500
   @replace_popup_hook :shop_replace_popup
@@ -351,10 +354,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
         :ok
 
       true ->
-        Engine.act(
-          [move_to(@sell_inventory_hook), scroll_down(@sell_scroll_clicks), sleep(@sell_scroll_settle_ms)],
-          ctx
-        )
+        scroll_and_settle(@sell_inventory_hook, scroll_down(@sell_scroll_clicks), ctx)
 
         scan_visible_inventory(ctx)
         continue_scrolling_inventory(ctx, pass + 1)
@@ -718,7 +718,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     end
 
     unless popup_at_bottom?(@fuse_popup) do
-      Engine.act([move_to(@fuse_inventory_hook), scroll_down(@sell_scroll_clicks), sleep(@sell_scroll_settle_ms)], ctx)
+      scroll_and_settle(@fuse_inventory_hook, scroll_down(@sell_scroll_clicks), ctx)
       scan_fuse_inventory_pass(consumed, ctx, pass + 1)
     end
   end
@@ -836,10 +836,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
           end
 
         true ->
-          Engine.act(
-            [move_to(@fuse_inventory_hook), scroll_down(@sell_scroll_clicks), sleep(@sell_scroll_settle_ms)],
-            ctx
-          )
+          scroll_and_settle(@fuse_inventory_hook, scroll_down(@sell_scroll_clicks), ctx)
 
           select_fuse_pass(state_after, ctx, pass + 1, dismissed?)
       end
@@ -1100,7 +1097,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     end
   end
 
-  defp scan_down_and_click(_popup, gift_id, _ctx, pass) when pass >= @max_sell_scroll_passes,
+  defp scan_down_and_click(_popup, gift_id, _ctx, pass) when pass >= @max_gift_search_passes,
     do: {:error, {:scroll_limit, gift_id}}
 
   defp scan_down_and_click(popup, gift_id, ctx, pass) do
@@ -1109,7 +1106,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
         if popup_at_bottom?(popup) do
           {:error, {:not_in_popup, gift_id}}
         else
-          Engine.act([move_to(popup.inventory), scroll_down(@sell_scroll_clicks), sleep(@sell_scroll_settle_ms)], ctx)
+          scroll_and_settle(popup.inventory, scroll_down(@sell_scroll_clicks), ctx)
           scan_down_and_click(popup, gift_id, ctx, pass + 1)
         end
 
@@ -1126,9 +1123,43 @@ defmodule StarlightBot.Automation.Shop.Ops do
     if checks[popup.top] or not (checks[popup.bottom] or checks[popup.track]) do
       :ok
     else
-      Engine.act([move_to(popup.inventory), scroll_up(@scroll_to_top_clicks), sleep(@sell_scroll_settle_ms)], ctx)
+      scroll_and_settle(popup.inventory, scroll_up(@scroll_to_top_clicks), ctx)
       scroll_popup_to_top(popup, ctx, pass + 1)
     end
+  end
+
+  defp scroll_and_settle(inventory_hook, scroll_step, ctx) do
+    with {:ok, _} <- Engine.act([move_to(inventory_hook)], ctx),
+         {:ok, %{} = hook} <- HookRegistry.find(inventory_hook),
+         {:ok, before} <- Capture.grab_frame(),
+         {:ok, _} = ok <- Engine.act([scroll_step], ctx) do
+      deadline = System.monotonic_time(:millisecond) + @sell_scroll_settle_ms
+      await_scroll_settled(hook.scan_region || hook.region, before, nil, deadline)
+      ok
+    end
+  end
+
+  defp await_scroll_settled(region, before, previous, deadline) do
+    if System.monotonic_time(:millisecond) < deadline do
+      Process.sleep(@scroll_poll_ms)
+
+      case Capture.grab_frame() do
+        {:ok, frame} ->
+          cond do
+            previous == nil and same_region?(frame, before, region) -> await_scroll_settled(region, before, nil, deadline)
+            previous != nil and same_region?(frame, previous, region) -> :ok
+            true -> await_scroll_settled(region, before, frame, deadline)
+          end
+
+        {:error, _} ->
+          await_scroll_settled(region, before, previous, deadline)
+      end
+    end
+  end
+
+  defp same_region?(a, b, region) do
+    {c0, c1, c2, _} = Evision.mean(Evision.absdiff(Evision.Mat.roi(a.mat, region), Evision.Mat.roi(b.mat, region)))
+    max(c0, max(c1, c2)) < @scroll_still_threshold
   end
 
   defp popup_at_bottom?(popup) do
