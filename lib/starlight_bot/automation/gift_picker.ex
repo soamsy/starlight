@@ -7,26 +7,51 @@ defmodule StarlightBot.Automation.GiftPicker do
   @slot_h 250
   @same_slot_fraction 0.8
   @min_item_area_px 550
+  @selected_radius_px 170
+  @anchor_leniency_px 20
 
-  def pick(scan_hook, count, tier_hooks, fallback_hook, ctx, pick_delay_ms \\ 0) do
+  def pick(scan_hook, count, tier_hooks, fallback_hook, ctx, pick_delay_ms \\ 0, opts \\ []) do
     gifts_by_id = Map.new(EgoGifts.list_gifts(), &{&1.id, &1})
     {frame, detections} = scan(scan_hook, ctx)
-    named = slots(detections)
+    named = detections |> anchored(frame, opts[:anchor_hook]) |> slots()
     badge_slots = badge_slots(named, tier_badges(frame, tier_hooks))
-    ranked = rank(named ++ badge_slots, wanted_names(gifts_by_id, ctx), RunMemory.ego_gifts(ctx), gifts_by_id)
+    {selected, available} = split_selected(named ++ badge_slots, frame, opts[:selected_hook])
+    ranked = rank(available, wanted_names(gifts_by_id, ctx), RunMemory.ego_gifts(ctx), gifts_by_id)
     chosen = Enum.take(ranked, count)
 
     Ctx.log(
       ctx,
       :info,
-      "gift picker: #{length(named)} gift(s) found in #{scan_hook}, #{length(badge_slots)} more from tier badges, picking " <>
+      "gift picker: #{length(named)} gift(s) found in #{scan_hook}, #{length(badge_slots)} more from tier badges, " <>
+        "#{length(selected)} already selected, picking " <>
         if(chosen == [], do: "none", else: Enum.map_join(chosen, ", ", & &1.gift_name))
     )
 
-    with {:ok, clicked} <- click_slots(chosen, pick_delay_ms, ctx) do
-      fallback(count - length(clicked), clicked, tier_hooks, fallback_hook, pick_delay_ms, ctx)
+    with {:ok, clicked} <- click_slots(chosen, count, pick_delay_ms, ctx) do
+      fallback(count - length(clicked), clicked ++ Enum.map(selected, & &1.rect), tier_hooks, fallback_hook, pick_delay_ms, ctx)
     end
   end
+
+  defp anchored(detections, nil, _anchor_hook), do: detections
+  defp anchored(detections, _frame, nil), do: detections
+
+  defp anchored(detections, frame, anchor_hook) do
+    lefts = frame |> Matcher.find_all(anchor_hook) |> Enum.map(&elem(&1, 0))
+
+    Enum.filter(detections, fn %{x: x, w: w} ->
+      Enum.any?(lefts, &(&1 >= x - @anchor_leniency_px and &1 <= x + w + @anchor_leniency_px))
+    end)
+  end
+
+  defp split_selected(slots, nil, _selected_hook), do: {[], slots}
+  defp split_selected(slots, _frame, nil), do: {[], slots}
+
+  defp split_selected(slots, frame, selected_hook) do
+    highlights = frame |> Matcher.find_all(selected_hook) |> Enum.map(&center/1)
+    Enum.split_with(slots, fn slot -> Enum.any?(highlights, &within_radius?(&1, slot.center)) end)
+  end
+
+  defp within_radius?({ax, ay}, {bx, by}), do: :math.pow(ax - bx, 2) + :math.pow(ay - by, 2) <= @selected_radius_px * @selected_radius_px
 
   def slots(detections) do
     detections

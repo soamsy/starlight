@@ -16,5 +16,5 @@ defmodule StarlightBot.Navigation.Screens.CabinetReward do
 
   screen :cabinet_reward_over, identity: nil, catch_all: true
 
-  def select_tier_gift(_frame, ctx), do: GiftPicker.pick(:cabinet_reward_scan_area, 1, @tier_hooks, :cabinet_reward, ctx)
+  def select_tier_gift(_frame, ctx), do: GiftPicker.pick(:cabinet_reward_scan_area, 1, @tier_hooks, :cabinet_reward, ctx, 0, anchor_hook: :cabinet_reward)
 end

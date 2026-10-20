@@ -5,7 +5,8 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
   alias StarlightBot.Ctx
   alias StarlightBot.Vision.HookRegistry
 
-  @pick_delay_ms 400
+  @pick_delay_ms 300
+  @settle_ms 100
   @tier_hooks [:mounting_trials_tier_4, :mounting_trials_tier_3, :mounting_trials_tier_2, :mounting_trials_tier_1]
   @selection_states [
     mounting_trials_2_of_2: {2, 2},
@@ -16,6 +17,7 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
   ]
   @selection_hooks Keyword.keys(@selection_states)
   @max_select_attempts 4
+  @selected_hook :mounting_trials_selected_orange
 
   screen :mounting_trials, identity: :mounting_trials do
     transition to: :mounting_trials_over, do: [custom(&select_and_confirm_gifts/2)]
@@ -38,8 +40,10 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
         {selected, total} ->
           Ctx.log(ctx, :info, "mounting trials: #{selected}/#{total} selected, picking #{total - selected}")
 
-          with {:ok, _} <- GiftPicker.pick(scan_hook(total), total - selected, @tier_hooks, :mounting_trials, ctx, @pick_delay_ms),
-               do: select_and_confirm(ctx, attempts - 1)
+          with {:ok, _} <- GiftPicker.pick(scan_hook(total), total - selected, @tier_hooks, :mounting_trials, ctx, @pick_delay_ms, selected_hook: @selected_hook) do
+            Process.sleep(@settle_ms)
+            select_and_confirm(ctx, attempts - 1)
+          end
 
         nil ->
           select_and_confirm(ctx, attempts - 1)
