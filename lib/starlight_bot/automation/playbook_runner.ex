@@ -843,10 +843,25 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp sinner_groups("except", ids, frame, tray, profiles, ctx) do
-    with {:ok, excluded} <- excluded_groups(ids, frame, tray, profiles, ctx) do
+    with {:ok, excluded} <- located_groups(ids, frame, tray, profiles, "so everyone counts as not", ctx) do
       names = Enum.map_join(ids, ", ", &profiles[&1].name)
       who = %{name: if(ids == [], do: "everyone", else: "everyone but #{names}")}
       {:ok, tray |> tray_groups() |> Enum.reject(&(&1 in excluded)) |> Enum.map(&{&1, who})}
+    end
+  end
+
+  defp sinner_groups(side, ids, frame, tray, profiles, ctx) when side in ["after", "before"] do
+    with {:ok, anchors} <- located_groups(ids, frame, tray, profiles, "so it can't anchor", ctx) do
+      case List.flatten(anchors) do
+        [] ->
+          Ctx.log(ctx, :info, "playbook: none of the #{side} sinners are in the skill tray, skipping")
+          :skip
+
+        anchor_columns ->
+          names = Enum.map_join(ids, ", ", &profiles[&1].name)
+          who = %{name: "everyone #{side} #{names}"}
+          {:ok, tray |> tray_groups() |> Enum.filter(&on_side?(side, &1, anchor_columns)) |> Enum.map(&{&1, who})}
+      end
     end
   end
 
@@ -870,13 +885,16 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     if groups == [], do: :skip, else: {:ok, groups}
   end
 
-  defp excluded_groups(ids, frame, tray, profiles, ctx) do
+  defp on_side?("after", columns, anchor_columns), do: Enum.min(columns) > Enum.max(anchor_columns)
+  defp on_side?("before", columns, anchor_columns), do: Enum.max(columns) < Enum.min(anchor_columns)
+
+  defp located_groups(ids, frame, tray, profiles, missing_note, ctx) do
     Enum.reduce_while(ids, {:ok, []}, fn id, {:ok, acc} ->
       with {:ok, profile} <- fetch_profile(profiles, id, ctx),
            {:ok, hook} <- locator_hook(profile, ctx) do
         case Matcher.find_all(frame, hook) do
           [] ->
-            Ctx.log(ctx, :info, "playbook: #{profile.name} not found in the skill tray, so everyone counts as not #{profile.name}")
+            Ctx.log(ctx, :info, "playbook: #{profile.name} not found in the skill tray, #{missing_note} #{profile.name}")
             {:cont, {:ok, acc}}
 
           rects ->

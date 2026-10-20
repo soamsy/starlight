@@ -735,7 +735,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
 
     ~H"""
     <select name={field_name(@prefix, "who")} class="select select-bordered select-xs">
-      <%= for {who, label} <- [{"only", "sinners"}, {"except", "all but"}, {"everyone", "everyone"}] do %>
+      <%= for {who, label} <- [{"only", "sinners"}, {"except", "all but"}, {"after", "all after"}, {"before", "all before"}, {"everyone", "everyone"}] do %>
         <option value={who} selected={@holder["who"] == who}><%= label %></option>
       <% end %>
     </select>
@@ -1059,7 +1059,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
       |> Enum.uniq()
 
     holder
-    |> Map.put("who", if(params["who"] == "except", do: "except", else: "only"))
+    |> Map.put("who", if(params["who"] in ["except", "after", "before"], do: params["who"], else: "only"))
     |> Map.put("profile_ids", ids)
   end
 
