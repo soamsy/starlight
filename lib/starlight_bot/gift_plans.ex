@@ -9,8 +9,9 @@ defmodule StarlightBot.GiftPlans do
     "fusion" => {"fusions", "fusions"},
     "buy_list" => {"shopping_lists", "list"}
   }
-  @skill_options ~w(s1_s3 s1_s2 s2_s3)
+  @skill_options ~w(s1_s3 s2_s3 s1_s2)
   @heal_cost 100
+  @skill_replace_cost 50
   @uptie_step_costs %{1 => [50, 100], 2 => [60, 120], 3 => [75, 150], 4 => [100, 200]}
   @default_grace_indexes [0, 2, 3, 7]
   @gift_search_max 3
@@ -50,6 +51,7 @@ defmodule StarlightBot.GiftPlans do
   def step_kinds, do: @step_kinds
   def skill_options, do: @skill_options
   def heal_cost, do: @heal_cost
+  def skill_replace_cost, do: @skill_replace_cost
   def library_ref(kind), do: Map.get(@library_refs, kind)
   def gift_search_max, do: @gift_search_max
 
