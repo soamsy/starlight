@@ -481,21 +481,42 @@ defmodule StarlightBot.GiftPlans do
 
   def parse_tier_entry(_entry), do: nil
 
-  def entry_label(entry) do
-    case parse_tier_entry(entry) do
-      nil -> entry
-      tier -> "Any T#{tier}"
+  def affinity_entry(affinity, tiers) do
+    case tiers |> Enum.uniq() |> Enum.sort() do
+      [] -> "affinity:#{affinity}"
+      tiers -> "affinity:#{affinity}:#{Enum.join(tiers, ",")}"
     end
   end
 
-  def list_rank(entries, gift) do
-    Enum.find_index(entries, fn entry ->
-      case parse_tier_entry(entry) do
-        nil -> entry == gift.name
-        tier -> tier == gift.tier
-      end
-    end)
+  def parse_affinity_entry("affinity:" <> rest) do
+    case String.split(rest, ":") do
+      [affinity] -> {affinity, []}
+      [affinity, tiers] -> {affinity, tiers |> String.split(",", trim: true) |> Enum.map(&String.to_integer/1)}
+    end
   end
+
+  def parse_affinity_entry(_entry), do: nil
+
+  def pattern_entry?(entry), do: not is_nil(parse_tier_entry(entry)) or not is_nil(parse_affinity_entry(entry))
+
+  def entry_matches?(entry, gift) do
+    case {parse_tier_entry(entry), parse_affinity_entry(entry)} do
+      {tier, nil} when is_integer(tier) -> tier == Map.get(gift, :tier)
+      {nil, {affinity, tiers}} -> Map.get(gift, :affinity) == affinity and (tiers == [] or Map.get(gift, :tier) in tiers)
+      {nil, nil} -> entry == gift.name
+    end
+  end
+
+  def entry_label(entry) do
+    case {parse_tier_entry(entry), parse_affinity_entry(entry)} do
+      {tier, nil} when is_integer(tier) -> "Any T#{tier}"
+      {nil, {affinity, []}} -> "Any #{affinity}"
+      {nil, {affinity, tiers}} -> "Any #{affinity} " <> Enum.map_join(tiers, ", ", &"T#{&1}")
+      {nil, nil} -> entry
+    end
+  end
+
+  def list_rank(entries, gift), do: Enum.find_index(entries, &entry_matches?(&1, gift))
 
   def list_owned_count(entries, owned_gifts), do: Enum.count(owned_gifts, &list_rank(entries, &1))
 
@@ -820,6 +841,8 @@ defmodule StarlightBot.GiftPlans do
     MapSet.new(keep_gifts(data, workflow) ++ derived_protected(data, workflow, gifts))
   end
 
+  def protected?(protected, gift), do: MapSet.member?(protected, gift.name) or Enum.any?(protected, &(is_binary(&1) and pattern_entry?(&1) and entry_matches?(&1, gift)))
+
   def ingredient_ids(%{ingredients: ingredients}) when is_binary(ingredients) and ingredients != "" do
     ingredients |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
   end
@@ -836,8 +859,9 @@ defmodule StarlightBot.GiftPlans do
   def fodder(owned, protected, gifts_by_id) do
     for {id, %{uptie: uptie, count: count}} <- owned,
         gift = gifts_by_id[id],
-        gift && gift.tier in 1..4 && (uptie || 0) < 1 && not MapSet.member?(protected, gift.name) do
-      %{id: id, name: gift.name, tier: gift.tier, uptie: uptie, selling_cost: gift.selling_cost || 0}
+        gift && gift.tier in 1..4 && (uptie || 0) < 1 && not protected?(protected, gift),
+        _copy <- 1..count//1 do
+      %{id: id, name: gift.name, tier: gift.tier, affinity: Map.get(gift, :affinity), uptie: uptie, selling_cost: gift.selling_cost || 0}
     end
   end
 

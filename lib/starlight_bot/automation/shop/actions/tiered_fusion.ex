@@ -102,7 +102,7 @@ defmodule StarlightBot.Automation.Shop.Actions.TieredFusion do
 
     items
     |> Enum.uniq_by(& &1.gift_id)
-    |> Enum.reject(&(Map.has_key?(owned, &1.gift_id) or MapSet.member?(state.protected, &1.gift_name)))
+    |> Enum.reject(&((Map.has_key?(owned, &1.gift_id) and not EgoGifts.stackable?(&1.gift_name)) or GiftPlans.protected?(state.protected, state.gifts_by_id[&1.gift_id] || %{name: &1.gift_name, tier: nil})))
     |> Enum.filter(&(state.gifts_by_id[&1.gift_id] && state.gifts_by_id[&1.gift_id].tier in wanted))
     |> Enum.sort_by(&(-state.gifts_by_id[&1.gift_id].tier))
   end

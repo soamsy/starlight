@@ -727,6 +727,20 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("lib_add_affinity", %{"def_id" => id, "affinity" => affinity} = params, socket) when affinity != "" do
+    tiers = for tier <- params["tiers"] || [], do: String.to_integer(tier)
+    entry = GiftPlans.affinity_entry(affinity, tiers)
+
+    {:noreply,
+     update_plan(socket, &update_definition(&1, "lists", id, fn list ->
+       if entry in list["gifts"], do: list, else: Map.put(list, "gifts", list["gifts"] ++ [entry])
+     end))}
+  end
+
+  @impl true
+  def handle_event("lib_add_affinity", _params, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_event("lib_reorder_gifts", %{"scope" => scope, "ids" => ids}, socket) do
     [lib, id] = String.split(scope, ":")
     {:noreply, update_plan(socket, &update_definition(&1, lib, id, fn definition -> Map.put(definition, "gifts", ids) end))}
@@ -1646,7 +1660,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
              class={"flex items-center gap-2 flex-1 min-w-0 " <> if(gift, do: "cursor-pointer", else: "")}>
           <img :if={gift} src={gift.image_path} class="w-6 h-6 rounded object-cover" />
           <span :if={gift} class="badge badge-ghost badge-xs">T<%= gift.tier %></span>
-          <span :if={GiftPlans.parse_tier_entry(name)} class="badge badge-secondary badge-xs">any tier</span>
+          <span :if={GiftPlans.pattern_entry?(name)} class="badge badge-secondary badge-xs">any</span>
           <span class={"text-[11px] flex-1 truncate " <> if(gift && @selected_gift_name == name, do: "font-semibold text-primary", else: "")}><%= GiftPlans.entry_label(name) %></span>
         </div>
         <%= render_slot(@extra, %{name: name, gift: gift}) %>
