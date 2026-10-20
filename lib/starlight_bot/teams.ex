@@ -35,7 +35,7 @@ defmodule StarlightBot.Teams do
         select: %{
           id: t.id,
           name: t.name,
-          hook: t.hook,
+          hooks: t.hooks,
           gift_strategy_id: t.gift_strategy_id,
           gift_strategy_name: g.name,
           battle_strategy_id: t.battle_strategy_id,
@@ -45,7 +45,7 @@ defmodule StarlightBot.Teams do
           theme_pack_plan_name: p.name
         }
     )
-    |> Enum.map(&decorate/1)
+    |> Enum.map(&(&1 |> decode_hooks() |> decorate()))
   rescue
     _ -> []
   end
@@ -60,13 +60,14 @@ defmodule StarlightBot.Teams do
         select: %{
           id: t.id,
           name: t.name,
-          hook: t.hook,
+          hooks: t.hooks,
           gift_strategy_id: t.gift_strategy_id,
           gift_strategy_data: g.data,
           battle_strategy_id: t.battle_strategy_id,
           theme_pack_plan_id: t.theme_pack_plan_id
         }
     )
+    |> decode_hooks()
     |> decode_affinity()
   rescue
     _ -> nil
@@ -77,7 +78,7 @@ defmodule StarlightBot.Teams do
 
     row = %{
       name: name,
-      hook: blank_to_nil(attrs[:hook]),
+      hooks: Jason.encode!(attrs[:hooks] || []),
       gift_strategy_id: attrs[:gift_strategy_id],
       battle_strategy_id: attrs[:battle_strategy_id],
       theme_pack_plan_id: attrs[:theme_pack_plan_id]
@@ -112,7 +113,7 @@ defmodule StarlightBot.Teams do
   def duplicate_team(id) when is_integer(id) do
     case get_team(id) do
       nil -> {:error, :not_found}
-      team -> team |> Map.take([:hook, :gift_strategy_id, :battle_strategy_id, :theme_pack_plan_id]) |> Map.put(:name, unique_name("#{team.name} (copy)")) |> save_team()
+      team -> team |> Map.take([:hooks, :gift_strategy_id, :battle_strategy_id, :theme_pack_plan_id]) |> Map.put(:name, unique_name("#{team.name} (copy)")) |> save_team()
     end
   end
 
@@ -135,9 +136,12 @@ defmodule StarlightBot.Teams do
         do: {label, hooks}
   end
 
-  defp blank_to_nil(nil), do: nil
-  defp blank_to_nil(""), do: nil
-  defp blank_to_nil(val), do: val
+  def hook_label("team_" <> type), do: String.upcase(type)
+  def hook_label(hook), do: hook
+
+  def pick_hook(%{hooks: hooks}, hook) do
+    if hook in hooks, do: hook, else: List.first(hooks)
+  end
 
   defp unique_name(base) do
     existing = Repo.all(from t in "teams", select: t.name) |> MapSet.new()
@@ -148,6 +152,18 @@ defmodule StarlightBot.Teams do
     else
       base
     end
+  end
+
+  defp decode_hooks(nil), do: nil
+
+  defp decode_hooks(%{hooks: json} = team) do
+    hooks =
+      case Jason.decode(json || "") do
+        {:ok, hooks} when is_list(hooks) -> hooks
+        _ -> []
+      end
+
+    %{team | hooks: hooks}
   end
 
   defp decode_affinity(nil), do: nil
@@ -179,7 +195,7 @@ defmodule StarlightBot.Teams do
 
     missing =
       [
-        team.hook in [nil, ""] and :hook,
+        team.hooks == [] and :hook,
         is_nil(team.gift_strategy_id) and :gift_strategy,
         is_nil(team.battle_strategy_id) and :battle_strategy,
         lineup_issues != [] and :lineup,

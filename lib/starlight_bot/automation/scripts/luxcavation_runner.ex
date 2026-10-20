@@ -11,7 +11,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   @post_battle_settle_ms 500
 
   def run(
-        team_id,
+        team,
         exp_consecutive,
         exp_repeats,
         thread_consecutive,
@@ -23,7 +23,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
       )
 
   def run(
-        team_id,
+        %{id: team_id} = team,
         exp_consecutive,
         exp_repeats,
         thread_consecutive,
@@ -41,7 +41,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
              is_integer(enkephalin_convert_count) and enkephalin_convert_count in 0..4 do
     {:ok, run_memory} = RunMemory.start_link()
     ctx = %{ctx | run_memory: run_memory}
-    RunMemory.put_team(ctx, %{id: team_id})
+    RunMemory.put_team(ctx, team)
     RunMemory.put_context(ctx, :luxcavation)
 
     result =

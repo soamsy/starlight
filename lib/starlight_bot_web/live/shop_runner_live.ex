@@ -20,6 +20,7 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
      |> assign(:run_memory, nav.run_memory)
      |> assign(:teams, teams)
      |> assign(:team_id, default_team_id(teams))
+     |> then(&assign(&1, :team_hook, resolve_team_hook(&1, nil)))
      |> assign(:floor, 1)
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)}
@@ -29,7 +30,7 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
   def handle_event("dry_run", _, socket) do
     case Enum.find(socket.assigns.teams, &(&1.id == socket.assigns.team_id)) do
       nil -> {:noreply, put_flash(socket, :error, "Pick a team first.")}
-      team -> {:noreply, start_countdown(socket, {:run_shop_dry_run, team.id, team.name, socket.assigns.floor})}
+      team -> {:noreply, start_countdown(socket, {:run_shop_dry_run, %{id: team.id, hook: socket.assigns.team_hook}, team.name, socket.assigns.floor})}
     end
   end
 
@@ -37,7 +38,7 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
   def handle_event("full_run", _, socket) do
     case Enum.find(socket.assigns.teams, &(&1.id == socket.assigns.team_id)) do
       nil -> {:noreply, put_flash(socket, :error, "Pick a team first.")}
-      team -> {:noreply, start_countdown(socket, {:run_shop, team.id, team.name, socket.assigns.floor})}
+      team -> {:noreply, start_countdown(socket, {:run_shop, %{id: team.id, hook: socket.assigns.team_hook}, team.name, socket.assigns.floor})}
     end
   end
 
@@ -108,6 +109,7 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
   defp apply_form(socket, params) do
     socket
     |> assign(:team_id, parse_team_id(params["team_id"] || "", socket.assigns.team_id))
+    |> then(&assign(&1, :team_hook, resolve_team_hook(&1, params["team_hook"])))
     |> assign(:floor, parse_floor(params["floor"] || "", socket.assigns.floor))
   end
 
@@ -118,6 +120,15 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
     end
   end
 
+  defp resolve_team_hook(socket, hook) do
+    case Enum.find(socket.assigns.teams, &(&1.id == socket.assigns.team_id)) do
+      nil -> nil
+      team -> Teams.pick_hook(team, hook)
+    end
+  end
+
+  def team_hooks(teams, team_id), do: Enum.find_value(teams, [], &(&1.id == team_id && &1.hooks))
+
   defp start_countdown(socket, action) do
     Process.send_after(self(), :countdown_tick, 1_000)
 
@@ -126,8 +137,8 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
     |> assign(:countdown, @countdown_secs)
   end
 
-  defp run_pending_action({:run_shop_dry_run, team_id, _team_name, floor}), do: Navigator.run_shop_dry_run(team_id, floor)
-  defp run_pending_action({:run_shop, team_id, _team_name, floor}), do: Navigator.run_shop(team_id, floor)
+  defp run_pending_action({:run_shop_dry_run, team, _team_name, floor}), do: Navigator.run_shop_dry_run(team, floor)
+  defp run_pending_action({:run_shop, team, _team_name, floor}), do: Navigator.run_shop(team, floor)
 
   def pending_action_label({:run_shop_dry_run, _team_id, team_name, floor}), do: "shop dry run: #{team_name}, floor #{floor}"
   def pending_action_label({:run_shop, _team_id, team_name, floor}), do: "shop runner (full run): #{team_name}, floor #{floor}"

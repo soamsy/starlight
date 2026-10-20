@@ -40,7 +40,7 @@ defmodule StarlightBot.Navigation.Navigator do
   def run_script(script_name), do: GenServer.cast(__MODULE__, {:run_script, script_name})
 
   def run_luxcavation(
-        team_id,
+        team,
         exp_consecutive,
         exp_repeats,
         thread_consecutive,
@@ -52,22 +52,22 @@ defmodule StarlightBot.Navigation.Navigator do
       do:
         GenServer.cast(
           __MODULE__,
-          {:run_luxcavation, team_id, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
+          {:run_luxcavation, team, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
            collect_enkephalin?, enkephalin_convert_count}
         )
 
-  def run_mirror_dungeon(team_ids, run_count, config),
-    do: GenServer.cast(__MODULE__, {:run_mirror_dungeon, team_ids, run_count, config})
+  def run_mirror_dungeon(picks, run_count, config),
+    do: GenServer.cast(__MODULE__, {:run_mirror_dungeon, picks, run_count, config})
 
-  def queue_after_run({:run_mirror_dungeon, _team_ids, _run_count, _config} = next),
+  def queue_after_run({:run_mirror_dungeon, _picks, _run_count, _config} = next),
     do: GenServer.cast(__MODULE__, {:queue_after_run, next})
 
   def select_team_on_screen(team_id),
     do: GenServer.cast(__MODULE__, {:select_team_on_screen, team_id})
 
-  def run_shop_dry_run(team_id, floor), do: GenServer.cast(__MODULE__, {:run_shop_dry_run, team_id, floor})
+  def run_shop_dry_run(team, floor), do: GenServer.cast(__MODULE__, {:run_shop_dry_run, team, floor})
 
-  def run_shop(team_id, floor), do: GenServer.cast(__MODULE__, {:run_shop, team_id, floor})
+  def run_shop(team, floor), do: GenServer.cast(__MODULE__, {:run_shop, team, floor})
 
   def claim_rewards(config), do: GenServer.cast(__MODULE__, {:claim_rewards, config})
 
@@ -252,7 +252,7 @@ defmodule StarlightBot.Navigation.Navigator do
     do: refuse_run(state, "mirror dungeon", "luxcavation")
 
   def handle_cast(
-        {:run_luxcavation, team_id, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
+        {:run_luxcavation, team, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
          collect_enkephalin?, enkephalin_convert_count},
         state
       ) do
@@ -262,7 +262,7 @@ defmodule StarlightBot.Navigation.Navigator do
       add_log(
         state,
         :info,
-        "Running luxcavation: team=#{team_id} exp=#{exp_repeats}x#{exp_consecutive} thread=#{thread_repeats}x#{thread_consecutive} " <>
+        "Running luxcavation: team=#{team.id} hook=#{team.hook} exp=#{exp_repeats}x#{exp_consecutive} thread=#{thread_repeats}x#{thread_consecutive} " <>
           "collect_xp=#{collect_xp?} collect_enkephalin=#{collect_enkephalin?} enkephalin_convert_count=#{enkephalin_convert_count}"
       )
 
@@ -280,7 +280,7 @@ defmodule StarlightBot.Navigation.Navigator do
 
         result =
           StarlightBot.Automation.Scripts.LuxcavationRunner.run(
-            team_id,
+            team,
             exp_consecutive,
             exp_repeats,
             thread_consecutive,
@@ -300,10 +300,10 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
-  def handle_cast({:run_mirror_dungeon, team_ids, run_count, config}, state) do
+  def handle_cast({:run_mirror_dungeon, picks, run_count, config}, state) do
     state = cancel_running(state)
     state = %{state | run_memory: %{}}
-    state = add_log(state, :info, "Running mirror dungeon: teams=#{inspect(team_ids)} runs=#{run_count} config=#{inspect(config)}")
+    state = add_log(state, :info, "Running mirror dungeon: teams=#{inspect(picks)} runs=#{run_count} config=#{inspect(config)}")
     me = self()
     pause_flag = :atomics.new(1, [])
 
@@ -317,7 +317,7 @@ defmodule StarlightBot.Navigation.Navigator do
             on_run_memory_change: fn snapshot -> send(me, {:nav_run_memory, snapshot}) end
           )
 
-        result = StarlightBot.Automation.Scripts.MirrorDungeonRunner.run(team_ids, run_count, config, ctx)
+        result = StarlightBot.Automation.Scripts.MirrorDungeonRunner.run(picks, run_count, config, ctx)
         send(me, {:nav_result, :run_script, result})
       end).pid
 
@@ -357,15 +357,15 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
-  def handle_cast({:run_shop_dry_run, team_id, floor}, state) do
+  def handle_cast({:run_shop_dry_run, team, floor}, state) do
     state = cancel_running(state)
     state = %{state | run_memory: %{}}
-    state = add_log(state, :info, "Shop dry run: team=#{team_id} floor=#{floor}")
+    state = add_log(state, :info, "Shop dry run: team=#{team.id} hook=#{team.hook} floor=#{floor}")
     me = self()
 
     pid =
       Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-        result = run_shop_script(me, team_id, floor, &ShopRunner.dry_run/1)
+        result = run_shop_script(me, team, floor, &ShopRunner.dry_run/1)
         send(me, {:nav_result, :shop_dry_run, result})
       end).pid
 
@@ -375,15 +375,15 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
-  def handle_cast({:run_shop, team_id, floor}, state) do
+  def handle_cast({:run_shop, team, floor}, state) do
     state = cancel_running(state)
     state = %{state | run_memory: %{}}
-    state = add_log(state, :info, "Shop runner (full run): team=#{team_id} floor=#{floor}")
+    state = add_log(state, :info, "Shop runner (full run): team=#{team.id} hook=#{team.hook} floor=#{floor}")
     me = self()
 
     pid =
       Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-        result = run_shop_script(me, team_id, floor, &ShopRunner.run/1)
+        result = run_shop_script(me, team, floor, &ShopRunner.run/1)
         send(me, {:nav_result, :shop_runner, result})
       end).pid
 
@@ -667,7 +667,7 @@ defmodule StarlightBot.Navigation.Navigator do
     {:noreply, state}
   end
 
-  defp run_shop_script(me, team_id, floor, fun) do
+  defp run_shop_script(me, team, floor, fun) do
     {:ok, run_memory} = RunMemory.start_link()
 
     ctx =
@@ -677,7 +677,7 @@ defmodule StarlightBot.Navigation.Navigator do
         run_memory: run_memory
       )
 
-    RunMemory.put_team(ctx, %{id: team_id})
+    RunMemory.put_team(ctx, team)
     RunMemory.put_floor(ctx, floor)
     result = fun.(ctx)
     RunMemory.stop(ctx)
@@ -694,8 +694,8 @@ defmodule StarlightBot.Navigation.Navigator do
     handle_cast(:localize, state)
   end
 
-  defp next_run_label({:run_mirror_dungeon, team_ids, run_count, _config}),
-    do: "mirror dungeon (#{run_count} run(s), #{length(team_ids)} team(s))"
+  defp next_run_label({:run_mirror_dungeon, picks, run_count, _config}),
+    do: "mirror dungeon (#{run_count} run(s), #{length(picks)} team(s))"
 
   defp refuse_run(state, wanted, active) do
     state = add_log(state, :error, "Not starting #{wanted}: #{active} is running. Cancel it first.")

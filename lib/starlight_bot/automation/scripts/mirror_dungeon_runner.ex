@@ -33,16 +33,16 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   @next_screen_poll_ms 100
   @cabinet_available_hooks [cabinet_ego_gift_available_3: 3, cabinet_ego_gift_available_2: 2, cabinet_ego_gift_available_1: 1]
 
-  def run(team_ids, run_count, config, ctx \\ Ctx.new())
+  def run(picks, run_count, config, ctx \\ Ctx.new())
 
-  def run([_ | _] = team_ids, run_count, %{weekly_bonus?: wb} = config, ctx)
+  def run([_ | _] = picks, run_count, %{weekly_bonus?: wb} = config, ctx)
       when is_integer(run_count) and run_count >= 0 and is_boolean(wb) do
     {:ok, run_memory} = RunMemory.start_link()
     ctx = %{ctx | run_memory: run_memory}
     if Map.get(config, :capture_ego_gifts?, false), do: EgoGiftCapture.enable()
 
     result =
-      with {:ok, teams} <- prepare_teams(team_ids, ctx),
+      with {:ok, teams} <- prepare_teams(picks, ctx),
            {:ok, first_screen} <- localize_at_start(ctx, 0) do
         cycle = activate(%{teams: teams, index: 0}, ctx)
         RunMemory.put_context(ctx, :mirror_dungeon)
@@ -57,16 +57,25 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     result
   end
 
-  def run(_team_ids, _run_count, _config, ctx) do
-    Ctx.log(ctx, :error, "team_ids must be a non-empty list, run_count a non-negative integer, and config must include weekly_bonus?")
+  def run(_picks, _run_count, _config, ctx) do
+    Ctx.log(ctx, :error, "teams must be a non-empty list, run_count a non-negative integer, and config must include weekly_bonus?")
     {:error, :invalid_arguments}
   end
 
-  defp prepare_teams(team_ids, ctx) do
-    Enum.reduce_while(team_ids, {:ok, []}, fn team_id, {:ok, acc} ->
+  defp prepare_teams(picks, ctx) do
+    Enum.reduce_while(picks, {:ok, []}, fn %{id: team_id, hook: hook}, {:ok, acc} ->
       with {:ok, team} <- fetch_team(team_id, ctx),
-           {:ok, team_type} <- resolve_team_type(team, ctx) do
-        prepared = %{id: team_id, name: team.name, type: team_type, affinity: resolve_affinity(team), grace_picks: resolve_grace_picks(team)}
+           hook = Teams.pick_hook(team, hook),
+           {:ok, team_type} <- resolve_team_type(hook, ctx) do
+        prepared = %{
+          id: team_id,
+          name: team.name,
+          hook: hook,
+          type: team_type,
+          affinity: resolve_affinity(team),
+          grace_picks: resolve_grace_picks(team)
+        }
+
         {:cont, {:ok, acc ++ [prepared]}}
       else
         {:error, _} = err -> {:halt, err}
@@ -76,8 +85,8 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   defp activate(%{teams: teams, index: index} = cycle, ctx) do
     team = Enum.at(teams, index)
-    RunMemory.put_team(ctx, %{id: team.id, name: team.name, type: team.type, affinity: Atom.to_string(team.affinity)})
-    if length(teams) > 1, do: Ctx.log(ctx, :info, "team cycle: using #{team.name} (#{index + 1}/#{length(teams)})")
+    RunMemory.put_team(ctx, %{id: team.id, name: team.name, hook: team.hook, type: team.type, affinity: Atom.to_string(team.affinity)})
+    if length(teams) > 1, do: Ctx.log(ctx, :info, "team cycle: using #{team.name} with #{team.hook} (#{index + 1}/#{length(teams)})")
     Map.put(cycle, :team, team)
   end
 
@@ -94,9 +103,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     end
   end
 
-  defp resolve_team_type(team, ctx) do
-    case team do
-      %{hook: "team_" <> type} when type != "" ->
+  defp resolve_team_type(hook, ctx) do
+    case hook do
+      "team_" <> type when type != "" ->
         if type in Teams.team_types() do
           {:ok, String.to_atom(type)}
         else
@@ -104,11 +113,11 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
           {:error, :unknown_team_hook}
         end
 
-      %{hook: hook} when is_binary(hook) and hook != "" ->
+      hook when is_binary(hook) ->
         Ctx.log(ctx, :error, "team has an unrecognized hook #{hook}")
         {:error, :unknown_team_hook}
 
-      %{} ->
+      nil ->
         Ctx.log(ctx, :error, "team has no team-select hook configured")
         {:error, :team_missing_hook}
     end

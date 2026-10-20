@@ -16,7 +16,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
     end
 
     nav = Navigator.status()
-    teams = Teams.list_teams() |> Enum.reject(&(&1.hook in [nil, ""]))
+    teams = Teams.list_teams() |> Enum.reject(&(&1.hooks == []))
 
     {:ok,
      socket
@@ -27,6 +27,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:log, nav.log)
      |> assign(:teams, teams)
      |> assign(:team_id, default_team_id(teams))
+     |> assign(:team_hook, nil)
      |> assign(:exp_consecutive, "1")
      |> assign(:exp_repeats, "1")
      |> assign(:thread_consecutive, "3")
@@ -84,6 +85,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
     {:noreply,
      socket
      |> assign(:team_id, parse_team_id(team_id, socket.assigns.team_id))
+     |> then(&assign(&1, :team_hook, resolve_team_hook(&1, params["team_hook"])))
      |> assign(:exp_consecutive, exp_consecutive)
      |> assign(:exp_repeats, exp_repeats)
      |> assign(:thread_consecutive, thread_consecutive)
@@ -206,12 +208,12 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   end
 
   defp run_pending_action(
-         {:run_luxcavation, team_id, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
+         {:run_luxcavation, team, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
           collect_enkephalin?, enkephalin_convert_count}
        ),
        do:
          Navigator.run_luxcavation(
-           team_id,
+           team,
            exp_consecutive,
            exp_repeats,
            thread_consecutive,
@@ -236,6 +238,15 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
 
   def pending_action_label({:then, lux, md}), do: pending_action_label(lux) <> ", then " <> MirrorDungeonLive.pending_action_label(md)
   def pending_action_label(:resume_luxcavation), do: "resume luxcavation"
+
+  defp resolve_team_hook(socket, hook) do
+    case Enum.find(socket.assigns.teams, &(&1.id == socket.assigns.team_id)) do
+      nil -> nil
+      team -> Teams.pick_hook(team, hook)
+    end
+  end
+
+  def team_hooks(teams, team_id), do: Enum.find_value(teams, [], &(&1.id == team_id && &1.hooks))
 
   @enkephalin_cumulative_costs [0, 26, 78, 156, 260]
 

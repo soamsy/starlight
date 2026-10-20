@@ -24,6 +24,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:gift_affinities, @gift_affinities)
      |> assign(:form, blank_form())
      |> assign(:editing_id, nil)
+     |> assign(:hooks, [])
      |> assign(:active, false)
      |> assign(:selected_ids, blank_selected_ids())
      |> assign(:strategy_forms, blank_strategy_forms())
@@ -50,8 +51,8 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
-  def handle_event("duplicate_team", _, %{assigns: %{editing_id: id}} = socket) when is_integer(id) do
-    case Teams.duplicate_team(id) do
+  def handle_event("duplicate_team", %{"id" => id}, socket) do
+    case Teams.duplicate_team(String.to_integer(id)) do
       {:ok, new_id} ->
         {:noreply,
          socket
@@ -64,8 +65,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     end
   end
 
-  def handle_event("duplicate_team", _, socket), do: {:noreply, socket}
-
   @impl true
   def handle_event("edit_team", %{"id" => id}, socket) do
     {:noreply, load_team(socket, String.to_integer(id))}
@@ -73,23 +72,42 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   @impl true
   def handle_event("validate_team", %{"team" => params}, socket) do
-    {:noreply, assign(socket, :form, build_form(params))}
+    socket = assign(socket, :form, build_form(params))
+    name = String.trim(params["name"] || "")
+
+    if name == "" do
+      {:noreply, socket}
+    else
+      case Teams.save_team(team_attrs(socket, name)) do
+        {:ok, _id} -> {:noreply, assign(socket, :teams, Teams.list_teams())}
+        {:error, reason} -> {:noreply, put_flash(socket, :error, "Save failed: #{inspect(reason)}")}
+      end
+    end
   end
 
   @impl true
-  def handle_event("save_team", %{"team" => params}, socket) do
-    attrs = team_attrs(socket, String.trim(params["name"] || ""), params["hook"])
+  def handle_event("add_team_hook", %{"hook" => hook}, socket) do
+    if hook == "" or hook in socket.assigns.hooks do
+      {:noreply, socket}
+    else
+      {:noreply, socket |> assign(:hooks, socket.assigns.hooks ++ [hook]) |> persist_team()}
+    end
+  end
 
-    case Teams.save_team(attrs) do
-      {:ok, id} ->
-        {:noreply,
-         socket
-         |> assign(:teams, Teams.list_teams())
-         |> assign(:editing_id, id)
-         |> put_flash(:info, "Team '#{attrs.name}' saved.")}
+  @impl true
+  def handle_event("remove_team_hook", %{"index" => index}, socket) do
+    {:noreply, socket |> assign(:hooks, List.delete_at(socket.assigns.hooks, String.to_integer(index))) |> persist_team()}
+  end
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Save failed: #{inspect(reason)}")}
+  @impl true
+  def handle_event("reorder_team_hooks", %{"ids" => ids}, socket) do
+    hooks = socket.assigns.hooks
+    order = Enum.map(ids, &String.to_integer/1)
+
+    if Enum.sort(order) == Enum.to_list(0..(length(hooks) - 1)//1) do
+      {:noreply, socket |> assign(:hooks, Enum.map(order, &Enum.at(hooks, &1))) |> persist_team()}
+    else
+      {:noreply, socket}
     end
   end
 
@@ -116,7 +134,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     socket =
       socket
       |> update(:selected_ids, &Map.put(&1, kind, parse_id(id)))
-      |> persist_selected_strategy()
+      |> persist_team()
 
     {:noreply, socket}
   end
@@ -155,7 +173,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
            |> assign(table, Strategies.list(table))
            |> update(:selected_ids, &Map.put(&1, kind, id))
            |> update(:strategy_forms, &Map.put(&1, kind, false))
-           |> persist_selected_strategy()
+           |> persist_team()
            |> put_flash(:info, "'#{name}' saved.")}
 
         {:error, reason} ->
@@ -217,23 +235,23 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   def log_kind_class(:info), do: "text-base-content/60"
   def log_kind_class(_), do: "text-base-content/40"
 
-  defp team_attrs(socket, name, hook) do
+  defp team_attrs(socket, name) do
     sel = socket.assigns.selected_ids
 
     %{
       id: socket.assigns.editing_id,
       name: name,
-      hook: hook,
+      hooks: socket.assigns.hooks,
       gift_strategy_id: sel["gift_strategy"],
       battle_strategy_id: sel["battle_strategy"],
       theme_pack_plan_id: sel["theme_pack_plan"]
     }
   end
 
-  defp persist_selected_strategy(%{assigns: %{editing_id: nil}} = socket), do: socket
+  defp persist_team(%{assigns: %{editing_id: nil}} = socket), do: socket
 
-  defp persist_selected_strategy(socket) do
-    attrs = team_attrs(socket, socket.assigns.form[:name].value, socket.assigns.form[:hook].value)
+  defp persist_team(socket) do
+    attrs = team_attrs(socket, socket.assigns.form[:name].value)
 
     case Teams.save_team(attrs) do
       {:ok, _id} -> assign(socket, :teams, Teams.list_teams())
@@ -247,11 +265,10 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         put_flash(socket, :error, "Team not found.")
 
       team ->
-        params = %{"name" => team.name, "hook" => team.hook || ""}
-
         socket
-        |> assign(:form, build_form(params))
+        |> assign(:form, build_form(%{"name" => team.name}))
         |> assign(:editing_id, team.id)
+        |> assign(:hooks, team.hooks)
         |> assign(:active, true)
         |> assign(:selected_ids, %{
           "gift_strategy" => team.gift_strategy_id,
@@ -267,6 +284,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     socket
     |> assign(:form, blank_form())
     |> assign(:editing_id, nil)
+    |> assign(:hooks, [])
     |> assign(:active, false)
     |> assign(:selected_ids, blank_selected_ids())
     |> assign(:strategy_forms, blank_strategy_forms())
@@ -334,7 +352,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   defp blank_form, do: build_form(%{})
 
   defp build_form(params) do
-    types = %{name: :string, hook: :string}
+    types = %{name: :string}
 
     changeset =
       {%{}, types}
@@ -360,7 +378,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     end
   end
 
-  defp missing_label(:hook), do: "hook"
+  defp missing_label(:hook), do: "team selector"
   defp missing_label(:gift_strategy), do: "gift strategy"
   defp missing_label(:battle_strategy), do: "battle strategy"
   defp missing_label(:lineup), do: "lineup (set it up in the battle strategy)"

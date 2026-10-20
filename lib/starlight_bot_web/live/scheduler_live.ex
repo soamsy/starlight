@@ -126,7 +126,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def action_label(nil, _teams), do: "not set up yet"
   def action_label({:run_mirror_dungeon, _, _, _} = action, _teams), do: MirrorDungeonLive.pending_action_label(action)
 
-  def action_label({:run_luxcavation, team_id, exp_c, exp_r, thread_c, thread_r, _xp?, _enkephalin?, _convert}, teams) do
+  def action_label({:run_luxcavation, %{id: team_id}, exp_c, exp_r, thread_c, thread_r, _xp?, _enkephalin?, _convert}, teams) do
     team = Enum.find_value(teams, "team #{team_id}", &(&1.id == team_id && &1.name))
     "luxcavation with #{team}: exp #{exp_r} x #{exp_c}, thread #{thread_r} x #{thread_c}"
   end

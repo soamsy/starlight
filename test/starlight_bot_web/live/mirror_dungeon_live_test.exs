@@ -5,11 +5,15 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
   alias StarlightBot.RunnerForms
   alias StarlightBotWeb.Live.MirrorDungeonLive, as: Live
 
-  @teams [%{id: 5, name: "Burn"}, %{id: 10, name: "Saikai"}]
+  @teams [%{id: 5, name: "Burn", hooks: ["team_burn"]}, %{id: 10, name: "Saikai", hooks: ["team_slash", "team_pierce"]}]
+  @burn %{id: 5, hook: "team_burn"}
+  @saikai %{id: 10, hook: "team_slash"}
+  @saikai_pierce %{id: 10, hook: "team_pierce"}
+  @bleed %{id: 7, hook: "team_bleed"}
 
-  defp socket(team_ids) do
+  defp socket(picks) do
     %Phoenix.LiveView.Socket{
-      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, team_ids: team_ids, start_index: 0, run_count: "1", weekly_bonus: true, collect_enkephalin: false, collect_xp: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil}
+      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, start_index: 0, run_count: "1", weekly_bonus: true, collect_enkephalin: false, collect_xp: false, capture_ego_gifts: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil}
     }
   end
 
@@ -22,22 +26,28 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     socket
   end
 
-  test "parse_team_ids keeps known ids in order, repeats included, and falls back when none are valid" do
-    assert Live.parse_team_ids(["10", "5", "10"], @teams) == [10, 5, 10]
-    assert Live.parse_team_ids(["10", "99", "x"], @teams) == [10]
-    assert Live.parse_team_ids(["99"], @teams, [5]) == [5]
-    assert Live.parse_team_ids(nil, @teams, [5]) == [5]
+  test "parse_team_picks keeps known teams in order, repeats included, and falls back when none are valid" do
+    assert RunnerForms.parse_team_picks(["10", "5", "10"], nil, @teams) == [@saikai, @burn, @saikai]
+    assert RunnerForms.parse_team_picks(["10", "99", "x"], nil, @teams) == [@saikai]
+    assert RunnerForms.parse_team_picks(["99"], nil, @teams, [@burn]) == [@burn]
+    assert RunnerForms.parse_team_picks(nil, nil, @teams, [@burn]) == [@burn]
+  end
+
+  test "parse_team_picks keeps each row's hook and falls back to the team's first hook" do
+    assert RunnerForms.parse_team_picks(["10", "10"], ["team_pierce", "team_slash"], @teams) == [@saikai_pierce, @saikai]
+    assert RunnerForms.parse_team_picks(["10", "5"], ["team_burn", "team_pierce"], @teams) == [@saikai, @burn]
+    assert RunnerForms.parse_team_picks(["5", "10"], ["team_burn"], @teams) == [@burn, @saikai]
   end
 
   test "the cycle grows by repeating the last team and never shrinks below one" do
-    socket = socket([5]) |> event("add_cycle_team", %{}) |> event("update_form", %{"team_ids" => ["5", "10"], "run_count" => "3"})
-    assert socket.assigns.team_ids == [5, 10]
+    socket = socket([@burn]) |> event("add_cycle_team", %{}) |> event("update_form", %{"team_ids" => ["5", "10"], "run_count" => "3"})
+    assert socket.assigns.picks == [@burn, @saikai]
 
     socket = socket |> event("add_cycle_team", %{}) |> event("remove_cycle_team", %{"index" => "0"})
-    assert socket.assigns.team_ids == [10, 10]
+    assert socket.assigns.picks == [@saikai, @saikai]
 
     socket = socket |> event("remove_cycle_team", %{"index" => "1"}) |> event("remove_cycle_team", %{"index" => "0"})
-    assert socket.assigns.team_ids == [10]
+    assert socket.assigns.picks == [@saikai]
   end
 
   test "restoring a saved form reads its team list and hooks" do
@@ -56,52 +66,52 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
   end
 
   test "running queues the whole cycle" do
-    socket = event(socket([5]), "run", %{"team_ids" => ["10", "5"], "run_count" => "2"})
-    assert {:run_mirror_dungeon, [10, 5], 2, %{weekly_bonus?: false, collect_enkephalin?: false}} = socket.assigns.pending_action
+    socket = event(socket([@burn]), "run", %{"team_ids" => ["10", "5"], "run_count" => "2"})
+    assert {:run_mirror_dungeon, [@saikai, @burn], 2, %{weekly_bonus?: false, collect_enkephalin?: false}} = socket.assigns.pending_action
     assert Live.pending_action_label(socket.assigns.pending_action) == "mirror dungeon: 2 run(s) cycling 2 teams"
   end
 
   test "collecting enkephalin carries the lunacy conversion count into the run config" do
     params = %{"team_ids" => ["5"], "run_count" => "2", "collect_enkephalin" => "true", "enkephalin_convert_count" => "2"}
-    socket = event(socket([5]), "run", params)
+    socket = event(socket([@burn]), "run", params)
 
-    assert {:run_mirror_dungeon, [5], 2, %{collect_enkephalin?: true, enkephalin_convert_count: 2}} = socket.assigns.pending_action
+    assert {:run_mirror_dungeon, [@burn], 2, %{collect_enkephalin?: true, enkephalin_convert_count: 2}} = socket.assigns.pending_action
     assert Live.pending_action_label(socket.assigns.pending_action) =~ "enkephalin before each run"
 
-    socket = event(socket([5]), "run", %{params | "enkephalin_convert_count" => "9"})
+    socket = event(socket([@burn]), "run", %{params | "enkephalin_convert_count" => "9"})
     assert socket.assigns.pending_action == nil
   end
 
   test "the starred team starts the run and the cycle wraps around from it" do
-    socket = event(socket([5]), "run", %{"team_ids" => ["5", "10", "7"], "start_index" => "1", "run_count" => "3"})
-    assert {:run_mirror_dungeon, [10, 5], 3, _} = socket.assigns.pending_action
+    socket = event(socket([@burn]), "run", %{"team_ids" => ["5", "10", "7"], "start_index" => "1", "run_count" => "3"})
+    assert {:run_mirror_dungeon, [@saikai, @burn], 3, _} = socket.assigns.pending_action
 
-    teams = @teams ++ [%{id: 7, name: "Bleed"}]
-    socket = %{socket([5]) | assigns: %{socket([5]).assigns | teams: teams}}
+    teams = @teams ++ [%{id: 7, name: "Bleed", hooks: ["team_bleed"]}]
+    socket = %{socket([@burn]) | assigns: %{socket([@burn]).assigns | teams: teams}}
     socket = event(socket, "run", %{"team_ids" => ["5", "10", "7"], "start_index" => "2", "run_count" => "3"})
-    assert {:run_mirror_dungeon, [7, 5, 10], 3, _} = socket.assigns.pending_action
+    assert {:run_mirror_dungeon, [@bleed, @burn, @saikai], 3, _} = socket.assigns.pending_action
 
     socket = event(socket, "run", %{"team_ids" => ["5", "10"], "start_index" => "9", "run_count" => "1"})
-    assert {:run_mirror_dungeon, [5, 10], 1, _} = socket.assigns.pending_action
+    assert {:run_mirror_dungeon, [@burn, @saikai], 1, _} = socket.assigns.pending_action
   end
 
   test "the star follows its team through drags and removals" do
     socket =
-      socket([5, 10, 5, 10])
+      socket([@burn, @saikai, @burn, @saikai])
       |> event("set_cycle_start", %{"index" => "2"})
       |> event("reorder_cycle", %{"ids" => ["2", "0", "1", "3"]})
 
-    assert socket.assigns.team_ids == [5, 5, 10, 10]
+    assert socket.assigns.picks == [@burn, @burn, @saikai, @saikai]
     assert socket.assigns.start_index == 0
 
     socket = socket |> event("reorder_cycle", %{"ids" => ["0", "0", "1", "2"]})
-    assert socket.assigns.team_ids == [5, 5, 10, 10]
+    assert socket.assigns.picks == [@burn, @burn, @saikai, @saikai]
 
     socket = socket |> event("set_cycle_start", %{"index" => "2"}) |> event("remove_cycle_team", %{"index" => "0"})
     assert socket.assigns.start_index == 1
 
     socket = socket |> event("remove_cycle_team", %{"index" => "2"}) |> event("remove_cycle_team", %{"index" => "1"})
-    assert socket.assigns.team_ids == [5]
+    assert socket.assigns.picks == [@burn]
     assert socket.assigns.start_index == 0
   end
 

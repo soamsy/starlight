@@ -17,7 +17,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     end
 
     nav = Navigator.status()
-    teams = Teams.list_teams() |> Enum.reject(&(&1.hook in [nil, ""]))
+    teams = Teams.list_teams() |> Enum.reject(&(&1.hooks == []))
 
     {:ok,
      socket
@@ -37,7 +37,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:history_runs, [])
      |> assign(:history_segments, [])
      |> assign(:teams, teams)
-     |> assign(:team_ids, default_team_ids(teams))
+     |> assign(:picks, default_picks(teams))
      |> assign(:start_index, 0)
      |> assign(:run_count, "1")
      |> assign(:weekly_bonus, true)
@@ -454,15 +454,10 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   def current_mode(run_memory), do: Map.get(run_memory, :mode) || RunMemory.mode_for(Map.get(run_memory, :team), current_floor(run_memory))
 
-  defp default_team_ids([]), do: []
-  defp default_team_ids([%{id: id} | _]), do: [id]
+  defp default_picks([]), do: []
+  defp default_picks([team | _]), do: [%{id: team.id, hook: Teams.pick_hook(team, nil)}]
 
-  def parse_start_index(value, team_ids) do
-    case Integer.parse(to_string(value)) do
-      {n, ""} when n >= 0 and n < length(team_ids) -> n
-      _ -> 0
-    end
-  end
+  def team_hooks(teams, team_id), do: Enum.find_value(teams, [], &(&1.id == team_id && &1.hooks))
 
   def restore_form(socket, nil), do: socket
 
@@ -506,14 +501,14 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     |> assign(:countdown, @countdown_secs)
   end
 
-  defp run_pending_action({:run_mirror_dungeon, team_ids, run_count, config}),
-    do: Navigator.run_mirror_dungeon(team_ids, run_count, config)
+  defp run_pending_action({:run_mirror_dungeon, picks, run_count, config}),
+    do: Navigator.run_mirror_dungeon(picks, run_count, config)
 
   defp run_pending_action(:resume_mirror_dungeon), do: Navigator.resume_mirror_dungeon()
 
-  def pending_action_label({:run_mirror_dungeon, team_ids, run_count, config}) do
+  def pending_action_label({:run_mirror_dungeon, picks, run_count, config}) do
     suffix = if config.weekly_bonus?, do: " + weekly bonuses", else: ""
-    cycle = if length(team_ids) > 1, do: " cycling #{length(team_ids)} teams", else: ""
+    cycle = if length(picks) > 1, do: " cycling #{length(picks)} teams", else: ""
 
     enkephalin =
       if Map.get(config, :collect_enkephalin?, false),

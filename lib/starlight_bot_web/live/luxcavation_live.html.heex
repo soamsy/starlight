@@ -56,6 +56,15 @@
           </select>
         </label>
 
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Team</span>
+          <select name="team_hook" class="select select-sm select-bordered" disabled={@teams == []}>
+            <%= for hook <- team_hooks(@teams, @team_id) do %>
+              <option value={hook} selected={hook == @team_hook}><%= Teams.hook_label(hook) %></option>
+            <% end %>
+          </select>
+        </label>
+
         <div class="flex flex-col gap-1">
           <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lux Exp</span>
           <div class="flex items-end gap-2">

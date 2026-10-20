@@ -78,7 +78,18 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     :ok
   end
 
-  defp maybe_select_team(true, %{hook: hook}, ctx) when is_binary(hook) and hook != "" do
+  defp maybe_select_team(true, team, ctx) do
+    case run_hook(team, ctx) do
+      nil ->
+        Ctx.log(ctx, :error, "team has no hook configured")
+        {:error, :team_missing_hook}
+
+      hook ->
+        select_team_hook(hook, ctx)
+    end
+  end
+
+  defp select_team_hook(hook, ctx) do
     case select_hook(String.to_existing_atom(hook), ctx) do
       {:ok, _} -> :ok
       {:error, _} = err -> err
@@ -89,9 +100,11 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
       {:error, :unknown_team_hook}
   end
 
-  defp maybe_select_team(true, _team, ctx) do
-    Ctx.log(ctx, :error, "team has no hook configured")
-    {:error, :team_missing_hook}
+  defp run_hook(%{id: id} = team, ctx) do
+    case RunMemory.team(ctx) do
+      %{id: ^id, hook: hook} -> Teams.pick_hook(team, hook)
+      _ -> Teams.pick_hook(team, nil)
+    end
   end
 
   defp maybe_select_order(false, _order, ctx) do
