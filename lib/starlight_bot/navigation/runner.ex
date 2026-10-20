@@ -435,6 +435,7 @@ defmodule StarlightBot.Navigation.Runner do
 
       :timeout ->
         Ctx.log(ctx, :error, "await #{inspect(hook)}: timeout")
+        save_timeout_frame(hook, ctx)
         {:error, {:timeout, hook}}
     end
   end
@@ -442,6 +443,7 @@ defmodule StarlightBot.Navigation.Runner do
   defp poll_any(hooks, deadline, ctx) do
     if mono() >= deadline do
       Ctx.log(ctx, :error, "await_any #{inspect(hooks)}: timeout")
+      save_timeout_frame(hooks, ctx)
       {:error, {:timeout, hooks}}
     else
       case grab_frame() do
@@ -504,7 +506,21 @@ defmodule StarlightBot.Navigation.Runner do
 
   defp retry_gave_up(loop, attempt, ctx) do
     Ctx.log(ctx, :error, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: gave up after #{attempt} attempt(s), #{mono() - loop.started_at}ms")
+    save_timeout_frame(loop.hook, ctx)
     {:error, {:retry_exhausted, loop.hook}}
+  end
+
+  defp save_timeout_frame(hook, ctx) do
+    with true <- Application.get_env(:starlight_bot, :save_timeout_frames, false),
+         {:ok, frame} <- grab_frame() do
+      stamp = NaiveDateTime.local_now() |> NaiveDateTime.to_string() |> String.replace([" ", ":", "."], "_")
+      name = hook |> inspect() |> String.replace(~r/[^A-Za-z0-9_]+/, "_") |> String.trim("_") |> String.slice(0, 80)
+      dir = Path.join(Application.get_env(:starlight_bot, :bot_log_dir, "log"), "timeouts")
+      File.mkdir_p!(dir)
+      path = Path.expand(Path.join(dir, "#{stamp}_#{name}.png"))
+      Evision.imwrite(path, frame.mat)
+      Ctx.log(ctx, :info, "saved the screen at the timeout to #{path}")
+    end
   end
 
   defp retry_allowed?(nil), do: true
@@ -550,6 +566,7 @@ defmodule StarlightBot.Navigation.Runner do
 
           :timeout ->
             Ctx.log(ctx, :error, "verification failed: #{screen_name} identity hook not found")
+            save_timeout_frame(screen.identity_hook, ctx)
             {:error, {:verification_failed, screen_name}}
         end
     end

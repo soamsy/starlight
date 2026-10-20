@@ -6,6 +6,8 @@ config :starlight_bot, :log_to_file, true
 
 config :starlight_bot, movement_profile: :fast
 
+config :starlight_bot, save_timeout_frames: true
+
 config :starlight_bot, StarlightBotWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4000],
   check_origin: false,
