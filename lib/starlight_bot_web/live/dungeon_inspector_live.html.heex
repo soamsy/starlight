@@ -8,6 +8,14 @@
       <span class="text-xs text-base-content/60">
         floor <%= @graph.floor || "?" %> · current level <%= @graph.current_level %>
       </span>
+      <%= case @plan do %>
+        <% {:ok, _} -> %>
+          <span class="text-xs font-semibold" style={"color: #{planned_color()};"}>
+            plan: <%= Enum.join(plan_steps(@graph, @plan), " then ") %>
+          </span>
+        <% {:error, reason} -> %>
+          <span class="text-xs text-warning">no plan: <%= reason %> (defaults to d)</span>
+      <% end %>
       <%= for warning <- @graph.warnings do %>
         <span class="text-xs text-warning"><%= warning %></span>
       <% end %>
@@ -34,8 +42,8 @@
       <div class="overflow-x-auto shrink-0">
         <div class="relative" style={"width: #{diagram_width()}px; height: #{diagram_height()}px;"}>
           <svg width={diagram_width()} height={diagram_height()} class="absolute inset-0">
-            <%= for e <- diagram_edges(@graph) do %>
-              <line x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke={e.color} stroke-width="2" />
+            <%= for e <- diagram_edges(@graph, @plan) do %>
+              <line x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke={e.color} stroke-width={e.width} />
             <% end %>
           </svg>
           <%= for n <- diagram_nodes(@graph) do %>
@@ -54,7 +62,7 @@
           <tbody>
             <%= for {hop, edges} <- edges_by_hop(@graph) do %>
               <%= for edge <- edges do %>
-                <tr>
+                <tr style={if planned_edge?(@plan, edge), do: "color: #{planned_color()}; font-weight: 600;"}>
                   <td><%= hop %></td>
                   <td><%= elem(edge.from_node, 1) %></td>
                   <td><%= elem(edge.to_node, 1) %></td>

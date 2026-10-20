@@ -5,42 +5,65 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   alias StarlightBot.BattleStrategies
   alias StarlightBot.BattleStrategies.Resolver
   alias StarlightBot.Ctx
-  alias StarlightBot.Vision.{Capture, DungeonGraph}
+  alias StarlightBot.Vision.{Capture, DungeonGraph, Matcher}
 
   @levels DungeonGraph.levels()
+  @ready_timeout_ms 3_000
+  @ready_poll_ms 50
+  @shop_confirm_wait_ms 1_500
 
-  @node_cost %{event: 0, battle: 52, hard_battle: 87, shop: 20, boss: 0}
+  @node_cost %{event: 10, battle: 15, hard_battle: 18, risky_battle: 25, shop: 10, boss: 50}
 
   @spec navigate_to_next_node(term, Ctx.t()) :: {:ok, term} | {:error, term}
   def navigate_to_next_node(_last_frame, ctx) do
+    graph_result = build_graph(ctx)
+
+    with {:ok, graph} <- graph_result, true <- DungeonGraph.boss_next?(graph) do
+      Ctx.log(ctx, :info, "dungeon path planner: at most one mid node ahead, marking boss next")
+      RunMemory.put_bosses_only(ctx, true)
+    end
+
     boss? = RunMemory.bosses_only?(ctx)
     venue = if boss?, do: "md_boss", else: "md_battle"
     RunMemory.put_venue(ctx, venue)
 
     {direction, kind} =
-      case build_graph(ctx) do
+      case graph_result do
         {:ok, graph} -> best_move(graph, ctx)
         {:error, reason} -> default_move(ctx, reason)
       end
 
     kind = if boss?, do: :boss, else: kind
+    advance(direction, kind, venue, [], ctx)
+  end
 
+  @spec leave_shop_for_boss(Ctx.t()) :: {:ok, term} | {:error, term}
+  def leave_shop_for_boss(ctx) do
+    RunMemory.put_venue(ctx, "md_boss")
+    shop_exit = [{:shop_leave_confirm, [key(:enter)]}, {:shop, [click(:shop_leave)]}]
+
+    with {:ok, _} <- Engine.act([click(:shop_leave), branch([{:shop_leave_confirm, []}], wait: @shop_confirm_wait_ms)], ctx) do
+      advance(:d, :boss, "md_boss", shop_exit, ctx)
+    end
+  end
+
+  defp advance(direction, kind, venue, leading_clauses, ctx) do
     cond do
-    kind in [:battle, :hard_battle, :boss] and formation_set?(venue, ctx) ->
+    kind in [:battle, :hard_battle, :risky_battle, :boss] and formation_set?(venue, ctx) ->
       Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead, sinner order already set — spamming #{direction} + enter until loading")
 
       Engine.act([
         retry_until(any_of([:loading_stage_1, :loading_stage_2]), [
-          branch([gift_popup_clause(), {:default, [key(direction), key(:enter)]}])
+          branch(leading_clauses ++ [gift_popup_clause(), {:default, [key(direction), key(:enter)]}])
         ], every: 200, timeout: 15_000)
       ] ++ loading(), ctx)
-    kind in [:battle, :hard_battle, :boss] ->
+    kind in [:battle, :hard_battle, :risky_battle, :boss] ->
       Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead, moving to team select")
 
       Engine.act([
         retry_until(any_of([:team_selector, :team_selector_tall, :team_selector_gone]),
         [
-          branch([
+          branch(leading_clauses ++ [
             gift_popup_clause(),
             {:dungeon_graph_dante, [key(direction), key(:enter), sleep(200), key(direction), key(:enter)]},
             {:default, [key(:enter)]}
@@ -55,7 +78,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
       Engine.act([
         retry_until(not_hook(:dungeon_graph),
         [
-          branch([
+          branch(leading_clauses ++ [
             gift_popup_clause(),
             {:dungeon_graph_dante, [key(direction), key(:enter), sleep(200), key(direction), key(:enter)]},
             {:default, [key(:enter)]}
@@ -91,14 +114,44 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   end
 
   defp build_graph(ctx) do
-    case grab_and_build() do
+    started_at = System.monotonic_time(:millisecond)
+
+    case await_ready_graph(started_at + @ready_timeout_ms, ctx) do
       {:error, :pan_zoom_not_reset} ->
-        Ctx.log(ctx, :info, "dungeon path planner: pan/zoom drifted — resetting view")
+        Ctx.log(ctx, :info, "dungeon path planner: pan/zoom never settled — resetting view")
         Engine.run_action(:dungeon_graph, :reset_view, ctx)
         grab_and_build()
 
+      {:ok, %DungeonGraph{current_level: level}} = ok when level != nil ->
+        waited = System.monotonic_time(:millisecond) - started_at
+        if waited >= @ready_poll_ms, do: Ctx.log(ctx, :info, "dungeon path planner: graph ready after #{waited}ms")
+        ok
+
       other ->
         other
+    end
+  end
+
+  defp await_ready_graph(deadline, ctx) do
+    with {:ok, frame} <- Capture.grab_frame() do
+      if Matcher.check(frame, :ego_gift_get) do
+        RewardHelpers.record_ego_gift_items(frame, ctx)
+        Engine.act([key(:enter)], ctx)
+        await_ready_graph(deadline, ctx)
+      else
+        case DungeonGraph.build(frame) do
+          {:ok, %DungeonGraph{current_level: level}} = ok when level != nil ->
+            ok
+
+          result ->
+            if System.monotonic_time(:millisecond) >= deadline do
+              result
+            else
+              Process.sleep(@ready_poll_ms)
+              await_ready_graph(deadline, ctx)
+            end
+        end
+      end
     end
   end
 
@@ -117,13 +170,45 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
         {:error, :no_forward_edges}
 
       candidates ->
-        {best, _cost} =
-          candidates
-          |> Enum.map(&{&1, total_cost(&1, nodes, edges)})
-          |> Enum.min_by(fn {_edge, cost} -> cost end)
-
-        {:ok, best}
+        {:ok, best_step(candidates, nodes, edges)}
     end
+  end
+
+  @spec planned_path(DungeonGraph.t()) :: {:ok, [map]} | {:error, term}
+  def planned_path(%DungeonGraph{nodes: nodes, edges: edges} = graph) do
+    with {:ok, first} <- choose_target(graph) do
+      {:ok, [first | continuation(first.to_node, nodes, edges)]}
+    end
+  end
+
+  defp continuation(node, nodes, edges) do
+    case edges_from(node, edges) do
+      [] -> []
+      candidates -> candidates |> best_step(nodes, edges) |> then(&[&1 | continuation(&1.to_node, nodes, edges)])
+    end
+  end
+
+  defp best_step(candidates, nodes, edges), do: Enum.min_by(candidates, &step_rank(&1, nodes, edges))
+
+  defp step_rank(edge, nodes, edges) do
+    costs = edge |> full_paths(edges) |> Enum.map(&path_cost(&1, nodes))
+    cheapest = Enum.min(costs)
+    {cheapest, -Enum.count(costs, &(&1 == cheapest)), -MapSet.size(reachable_from(edge.to_node, edges))}
+  end
+
+  defp full_paths(edge, edges) do
+    case edges_from(edge.to_node, edges) do
+      [] -> [[edge]]
+      next -> for n <- next, rest <- full_paths(n, edges), do: [edge | rest]
+    end
+  end
+
+  defp path_cost(path, nodes), do: path |> Enum.map(&edge_cost(&1, nodes)) |> Enum.sum()
+
+  defp reachable_from(node, edges) do
+    node
+    |> edges_from(edges)
+    |> Enum.reduce(MapSet.new(), &(&2 |> MapSet.put(&1.to_node) |> MapSet.union(reachable_from(&1.to_node, edges))))
   end
 
   defp edge_kind(%{variant: variant}, _nodes) when variant in [:boss, :shop], do: variant
@@ -136,15 +221,6 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   end
 
   defp edges_from(node, edges), do: Enum.filter(edges, &(&1.from_node == node))
-
-  defp total_cost(edge, nodes, edges), do: edge_cost(edge, nodes) + continuation_cost(edge.to_node, nodes, edges)
-
-  defp continuation_cost(node, nodes, edges) do
-    case edges_from(node, edges) do
-      [] -> 0
-      next -> next |> Enum.map(&edge_cost(&1, nodes)) |> Enum.min()
-    end
-  end
 
   defp edge_cost(%{variant: :boss}, _nodes), do: @node_cost.boss
   defp edge_cost(%{variant: :shop}, _nodes), do: @node_cost.shop

@@ -1,6 +1,6 @@
 defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   import StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.{Engine, EnkephalinCharger, RewardHelpers, RunMemory}
+  alias StarlightBot.Automation.{DungeonPathPlanner, Engine, EnkephalinCharger, RewardHelpers, RunMemory}
   alias StarlightBot.Automation.Scripts.{ClaimRewards, GiftSearchPicker, SelectTeamOnScreen, ShopRunner, ThemePackSelector}
   alias StarlightBot.Automation.SeasonPassCollector
   alias StarlightBot.Automation.Shop.Ops
@@ -672,7 +672,10 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   defp leave_shop({:ok, _} = _result, ctx) do
     left =
       case Engine.localize() do
-        {:ok, screen} when screen in @shop_screens -> Engine.goto(screen, :dungeon_graph, ctx)
+        {:ok, screen} when screen in [:shop, :shop_super] -> DungeonPathPlanner.leave_shop_for_boss(ctx)
+        {:ok, screen} when screen in @shop_screens ->
+          with {:ok, _} <- Engine.goto(screen, :shop, ctx), do: DungeonPathPlanner.leave_shop_for_boss(ctx)
+
         {:ok, screen} -> {:ok, screen}
         :unknown -> {:error, :unknown_screen}
       end

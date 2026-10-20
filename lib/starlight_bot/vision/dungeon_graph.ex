@@ -17,11 +17,17 @@ defmodule StarlightBot.Vision.DungeonGraph do
     dungeon_graph_node_high_coin_all: :high
   }
 
+  @warning_hook_level %{
+    dungeon_graph_node_low_warning: :low,
+    dungeon_graph_node_mid_warning: :mid,
+    dungeon_graph_node_high_warning: :high
+  }
+
   @coin_x_regions %{1 => {990, 1190}, 2 => {1370, 1570}, 3 => {1760, 1920}}
   @coin_center_tolerance_px 25
 
-  @enforce_keys [:nodes, :edges, :diagnostics, :warnings, :node_hits]
-  defstruct [:floor, :current_level, :nodes, :edges, :diagnostics, :warnings, :node_hits]
+  @enforce_keys [:nodes, :edges, :diagnostics, :warnings, :node_hits, :warning_hits]
+  defstruct [:floor, :current_level, :nodes, :edges, :diagnostics, :warnings, :node_hits, :warning_hits]
 
   def levels, do: @levels
 
@@ -39,34 +45,42 @@ defmodule StarlightBot.Vision.DungeonGraph do
   end
 
   defp build_matched(frame) do
-    matches =
+    variants =
       HookRegistry.all_names()
       |> edge_specs()
-      |> Enum.flat_map(fn spec ->
-        Enum.map(spec.variants, fn {variant, hook_name} ->
-          match_hook(frame, hook_name, spec, variant)
-        end)
+      |> Enum.flat_map(fn spec -> Enum.map(spec.variants, fn {variant, hook_name} -> {hook_name, spec, variant} end) end)
+
+    matches =
+      frame
+      |> Matcher.find_with_score_batch(Enum.map(variants, &elem(&1, 0)))
+      |> Enum.zip_with(variants, fn {hook_name, result, _duration_us}, {hook_name, spec, variant} ->
+        match_hook(result, hook_name, spec, variant)
       end)
 
     graph = build_from_matches(matches)
-    hits = classify_hits(coin_hits_by_hook(frame))
+    hits_by_hook = node_hits_by_hook(frame)
+    hits = classify_hits(Map.take(hits_by_hook, @coin_hooks))
+    warning_hits = classify_warning_hits(Map.take(hits_by_hook, Map.keys(@warning_hook_level)))
 
     %{
       graph
-      | nodes: apply_hits_to_nodes(graph.nodes, hits),
+      | nodes: graph.nodes |> apply_hits_to_nodes(hits) |> apply_warnings_to_nodes(warning_hits),
         node_hits: hits,
+        warning_hits: warning_hits,
         floor: detect_floor(frame)
     }
   end
 
-  defp coin_hits_by_hook(frame) do
-    Map.new(@coin_hooks, fn hook_name -> {hook_name, Matcher.find_all(frame, hook_name)} end)
+  defp node_hits_by_hook(frame) do
+    (@coin_hooks ++ Map.keys(@warning_hook_level))
+    |> Task.async_stream(&{&1, Matcher.find_all(frame, &1)}, max_concurrency: System.schedulers_online(), timeout: :infinity)
+    |> Map.new(fn {:ok, entry} -> entry end)
   end
 
-  defp match_hook(frame, hook_name, spec, variant) do
+  defp match_hook(result, hook_name, spec, variant) do
     region = hook_region(hook_name)
 
-    case Matcher.find_with_score(frame, hook_name) do
+    case result do
       {:ok, score, match} ->
         %{
           hook: hook_name,
@@ -192,8 +206,19 @@ defmodule StarlightBot.Vision.DungeonGraph do
       edges: reachable,
       diagnostics: matches,
       warnings: level_warnings ++ orphan_warning,
-      node_hits: []
+      node_hits: [],
+      warning_hits: []
     }
+  end
+
+  def boss_next?(%__MODULE__{diagnostics: diagnostics}) do
+    matched_slots =
+      diagnostics
+      |> Enum.filter(& &1.matched?)
+      |> Enum.map(&{&1.hop, &1.from, &1.to})
+      |> Enum.uniq()
+
+    matched_slots in [[], [{0, :mid, :mid}]]
   end
 
   def classify_hits(hits_by_hook) do
@@ -227,6 +252,33 @@ defmodule StarlightBot.Vision.DungeonGraph do
 
     Map.new(nodes, fn {{hop, level} = key, node} ->
       {key, apply_node_type(node, Map.get(hits_by_slot, {level, hop}))}
+    end)
+  end
+
+  def classify_warning_hits(hits_by_hook) do
+    hits_by_hook
+    |> Enum.flat_map(fn {hook_name, rects} -> Enum.map(rects, &warning_hit(hook_name, &1)) end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp warning_hit(hook_name, {x, y, w, h}) do
+    cx = x + div(w, 2)
+
+    case @coin_x_regions |> Enum.sort() |> Enum.find(fn {_hop, {lo, hi}} -> cx <= div(lo + hi, 2) end) do
+      nil -> nil
+      {hop, _} -> %{level: Map.fetch!(@warning_hook_level, hook_name), hop: hop, hook: hook_name, rect: {x, y, w, h}}
+    end
+  end
+
+  def apply_warnings_to_nodes(nodes, warning_hits) do
+    risky_slots = MapSet.new(warning_hits, &{&1.hop, &1.level})
+
+    Map.new(nodes, fn {key, node} ->
+      if node.type == :hard_battle and MapSet.member?(risky_slots, key) do
+        {key, %{node | type: :risky_battle}}
+      else
+        {key, node}
+      end
     end)
   end
 

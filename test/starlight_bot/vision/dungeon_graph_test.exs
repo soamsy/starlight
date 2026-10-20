@@ -206,4 +206,68 @@ defmodule StarlightBot.Vision.DungeonGraphTest do
       assert classified[{3, :high}].type == :event
     end
   end
+
+  describe "classify_warning_hits/1" do
+    test "a warning maps to the node immediately to its right" do
+      hits =
+        DungeonGraph.classify_warning_hits(%{
+          dungeon_graph_node_mid_warning: [{1380, 398, 28, 71}],
+          dungeon_graph_node_high_warning: [{1000, 77, 28, 71}],
+          dungeon_graph_node_low_warning: [{1750, 718, 28, 71}]
+        })
+
+      assert Enum.sort(Enum.map(hits, &{&1.hop, &1.level})) == [{1, :high}, {2, :mid}, {3, :low}]
+    end
+
+    test "a warning right of the last node column is dropped" do
+      assert DungeonGraph.classify_warning_hits(%{dungeon_graph_node_low_warning: [{1850, 718, 28, 71}]}) == []
+    end
+  end
+
+  describe "apply_warnings_to_nodes/2" do
+    test "upgrades only hard_battle nodes with a matching warning to risky_battle" do
+      nodes = %{
+        {1, :mid} => %{hop: 1, level: :mid, type: :battle},
+        {2, :low} => %{hop: 2, level: :low, type: :hard_battle},
+        {2, :mid} => %{hop: 2, level: :mid, type: :hard_battle},
+        {3, :high} => %{hop: 3, level: :high, type: :event}
+      }
+
+      warnings =
+        for {hop, level} <- [{1, :mid}, {2, :low}, {3, :high}],
+            do: %{level: level, hop: hop, hook: :dungeon_graph_node_mid_warning, rect: {0, 0, 1, 1}}
+
+      classified = DungeonGraph.apply_warnings_to_nodes(nodes, warnings)
+
+      assert classified[{1, :mid}].type == :battle
+      assert classified[{2, :low}].type == :risky_battle
+      assert classified[{2, :mid}].type == :hard_battle
+      assert classified[{3, :high}].type == :event
+    end
+  end
+
+  describe "boss_next?/1" do
+    defp graph_with_matches(slots) do
+      slots
+      |> Enum.map(fn {hop, from, to} -> %{hop: hop, from: from, to: to, matched?: true} end)
+      |> Kernel.++([%{hop: 1, from: :mid, to: :high, matched?: false}])
+      |> then(&%DungeonGraph{nodes: %{}, edges: [], diagnostics: &1, warnings: [], node_hits: [], warning_hits: []})
+    end
+
+    test "no matched path hooks means boss next" do
+      assert DungeonGraph.boss_next?(graph_with_matches([]))
+    end
+
+    test "only the single mid node ahead means boss next" do
+      assert DungeonGraph.boss_next?(graph_with_matches([{0, :mid, :mid}]))
+    end
+
+    test "a mid node ahead with anything further visible is not boss next" do
+      refute DungeonGraph.boss_next?(graph_with_matches([{0, :mid, :mid}, {1, :mid, :mid}]))
+    end
+
+    test "a single non-mid node ahead is not boss next" do
+      refute DungeonGraph.boss_next?(graph_with_matches([{0, :mid, :high}]))
+    end
+  end
 end

@@ -1,5 +1,6 @@
 defmodule StarlightBotWeb.Live.DungeonInspectorLive do
   use StarlightBotWeb, :live_view
+  alias StarlightBot.Automation.DungeonPathPlanner
   alias StarlightBot.Vision.{Capture, DungeonGraph}
 
   @tmp_jpeg "/tmp/_starlight_dungeon_inspector.jpg"
@@ -9,11 +10,14 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
   @miss_color "#6b7280"
   @battle_color "#4ade80"
   @hard_battle_color "#f87171"
+  @risky_battle_color "#fb923c"
+  @planned_color "#38bdf8"
 
   @node_type_colors %{
     event: "#9ca3af",
     battle: @battle_color,
     hard_battle: @hard_battle_color,
+    risky_battle: @risky_battle_color,
     shop: "#60a5fa",
     boss: "#c084fc"
   }
@@ -22,6 +26,7 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
     event: "Event",
     battle: "Battle",
     hard_battle: "Hard Battle",
+    risky_battle: "Risky Battle",
     shop: "Shop",
     boss: "Boss"
   }
@@ -40,6 +45,7 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
      |> assign(:status, :idle)
      |> assign(:frame_b64, nil)
      |> assign(:graph, nil)
+     |> assign(:plan, {:error, :no_graph})
      |> assign(:error, nil)}
   end
 
@@ -75,6 +81,7 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
              |> assign(:status, :done)
              |> assign(:frame_b64, b64)
              |> assign(:graph, graph)
+             |> assign(:plan, DungeonPathPlanner.planned_path(graph))
              |> assign(:error, nil)
              |> push_event("load_dungeon_frame", %{data: b64, overlays: overlays(graph)})}
 
@@ -84,6 +91,7 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
              |> assign(:status, :done)
              |> assign(:frame_b64, b64)
              |> assign(:graph, nil)
+             |> assign(:plan, {:error, :no_graph})
              |> assign(:error, reason)
              |> push_event("load_dungeon_frame", %{data: b64, overlays: []})}
         end
@@ -96,9 +104,25 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
     end
   end
 
-  defp overlays(%DungeonGraph{diagnostics: diagnostics, edges: edges, node_hits: node_hits}) do
+  defp overlays(%DungeonGraph{diagnostics: diagnostics, edges: edges, node_hits: node_hits, warning_hits: warning_hits}) do
     reachable = MapSet.new(edges, &{&1.from_node, &1.to_node})
-    Enum.flat_map(diagnostics, &diagnostic_overlay(&1, reachable)) ++ Enum.map(node_hits, &node_hit_overlay/1)
+
+    Enum.flat_map(diagnostics, &diagnostic_overlay(&1, reachable)) ++
+      Enum.map(node_hits, &node_hit_overlay/1) ++ Enum.map(warning_hits, &warning_hit_overlay/1)
+  end
+
+  defp warning_hit_overlay(%{rect: {x, y, w, h}} = hit) do
+    %{
+      type: "rect",
+      x: x,
+      y: y,
+      w: w,
+      h: h,
+      color: @risky_battle_color,
+      text: "#{hit.hop} #{hit.level} warning",
+      text_x: x,
+      text_y: y - 6
+    }
   end
 
   defp node_hit_overlay(%{rect: {x, y, w, h}} = hit) do
@@ -198,20 +222,40 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
     end)
   end
 
-  def diagram_edges(%DungeonGraph{edges: edges}) do
+  def diagram_edges(%DungeonGraph{edges: edges}, plan) do
     Enum.map(edges, fn edge ->
       {x1, y1} = node_position(edge.from_node)
       {x2, y2} = node_position(edge.to_node)
+      planned? = planned_edge?(plan, edge)
 
       %{
         x1: x1 + @diagram_node_w,
         y1: y1 + div(@diagram_node_h, 2),
         x2: x2,
         y2: y2 + div(@diagram_node_h, 2),
-        color: if(edge.variant == :hard, do: @hard_battle_color, else: "#9ca3af")
+        color:
+          cond do
+            planned? -> @planned_color
+            edge.variant == :hard -> @hard_battle_color
+            true -> "#9ca3af"
+          end,
+        width: if(planned?, do: 4, else: 2)
       }
     end)
   end
+
+  def planned_edge?({:ok, path}, edge), do: Enum.any?(path, &(&1.from_node == edge.from_node and &1.to_node == edge.to_node))
+  def planned_edge?({:error, _}, _edge), do: false
+
+  def plan_steps(graph, {:ok, path}) do
+    Enum.map(path, fn edge ->
+      "#{elem(edge.from_node, 0)}:#{elem(edge.from_node, 1)} → #{elem(edge.to_node, 0)}:#{elem(edge.to_node, 1)} (#{edge.variant || node_type(graph, edge.to_node)})"
+    end)
+  end
+
+  def plan_steps(_graph, {:error, _}), do: []
+
+  def planned_color, do: @planned_color
 
   defp node_position({hop, level}) do
     x = Map.fetch!(@diagram_col_x, hop)
