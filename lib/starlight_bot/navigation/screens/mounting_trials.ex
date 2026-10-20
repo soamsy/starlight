@@ -33,7 +33,7 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
     with {:ok, _} <- Engine.act([await_any(@selection_hooks)], ctx) do
       case selection_state() do
         {total, total} ->
-          with {:ok, _} <- Engine.act([click(confirm_hook(total))], ctx), do: RewardHelpers.dismiss_ego_gift_get(ctx)
+          with {:ok, _} <- Engine.act([click(confirm_hook(total))], ctx), do: RewardHelpers.dismiss_ego_gift_get(ctx, leaving: :mounting_trials)
 
         {selected, total} ->
           Ctx.log(ctx, :info, "mounting trials: #{selected}/#{total} selected, picking #{total - selected}")

@@ -9,7 +9,7 @@ defmodule StarlightBot.Navigation.Screens.CabinetReward do
       [
         custom(&select_tier_gift/2),
         click(:cabinet_reward_select),
-        RewardHelpers.dismiss_ego_gift_get_step()
+        RewardHelpers.dismiss_ego_gift_get_step(leaving: :cabinet_reward)
       ]
     end
   end

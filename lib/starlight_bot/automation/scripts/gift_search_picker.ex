@@ -8,6 +8,7 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
   @clicked_key :gift_search_clicked
   @none_selected_hook :gift_search_select_0_3
   @selected_timeout_ms 1_500
+  @leave_timeout_ms 3_000
   @scroll_clicks 4
   @scroll_settle_ms 400
   @tab_settle_ms 600
@@ -47,10 +48,15 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
   end
 
   defp dismiss_ego_gift_get(ctx) do
-    case Engine.act([await(:ego_gift_get), RewardHelpers.record_ego_gift_items_step(), RewardHelpers.dismiss_ego_gift_get_step()], ctx) do
+    case Engine.act([await(:ego_gift_get), RewardHelpers.record_ego_gift_items_step(), RewardHelpers.dismiss_ego_gift_get_step(leaving: :gift_search)], ctx) do
       {:ok, _} = ok ->
         Ctx.log(ctx, :ok, "gift search: dismissed ego gift get")
-        ok
+        if Engine.check(:ego_gift_get) do
+          dismiss_ego_gift_get(ctx)
+        else
+          Engine.act([await(not_hook(:gift_search), timeout: @leave_timeout_ms)], ctx)
+          ok
+        end
 
       {:error, reason} ->
         Ctx.log(ctx, :info, "gift search: no ego gift get (#{inspect(reason)}), moving on")
