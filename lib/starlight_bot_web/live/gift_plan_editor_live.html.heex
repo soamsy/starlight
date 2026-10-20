@@ -138,7 +138,7 @@
                         <span class="text-[11px] text-base-content/60">Keep list (never sold, never fusion fodder)</span>
                         <select name="workflow[keep]" class="select select-bordered select-xs">
                           <option value="">none</option>
-                          <option :for={keep <- @plan_data["library"]["keep_lists"]} value={keep["id"]} selected={workflow["keep"] == keep["id"]}>
+                          <option :for={keep <- @plan_data["library"]["lists"]} value={keep["id"]} selected={workflow["keep"] == keep["id"]}>
                             <%= keep["name"] %>
                           </option>
                         </select>

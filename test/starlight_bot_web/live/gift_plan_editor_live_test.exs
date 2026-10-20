@@ -44,7 +44,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
   end
 
   test "a new plan starts as a valid v2 plan", %{socket: socket} do
-    assert saved(socket)["version"] == 2
+    assert saved(socket)["version"] == 3
     assert GiftPlans.issues(saved(socket)) == []
     assert render(socket) =~ "No steps yet"
   end
@@ -98,33 +98,57 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert html =~ "+ add T2 route"
   end
 
-  test "shopping lists take Any-tier entries, and keep lists drop them on paste", %{socket: socket} do
-    socket = socket |> event("lib_add", %{"lib" => "shopping_lists"}) |> event("set_tab", %{"tab" => "shopping_lists"})
-    list_id = socket.assigns.selected_def["shopping_lists"]
+  test "lists take Any-tier entries and keep them on paste", %{socket: socket} do
+    socket = socket |> event("lib_add", %{"lib" => "lists"}) |> event("set_tab", %{"tab" => "shop"})
+    list_id = socket.assigns.selected_def["lists"]
 
     socket =
       socket
-      |> event("lib_toggle_gift", %{"lib" => "shopping_lists", "id" => list_id, "gift" => "Fiery Down"})
-      |> event("lib_toggle_gift", %{"lib" => "shopping_lists", "id" => list_id, "gift" => "tier:3"})
+      |> event("lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down"})
+      |> event("lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "tier:3"})
 
-    assert hd(saved(socket)["library"]["shopping_lists"])["gifts"] == ["Fiery Down", "tier:3"]
+    [keep, list] = saved(socket)["library"]["lists"]
+    assert list["gifts"] == ["Fiery Down", "tier:3"]
     assert render(socket) =~ "Any T3"
 
-    keep_id = hd(saved(socket)["library"]["keep_lists"])["id"]
-    socket = socket |> event("gifts_copy", %{"lib" => "shopping_lists", "def_id" => list_id}) |> event("gifts_paste", %{"lib" => "keep_lists", "def_id" => keep_id})
-    assert hd(saved(socket)["library"]["keep_lists"])["gifts"] == ["Fiery Down"]
+    socket = socket |> event("gifts_copy", %{"lib" => "lists", "def_id" => list_id}) |> event("gifts_paste", %{"lib" => "lists", "def_id" => keep["id"]})
+    assert hd(saved(socket)["library"]["lists"])["gifts"] == ["Fiery Down", "tier:3"]
   end
 
-  test "shopping lists save an optional done-at count", %{socket: socket} do
-    socket = socket |> event("lib_add", %{"lib" => "shopping_lists"}) |> event("set_tab", %{"tab" => "shopping_lists"})
-    list_id = socket.assigns.selected_def["shopping_lists"]
+  test "lists take any-affinity entries with a tier filter, and they join milestones as optional", %{socket: socket} do
+    socket = socket |> event("lib_add", %{"lib" => "lists"}) |> event("set_tab", %{"tab" => "shop"})
+    list_id = socket.assigns.selected_def["lists"]
 
-    socket = event(socket, "lib_update", %{"lib" => "shopping_lists", "def_id" => list_id, "def" => %{"name" => "Poise", "done_at" => "1"}})
-    assert %{"name" => "Poise", "done_at" => 1} = hd(saved(socket)["library"]["shopping_lists"])
-    assert render(socket) =~ "Done at owning"
+    socket =
+      socket
+      |> event("lib_add_affinity", %{"def_id" => list_id, "affinity" => "burn", "tiers" => ["3", "2"]})
+      |> event("lib_add_affinity", %{"def_id" => list_id, "affinity" => "burn", "tiers" => ["2", "3"]})
+      |> event("lib_add_affinity", %{"def_id" => list_id, "affinity" => "bleed"})
+      |> event("lib_add_affinity", %{"def_id" => list_id, "affinity" => ""})
 
-    socket = event(socket, "lib_update", %{"lib" => "shopping_lists", "def_id" => list_id, "def" => %{"name" => "Poise", "done_at" => ""}})
-    assert hd(saved(socket)["library"]["shopping_lists"])["done_at"] == nil
+    assert List.last(saved(socket)["library"]["lists"])["gifts"] == ["affinity:burn:2,3", "affinity:bleed"]
+    assert render(socket) =~ "Any burn T2, T3"
+
+    [%{"id" => shop_id}] = saved(socket)["milestones"]
+    socket = event(socket, "toggle_milestone", %{"lib" => "lists", "id" => list_id, "gift" => "affinity:bleed", "milestone" => shop_id})
+    assert [%{optional: true, gift: "affinity:bleed"}] = GiftPlans.milestone_entries(saved(socket), shop_id)
+    assert render(event(socket, "select_milestone", %{"id" => shop_id})) =~ "optional, buy if seen"
+  end
+
+  test "buy steps buy one per run and save an optional stop-once-owning count", %{socket: socket} do
+    socket = socket |> event("lib_add", %{"lib" => "lists"})
+    list_id = socket.assigns.selected_def["lists"]
+    socket = event(socket, "add_step", %{"kind" => "buy_list", "ref" => list_id})
+    [buy] = steps(socket)
+    refute Map.has_key?(buy, "max_items")
+
+    socket = event(socket, "update_step", %{"step_id" => buy["id"], "step" => %{"list" => list_id, "done_at" => "2", "repeat" => "3"}})
+    assert %{"list" => ^list_id, "done_at" => 2, "repeat" => 3} = hd(steps(socket))
+    assert render(socket) =~ "Stop once owning"
+    assert Live.list_roles(saved(socket), list_id) == ["buy"]
+
+    socket = event(socket, "update_step", %{"step_id" => buy["id"], "step" => %{"list" => list_id, "done_at" => "", "repeat" => "3"}})
+    assert hd(steps(socket))["done_at"] == nil
   end
 
   test "gift search holds up to 3 gifts of tier 3 or under", %{socket: socket} do

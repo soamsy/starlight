@@ -263,7 +263,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("add_workflow", _, socket) do
     data = socket.assigns.plan_data
-    keep_id = data["library"]["keep_lists"] |> List.first() |> then(&(&1 && &1["id"]))
+    keep_id = data["library"]["lists"] |> List.first() |> then(&(&1 && &1["id"]))
     workflow = %{"id" => GiftPlans.new_id("wf"), "name" => "Workflow #{length(data["workflows"]) + 1}", "keep" => keep_id, "steps" => []}
 
     {:noreply,
@@ -658,7 +658,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def handle_event("gifts_paste", %{"lib" => lib, "def_id" => id}, socket) do
     case socket.assigns.gift_clipboard do
       %{gifts: gifts} ->
-        gifts = if lib == "keep_lists", do: Enum.reject(gifts, &GiftPlans.parse_tier_entry/1), else: gifts
         {:noreply, update_plan(socket, &update_definition(&1, lib, id, fn definition -> Map.put(definition, "gifts", gifts) end))}
 
       nil -> {:noreply, socket}
@@ -765,8 +764,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def lib_label("upties"), do: "Uptie"
   def lib_label("fusions"), do: "Fusion"
-  def lib_label("shopping_lists"), do: "Shopping List"
-  def lib_label("keep_lists"), do: "Keep List"
+  def lib_label("lists"), do: "List"
+
+  def lib_heading("lists"), do: "Item Lists"
+  def lib_heading(lib), do: "#{lib_label(lib)}s"
 
   def grace_pick(plan_data, index), do: Enum.find(plan_data["grace_picks"], &(&1["index"] == index))
 
@@ -797,6 +798,17 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def selected_definition(assigns, lib), do: GiftPlans.find_definition(assigns.plan_data, lib, assigns.selected_def[lib])
 
+  def list_roles(data, id) do
+    steps = Enum.flat_map(data["workflows"], & &1["steps"])
+
+    [
+      Enum.any?(data["workflows"], &(&1["keep"] == id)) && "keep",
+      Enum.any?(steps, &(&1["kind"] == "buy_list" and &1["list"] == id)) && "buy",
+      Enum.any?(steps, &(&1["kind"] == "sell" and &1["list"] == id)) && "sell"
+    ]
+    |> Enum.filter(& &1)
+  end
+
   def workflows_using_keep(data, keep_id), do: data["workflows"] |> Enum.filter(&(&1["keep"] == keep_id)) |> Enum.map(& &1["name"])
 
   def step_broken?(data, step), do: match?({:error, _}, GiftPlans.definition_for(data, step))
@@ -817,12 +829,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     end
   end
 
-  def step_summary(_data, %{"kind" => "buy_list"} = step), do: "up to #{step["max_items"]}"
+  def step_summary(_data, %{"kind" => "buy_list", "done_at" => done_at}) when is_integer(done_at), do: "until owning #{done_at}"
 
   def step_summary(_data, %{"kind" => "sell"} = step) do
-    tiers = Enum.map_join(step["tiers"] || [], " then ", &"T#{&1}")
+    source = if step["list"], do: "from list", else: Enum.map_join(step["tiers"] || [], " then ", &"T#{&1}")
     stop = if step["stop_at_cost"], do: "until #{step["stop_at_cost"]} or ", else: "up to "
-    "#{tiers} · #{stop}#{step["max_items"]} sold"
+    "#{source} · #{stop}#{step["max_items"]} sold"
   end
 
   def step_summary(_data, %{"kind" => "skill_replace"} = step), do: Enum.map_join(step["options"] || [], ", ", &String.replace(&1, "_", "→"))
@@ -1062,13 +1074,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   defp apply_step_params(%{"kind" => "buy_list"} = step, p) do
-    %{step | "list" => blank_to_nil(p["list"]), "max_items" => max(parse_int(p["max_items"], 1), 1)}
+    %{step | "list" => blank_to_nil(p["list"])} |> Map.put("done_at", if(p["done_at"] in [nil, ""], do: nil, else: max(parse_int(p["done_at"], 1), 1)))
   end
 
   defp apply_step_params(%{"kind" => "affinity_refresh"} = step, p), do: Map.put(step, "affinity", blank_to_nil(p["affinity"]))
 
   defp apply_step_params(%{"kind" => "sell"} = step, p) do
-    %{step | "stop_at_cost" => parse_optional_int(p["stop_at_cost"]), "max_items" => max(parse_int(p["max_items"], 1), 1)}
+    %{Map.put(step, "list", blank_to_nil(p["list"])) | "stop_at_cost" => parse_optional_int(p["stop_at_cost"]), "max_items" => max(parse_int(p["max_items"], 1), 1)}
   end
 
   defp apply_step_params(%{"kind" => "skill_replace"} = step, p), do: Map.put(step, "sinner", blank_to_nil(p["sinner"]))
@@ -1087,11 +1099,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp apply_definition_params("upties", definition, p) do
     %{definition | "name" => p["name"] || definition["name"], "target_level" => parse_int(p["target_level"], 2)}
-  end
-
-  defp apply_definition_params("shopping_lists", definition, p) do
-    done_at = if p["done_at"] in [nil, ""], do: nil, else: max(parse_int(p["done_at"], 1), 1)
-    %{Map.put(definition, "done_at", done_at) | "name" => p["name"] || definition["name"]}
   end
 
   defp apply_definition_params("fusions", %{"type" => "fixed"} = definition, p) do
@@ -1272,12 +1279,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :lib, :string, required: true
   attr :defs, :list, required: true
   attr :selected_id, :any, required: true
+  attr :roles, :any, default: nil
 
   def library_list(assigns) do
     ~H"""
     <div class="flex flex-col gap-1">
       <div class="flex items-center gap-2">
-        <span class="text-xs font-semibold text-base-content/70"><%= lib_label(@lib) %>s</span>
+        <span class="text-xs font-semibold text-base-content/70"><%= lib_heading(@lib) %></span>
         <%= if @lib == "fusions" do %>
           <button phx-click="lib_add" phx-value-lib={@lib} phx-value-type="tiered" class="btn btn-primary btn-xs ml-auto">+ Tiered</button>
           <button phx-click="lib_add" phx-value-lib={@lib} phx-value-type="fixed" class="btn btn-primary btn-xs">+ Fixed</button>
@@ -1293,6 +1301,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         <span :if={@lib == "fusions"} class={"badge badge-xs " <> if(GiftPlans.fixed_fusion?(definition), do: "badge-accent", else: "badge-ghost")}>
           <%= if GiftPlans.fixed_fusion?(definition), do: "fixed", else: "tiered" %>
         </span>
+        <span :for={role <- if(@roles, do: @roles.(definition["id"]), else: [])} class="badge badge-ghost badge-xs"><%= role %></span>
         <button phx-click="lib_delete" phx-value-lib={@lib} phx-value-id={definition["id"]}
                 data-confirm={"Delete '#{definition["name"]}'? Steps using it will break."}
                 class="btn btn-ghost btn-2xs text-error">✕</button>

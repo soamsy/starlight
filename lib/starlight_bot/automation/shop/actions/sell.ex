@@ -3,8 +3,8 @@ defmodule StarlightBot.Automation.Shop.Actions.Sell do
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.GiftPlans
 
-  def run(step, _definition, state, ctx) do
-    case plan(step, state, ctx) do
+  def run(step, list, state, ctx) do
+    case plan(step, list, state, ctx) do
       {:skip, reason} ->
         {:skipped, reason, state}
 
@@ -21,8 +21,8 @@ defmodule StarlightBot.Automation.Shop.Actions.Sell do
     end
   end
 
-  def preview(step, _definition, state, ctx) do
-    case plan(step, state, ctx) do
+  def preview(step, list, state, ctx) do
+    case plan(step, list, state, ctx) do
       {:skip, reason} -> {:would_run, reason, state}
       {:sell, gifts, total, enough?} ->
         suffix = if enough?, do: "", else: ", not enough to reach #{step["stop_at_cost"]}"
@@ -30,12 +30,9 @@ defmodule StarlightBot.Automation.Shop.Actions.Sell do
     end
   end
 
-  defp plan(step, state, ctx) do
-    queue =
-      ctx
-      |> RunMemory.ego_gifts()
-      |> GiftPlans.fodder(state.protected, state.gifts_by_id)
-      |> GiftPlans.sell_order(step["tiers"] || [])
+  defp plan(step, list, state, ctx) do
+    fodder = ctx |> RunMemory.ego_gifts() |> GiftPlans.fodder(state.protected, state.gifts_by_id)
+    queue = if list, do: GiftPlans.list_sell_order(fodder, list["gifts"]), else: GiftPlans.sell_order(fodder, step["tiers"] || [])
 
     case needed(step, state, ctx) do
       :unknown_cost ->
@@ -46,11 +43,14 @@ defmodule StarlightBot.Automation.Shop.Actions.Sell do
 
       needed ->
         case GiftPlans.sell_plan(queue, needed, step["max_items"] || 1) do
-          {[], _total} -> {:skip, "nothing unprotected in those tiers"}
+          {[], _total} -> {:skip, nothing_label(list)}
           {gifts, total} -> {:sell, gifts, total, is_nil(needed) or total >= needed}
         end
     end
   end
+
+  defp nothing_label(nil), do: "nothing unprotected in those tiers"
+  defp nothing_label(list), do: "nothing unprotected from #{list["name"]}"
 
   defp needed(%{"stop_at_cost" => stop}, state, ctx) when is_integer(stop) do
     case RunMemory.cost(ctx) do

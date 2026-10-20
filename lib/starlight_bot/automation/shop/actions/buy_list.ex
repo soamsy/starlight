@@ -5,21 +5,18 @@ defmodule StarlightBot.Automation.Shop.Actions.BuyList do
   alias StarlightBot.GiftPlans
 
   def run(step, list, state, ctx) do
-    max_items = step["max_items"] || 1
-
-    case GiftPlans.list_remaining(list, owned_gifts(state, ctx)) do
-      0 -> {:skipped, "list done: owns #{list["done_at"]} from #{list["name"]}", state}
-      nil -> buy_from_shelf(list, max_items, state, ctx)
-      remaining -> buy_from_shelf(list, min(max_items, remaining), state, ctx)
+    case GiftPlans.list_remaining(list, step["done_at"], owned_gifts(state, ctx)) do
+      0 -> {:skipped, "done: owns #{step["done_at"]} from #{list["name"]}", state}
+      _ -> buy_from_shelf(list, state, ctx)
     end
   end
 
-  defp buy_from_shelf(list, limit, state, ctx) do
+  defp buy_from_shelf(list, state, ctx) do
     case Ops.shelf_items(ctx) do
       {:ok, items} ->
         items
         |> candidates(list["gifts"], state, ctx)
-        |> Enum.take(limit)
+        |> Enum.take(1)
         |> buy_all(0, state, ctx)
 
       {:error, reason} ->

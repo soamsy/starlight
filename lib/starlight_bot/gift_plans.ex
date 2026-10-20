@@ -2,12 +2,13 @@ defmodule StarlightBot.GiftPlans do
   alias StarlightBot.Conditions
   alias StarlightBot.GiftPlans.Routes
 
-  @library_keys ~w(keep_lists upties fusions shopping_lists)
-  @step_kinds ~w(uptie fusion buy_list refresh affinity_refresh sell skill_replace heal heal_all revive budget workflow bail leave)
+  @library_keys ~w(fusions upties lists)
+  @step_kinds ~w(if milestone uptie fusion buy_list refresh affinity_refresh sell skill_replace heal heal_all revive budget workflow bail leave)
   @library_refs %{
     "uptie" => {"upties", "upties"},
     "fusion" => {"fusions", "fusions"},
-    "buy_list" => {"shopping_lists", "list"}
+    "buy_list" => {"lists", "list"},
+    "sell" => {"lists", "list"}
   }
   @skill_options ~w(s1_s3 s2_s3 s1_s2)
   @heal_cost 100
@@ -62,26 +63,26 @@ defmodule StarlightBot.GiftPlans do
   def shop_tiers, do: @shop_tiers
 
   def blank(affinity \\ nil) do
-    keep = new_definition("keep_lists", "Keep")
+    keep = new_definition("lists", "Keep")
     workflow = %{"id" => new_id("wf"), "name" => "Standard", "keep" => keep["id"], "steps" => []}
 
     %{
-      "version" => 2,
+      "version" => 3,
       "affinity" => affinity,
       "cabinet_gifts" => starting_gifts(affinity),
       "grace_picks" => Enum.map(@default_grace_indexes, &%{"index" => &1, "enhance" => 0}),
       "gift_search" => [],
-      "library" => %{"keep_lists" => [keep], "upties" => [], "fusions" => [], "shopping_lists" => []},
+      "library" => %{"lists" => [keep], "upties" => [], "fusions" => []},
       "workflows" => [workflow],
       "floor_schedule" => [%{"from_floor" => 1, "workflow" => workflow["id"]}]
     }
   end
 
-  def normalize(%{"version" => 2} = data) do
+  def normalize(%{"version" => 3} = data) do
     library = data["library"] || %{}
 
     %{
-      "version" => 2,
+      "version" => 3,
       "affinity" => data["affinity"],
       "cabinet_gifts" => data["cabinet_gifts"] || [],
       "grace_picks" => data["grace_picks"] || [],
@@ -122,10 +123,10 @@ defmodule StarlightBot.GiftPlans do
 
   defp step_defaults("uptie", data), do: %{"upties" => List.wrap(first_id(data, "upties")), "max_gifts" => 1}
   defp step_defaults("fusion", data), do: %{"fusions" => List.wrap(first_id(data, "fusions"))}
-  defp step_defaults("buy_list", data), do: %{"list" => first_id(data, "shopping_lists"), "max_items" => 1}
+  defp step_defaults("buy_list", data), do: %{"list" => first_id(data, "lists"), "done_at" => nil}
   defp step_defaults("refresh", _data), do: %{}
   defp step_defaults("affinity_refresh", data), do: %{"affinity" => data["affinity"]}
-  defp step_defaults("sell", _data), do: %{"tiers" => [1], "stop_at_cost" => nil, "max_items" => 1}
+  defp step_defaults("sell", _data), do: %{"tiers" => [1], "list" => nil, "stop_at_cost" => nil, "max_items" => 1}
   defp step_defaults("skill_replace", _data), do: %{"sinner" => nil, "options" => @skill_options}
   defp step_defaults("heal", _data), do: %{"sinner" => nil}
   defp step_defaults("heal_all", _data), do: %{}
@@ -171,11 +172,11 @@ defmodule StarlightBot.GiftPlans do
 
   def list_owned_count(entries, owned_gifts), do: Enum.count(owned_gifts, &list_rank(entries, &1))
 
-  def list_remaining(%{"done_at" => done_at} = list, owned_gifts) when is_integer(done_at) do
+  def list_remaining(list, done_at, owned_gifts) when is_integer(done_at) do
     max(done_at - list_owned_count(list["gifts"], owned_gifts), 0)
   end
 
-  def list_remaining(_list, _owned_gifts), do: nil
+  def list_remaining(_list, _done_at, _owned_gifts), do: nil
 
   def find_definition(data, lib, id), do: Enum.find(data["library"][lib] || [], &(&1["id"] == id))
 
@@ -251,14 +252,14 @@ defmodule StarlightBot.GiftPlans do
             "name" => name,
             "steps" => Enum.map(workflow["steps"], &remap_step(&1, wf_map, ref_map))
         }
-        |> Map.put("keep", ref_map[{"keep_lists", workflow["keep"]}])
+        |> Map.put("keep", ref_map[{"lists", workflow["keep"]}])
       end)
 
     Map.update!(data, "workflows", &(&1 ++ imported))
   end
 
   defp workflow_refs(workflow) do
-    keep = if workflow["keep"], do: [{"keep_lists", workflow["keep"]}], else: []
+    keep = if workflow["keep"], do: [{"lists", workflow["keep"]}], else: []
 
     keep ++
       Enum.flat_map(workflow["steps"], fn step ->
@@ -315,8 +316,7 @@ defmodule StarlightBot.GiftPlans do
   defp remap_ref(ids, lib, ref_map) when is_list(ids), do: for(id <- ids, ref_map[{lib, id}], do: ref_map[{lib, id}])
   defp remap_ref(id, lib, ref_map), do: ref_map[{lib, id}]
 
-  defp id_prefix("keep_lists"), do: "kp"
-  defp id_prefix("shopping_lists"), do: "sl"
+  defp id_prefix("lists"), do: "ls"
   defp id_prefix("upties"), do: "up"
   defp id_prefix("fusions"), do: "fu"
 
@@ -348,7 +348,7 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def keep_gifts(data, workflow) do
-    case find_definition(data, "keep_lists", workflow["keep"]) do
+    case find_definition(data, "lists", workflow["keep"]) do
       nil -> []
       keep -> keep["gifts"]
     end
@@ -429,6 +429,16 @@ defmodule StarlightBot.GiftPlans do
     fodder
     |> Enum.filter(&Map.has_key?(rank, &1.tier))
     |> Enum.sort_by(&{rank[&1.tier], -&1.selling_cost, &1.name})
+  end
+
+  def chance_comet?(data), do: Enum.any?(data["grace_picks"] || [], &match?(%{"index" => @chance_comet}, &1))
+
+  def list_sell_order(fodder, entries) do
+    fodder
+    |> Enum.map(&{&1, list_rank(entries, &1)})
+    |> Enum.reject(fn {_gift, rank} -> is_nil(rank) end)
+    |> Enum.sort_by(fn {gift, rank} -> {rank, -gift.selling_cost, gift.name} end)
+    |> Enum.map(fn {gift, _rank} -> gift end)
   end
 
   def sell_plan(queue, needed, max_items) do
@@ -597,6 +607,14 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
+  defp step_subject(data, %{"kind" => "sell"} = step) do
+    case definition_for(data, step) do
+      {:ok, nil} -> nil
+      {:ok, list} -> list["name"]
+      {:error, :missing_definition} -> "(missing definition)"
+    end
+  end
+
   defp step_subject(_data, %{"kind" => "affinity_refresh"} = step), do: step["affinity"] || "(no affinity)"
   defp step_subject(_data, %{"kind" => "skill_replace"} = step), do: step["sinner"] || "(no sinner)"
   defp step_subject(_data, %{"kind" => kind} = step) when kind in ["heal", "revive"], do: step["sinner"] || "(no sinner)"
@@ -681,7 +699,7 @@ defmodule StarlightBot.GiftPlans do
 
   defp workflow_issues(data, workflow) do
     keep =
-      if find_definition(data, "keep_lists", workflow["keep"]),
+      if find_definition(data, "lists", workflow["keep"]),
         do: [],
         else: ["#{workflow["name"]}: no keep list selected."]
 
