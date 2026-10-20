@@ -536,6 +536,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     leaf =
       case params["op"] do
         op when op in ["cost_gte", "cost_lt"] -> %{"op" => op, "value" => parse_int(params["value"], 0)}
+        op when op in ["refreshes_lt", "refreshes_gte"] -> %{"op" => op, "value" => max(parse_int(params["value"], 0), 0)}
         op when op in ["fusions_complete", "upties_complete"] -> %{"op" => op}
         "fusion_done" -> %{"op" => "fusion_done", "fusion" => blank_to_nil(params["fusion"])}
         "uptie_done" -> %{"op" => "uptie_done", "uptie" => blank_to_nil(params["uptie"])}
@@ -1173,6 +1174,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     <select name="op" class="select select-bordered select-xs">
       <option value="cost_gte" selected={@node["op"] == "cost_gte"}>cost at least</option>
       <option value="cost_lt" selected={@node["op"] == "cost_lt"}>cost under</option>
+      <option value="refreshes_lt" selected={@node["op"] == "refreshes_lt"}>refreshes this shop under</option>
+      <option value="refreshes_gte" selected={@node["op"] == "refreshes_gte"}>refreshes this shop at least</option>
       <option value="has_gift" selected={@node["op"] == "has_gift"}>owns gift</option>
       <option value="missing_gift" selected={@node["op"] == "missing_gift"}>doesn't own gift</option>
       <option value="fusions_complete" selected={@node["op"] == "fusions_complete"}>all fusions complete</option>
@@ -1181,7 +1184,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <option value="uptie_done" selected={@node["op"] == "uptie_done"}>uptie done</option>
     </select>
     <%= cond do %>
-      <% @node["op"] in ["cost_gte", "cost_lt"] -> %>
+      <% @node["op"] in ["cost_gte", "cost_lt", "refreshes_lt", "refreshes_gte"] -> %>
         <input type="number" name="value" value={@node["value"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
       <% @node["op"] in ["fusions_complete", "upties_complete"] -> %>
         <span class="flex-1"></span>

@@ -100,6 +100,8 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       floor: floor,
       shop_type: Ops.shop_type(),
       reserve: (progress && progress.reserve) || 0,
+      refreshes: (progress && progress[:refreshes]) || 0,
+      replaced: (progress && progress[:replaced]) || MapSet.new(),
       gifts_by_name: Map.new(gifts, &{&1.name, &1}),
       gifts_by_id: Map.new(gifts, &{&1.id, &1}),
       protected: GiftPlans.protected_set(plan, workflow, gifts),
@@ -188,7 +190,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
 
   defp condition_env(state, ctx) do
     inventory = RunMemory.ego_gifts(ctx)
-    %{wallet: wallet(state, ctx), owned: owned_names(inventory), inventory: inventory, plan: state.plan}
+    %{wallet: wallet(state, ctx), owned: owned_names(inventory), inventory: inventory, plan: state.plan, gifts: state.gifts_by_name, refreshes: state.refreshes}
   end
 
   defp repeat_step(step, state, mode, ctx, run, total) when is_integer(run) and is_integer(total) do
@@ -363,6 +365,8 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       workflow_id: state.workflow["id"],
       floor: state.floor,
       reserve: state.reserve,
+      refreshes: state.refreshes,
+      replaced: state.replaced,
       steps: state.steps,
       done: state.done
     }

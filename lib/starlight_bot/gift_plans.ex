@@ -501,6 +501,8 @@ defmodule StarlightBot.GiftPlans do
 
   defp eval_leaf(%{"op" => "cost_gte", "value" => value}, %{wallet: wallet}), do: is_integer(wallet) and wallet >= value
   defp eval_leaf(%{"op" => "cost_lt", "value" => value}, %{wallet: wallet}), do: is_integer(wallet) and wallet < value
+  defp eval_leaf(%{"op" => "refreshes_lt", "value" => value}, env), do: Map.get(env, :refreshes, 0) < value
+  defp eval_leaf(%{"op" => "refreshes_gte", "value" => value}, env), do: Map.get(env, :refreshes, 0) >= value
   defp eval_leaf(%{"op" => "has_gift", "gift" => gift}, %{owned: owned}), do: MapSet.member?(owned, gift)
   defp eval_leaf(%{"op" => "missing_gift", "gift" => gift}, %{owned: owned}), do: not MapSet.member?(owned, gift)
   defp eval_leaf(%{"op" => "fusions_complete"}, %{plan: plan, owned: owned}), do: fusions_complete?(plan, owned)
@@ -538,6 +540,8 @@ defmodule StarlightBot.GiftPlans do
 
   defp leaf_label(%{"op" => "cost_gte", "value" => value}, _data), do: "cost >= #{value}"
   defp leaf_label(%{"op" => "cost_lt", "value" => value}, _data), do: "cost < #{value}"
+  defp leaf_label(%{"op" => "refreshes_lt", "value" => value}, _data), do: "refreshes < #{value}"
+  defp leaf_label(%{"op" => "refreshes_gte", "value" => value}, _data), do: "refreshes >= #{value}"
   defp leaf_label(%{"op" => "has_gift", "gift" => gift}, _data), do: "owns #{gift}"
   defp leaf_label(%{"op" => "missing_gift", "gift" => gift}, _data), do: "missing #{gift}"
   defp leaf_label(%{"op" => "fusions_complete"}, _data), do: "all fusions complete"

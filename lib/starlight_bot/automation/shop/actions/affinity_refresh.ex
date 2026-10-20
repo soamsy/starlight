@@ -8,7 +8,7 @@ defmodule StarlightBot.Automation.Shop.Actions.AffinityRefresh do
 
       affinity ->
         case Ops.keyword_refresh(affinity, ctx) do
-          :ok -> {:done, "refreshed for #{affinity}", state}
+          :ok -> {:done, "refreshed for #{affinity} (refresh #{state.refreshes + 1} this shop)", %{state | refreshes: state.refreshes + 1}}
           {:error, reason} -> {:failed, inspect(reason), state}
         end
     end
