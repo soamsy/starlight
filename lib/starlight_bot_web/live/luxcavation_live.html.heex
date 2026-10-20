@@ -110,7 +110,7 @@
             <select name="enkephalin_convert_count" class="select select-sm select-bordered">
               <%= for n <- 0..4 do %>
                 <option value={n} selected={to_string(n) == to_string(@enkephalin_convert_count)}>
-                  <%= n %>x (<%= enkephalin_cumulative_cost(n) %> lunacy)
+                  <%= n %>x (<%= enkephalin_cumulative_cost(n) %> lunacy, <%= enkephalin_cumulative_cost(n) * 7 %>/week)
                 </option>
               <% end %>
             </select>
@@ -157,6 +157,16 @@
               No mirror dungeon setup found. Set one up on the Mirror Dungeon page.
           <% end %>
         </div>
+
+        <%= if @phase == :running and not @other_running? do %>
+          <button
+            type="button"
+            phx-click="pause"
+            disabled={@pause_requested}
+            class="btn btn-warning btn-outline btn-sm">
+            <%= if @pause_requested, do: "Pausing…", else: "Pause" %>
+          </button>
+        <% end %>
 
         <%= if @phase != :idle and not @other_running? do %>
           <button type="button" phx-click="cancel" class="btn btn-ghost btn-sm btn-error">Cancel</button>

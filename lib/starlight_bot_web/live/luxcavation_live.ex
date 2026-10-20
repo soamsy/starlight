@@ -22,6 +22,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      socket
      |> assign(:current_screen, nav.current_screen)
      |> assign(:phase, nav.phase)
+     |> assign(:pause_requested, nav.pause_requested)
      |> assign(:other_running?, nav.run_kind == :mirror_dungeon)
      |> assign(:log, nav.log)
      |> assign(:teams, teams)
@@ -99,8 +100,9 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   end
 
   @impl true
-  def handle_event("resume", _, socket) do
-    {:noreply, start_countdown(socket, :resume_luxcavation)}
+  def handle_event("pause", _, socket) do
+    Navigator.pause()
+    {:noreply, socket}
   end
 
   @impl true
@@ -137,6 +139,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      socket
      |> assign(:current_screen, nav.current_screen)
      |> assign(:phase, nav.phase)
+     |> assign(:pause_requested, nav.pause_requested)
      |> assign(:other_running?, nav.run_kind == :mirror_dungeon)
      |> assign(:queued_next, nav.next_run)
      |> assign(:log, nav.log)}
