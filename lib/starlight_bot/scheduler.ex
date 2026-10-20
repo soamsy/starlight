@@ -3,7 +3,7 @@ defmodule StarlightBot.Scheduler do
   alias StarlightBot.Repo
 
   @topic "scheduler"
-  @runners ~w(mirror_dungeon luxcavation)
+  @runners ~w(luxcavation_then_mirror_dungeon mirror_dungeon luxcavation)
   @launch_modes ~w(none steam exe)
   @fields [
     :enabled,

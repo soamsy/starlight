@@ -200,15 +200,21 @@ defmodule StarlightBot.Scheduler.Server do
     end
   end
 
-  defp start_run({:run_mirror_dungeon, team_ids, run_count, config}) do
-    Navigator.run_mirror_dungeon(team_ids, run_count, config)
+  defp start_run({:luxcavation_then_mirror_dungeon, lux, md}) do
+    request_run(lux)
+    Navigator.queue_after_run(md)
     confirm_run_started()
   end
 
-  defp start_run({:run_luxcavation, team_id, exp_c, exp_r, thread_c, thread_r, collect_xp?, collect_enkephalin?, convert}) do
-    Navigator.run_luxcavation(team_id, exp_c, exp_r, thread_c, thread_r, collect_xp?, collect_enkephalin?, convert)
+  defp start_run(action) do
+    request_run(action)
     confirm_run_started()
   end
+
+  defp request_run({:run_mirror_dungeon, picks, run_count, config}), do: Navigator.run_mirror_dungeon(picks, run_count, config)
+
+  defp request_run({:run_luxcavation, team, exp_c, exp_r, thread_c, thread_r, collect_xp?, collect_enkephalin?, convert}),
+    do: Navigator.run_luxcavation(team, exp_c, exp_r, thread_c, thread_r, collect_xp?, collect_enkephalin?, convert)
 
   defp confirm_run_started do
     Process.sleep(@run_start_confirm_ms)
@@ -274,6 +280,7 @@ defmodule StarlightBot.Scheduler.Server do
 
   defp ms_until(end_at), do: NaiveDateTime.diff(end_at, Scheduler.local_now(), :millisecond)
 
+  def runner_label("luxcavation_then_mirror_dungeon"), do: "luxcavation then mirror dungeon"
   def runner_label("mirror_dungeon"), do: "mirror dungeon"
   def runner_label("luxcavation"), do: "luxcavation"
 

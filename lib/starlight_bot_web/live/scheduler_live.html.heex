@@ -39,8 +39,9 @@
         <label class="flex flex-col gap-1">
           <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Runner</span>
           <select name="runner" class="select select-sm select-bordered">
-            <option value="mirror_dungeon" selected={@form["runner"] == "mirror_dungeon"}>Mirror Dungeon</option>
-            <option value="luxcavation" selected={@form["runner"] == "luxcavation"}>Luxcavation</option>
+            <option value="luxcavation_then_mirror_dungeon" selected={@form["runner"] == "luxcavation_then_mirror_dungeon"}>Luxcavation, then Mirror Dungeon</option>
+            <option value="mirror_dungeon" selected={@form["runner"] == "mirror_dungeon"}>Mirror Dungeon only</option>
+            <option value="luxcavation" selected={@form["runner"] == "luxcavation"}>Luxcavation only</option>
           </select>
         </label>
 
