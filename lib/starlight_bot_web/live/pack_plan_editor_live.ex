@@ -341,7 +341,6 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
         |> assign(:editing_id, plan.id)
         |> assign(:name, plan.name)
         |> assign(:plan_data, normalize_plan_data(plan.data))
-        |> assign(:active_mode, "normal")
         |> assign(:floor_filter, nil)
         |> assign(:filter, "")
         |> assign(:floor_editor_pack_id, nil)
