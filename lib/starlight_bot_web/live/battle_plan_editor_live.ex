@@ -26,7 +26,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   @impl true
   def handle_event("new_plan", _, socket) do
-    attrs = %{name: "New Plan #{length(socket.assigns.plans) + 1}", data: BattlePlans.blank()}
+    attrs = %{name: Plans.new_name(:battle_plans, socket.assigns.team_id), data: BattlePlans.blank()}
 
     case Plans.save(:battle_plans, attrs) do
       {:ok, id} -> {:noreply, socket |> assign(:plans, Plans.list(:battle_plans)) |> load_plan(id) |> link_team(:battle_plan_id)}

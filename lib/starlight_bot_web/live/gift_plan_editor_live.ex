@@ -105,7 +105,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("new_plan", _, socket) do
-    attrs = %{name: new_plan_name(socket.assigns.plans), data: GiftPlans.blank()}
+    attrs = %{name: Plans.new_name(:gift_plans, socket.assigns.team_id), data: GiftPlans.blank()}
 
     case Plans.save(:gift_plans, attrs) do
       {:ok, id} -> {:noreply, socket |> refresh_plans() |> load_plan(id) |> link_team(:gift_plan_id)}
@@ -1338,8 +1338,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp first_id([%{"id" => id} | _]), do: id
   defp first_id(_), do: nil
-
-  defp new_plan_name(plans), do: "New Gift Plan #{length(plans) + 1}"
 
   defp blank_to_nil(nil), do: nil
   defp blank_to_nil(""), do: nil

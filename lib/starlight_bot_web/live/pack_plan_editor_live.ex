@@ -27,7 +27,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
 
   @impl true
   def handle_event("new_plan", _, socket) do
-    attrs = %{name: new_plan_name(socket.assigns.plans), data: blank_plan_data()}
+    attrs = %{name: Plans.new_name(:pack_plans, socket.assigns.team_id), data: blank_plan_data()}
 
     case Plans.save(:pack_plans, attrs) do
       {:ok, id} ->
@@ -356,8 +356,6 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
     end
   end
-
-  defp new_plan_name(plans), do: "New Plan #{length(plans) + 1}"
 
   defp blank_plan_data do
     %{"version" => 1, "mode_schedule" => [], "packs" => %{}, "search_floors" => []}

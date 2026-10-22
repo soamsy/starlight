@@ -1,7 +1,7 @@
 defmodule StarlightBot.Plans do
   require Logger
   import Ecto.Query
-  alias StarlightBot.Repo
+  alias StarlightBot.{Repo, Teams}
 
   @tables ~w(gift_plans battle_plans pack_plans)a
 
@@ -63,6 +63,23 @@ defmodule StarlightBot.Plans do
     e ->
       Logger.error("Plans DB error: #{Exception.message(e)}", module: __MODULE__)
       {:error, Exception.message(e)}
+  end
+
+  def new_name(table, team_id) when table in @tables do
+    base =
+      case team_id && Teams.get_team(team_id) do
+        %{name: name} -> name
+        _ -> "New Plan"
+      end
+
+    existing = Repo.all(from r in Atom.to_string(table), select: r.name) |> MapSet.new()
+
+    if MapSet.member?(existing, base) do
+      n = Stream.iterate(2, &(&1 + 1)) |> Enum.find(&(not MapSet.member?(existing, "#{base} #{&1}")))
+      "#{base} #{n}"
+    else
+      base
+    end
   end
 
   defp decode(nil), do: nil

@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
   use ExUnit.Case, async: false
 
-  alias StarlightBot.{BattlePlans, Plans, Repo}
+  alias StarlightBot.{BattlePlans, Plans, Repo, Teams}
   alias StarlightBotWeb.Live.BattlePlanEditorLive, as: Live
 
   setup do
@@ -25,6 +25,15 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
   defp actions(socket, playbook_id) do
     saved = Plans.get(:battle_plans, socket.assigns.editing_id).data
     hd(Enum.find(saved["playbooks"], &(&1["id"] == playbook_id))["phases"])["actions"]
+  end
+
+  test "new plans are named after the team, numbered when the name is taken" do
+    {:ok, team_id} = Teams.save_team(%{name: "Burn Team"})
+    assert Plans.new_name(:battle_plans, team_id) == "Burn Team"
+    {:ok, _} = Plans.save(:battle_plans, %{name: "Burn Team", data: BattlePlans.blank()})
+    assert Plans.new_name(:battle_plans, team_id) == "Burn Team 2"
+    assert Plans.new_name(:pack_plans, team_id) == "Burn Team"
+    assert Plans.new_name(:battle_plans, nil) =~ "New Plan"
   end
 
   test "duplicating a plan copies its data under a new name and opens the copy", %{socket: socket} do
