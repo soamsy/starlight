@@ -9,22 +9,148 @@
       <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
         <%= if @data do %>
           <div class="flex items-center gap-3">
-            <.plan_picker id="battle-strategy-picker" items={@strategies} current_id={@editing_id} name={@name} noun="strategy" label="battle strategy" />
+            <.plan_picker id="battle-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="battle plan" />
             <form phx-change="set_max_retries" class="flex items-center gap-1 text-xs"
                   title="How many times a lost battle is retried before the run gives up.">
               <span class="text-base-content/60">Retries per battle</span>
-              <input type="number" name="max_retries" min="0" value={StarlightBot.BattleStrategies.max_retries(@data)}
+              <input type="number" name="max_retries" min="0" value={StarlightBot.BattlePlans.max_retries(@data)}
                      phx-debounce="300" class="input input-bordered input-xs w-16" />
             </form>
           </div>
 
-          <% lineup_issues = StarlightBot.BattleStrategies.lineup_issues(@data) %>
+          <% lineup_issues = StarlightBot.BattlePlans.lineup_issues(@data) %>
           <div :if={lineup_issues != []} role="alert" class="alert alert-warning alert-soft py-1.5 px-3 text-xs">
             <div class="flex flex-col">
               <span class="font-semibold">Lineups need setting up. Until then the bot leaves the in-game sinner order alone.</span>
               <span :for={issue <- lineup_issues}><%= issue %></span>
             </div>
           </div>
+
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <%= for lineup <- StarlightBot.BattlePlans.lineups(@data) do %>
+                <% used = StarlightBot.BattlePlans.venues_using(@data, lineup["id"]) %>
+                <%= if @renaming_lineup_id == lineup["id"] do %>
+                  <form phx-submit="rename_lineup" class="flex">
+                    <input type="text" name="value" value={lineup["name"]} phx-blur="rename_lineup"
+                           phx-keydown="cancel_rename_lineup" phx-key="Escape" phx-mounted={JS.focus()}
+                           class="input input-bordered input-sm w-40 font-semibold" />
+                  </form>
+                <% else %>
+                  <div id={"lineup-#{lineup["id"]}"} phx-hook="DblClickEvent" data-event="start_rename_lineup" data-id={lineup["id"]}
+                       title={"Double-click to rename. Used on: " <> if(used == [], do: "nothing", else: Enum.map_join(used, ", ", &StarlightBot.BattlePlans.venue_label/1))}
+                       class={"flex items-center rounded-lg border text-xs " <> if(@lineup_id == lineup["id"], do: "border-primary bg-primary/10", else: "border-base-300 hover:bg-base-200")}>
+                    <button phx-click="select_lineup" phx-value-id={lineup["id"]} class="flex items-center gap-1.5 pl-1.5 pr-1 py-1">
+                      <span class="inline-block w-5 text-center rounded-full text-[10px] font-semibold text-white" style={lineup_color(@data, lineup["id"], 0.9)}><%= playbook_tag(lineup) %></span>
+                      <span class="font-medium"><%= lineup["name"] %></span>
+                      <span class={"text-[10px] " <> if(lineup["sinners"] == [], do: "text-warning", else: "text-base-content/40")}><%= length(lineup["sinners"]) %> sin</span>
+                    </button>
+                    <button phx-click="delete_lineup" phx-value-id={lineup["id"]}
+                            data-confirm={"Delete lineup '#{lineup["name"]}'?"}
+                            title="Delete lineup"
+                            class="btn btn-2xs btn-ghost text-error px-1">✕</button>
+                  </div>
+                <% end %>
+              <% end %>
+              <button phx-click="new_lineup" class="btn btn-xs btn-ghost">+ lineup</button>
+            </div>
+
+            <% lineup = StarlightBot.BattlePlans.find_lineup(@data, @lineup_id) %>
+            <%= if lineup do %>
+              <div class="flex flex-wrap gap-4 items-start">
+                <div class="flex flex-col gap-2 pt-5">
+                  <%= for row <- sinner_rows() do %>
+                    <div class="grid grid-cols-6 gap-1 max-w-xl">
+                      <%= for sinner <- row do %>
+                        <% pos = Enum.find_index(lineup["sinners"], &(&1 == sinner)) %>
+                        <button type="button" phx-click="toggle_lineup_sinner" phx-value-sinner={sinner}
+                                class={"btn btn-xs relative " <> if(pos, do: "btn-primary", else: "btn-outline")}>
+                          <%= sinner_label(sinner) %>
+                          <span :if={pos} class={"absolute -top-2 -right-2 badge badge-xs " <> if(pos < StarlightBot.BattlePlans.front_line_size(), do: "badge-secondary", else: "badge-neutral")}><%= pos + 1 %></span>
+                        </button>
+                      <% end %>
+                    </div>
+                  <% end %>
+                  <div class="flex items-center gap-2 text-xs">
+                    <button type="button" phx-click="clear_lineup" class="btn btn-xs btn-ghost">Clear</button>
+                    <span class="text-base-content/50">
+                      <%= length(lineup["sinners"]) %> picked
+                      <%= if length(lineup["sinners"]) > StarlightBot.BattlePlans.front_line_size() do %>
+                        (<%= length(lineup["sinners"]) - StarlightBot.BattlePlans.front_line_size() %> backup)
+                      <% end %>
+                    </span>
+                  </div>
+                  <span class="text-xs text-base-content/60">
+                    Click sinners in pick order. The first <%= StarlightBot.BattlePlans.front_line_size() %> go on the front line, the rest are backups.
+                  </span>
+                </div>
+                <div class="flex flex-col gap-1">
+                  <table class="text-[11px] border-separate border-spacing-0.5 self-start">
+                    <thead>
+                      <tr>
+                        <th></th>
+                        <%= for floor <- floors(@extreme?) do %>
+                          <th class="font-normal text-base-content/50 w-8"><%= floor %></th>
+                        <% end %>
+                        <%= unless @extreme? do %>
+                          <th class="font-normal text-base-content/50 w-12">6-15</th>
+                        <% end %>
+                      </tr>
+                    </thead>
+                    <tbody>
+                    <%= for venue <- StarlightBot.BattlePlans.venues() do %>
+                      <% entries = StarlightBot.BattlePlans.lineup_track(@data, venue) %>
+                      <% lux? = StarlightBot.BattlePlans.lux_venue?(venue) %>
+                      <tr>
+                        <td class="pr-2 whitespace-nowrap text-base-content/70"><%= StarlightBot.BattlePlans.venue_label(venue) %></td>
+                        <%= for floor <- if(lux?, do: [1], else: floors(@extreme?)) do %>
+                          <% id = StarlightBot.BattlePlans.Resolver.lineup_id_at(entries, floor) %>
+                          <% painted = StarlightBot.BattlePlans.find_lineup(@data, id) %>
+                          <% start? = change_point?(entries, floor) %>
+                          <td>
+                            <button phx-click="paint_lineup" phx-value-venue={venue} phx-value-floor={floor}
+                                    title={lineup_tooltip(@data, entries, floor)}
+                                    style={if painted, do: lineup_color(@data, id, if(start?, do: 0.9, else: 0.25))}
+                                    class={"w-8 h-6 rounded-full text-[10px] font-semibold " <> cond do
+                                      is_nil(painted) -> "border border-dashed border-warning text-warning"
+                                      start? -> "border-l-4 border-base-content/70 text-white"
+                                      true -> "text-base-content/40"
+                                    end}>
+                              <%= cond do %>
+                                <% is_nil(painted) -> %>?
+                                <% start? -> %><%= playbook_tag(painted) %>
+                                <% true -> %>··
+                              <% end %>
+                            </button>
+                          </td>
+                        <% end %>
+                        <%= if not @extreme? and not lux? do %>
+                          <% id = StarlightBot.BattlePlans.Resolver.lineup_id_at(entries, 6) %>
+                          <% painted = StarlightBot.BattlePlans.find_lineup(@data, id) %>
+                          <td>
+                            <button phx-click="toggle_extreme"
+                                    title={lineup_tooltip(@data, entries, 6) <> if(hidden_change_points?(entries), do: ", more change points above", else: "")}
+                                    style={if painted, do: lineup_color(@data, id, if(change_point?(entries, 6), do: 0.9, else: 0.25))}
+                                    class="w-12 h-6 rounded-full text-[10px] font-semibold">
+                              <%= if painted, do: playbook_tag(painted), else: "?" %><%= if hidden_change_points?(entries), do: " •" %>
+                            </button>
+                          </td>
+                        <% end %>
+                      </tr>
+                    <% end %>
+                    </tbody>
+                  </table>
+                  <div class="flex items-center gap-2 text-xs text-base-content/60">
+                    <span>Click a floor to start <span class="font-semibold"><%= lineup["name"] %></span> there.</span>
+                    <button phx-click="toggle_lineup_erase" title="Remove a change point"
+                            class={"btn btn-2xs " <> if(@lineup_erase?, do: "btn-error", else: "btn-ghost text-error")}>eraser</button>
+                  </div>
+                </div>
+              </div>
+            <% end %>
+          </div>
+
+          <div class="divider my-0"></div>
 
           <div class="flex flex-col gap-1">
             <div class="flex items-center gap-2 text-xs text-base-content/60 flex-wrap">
@@ -45,14 +171,6 @@
                   <%= pb["name"] %>
                 </button>
               <% end %>
-              <span class="text-base-content/30">|</span>
-              <%= for lineup <- StarlightBot.BattleStrategies.lineups(@data) do %>
-                <button phx-click="set_paint" phx-value-id={lineup["id"]} title={"#{lineup["name"]} (lineup)"}
-                        class={"btn btn-2xs gap-1 " <> if(@paint == lineup["id"], do: "ring ring-offset-1 ring-base-content/50", else: "btn-ghost")}>
-                  <span class="inline-block w-2.5 h-2.5 rounded-full" style={lineup_color(@data, lineup["id"], 1)}></span>
-                  <%= lineup["name"] %>
-                </button>
-              <% end %>
               <button phx-click="set_paint" phx-value-id="erase" title="Remove a change point"
                       class={"btn btn-2xs " <> if(@paint == "erase", do: "btn-error", else: "btn-ghost text-error")}>eraser</button>
             </div>
@@ -71,13 +189,16 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <%= for track <- StarlightBot.BattleStrategies.tracks() do %>
+                  <%= for track <- StarlightBot.BattlePlans.tracks() do %>
                     <% entries = @data["tracks"][track] %>
-                    <% lux? = StarlightBot.BattleStrategies.lux_track?(track) %>
+                    <% lux? = StarlightBot.BattlePlans.lux_track?(track) %>
+                    <tr :if={track == "lux_chain"}>
+                      <td colspan="16" class="py-0.5"><div class="h-px"></div></td>
+                    </tr>
                     <tr>
                       <td class="pr-2 whitespace-nowrap text-base-content/70"><%= track_label(track) %></td>
                       <%= for floor <- if(lux?, do: [1], else: floors(@extreme?)) do %>
-                        <% id = StarlightBot.BattleStrategies.Resolver.playbook_id_at(entries, floor) %>
+                        <% id = StarlightBot.BattlePlans.Resolver.playbook_id_at(entries, floor) %>
                         <% start? = change_point?(entries, floor) %>
                         <td>
                           <button phx-click="paint_cell" phx-value-track={track} phx-value-floor={floor}
@@ -89,56 +210,13 @@
                         </td>
                       <% end %>
                       <%= if not @extreme? and not lux? do %>
-                        <% id = StarlightBot.BattleStrategies.Resolver.playbook_id_at(entries, 6) %>
+                        <% id = StarlightBot.BattlePlans.Resolver.playbook_id_at(entries, 6) %>
                         <td>
                           <button phx-click="toggle_extreme"
                                   title={run_tooltip(@data, entries, 6) <> if(hidden_change_points?(entries), do: ", more change points above", else: "")}
                                   style={playbook_color(@data, id, if(change_point?(entries, 6), do: 0.9, else: 0.25))}
                                   class="w-12 h-6 rounded text-[10px] font-semibold">
                             <%= playbook_tag(find_playbook(@data, id)) %><%= if hidden_change_points?(entries), do: " •" %>
-                          </button>
-                        </td>
-                      <% end %>
-                    </tr>
-                  <% end %>
-                  <tr>
-                    <td class="pt-2 pr-2 text-[10px] font-semibold uppercase tracking-wide text-base-content/50">Lineups</td>
-                  </tr>
-                  <%= for venue <- StarlightBot.BattleStrategies.venues() do %>
-                    <% entries = StarlightBot.BattleStrategies.lineup_track(@data, venue) %>
-                    <% lux? = StarlightBot.BattleStrategies.lux_venue?(venue) %>
-                    <tr>
-                      <td class="pr-2 whitespace-nowrap text-base-content/70"><%= StarlightBot.BattleStrategies.venue_label(venue) %></td>
-                      <%= for floor <- if(lux?, do: [1], else: floors(@extreme?)) do %>
-                        <% id = StarlightBot.BattleStrategies.Resolver.lineup_id_at(entries, floor) %>
-                        <% lineup = StarlightBot.BattleStrategies.find_lineup(@data, id) %>
-                        <% start? = change_point?(entries, floor) %>
-                        <td>
-                          <button phx-click="paint_lineup" phx-value-venue={venue} phx-value-floor={floor}
-                                  title={lineup_tooltip(@data, entries, floor)}
-                                  style={if lineup, do: lineup_color(@data, id, if(start?, do: 0.9, else: 0.25))}
-                                  class={"w-8 h-6 rounded-full text-[10px] font-semibold " <> cond do
-                                    is_nil(lineup) -> "border border-dashed border-warning text-warning"
-                                    start? -> "border-l-4 border-base-content/70 text-white"
-                                    true -> "text-base-content/40"
-                                  end}>
-                            <%= cond do %>
-                              <% is_nil(lineup) -> %>?
-                              <% start? -> %><%= playbook_tag(lineup) %>
-                              <% true -> %>··
-                            <% end %>
-                          </button>
-                        </td>
-                      <% end %>
-                      <%= if not @extreme? and not lux? do %>
-                        <% id = StarlightBot.BattleStrategies.Resolver.lineup_id_at(entries, 6) %>
-                        <% lineup = StarlightBot.BattleStrategies.find_lineup(@data, id) %>
-                        <td>
-                          <button phx-click="toggle_extreme"
-                                  title={lineup_tooltip(@data, entries, 6) <> if(hidden_change_points?(entries), do: ", more change points above", else: "")}
-                                  style={if lineup, do: lineup_color(@data, id, if(change_point?(entries, 6), do: 0.9, else: 0.25))}
-                                  class="w-12 h-6 rounded-full text-[10px] font-semibold">
-                            <%= if lineup, do: playbook_tag(lineup), else: "?" %><%= if hidden_change_points?(entries), do: " •" %>
                           </button>
                         </td>
                       <% end %>
@@ -160,7 +238,7 @@
                     <button phx-click="new_playbook" phx-value-kind={kind} class="btn btn-2xs btn-ghost ml-auto">+ <%= kind %></button>
                   </div>
                   <%= for pb <- Enum.filter(@data["playbooks"], &(&1["kind"] == kind)) do %>
-                    <% used = StarlightBot.BattleStrategies.tracks_using(@data, pb["id"]) %>
+                    <% used = StarlightBot.BattlePlans.tracks_using(@data, pb["id"]) %>
                     <button phx-click="select_playbook" phx-value-id={pb["id"]}
                             class={"flex items-center gap-1.5 text-left text-xs rounded px-1.5 py-1 hover:bg-base-200 " <> if(@playbook_id == pb["id"], do: "bg-primary/10 border-l-2 border-primary", else: "")}>
                       <span class="inline-block w-5 text-center rounded text-[10px] font-semibold text-white" style={playbook_color(@data, pb["id"], 0.9)}><%= playbook_tag(pb) %></span>
@@ -170,62 +248,10 @@
                   <% end %>
                 </div>
               <% end %>
-              <div class="flex flex-col gap-0.5">
-                <div class="flex items-center text-xs font-semibold text-base-content/70">
-                  Lineups
-                  <button phx-click="new_lineup" class="btn btn-2xs btn-ghost ml-auto">+ lineup</button>
-                </div>
-                <%= for lineup <- StarlightBot.BattleStrategies.lineups(@data) do %>
-                  <% used = StarlightBot.BattleStrategies.venues_using(@data, lineup["id"]) %>
-                  <button phx-click="select_lineup" phx-value-id={lineup["id"]}
-                          class={"flex items-center gap-1.5 text-left text-xs rounded px-1.5 py-1 hover:bg-base-200 " <> if(@lineup_id == lineup["id"], do: "bg-primary/10 border-l-2 border-primary", else: "")}>
-                    <span class="inline-block w-5 text-center rounded-full text-[10px] font-semibold text-white" style={lineup_color(@data, lineup["id"], 0.9)}><%= playbook_tag(lineup) %></span>
-                    <span class="flex-1 truncate"><%= lineup["name"] %></span>
-                    <span class={"text-[10px] " <> if(lineup["sinners"] == [], do: "text-warning", else: "text-base-content/40")}
-                          title={Enum.map_join(used, ", ", &StarlightBot.BattleStrategies.venue_label/1)}><%= length(lineup["sinners"]) %> sin</span>
-                  </button>
-                <% end %>
-              </div>
             </div>
 
             <div class="flex flex-col gap-2 min-w-0">
               <% playbook = find_playbook(@data, @playbook_id) %>
-              <% lineup = StarlightBot.BattleStrategies.find_lineup(@data, @lineup_id) %>
-              <%= if lineup do %>
-                <div class="flex items-center gap-2">
-                  <input type="text" value={lineup["name"]} phx-blur="rename_lineup"
-                         class="input input-bordered input-sm w-56 font-semibold" />
-                  <span class="badge badge-sm badge-outline">lineup</span>
-                  <button phx-click="delete_lineup" phx-value-id={lineup["id"]}
-                          data-confirm={"Delete lineup '#{lineup["name"]}'?"}
-                          class="btn btn-xs btn-ghost text-error ml-auto">Delete</button>
-                </div>
-                <span class="text-xs text-base-content/60">
-                  Click sinners in pick order. The first <%= StarlightBot.BattleStrategies.front_line_size() %> go on the front line, the rest are backups.
-                  Paint this lineup onto the MD Battle, MD Boss, or Lux rows above.
-                </span>
-                <%= for row <- sinner_rows() do %>
-                  <div class="grid grid-cols-6 gap-1 max-w-xl">
-                    <%= for sinner <- row do %>
-                      <% pos = Enum.find_index(lineup["sinners"], &(&1 == sinner)) %>
-                      <button type="button" phx-click="toggle_lineup_sinner" phx-value-sinner={sinner}
-                              class={"btn btn-xs relative " <> if(pos, do: "btn-primary", else: "btn-outline")}>
-                        <%= sinner_label(sinner) %>
-                        <span :if={pos} class={"absolute -top-2 -right-2 badge badge-xs " <> if(pos < StarlightBot.BattleStrategies.front_line_size(), do: "badge-secondary", else: "badge-neutral")}><%= pos + 1 %></span>
-                      </button>
-                    <% end %>
-                  </div>
-                <% end %>
-                <div class="flex items-center gap-2 text-xs">
-                  <button type="button" phx-click="clear_lineup" class="btn btn-xs btn-ghost">Clear</button>
-                  <span class="text-base-content/50">
-                    <%= length(lineup["sinners"]) %> picked
-                    <%= if length(lineup["sinners"]) > StarlightBot.BattleStrategies.front_line_size() do %>
-                      (<%= length(lineup["sinners"]) - StarlightBot.BattleStrategies.front_line_size() %> backup)
-                    <% end %>
-                  </span>
-                </div>
-              <% end %>
               <%= if playbook do %>
                 <div class="flex items-center gap-2">
                   <input type="text" value={playbook["name"]} phx-blur="rename_playbook"
@@ -283,15 +309,15 @@
                   </div>
                 <% end %>
               <% end %>
-              <%= if is_nil(playbook) and is_nil(lineup) do %>
-                <div class="text-xs text-base-content/40 italic">Select a playbook or lineup to edit.</div>
+              <%= if is_nil(playbook) do %>
+                <div class="text-xs text-base-content/40 italic">Select a playbook to edit.</div>
               <% end %>
             </div>
           </div>
         <% else %>
-          <.plan_picker id="battle-strategy-picker" items={@strategies} current_id={@editing_id} name={@name} noun="strategy" label="battle strategy" />
+          <.plan_picker id="battle-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="battle plan" />
           <div class="flex-1 flex items-center justify-center text-base-content/40 text-sm">
-            Pick or create a battle strategy for this team.
+            Pick or create a battle plan for this team.
           </div>
         <% end %>
       </div>

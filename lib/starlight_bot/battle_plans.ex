@@ -1,14 +1,14 @@
-defmodule StarlightBot.BattleStrategies do
-  alias StarlightBot.BattleStrategies.Resolver
+defmodule StarlightBot.BattlePlans do
+  alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Conditions
   alias StarlightBot.GiftPlans
 
-  @tracks ~w(normal_chain normal_focused hard_chain hard_focused lux_chain lux_focused)
+  @tracks ~w(normal_chain hard_chain normal_focused hard_focused lux_chain lux_focused)
   @venues ~w(md_battle md_boss lux)
   @front_line_size 7
   @backup_size 5
   @max_floor 15
-  @default_max_retries 3
+  @default_max_retries 5
   @chain_actions ~w(chain_fast chain_a_res)
   @common_actions ~w(win_rate damage_rate commit clear dodge ego retry)
   @focused_actions ~w(target)

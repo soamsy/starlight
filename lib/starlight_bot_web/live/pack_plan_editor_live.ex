@@ -1,10 +1,10 @@
-defmodule StarlightBotWeb.Live.ThemePackPlanEditorLive do
+defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   use StarlightBotWeb, :live_view
 
   import StarlightBotWeb.Components.PlanPicker
 
-  alias StarlightBot.{Strategies, Teams, ThemePacks}
-  alias StarlightBot.ThemePackPlans.Resolver
+  alias StarlightBot.{Plans, Teams, ThemePacks}
+  alias StarlightBot.PackPlans.Resolver
 
   @priorities ~w(hunt banned bonus)
 
@@ -16,22 +16,22 @@ defmodule StarlightBotWeb.Live.ThemePackPlanEditorLive do
     socket =
       socket
       |> assign(:team_id, team && team.id)
-      |> assign(:plans, Strategies.list(:theme_pack_plans))
+      |> assign(:plans, Plans.list(:pack_plans))
       |> assign(:theme_packs, theme_packs)
       |> assign(:packs_by_id, Map.new(theme_packs, &{&1.id, &1}))
       |> assign(:extreme?, false)
       |> reset_editor()
 
-    {:ok, if(team && team.theme_pack_plan_id, do: load_plan(socket, team.theme_pack_plan_id), else: socket)}
+    {:ok, if(team && team.pack_plan_id, do: load_plan(socket, team.pack_plan_id), else: socket)}
   end
 
   @impl true
   def handle_event("new_plan", _, socket) do
     attrs = %{name: new_plan_name(socket.assigns.plans), data: blank_plan_data()}
 
-    case Strategies.save(:theme_pack_plans, attrs) do
+    case Plans.save(:pack_plans, attrs) do
       {:ok, id} ->
-        {:noreply, socket |> assign(:plans, Strategies.list(:theme_pack_plans)) |> load_plan(id) |> link_team(:theme_pack_plan_id)}
+        {:noreply, socket |> assign(:plans, Plans.list(:pack_plans)) |> load_plan(id) |> link_team(:pack_plan_id)}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
@@ -40,18 +40,18 @@ defmodule StarlightBotWeb.Live.ThemePackPlanEditorLive do
 
   @impl true
   def handle_event("select_plan", %{"id" => id}, socket) do
-    {:noreply, socket |> load_plan(String.to_integer(id)) |> link_team(:theme_pack_plan_id)}
+    {:noreply, socket |> load_plan(String.to_integer(id)) |> link_team(:pack_plan_id)}
   end
 
   @impl true
   def handle_event("duplicate_plan", %{"id" => id}, socket) do
-    case Strategies.get(:theme_pack_plans, String.to_integer(id)) do
+    case Plans.get(:pack_plans, String.to_integer(id)) do
       nil ->
         {:noreply, put_flash(socket, :error, "Plan not found.")}
 
       plan ->
-        case Strategies.save(:theme_pack_plans, %{name: "#{plan.name} (copy)", data: plan.data}) do
-          {:ok, new_id} -> {:noreply, socket |> assign(:plans, Strategies.list(:theme_pack_plans)) |> load_plan(new_id) |> link_team(:theme_pack_plan_id)}
+        case Plans.save(:pack_plans, %{name: "#{plan.name} (copy)", data: plan.data}) do
+          {:ok, new_id} -> {:noreply, socket |> assign(:plans, Plans.list(:pack_plans)) |> load_plan(new_id) |> link_team(:pack_plan_id)}
           {:error, reason} -> {:noreply, put_flash(socket, :error, "Duplicate failed: #{inspect(reason)}")}
         end
     end
@@ -61,14 +61,14 @@ defmodule StarlightBotWeb.Live.ThemePackPlanEditorLive do
   def handle_event("delete_plan", %{"id" => id}, socket) do
     id = String.to_integer(id)
 
-    case Strategies.delete(:theme_pack_plans, id) do
+    case Plans.delete(:pack_plans, id) do
       {:ok, _} ->
         socket = if socket.assigns.editing_id == id, do: reset_editor(socket), else: socket
 
         {:noreply,
          socket
-         |> assign(:plans, Strategies.list(:theme_pack_plans))
-         |> link_team(:theme_pack_plan_id)
+         |> assign(:plans, Plans.list(:pack_plans))
+         |> link_team(:pack_plan_id)
          |> put_flash(:info, "Plan deleted.")}
 
       {:error, reason} ->
@@ -78,7 +78,7 @@ defmodule StarlightBotWeb.Live.ThemePackPlanEditorLive do
 
   @impl true
   def handle_event("rename_plan", %{"value" => name}, socket) do
-    {:noreply, socket |> assign(:name, String.trim(name)) |> persist_plan() |> link_team(:theme_pack_plan_id)}
+    {:noreply, socket |> assign(:name, String.trim(name)) |> persist_plan() |> link_team(:pack_plan_id)}
   end
 
   @impl true
@@ -332,7 +332,7 @@ defmodule StarlightBotWeb.Live.ThemePackPlanEditorLive do
   end
 
   defp load_plan(socket, id) do
-    case Strategies.get(:theme_pack_plans, id) do
+    case Plans.get(:pack_plans, id) do
       nil ->
         put_flash(socket, :error, "Plan not found.")
 
@@ -351,8 +351,8 @@ defmodule StarlightBotWeb.Live.ThemePackPlanEditorLive do
   defp persist_plan(socket) do
     attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.plan_data}
 
-    case Strategies.save(:theme_pack_plans, attrs) do
-      {:ok, _id} -> assign(socket, :plans, Strategies.list(:theme_pack_plans))
+    case Plans.save(:pack_plans, attrs) do
+      {:ok, _id} -> assign(socket, :plans, Plans.list(:pack_plans))
       {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
     end
   end

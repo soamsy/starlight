@@ -76,7 +76,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
   end
 
   defp fetch_plan(ctx) do
-    case RunMemory.gift_strategy(ctx) do
+    case RunMemory.gift_plan(ctx) do
       nil -> {:skip, "no gift plan for this team"}
       data -> {:ok, GiftPlans.normalize(data)}
     end

@@ -3,9 +3,6 @@ import { Socket } from "phoenix"
 import { LiveSocket } from "phoenix_live_view"
 import TemplateEditor from "./template_editor"
 
-// --- JS error forwarding to server log ---
-// Sends browser errors/warnings to /dev/js-log so they appear in /tmp/starlight.log
-
 function postToServerLog(level, args) {
   const message = args
     .map(a => {
@@ -44,9 +41,6 @@ window.addEventListener("unhandledrejection", (e) => {
   postToServerLog("error", [`Unhandled promise rejection: ${e.reason?.stack || e.reason}`])
 })
 
-// --- Theme management ---
-// light = retro, dark = luxury; system preference sets default, localStorage overrides
-
 const LIGHT_THEME = 'valentine'
 const DARK_THEME = 'halloween'
 
@@ -77,13 +71,6 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e =
   if (!localStorage.getItem('starlight-theme')) applyTheme(e.matches ? DARK_THEME : LIGHT_THEME)
 })
 
-// --- ScreenshotCanvas hook ---
-// Renders the game screenshot on a canvas and allows the user to drag-select
-// a rectangular region. Sends "region_selected" back to the LiveView with
-// {x, y, w, h} in 1920x1080 image coordinates.
-
-// Converts 0-255 RGB to OpenCV-scale HSV (h: 0-179, s/v: 0-255) for the
-// color_detector eyedropper — OpenCV halves hue into 0-179 so it fits a byte.
 function rgbToHsvCv(r, g, b) {
   r /= 255; g /= 255; b /= 255
   const max = Math.max(r, g, b), min = Math.min(r, g, b)
@@ -166,7 +153,6 @@ const ScreenshotCanvas = {
         ctx.fillText(label, rect.x + 3, ty)
       })
 
-      // Show precision mode indicator
       if (precisionMode && selecting) {
         ctx.fillStyle = "rgba(255, 255, 255, 0.7)"
         ctx.font = "bold 14px monospace"
@@ -222,7 +208,6 @@ const ScreenshotCanvas = {
       else sel = null
     })
     
-    // Track Shift key state for precision mode
     document.addEventListener("keydown", (e) => {
       if (e.key === "Shift" && selecting) {
         precisionMode = true
@@ -241,14 +226,11 @@ const ScreenshotCanvas = {
       if (!selecting || !startPos) return
       let cur = getImageCoords(e)
       
-      // Update precision mode state
       precisionMode = e.shiftKey
-      
-      // Precision mode when Shift is held - slow down movement for fine control
+
       if (e.shiftKey) {
         const dx = cur.x - startPos.x
         const dy = cur.y - startPos.y
-        // Scale down movement by 10x for precision
         cur = {
           x: Math.round(startPos.x + dx / 10),
           y: Math.round(startPos.y + dy / 10)
@@ -285,10 +267,6 @@ const ScreenshotCanvas = {
     canvas.addEventListener("mouseleave", finishSelect)
   }
 }
-
-// --- BattleInspectorCanvas / ChainPreviewCanvas hooks ---
-// Renders a screenshot with server-computed overlays (rects/lines/labels)
-// describing what a battle-screen scan found. Read-only, no drag-select.
 
 function overlayCanvasHook(eventName) {
   return {
@@ -337,11 +315,6 @@ const BattleInspectorCanvas = overlayCanvasHook("load_battle_frame")
 const ChainPreviewCanvas = overlayCanvasHook("load_chain_preview_frame")
 const TargetPreviewCanvas = overlayCanvasHook("load_target_preview_frame")
 const DungeonInspectorCanvas = overlayCanvasHook("load_dungeon_frame")
-
-// --- GiftInspectorCanvas hook ---
-// Combines ScreenshotCanvas's drag-to-select-region with overlayCanvasHook's
-// overlay drawing: drag a region on the screenshot, send it to the server as
-// "region_selected", then draw the server's ego-gift detection overlays on top.
 
 const GiftInspectorCanvas = {
   mounted() {
@@ -439,11 +412,6 @@ const GiftInspectorCanvas = {
   }
 }
 
-// --- EditableNotes hook ---
-// Double-click the notes cell to edit inline; blur (click or tab away) saves.
-// Tab/Shift+Tab from the editor jumps straight into the next/previous row's
-// notes editor when one exists, instead of leaving the table.
-
 function openNotesEditor(cell) {
   const display = cell.querySelector(".notes-display")
   const editor = cell.querySelector(".notes-edit")
@@ -501,10 +469,6 @@ const EditableNotes = {
   }
 }
 
-// --- PreserveScroll hook ---
-// Keeps a scrollable container's scroll position stable across LiveView
-// patches (e.g. the hooks table re-rendering after a form save).
-
 const PreserveScroll = {
   beforeUpdate() {
     this.scrollTop = this.el.scrollTop
@@ -529,12 +493,6 @@ const ScrollToBottom = {
     if (this.pinned) this.el.scrollTop = this.el.scrollHeight
   }
 }
-
-// --- PriorityClipboard hook ---
-// Wraps the priority columns in the theme pack plan editor. Copy sends the
-// server-rendered JSON straight to the clipboard. Paste reads the clipboard
-// and forwards the raw text to the server, since mode/floor validation needs
-// the live plan data that only the server has.
 
 const PriorityClipboard = {
   mounted() {
@@ -645,13 +603,19 @@ const LocalStorageForm = {
   }
 }
 
+const DblClickEvent = {
+  mounted() {
+    this.el.addEventListener("dblclick", () => this.pushEvent(this.el.dataset.event, { id: this.el.dataset.id }))
+  }
+}
+
 // --- LiveSocket setup ---
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, DblClickEvent }
 })
 
 liveSocket.connect()

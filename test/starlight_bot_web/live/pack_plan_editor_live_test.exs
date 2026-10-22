@@ -1,7 +1,7 @@
-defmodule StarlightBotWeb.Live.ThemePackPlanEditorLiveTest do
+defmodule StarlightBotWeb.Live.PackPlanEditorLiveTest do
   use ExUnit.Case, async: true
 
-  alias StarlightBotWeb.Live.ThemePackPlanEditorLive, as: Live
+  alias StarlightBotWeb.Live.PackPlanEditorLive, as: Live
 
   describe "toggle_breakpoint/2" do
     test "clicking any floor on an empty schedule sets it as the switch to hard" do

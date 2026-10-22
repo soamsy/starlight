@@ -1,7 +1,7 @@
 defmodule StarlightBot.Automation.RunMemory do
   alias StarlightBot.Ctx
-  alias StarlightBot.ThemePackPlans.Resolver
-  alias StarlightBot.{BattleStrategies, Strategies, Teams}
+  alias StarlightBot.PackPlans.Resolver
+  alias StarlightBot.{BattlePlans, Plans, Teams}
 
   def start_link, do: Agent.start_link(fn -> %{} end)
 
@@ -170,10 +170,10 @@ defmodule StarlightBot.Automation.RunMemory do
     if shop_progress(ctx), do: put(ctx, :shop_progress, nil), else: :ok
   end
 
-  def gift_strategy(ctx) do
+  def gift_plan(ctx) do
     with %{id: team_id} <- team(ctx),
-         %{gift_strategy_id: id} when is_integer(id) <- Teams.get_team(team_id),
-         %{data: data} when is_map(data) <- Strategies.get(:gift_strategies, id) do
+         %{gift_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
+         %{data: data} when is_map(data) <- Plans.get(:gift_plans, id) do
       data
     else
       _ -> nil
@@ -184,10 +184,10 @@ defmodule StarlightBot.Automation.RunMemory do
 
   def put_context(ctx, context), do: put(ctx, :context, context)
 
-  def battle_strategy(ctx) do
+  def battle_plan(ctx) do
     with %{id: team_id} <- team(ctx),
-         %{battle_strategy_id: id} when is_integer(id) <- Teams.get_team(team_id),
-         %{data: data} when is_map(data) <- Strategies.get(:battle_strategies, id) do
+         %{battle_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
+         %{data: data} when is_map(data) <- Plans.get(:battle_plans, id) do
       data
     else
       _ -> nil
@@ -222,7 +222,7 @@ defmodule StarlightBot.Automation.RunMemory do
 
   def claim_battle_retry(ctx) do
     retries = battle_retries(ctx)
-    max_retries = BattleStrategies.max_retries(battle_strategy(ctx))
+    max_retries = BattlePlans.max_retries(battle_plan(ctx))
 
     cond do
       give_up?(ctx) ->
@@ -247,8 +247,8 @@ defmodule StarlightBot.Automation.RunMemory do
   def mode_for(_team, _floor), do: "normal"
 
   defp mode_schedule(team_id) do
-    with %{theme_pack_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
-         %{data: %{"mode_schedule" => schedule}} when is_list(schedule) <- Strategies.get(:theme_pack_plans, id) do
+    with %{pack_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
+         %{data: %{"mode_schedule" => schedule}} when is_list(schedule) <- Plans.get(:pack_plans, id) do
       schedule
     else
       _ -> []

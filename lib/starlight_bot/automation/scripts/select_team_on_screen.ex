@@ -2,8 +2,8 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   use StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Ctx
-  alias StarlightBot.{BattleStrategies, Strategies, Teams}
-  alias StarlightBot.BattleStrategies.Resolver
+  alias StarlightBot.{BattlePlans, Plans, Teams}
+  alias StarlightBot.BattlePlans.Resolver
 
   @max_sweep_scrolls 14
   @scroll_clicks 8
@@ -25,18 +25,18 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
   defp lineup_sinners(team, venue, floor, ctx) do
     data =
-      case team.battle_strategy_id && Strategies.get(:battle_strategies, team.battle_strategy_id) do
+      case team.battle_plan_id && Plans.get(:battle_plans, team.battle_plan_id) do
         %{data: data} -> data
         _ -> nil
       end
 
     case Resolver.lineup_for(data, venue, floor) do
       %{"name" => name, "sinners" => sinners} ->
-        Ctx.log(ctx, :info, "lineup for #{BattleStrategies.venue_label(venue)} F#{floor}: #{name}")
+        Ctx.log(ctx, :info, "lineup for #{BattlePlans.venue_label(venue)} F#{floor}: #{name}")
         sinners
 
       nil ->
-        Ctx.log(ctx, :error, "battle strategy has no lineup for #{BattleStrategies.venue_label(venue)} F#{floor}")
+        Ctx.log(ctx, :error, "battle plan has no lineup for #{BattlePlans.venue_label(venue)} F#{floor}")
         []
     end
   end
@@ -124,7 +124,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     case order_mismatches(formation) do
       [] ->
         Ctx.log(ctx, :ok, "sinner order already set — nothing to do")
-        RunMemory.put_formation(ctx, BattleStrategies.formation(order))
+        RunMemory.put_formation(ctx, BattlePlans.formation(order))
         :ok
 
       mismatches ->
@@ -133,7 +133,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
         case Engine.act(order_steps(formation, ctx), ctx) do
           {:ok, _} ->
-            RunMemory.put_formation(ctx, BattleStrategies.formation(order))
+            RunMemory.put_formation(ctx, BattlePlans.formation(order))
             :ok
 
           {:error, _} = err ->
@@ -181,7 +181,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
       Enum.map(backup, &click(sinner_hook(&1, :backup), duration_mult: 1.1))
   end
 
-  defp formation(order), do: order |> alive_order() |> BattleStrategies.formation()
+  defp formation(order), do: order |> alive_order() |> BattlePlans.formation()
 
   defp alive_order(order) do
     dead = Engine.check_all(Enum.map(order, &sinner_hook(&1, :dead)))

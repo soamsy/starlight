@@ -3,10 +3,10 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Ctx
   alias StarlightBot.Navigation.Runner
-  alias StarlightBot.ThemePackPlans.Resolver
+  alias StarlightBot.PackPlans.Resolver
   alias StarlightBot.Vision.{Capture, Frame, HookRegistry, Matcher}
   alias StarlightBot.Input.Mouse
-  alias StarlightBot.{Strategies, Teams, ThemePacks}
+  alias StarlightBot.{Plans, Teams, ThemePacks}
 
   @mode_poll_budget_ms 400
   @ready_poll_every_ms 100
@@ -136,8 +136,8 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   defp grace_enhance(_pick), do: 0
 
   defp fetch_plan_data(team) do
-    with %{theme_pack_plan_id: id} when is_integer(id) <- team,
-         %{data: data} when is_map(data) <- Strategies.get(:theme_pack_plans, id) do
+    with %{pack_plan_id: id} when is_integer(id) <- team,
+         %{data: data} when is_map(data) <- Plans.get(:pack_plans, id) do
       data
     else
       _ -> %{"mode_schedule" => [], "packs" => %{}}

@@ -4,11 +4,11 @@ Replaces the weight-driven gift plan with explicit, user-ordered shop workflows.
 
 ## Concepts
 
-- **Gift plan**: one row in `gift_strategies` (unchanged table, `data` JSON bumped to `version: 2`). Holds plan-global settings, a library of definitions, workflows, and a floor schedule.
+- **Gift plan**: one row in `gift_plans` (unchanged table, `data` JSON bumped to `version: 2`). Holds plan-global settings, a library of definitions, workflows, and a floor schedule.
 - **Library definition**: a reusable, named piece of config (one uptie target, one fusion target with its route tree, shopping lists, keep lists). Shared by every workflow in the plan. Editing one changes everything that references it.
 - **Step**: one entry in a workflow. Either references a library definition by id, or carries its own small inline params (refresh, sell, budget, etc.). Every step has an optional condition tree.
 - **Workflow**: a named, ordered list of steps plus exactly one keep list.
-- **Floor schedule**: maps floor ranges to workflows, same `from_floor` pattern as `theme_pack_plans.mode_schedule` (`ThemePackPlans.Resolver.mode_for_floor/2`).
+- **Floor schedule**: maps floor ranges to workflows, same `from_floor` pattern as `pack_plans.mode_schedule` (`PackPlans.Resolver.mode_for_floor/2`).
 
 Rule for where config lives: if it's a list the user curates and ranks, or a single target with nontrivial config, it goes in a library tab. If it's a few scalars, it's inline on the step. Uptie and tiered fusion steps hold an ordered list of library refs, so the order of work lives on the step and each definition stays about one gift.
 

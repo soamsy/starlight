@@ -1,7 +1,7 @@
 defmodule StarlightBot.Teams do
   require Logger
   import Ecto.Query
-  alias StarlightBot.{BattleStrategies, Repo}
+  alias StarlightBot.{BattlePlans, Repo}
 
   @team_groups [
     {"Status", ~w(burn bleed tremor rupture sinking poise charge)},
@@ -21,28 +21,28 @@ defmodule StarlightBot.Teams do
   def all_sinners, do: @all_sinners
   def team_types, do: @team_types
 
-  @doc "List all teams, with joined-in strategy names and a `:missing` field list for incomplete configs."
+  @doc "List all teams, with joined-in plan names and a `:missing` field list for incomplete configs."
   def list_teams do
     Repo.all(
       from t in "teams",
-        left_join: g in "gift_strategies",
-        on: g.id == t.gift_strategy_id,
-        left_join: b in "battle_strategies",
-        on: b.id == t.battle_strategy_id,
-        left_join: p in "theme_pack_plans",
-        on: p.id == t.theme_pack_plan_id,
+        left_join: g in "gift_plans",
+        on: g.id == t.gift_plan_id,
+        left_join: b in "battle_plans",
+        on: b.id == t.battle_plan_id,
+        left_join: p in "pack_plans",
+        on: p.id == t.pack_plan_id,
         order_by: [asc: t.name],
         select: %{
           id: t.id,
           name: t.name,
           hooks: t.hooks,
-          gift_strategy_id: t.gift_strategy_id,
-          gift_strategy_name: g.name,
-          battle_strategy_id: t.battle_strategy_id,
-          battle_strategy_name: b.name,
-          battle_strategy_data: b.data,
-          theme_pack_plan_id: t.theme_pack_plan_id,
-          theme_pack_plan_name: p.name
+          gift_plan_id: t.gift_plan_id,
+          gift_plan_name: g.name,
+          battle_plan_id: t.battle_plan_id,
+          battle_plan_name: b.name,
+          battle_plan_data: b.data,
+          pack_plan_id: t.pack_plan_id,
+          pack_plan_name: p.name
         }
     )
     |> Enum.map(&(&1 |> decode_hooks() |> decorate()))
@@ -54,17 +54,17 @@ defmodule StarlightBot.Teams do
   def get_team(id) when is_integer(id) do
     Repo.one(
       from t in "teams",
-        left_join: g in "gift_strategies",
-        on: g.id == t.gift_strategy_id,
+        left_join: g in "gift_plans",
+        on: g.id == t.gift_plan_id,
         where: t.id == ^id,
         select: %{
           id: t.id,
           name: t.name,
           hooks: t.hooks,
-          gift_strategy_id: t.gift_strategy_id,
-          gift_strategy_data: g.data,
-          battle_strategy_id: t.battle_strategy_id,
-          theme_pack_plan_id: t.theme_pack_plan_id
+          gift_plan_id: t.gift_plan_id,
+          gift_plan_data: g.data,
+          battle_plan_id: t.battle_plan_id,
+          pack_plan_id: t.pack_plan_id
         }
     )
     |> decode_hooks()
@@ -79,9 +79,9 @@ defmodule StarlightBot.Teams do
     row = %{
       name: name,
       hooks: Jason.encode!(attrs[:hooks] || []),
-      gift_strategy_id: attrs[:gift_strategy_id],
-      battle_strategy_id: attrs[:battle_strategy_id],
-      theme_pack_plan_id: attrs[:theme_pack_plan_id]
+      gift_plan_id: attrs[:gift_plan_id],
+      battle_plan_id: attrs[:battle_plan_id],
+      pack_plan_id: attrs[:pack_plan_id]
     }
 
     case attrs[:id] do
@@ -113,11 +113,11 @@ defmodule StarlightBot.Teams do
   def duplicate_team(id) when is_integer(id) do
     case get_team(id) do
       nil -> {:error, :not_found}
-      team -> team |> Map.take([:hooks, :gift_strategy_id, :battle_strategy_id, :theme_pack_plan_id]) |> Map.put(:name, unique_name("#{team.name} (copy)")) |> save_team()
+      team -> team |> Map.take([:hooks, :gift_plan_id, :battle_plan_id, :pack_plan_id]) |> Map.put(:name, unique_name("#{team.name} (copy)")) |> save_team()
     end
   end
 
-  def set_plan(team_id, field, plan_id) when is_integer(team_id) and field in [:gift_strategy_id, :battle_strategy_id, :theme_pack_plan_id] do
+  def set_plan(team_id, field, plan_id) when is_integer(team_id) and field in [:gift_plan_id, :battle_plan_id, :pack_plan_id] do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     {n, _} = Repo.update_all(from(t in "teams", where: t.id == ^team_id), set: [{field, plan_id}, updated_at: now])
     if n > 0, do: {:ok, team_id}, else: {:error, :not_found}
@@ -181,7 +181,7 @@ defmodule StarlightBot.Teams do
 
   defp decode_affinity(nil), do: nil
 
-  defp decode_affinity(%{gift_strategy_data: json} = team) do
+  defp decode_affinity(%{gift_plan_data: json} = team) do
     data =
       case json && Jason.decode(json) do
         {:ok, %{} = data} -> data
@@ -194,25 +194,25 @@ defmodule StarlightBot.Teams do
     team
     |> Map.put(:affinity, affinity)
     |> Map.put(:grace_picks, grace_picks)
-    |> Map.delete(:gift_strategy_data)
+    |> Map.delete(:gift_plan_data)
   end
 
   defp decorate(team) do
-    {data, team} = Map.pop(team, :battle_strategy_data)
+    {data, team} = Map.pop(team, :battle_plan_data)
 
     lineup_issues =
       case data && Jason.decode(data) do
-        {:ok, %{} = data} -> BattleStrategies.lineup_issues(data)
+        {:ok, %{} = data} -> BattlePlans.lineup_issues(data)
         _ -> []
       end
 
     missing =
       [
         team.hooks == [] and :hook,
-        is_nil(team.gift_strategy_id) and :gift_strategy,
-        is_nil(team.battle_strategy_id) and :battle_strategy,
+        is_nil(team.gift_plan_id) and :gift_plan,
+        is_nil(team.battle_plan_id) and :battle_plan,
         lineup_issues != [] and :lineup,
-        is_nil(team.theme_pack_plan_id) and :theme_pack_plan
+        is_nil(team.pack_plan_id) and :pack_plan
       ]
       |> Enum.filter(& &1)
 

@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.SinnerProfilesLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{BattleStrategies, Hooks, SinnerProfiles, Strategies}
+  alias StarlightBot.{BattlePlans, Hooks, Plans, SinnerProfiles}
   alias StarlightBot.Vision.{Capture, Matcher, SkillTray}
 
   @impl true
@@ -59,8 +59,8 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
     profiles = SinnerProfiles.list()
 
     usage =
-      Strategies.list(:battle_strategies)
-      |> Enum.flat_map(fn s -> if is_map(s.data), do: Enum.to_list(BattleStrategies.profile_ids_used(s.data)), else: [] end)
+      Plans.list(:battle_plans)
+      |> Enum.flat_map(fn s -> if is_map(s.data), do: Enum.to_list(BattlePlans.profile_ids_used(s.data)), else: [] end)
       |> Enum.frequencies()
 
     thumbs =

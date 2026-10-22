@@ -1,4 +1,4 @@
-defmodule StarlightBot.BattleStrategies.Resolver do
+defmodule StarlightBot.BattlePlans.Resolver do
   def playbook_id_at(entries, floor), do: id_at(entries, floor, "playbook")
 
   def lineup_id_at(entries, floor), do: id_at(entries, floor, "lineup")

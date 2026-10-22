@@ -3,7 +3,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   import StarlightBotWeb.Components.ConditionTree
   import StarlightBotWeb.Components.PlanPicker
 
-  alias StarlightBot.{Conditions, EgoGifts, GiftPlans, Strategies, Teams}
+  alias StarlightBot.{Conditions, EgoGifts, GiftPlans, Plans, Teams}
   alias StarlightBot.GiftPlans.{Routes, RouteDefaults, Combos}
 
   embed_templates "gift_plan_editor/*"
@@ -89,7 +89,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     socket =
       socket
       |> assign(:team_id, team && team.id)
-      |> assign(:plans, Strategies.list(:gift_strategies))
+      |> assign(:plans, Plans.list(:gift_plans))
       |> assign(:gifts, gifts)
       |> assign(:gifts_by_name, Map.new(gifts, &{&1.name, &1}))
       |> assign(:gifts_by_id, Map.new(gifts, &{&1.id, &1}))
@@ -100,33 +100,33 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:gift_clipboard, nil)
       |> reset_editor()
 
-    {:ok, if(team && team.gift_strategy_id, do: load_plan(socket, team.gift_strategy_id), else: socket)}
+    {:ok, if(team && team.gift_plan_id, do: load_plan(socket, team.gift_plan_id), else: socket)}
   end
 
   @impl true
   def handle_event("new_plan", _, socket) do
     attrs = %{name: new_plan_name(socket.assigns.plans), data: GiftPlans.blank()}
 
-    case Strategies.save(:gift_strategies, attrs) do
-      {:ok, id} -> {:noreply, socket |> refresh_plans() |> load_plan(id) |> link_team(:gift_strategy_id)}
+    case Plans.save(:gift_plans, attrs) do
+      {:ok, id} -> {:noreply, socket |> refresh_plans() |> load_plan(id) |> link_team(:gift_plan_id)}
       {:error, reason} -> {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
     end
   end
 
   @impl true
   def handle_event("select_plan", %{"id" => id}, socket) do
-    {:noreply, socket |> load_plan(String.to_integer(id)) |> link_team(:gift_strategy_id)}
+    {:noreply, socket |> load_plan(String.to_integer(id)) |> link_team(:gift_plan_id)}
   end
 
   @impl true
   def handle_event("duplicate_plan", %{"id" => id}, socket) do
-    case Strategies.get(:gift_strategies, String.to_integer(id)) do
+    case Plans.get(:gift_plans, String.to_integer(id)) do
       nil ->
         {:noreply, put_flash(socket, :error, "Plan not found.")}
 
       plan ->
-        case Strategies.save(:gift_strategies, %{name: "#{plan.name} (copy)", data: plan.data}) do
-          {:ok, new_id} -> {:noreply, socket |> refresh_plans() |> load_plan(new_id) |> link_team(:gift_strategy_id)}
+        case Plans.save(:gift_plans, %{name: "#{plan.name} (copy)", data: plan.data}) do
+          {:ok, new_id} -> {:noreply, socket |> refresh_plans() |> load_plan(new_id) |> link_team(:gift_plan_id)}
           {:error, reason} -> {:noreply, put_flash(socket, :error, "Duplicate failed: #{inspect(reason)}")}
         end
     end
@@ -136,10 +136,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def handle_event("delete_plan", %{"id" => id}, socket) do
     id = String.to_integer(id)
 
-    case Strategies.delete(:gift_strategies, id) do
+    case Plans.delete(:gift_plans, id) do
       {:ok, _} ->
         socket = if socket.assigns.editing_id == id, do: reset_editor(socket), else: socket
-        {:noreply, socket |> refresh_plans() |> link_team(:gift_strategy_id) |> put_flash(:info, "Plan deleted.")}
+        {:noreply, socket |> refresh_plans() |> link_team(:gift_plan_id) |> put_flash(:info, "Plan deleted.")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Delete failed: #{inspect(reason)}")}
@@ -148,7 +148,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("rename_plan", %{"value" => name}, socket) do
-    {:noreply, socket |> assign(:name, String.trim(name)) |> persist_plan() |> link_team(:gift_strategy_id)}
+    {:noreply, socket |> assign(:name, String.trim(name)) |> persist_plan() |> link_team(:gift_plan_id)}
   end
 
   @impl true
@@ -272,7 +272,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def handle_event("import_source", params, socket) do
     source =
       case Integer.parse(params["plan_id"] || "") do
-        {id, ""} -> Strategies.get(:gift_strategies, id)
+        {id, ""} -> Plans.get(:gift_plans, id)
         _ -> nil
       end
 
@@ -1149,7 +1149,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     end
   end
 
-  defp refresh_plans(socket), do: assign(socket, :plans, Strategies.list(:gift_strategies))
+  defp refresh_plans(socket), do: assign(socket, :plans, Plans.list(:gift_plans))
 
   defp reset_editor(socket) do
     socket
@@ -1177,7 +1177,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   defp load_plan(socket, id) do
-    case Strategies.get(:gift_strategies, id) do
+    case Plans.get(:gift_plans, id) do
       nil ->
         put_flash(socket, :error, "Plan not found.")
 
@@ -1202,7 +1202,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp persist_plan(socket) do
     attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.plan_data}
 
-    case Strategies.save(:gift_strategies, attrs) do
+    case Plans.save(:gift_plans, attrs) do
       {:ok, _id} -> refresh_plans(socket)
       {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
     end

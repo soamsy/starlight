@@ -488,7 +488,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   end
 
   defp gift_search_names(ctx) do
-    case RunMemory.gift_strategy(ctx) do
+    case RunMemory.gift_plan(ctx) do
       nil -> []
       data -> GiftPlans.normalize(data)["gift_search"]
     end
@@ -545,7 +545,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     count = Enum.find_value(@cabinet_available_hooks, 1, fn {hook, n} -> if Engine.check(hook), do: n end)
 
     slots =
-      case RunMemory.gift_strategy(ctx) do
+      case RunMemory.gift_plan(ctx) do
         nil -> [0, 1, 2]
         data -> GiftPlans.cabinet_slots(GiftPlans.normalize(data))
       end

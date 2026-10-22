@@ -47,10 +47,13 @@ defmodule StarlightBot.Automation.RunMemoryTest do
 
   test "claim_battle_retry counts retries up to the limit, then gives up", %{ctx: ctx} do
     RunMemory.put_battle_turn(ctx, 5)
-    assert RunMemory.claim_battle_retry(ctx) == {:retry, 1, 3}
+    assert RunMemory.claim_battle_retry(ctx) == {:retry, 1, 5}
     assert RunMemory.battle_turn(ctx) == 1
-    assert RunMemory.claim_battle_retry(ctx) == {:retry, 2, 3}
-    assert RunMemory.claim_battle_retry(ctx) == {:retry, 3, 3}
+
+    for attempt <- 2..5 do
+      assert RunMemory.claim_battle_retry(ctx) == {:retry, attempt, 5}
+    end
+
     assert RunMemory.claim_battle_retry(ctx) == :give_up
     assert RunMemory.give_up(ctx) == :too_many_retries
     assert RunMemory.claim_battle_retry(ctx) == :give_up

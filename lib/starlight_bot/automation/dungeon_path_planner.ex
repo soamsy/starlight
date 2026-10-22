@@ -2,8 +2,8 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   alias StarlightBot.Automation.Engine
   import StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.{RewardHelpers, RunMemory}
-  alias StarlightBot.BattleStrategies
-  alias StarlightBot.BattleStrategies.Resolver
+  alias StarlightBot.BattlePlans
+  alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Ctx
   alias StarlightBot.Vision.{Capture, DungeonGraph, Matcher}
 
@@ -95,8 +95,8 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   defp formation_set?(venue, ctx) do
     stored = RunMemory.formation(ctx)
 
-    case Resolver.lineup_for(RunMemory.battle_strategy(ctx), venue, RunMemory.floor(ctx)) do
-      %{"sinners" => [_ | _] = sinners} -> stored != nil and BattleStrategies.formation(sinners) == stored
+    case Resolver.lineup_for(RunMemory.battle_plan(ctx), venue, RunMemory.floor(ctx)) do
+      %{"sinners" => [_ | _] = sinners} -> stored != nil and BattlePlans.formation(sinners) == stored
       _ -> false
     end
   end

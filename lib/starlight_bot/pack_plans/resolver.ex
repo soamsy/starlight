@@ -1,4 +1,4 @@
-defmodule StarlightBot.ThemePackPlans.Resolver do
+defmodule StarlightBot.PackPlans.Resolver do
   alias StarlightBot.ThemePacks
 
   def mode_for_floor(mode_schedule, floor) when is_list(mode_schedule) and is_integer(floor) do

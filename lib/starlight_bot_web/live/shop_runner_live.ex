@@ -10,7 +10,7 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
     if connected?(socket), do: Navigator.subscribe()
 
     nav = Navigator.status()
-    teams = Teams.list_teams() |> Enum.reject(&is_nil(&1.gift_strategy_id))
+    teams = Teams.list_teams() |> Enum.reject(&is_nil(&1.gift_plan_id))
 
     {:ok,
      socket

@@ -1,9 +1,9 @@
-defmodule StarlightBot.Strategies do
+defmodule StarlightBot.Plans do
   require Logger
   import Ecto.Query
   alias StarlightBot.Repo
 
-  @tables ~w(gift_strategies battle_strategies theme_pack_plans)a
+  @tables ~w(gift_plans battle_plans pack_plans)a
 
   @doc "List all rows in `table`, `data` JSON-decoded, ordered by name."
   def list(table) when table in @tables do
@@ -49,7 +49,7 @@ defmodule StarlightBot.Strategies do
     end
   rescue
     e ->
-      Logger.error("Strategies DB error: #{Exception.message(e)}", module: __MODULE__)
+      Logger.error("Plans DB error: #{Exception.message(e)}", module: __MODULE__)
       {:error, Exception.message(e)}
   end
 
@@ -61,7 +61,7 @@ defmodule StarlightBot.Strategies do
     if n > 0, do: {:ok, id}, else: {:error, :not_found}
   rescue
     e ->
-      Logger.error("Strategies DB error: #{Exception.message(e)}", module: __MODULE__)
+      Logger.error("Plans DB error: #{Exception.message(e)}", module: __MODULE__)
       {:error, Exception.message(e)}
   end
 

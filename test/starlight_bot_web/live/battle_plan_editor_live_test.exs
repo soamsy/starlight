@@ -1,13 +1,13 @@
-defmodule StarlightBotWeb.Live.BattleStrategyEditorLiveTest do
+defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
   use ExUnit.Case, async: false
 
-  alias StarlightBot.{BattleStrategies, Repo, Strategies}
-  alias StarlightBotWeb.Live.BattleStrategyEditorLive, as: Live
+  alias StarlightBot.{BattlePlans, Plans, Repo}
+  alias StarlightBotWeb.Live.BattlePlanEditorLive, as: Live
 
   setup do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
     {:ok, socket} = Live.mount(%{}, %{}, %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, flash: %{}}})
-    {:noreply, socket} = Live.handle_event("new_strategy", %{}, socket)
+    {:noreply, socket} = Live.handle_event("new_plan", %{}, socket)
     focused = Enum.find(socket.assigns.data["playbooks"], &(&1["kind"] == "focused"))
     {:noreply, socket} = Live.handle_event("select_playbook", %{"id" => focused["id"]}, socket)
     %{socket: socket, playbook_id: focused["id"]}
@@ -23,14 +23,14 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLiveTest do
   end
 
   defp actions(socket, playbook_id) do
-    saved = Strategies.get(:battle_strategies, socket.assigns.editing_id).data
+    saved = Plans.get(:battle_plans, socket.assigns.editing_id).data
     hd(Enum.find(saved["playbooks"], &(&1["id"] == playbook_id))["phases"])["actions"]
   end
 
-  test "duplicating a strategy copies its data under a new name and opens the copy", %{socket: socket} do
-    original = Strategies.get(:battle_strategies, socket.assigns.editing_id)
-    socket = event(socket, "duplicate_strategy", %{"id" => to_string(original.id)})
-    copy = Strategies.get(:battle_strategies, socket.assigns.editing_id)
+  test "duplicating a plan copies its data under a new name and opens the copy", %{socket: socket} do
+    original = Plans.get(:battle_plans, socket.assigns.editing_id)
+    socket = event(socket, "duplicate_plan", %{"id" => to_string(original.id)})
+    copy = Plans.get(:battle_plans, socket.assigns.editing_id)
 
     assert copy.id != original.id
     assert copy.name == "#{original.name} (copy)"
@@ -57,7 +57,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLiveTest do
     [_, _, block] = actions(socket, playbook_id)
     [ego, target] = block["then"]
     assert Enum.map(block["else"], & &1["type"]) == ["clear"]
-    assert BattleStrategies.condition_label(block["condition"]) == "battle_combat_ready off AND battle_chain on AND sinners = 1"
+    assert BattlePlans.condition_label(block["condition"]) == "battle_combat_ready off AND battle_chain on AND sinners = 1"
 
     socket =
       socket
@@ -90,7 +90,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLiveTest do
   test "retries per battle saves non-negative integers only", %{socket: socket} do
     socket = event(socket, "set_max_retries", %{"max_retries" => "5"})
     socket = event(socket, "set_max_retries", %{"max_retries" => "-2"})
-    assert Strategies.get(:battle_strategies, socket.assigns.editing_id).data["max_retries"] == 5
+    assert Plans.get(:battle_plans, socket.assigns.editing_id).data["max_retries"] == 5
     assert render(socket) =~ "Retries per battle"
   end
 
@@ -197,7 +197,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLiveTest do
     assert Enum.map(outer["then"], & &1["type"]) == ["win_rate", "chain_fast"]
     assert Enum.map(inner["then"], & &1["type"]) == ["chain_fast"]
     assert Enum.map(inner["else"], & &1["type"]) == ["chain_a_res"]
-    assert BattleStrategies.condition_label(inner["condition"]) == "pride slots = 1"
+    assert BattlePlans.condition_label(inner["condition"]) == "pride slots = 1"
     assert render(socket) =~ "pride slots = 1"
   end
 end

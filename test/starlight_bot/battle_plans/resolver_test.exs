@@ -1,7 +1,7 @@
-defmodule StarlightBot.BattleStrategies.ResolverTest do
+defmodule StarlightBot.BattlePlans.ResolverTest do
   use ExUnit.Case, async: true
 
-  alias StarlightBot.BattleStrategies.Resolver
+  alias StarlightBot.BattlePlans.Resolver
 
   @data %{
     "playbooks" => [
@@ -50,7 +50,7 @@ defmodule StarlightBot.BattleStrategies.ResolverTest do
       assert Resolver.lineup_for(@lineups, "md_battle", 5)["id"] == "full"
     end
 
-    test "returns nil for an unassigned venue or a strategy without lineups" do
+    test "returns nil for an unassigned venue or a plan without lineups" do
       assert Resolver.lineup_for(@lineups, "lux", 1) == nil
       assert Resolver.lineup_for(%{"playbooks" => []}, "md_battle", 1) == nil
       assert Resolver.lineup_for(nil, "md_battle", 1) == nil

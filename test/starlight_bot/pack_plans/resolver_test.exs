@@ -1,7 +1,7 @@
-defmodule StarlightBot.ThemePackPlans.ResolverTest do
+defmodule StarlightBot.PackPlans.ResolverTest do
   use ExUnit.Case, async: true
 
-  alias StarlightBot.ThemePackPlans.Resolver
+  alias StarlightBot.PackPlans.Resolver
 
   defp pack(id, normal_floors, hard_floors) do
     %{id: id, normal_floors: Jason.encode!(normal_floors), hard_floors: Jason.encode!(hard_floors)}

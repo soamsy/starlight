@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
   use ExUnit.Case, async: false
 
-  alias StarlightBot.{GiftPlans, Repo, Strategies}
+  alias StarlightBot.{GiftPlans, Plans, Repo}
   alias StarlightBotWeb.Live.GiftPlanEditorLive, as: Live
 
   setup do
@@ -30,7 +30,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     socket.assigns |> Live.render() |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
   end
 
-  defp saved(socket), do: Strategies.get(:gift_strategies, socket.assigns.editing_id).data
+  defp saved(socket), do: Plans.get(:gift_plans, socket.assigns.editing_id).data
 
   defp steps(socket), do: hd(saved(socket)["workflows"])["steps"]
 
@@ -446,8 +446,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
   end
 
   test "workflows can be copied in from another plan", %{socket: socket} do
-    {:ok, source_id} = Strategies.save(:gift_strategies, %{name: "Source", data: GiftPlans.blank("burn")})
-    source = Strategies.get(:gift_strategies, source_id)
+    {:ok, source_id} = Plans.save(:gift_plans, %{name: "Source", data: GiftPlans.blank("burn")})
+    source = Plans.get(:gift_plans, source_id)
     [%{"id" => wf_id}] = source.data["workflows"]
 
     socket =

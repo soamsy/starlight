@@ -73,14 +73,14 @@
                   </td>
                   <td class="whitespace-nowrap">
                     <div class="join">
-                      <button :for={{pane, label} <- [{"strategies", "Strategies"}, {"themes", "Themes"}, {"gifts", "Gifts"}]}
+                      <button :for={{pane, label} <- [{"battle", "Battle"}, {"packs", "Packs"}, {"gifts", "Gifts"}]}
                               phx-click={JS.patch(~p"/teams?team=#{team.id}&pane=#{pane}")}
                               class={"btn btn-xs join-item " <> if(selected? and @pane == pane, do: "btn-primary", else: "btn-outline")}><%= label %></button>
                     </div>
                   </td>
                   <td>
                     <button phx-click="duplicate_team" phx-value-id={team.id}
-                            title="Copy this team, keeping its hook and strategies"
+                            title="Copy this team, keeping its hook and plans"
                             class="btn btn-xs btn-ghost">Dup</button>
                   </td>
                   <td>
@@ -133,7 +133,7 @@
                         </form>
                       </div>
 
-                      <% budget = starlight_budget(@gift_strategies, @theme_pack_plans, @theme_packs, @selected_ids, @budget_inputs) %>
+                      <% budget = starlight_budget(@gift_plans, @pack_plans, @theme_packs, @selected_ids, @budget_inputs) %>
                       <button type="button" phx-click="toggle_budget" title="Starlight per run, floors 1 to 5. Click for the breakdown."
                               class={"btn btn-sm self-start gap-1 " <> if(budget.net >= 0, do: "btn-success btn-outline", else: "btn-error btn-outline")}>
                         <img src={~p"/images/icons/starlight.webp"} alt="Starlight" class="h-5 w-5" />
@@ -157,7 +157,7 @@
                           <span class="self-center text-base-content/40">+ ⌊(</span>
                           <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title={floor_breakdown(budget.floors)}>
                             <span class="text-[10px] font-sans text-base-content/50">
-                              Floor clears<%= if not budget.has_theme_pack_plan?, do: " (no plan, all normal)" %>
+                              Floor clears<%= if not budget.has_pack_plan?, do: " (no plan, all normal)" %>
                             </span>
                             <span class="text-sm"><%= budget.floor_total %></span>
                           </div>
@@ -191,12 +191,12 @@
                           <span class="self-center text-base-content/40">−</span>
                           <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center">
                             <span class="text-[10px] font-sans text-base-content/50">Graces</span>
-                            <span class="text-sm text-error"><%= if budget.has_gift_strategy?, do: budget.costs.grace, else: "—" %></span>
+                            <span class="text-sm text-error"><%= if budget.has_gift_plan?, do: budget.costs.grace, else: "—" %></span>
                           </div>
                           <span class="self-center text-base-content/40">−</span>
                           <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center">
                             <span class="text-[10px] font-sans text-base-content/50">Gift search (<%= budget.gift_searches %>)</span>
-                            <span class="text-sm text-error"><%= if budget.has_gift_strategy?, do: budget.costs.gift_search, else: "—" %></span>
+                            <span class="text-sm text-error"><%= if budget.has_gift_plan?, do: budget.costs.gift_search, else: "—" %></span>
                           </div>
                           <span class="self-center text-base-content/40">−</span>
                           <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"

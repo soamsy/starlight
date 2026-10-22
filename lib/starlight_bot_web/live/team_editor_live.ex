@@ -1,12 +1,12 @@
 defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{GiftPlans, StarlightBudget, Strategies, Teams, ThemePacks}
-  alias StarlightBotWeb.Live.{BattleStrategyEditorLive, GiftPlanEditorLive, ThemePackPlanEditorLive}
+  alias StarlightBot.{GiftPlans, Plans, StarlightBudget, Teams, ThemePacks}
+  alias StarlightBotWeb.Live.{BattlePlanEditorLive, GiftPlanEditorLive, PackPlanEditorLive}
   alias StarlightBot.Navigation.Navigator
 
   @countdown_secs 2
-  @panes %{"themes" => ThemePackPlanEditorLive, "gifts" => GiftPlanEditorLive, "strategies" => BattleStrategyEditorLive}
+  @panes %{"packs" => PackPlanEditorLive, "gifts" => GiftPlanEditorLive, "battle" => BattlePlanEditorLive}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -16,8 +16,8 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     {:ok,
      socket
      |> assign(:teams, Teams.list_teams())
-     |> assign(:gift_strategies, Strategies.list(:gift_strategies))
-     |> assign(:theme_pack_plans, Strategies.list(:theme_pack_plans))
+     |> assign(:gift_plans, Plans.list(:gift_plans))
+     |> assign(:pack_plans, Plans.list(:pack_plans))
      |> assign(:team_hooks, Teams.team_hooks())
      |> assign(:theme_packs, ThemePacks.list_theme_packs())
      |> assign(:form, blank_form())
@@ -32,7 +32,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)
      |> assign(:tab, "teams")
-     |> assign(:pane, "strategies")}
+     |> assign(:pane, "battle")}
   end
 
   @impl true
@@ -197,8 +197,8 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     socket =
       socket
       |> assign(:teams, Teams.list_teams())
-      |> assign(:gift_strategies, Strategies.list(:gift_strategies))
-      |> assign(:theme_pack_plans, Strategies.list(:theme_pack_plans))
+      |> assign(:gift_plans, Plans.list(:gift_plans))
+      |> assign(:pack_plans, Plans.list(:pack_plans))
 
     case socket.assigns.editing_id && Teams.get_team(socket.assigns.editing_id) do
       nil -> {:noreply, socket}
@@ -237,9 +237,9 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       id: socket.assigns.editing_id,
       name: name,
       hooks: socket.assigns.hooks,
-      gift_strategy_id: sel["gift_strategy"],
-      battle_strategy_id: sel["battle_strategy"],
-      theme_pack_plan_id: sel["theme_pack_plan"]
+      gift_plan_id: sel["gift_plan"],
+      battle_plan_id: sel["battle_plan"],
+      pack_plan_id: sel["pack_plan"]
     }
   end
 
@@ -272,9 +272,9 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   defp selected_ids(team) do
     %{
-      "gift_strategy" => team.gift_strategy_id,
-      "battle_strategy" => team.battle_strategy_id,
-      "theme_pack_plan" => team.theme_pack_plan_id
+      "gift_plan" => team.gift_plan_id,
+      "battle_plan" => team.battle_plan_id,
+      "pack_plan" => team.pack_plan_id
     }
   end
 
@@ -290,16 +290,16 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   defp blank_selected_ids do
-    %{"gift_strategy" => nil, "battle_strategy" => nil, "theme_pack_plan" => nil}
+    %{"gift_plan" => nil, "battle_plan" => nil, "pack_plan" => nil}
   end
 
   defp blank_budget_inputs do
     %{pack_searches: 1, sinner_bonus: div(StarlightBudget.max_sinner_bonus(), 2), railway_packs: nil, reward_cards: 0}
   end
 
-  def starlight_budget(gift_strategies, theme_pack_plans, theme_packs, selected_ids, inputs) do
-    gift_data = strategy_data_for(gift_strategies, selected_ids["gift_strategy"])
-    plan_data = strategy_data_for(theme_pack_plans, selected_ids["theme_pack_plan"])
+  def starlight_budget(gift_plans, pack_plans, theme_packs, selected_ids, inputs) do
+    gift_data = plan_data_for(gift_plans, selected_ids["gift_plan"])
+    plan_data = plan_data_for(pack_plans, selected_ids["pack_plan"])
     floors = StarlightBudget.floor_rewards(plan_data["mode_schedule"] || [])
     floor_total = floors |> Enum.map(& &1.starlight) |> Enum.sum()
     max_pack_searches = StarlightBudget.max_pack_searches(plan_data)
@@ -334,13 +334,13 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       gift_searches: gift_searches,
       pack_searches: pack_searches,
       max_pack_searches: max_pack_searches,
-      has_gift_strategy?: gift_data != %{},
-      has_theme_pack_plan?: plan_data != %{},
+      has_gift_plan?: gift_data != %{},
+      has_pack_plan?: plan_data != %{},
       net: Enum.sum(Map.values(income)) - Enum.sum(Map.values(costs))
     }
   end
 
-  defp strategy_data_for(strategies, id), do: Enum.find_value(strategies, %{}, &(&1.id == id && &1.data)) || %{}
+  defp plan_data_for(plans, id), do: Enum.find_value(plans, %{}, &(&1.id == id && &1.data)) || %{}
 
   def floor_breakdown(floors), do: Enum.map_join(floors, ", ", &"F#{&1.floor} #{&1.mode} #{&1.starlight}")
 
@@ -368,8 +368,8 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   defp missing_label(:hook), do: "team selector"
-  defp missing_label(:gift_strategy), do: "gift strategy"
-  defp missing_label(:battle_strategy), do: "battle strategy"
-  defp missing_label(:lineup), do: "lineup (set it up in the battle strategy)"
-  defp missing_label(:theme_pack_plan), do: "theme pack plan"
+  defp missing_label(:gift_plan), do: "gift plan"
+  defp missing_label(:battle_plan), do: "battle plan"
+  defp missing_label(:lineup), do: "lineup (set it up in the battle plan)"
+  defp missing_label(:pack_plan), do: "pack plan"
 end

@@ -140,7 +140,7 @@ defmodule StarlightBot.Automation.GiftPicker do
   defp center({x, y, w, h}), do: {x + w / 2, y + h / 2}
 
   defp wanted_names(gifts_by_id, ctx) do
-    with %{} = data <- RunMemory.gift_strategy(ctx),
+    with %{} = data <- RunMemory.gift_plan(ctx),
          plan = GiftPlans.normalize(data),
          %{} = workflow <- GiftPlans.workflow_for_floor(plan, RunMemory.floor(ctx)) do
       Enum.uniq(GiftPlans.keep_gifts(plan, workflow) ++ GiftPlans.derived_protected(plan, workflow, Map.values(gifts_by_id)))

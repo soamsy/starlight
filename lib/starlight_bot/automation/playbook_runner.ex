@@ -1,7 +1,7 @@
 defmodule StarlightBot.Automation.PlaybookRunner do
   alias StarlightBot.Automation.{BattleChain, Engine, RunMemory, TrayWatch}
-  alias StarlightBot.{BattleStrategies, Conditions, Ctx, SinnerProfiles}
-  alias StarlightBot.BattleStrategies.Resolver
+  alias StarlightBot.{BattlePlans, Conditions, Ctx, SinnerProfiles}
+  alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Input.Mouse
   alias StarlightBot.Navigation.{DSL, Runner}
   alias StarlightBot.Vision.{Capture, EnemyTargets, HookRegistry, Matcher, SinColor, SkillTray}
@@ -108,7 +108,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp play_turn(kind, ctx) do
     turn = RunMemory.battle_turn(ctx)
     track = RunMemory.battle_track(ctx, kind)
-    floor = if BattleStrategies.lux_track?(track), do: 1, else: RunMemory.floor(ctx)
+    floor = if BattlePlans.lux_track?(track), do: 1, else: RunMemory.floor(ctx)
     playbook = playbook(ctx, track, floor, kind)
     actions = playbook |> Resolver.phase_for(turn) |> Map.get("actions", []) |> order_actions()
 
@@ -118,7 +118,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       "playbook: #{track} F#{floor} turn #{turn} -> #{playbook["name"]} [#{Enum.map_join(actions, ", ", & &1["type"])}]"
     )
 
-    scan = if Enum.any?(BattleStrategies.flatten_actions(actions), &needs_tray?/1), do: scan(ctx), else: :skip
+    scan = if Enum.any?(BattlePlans.flatten_actions(actions), &needs_tray?/1), do: scan(ctx), else: :skip
     RunMemory.put(ctx, :target_panned?, false)
 
     with {:ok, state} <- run_actions(actions |> merge_keys() |> commit_trailing_damage_rate(), %{kind: kind, scan: scan}, ctx),
@@ -129,21 +129,21 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp playbook(ctx, track, floor, kind) do
-    case RunMemory.battle_strategy(ctx) |> Resolver.playbook_for(track, floor) do
+    case RunMemory.battle_plan(ctx) |> Resolver.playbook_for(track, floor) do
       %{} = playbook ->
         playbook
 
       nil ->
         Ctx.log(ctx, :info, "playbook: nothing assigned to #{track} F#{floor}, using the #{kind} default")
-        BattleStrategies.new_playbook(kind, "Default")
+        BattlePlans.new_playbook(kind, "Default")
     end
   end
 
-  defp needs_tray?(%{"type" => "if", "condition" => tree}), do: Enum.any?(Conditions.leaves(tree), &(BattleStrategies.sinner_leaf?(&1) or BattleStrategies.tray_leaf?(&1) or BattleStrategies.position_leaf?(&1)))
+  defp needs_tray?(%{"type" => "if", "condition" => tree}), do: Enum.any?(Conditions.leaves(tree), &(BattlePlans.sinner_leaf?(&1) or BattlePlans.tray_leaf?(&1) or BattlePlans.position_leaf?(&1)))
   defp needs_tray?(%{"type" => type}), do: type in ~w(dodge ego target chain_fast chain_a_res)
 
   defp order_actions(actions) do
-    {terminal, rest} = Enum.split_with(actions, &BattleStrategies.terminal?/1)
+    {terminal, rest} = Enum.split_with(actions, &BattlePlans.terminal?/1)
     rest ++ Enum.take(terminal, 1)
   end
 
@@ -188,7 +188,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     Ctx.log(
       ctx,
       :info,
-      "playbook: if #{BattleStrategies.condition_label(block["condition"], profile_names())} -> #{branch} [#{Enum.map_join(actions, ", ", & &1["type"])}]"
+      "playbook: if #{BattlePlans.condition_label(block["condition"], profile_names())} -> #{branch} [#{Enum.map_join(actions, ", ", & &1["type"])}]"
     )
 
     case run_actions(actions, turn, ctx) do
@@ -464,8 +464,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     case Capture.grab_frame() do
       {:ok, frame} ->
         leaves = Conditions.leaves(tree)
-        sinners = if Enum.any?(leaves, &BattleStrategies.sinner_leaf?/1), do: sinner_count(scan, ctx)
-        classified = if Enum.any?(leaves, &BattleStrategies.tray_leaf?/1), do: classify_scan(scan, ctx)
+        sinners = if Enum.any?(leaves, &BattlePlans.sinner_leaf?/1), do: sinner_count(scan, ctx)
+        classified = if Enum.any?(leaves, &BattlePlans.tray_leaf?/1), do: classify_scan(scan, ctx)
         Conditions.eval(tree, &condition_leaf(&1, frame, %{sinners: sinners, classified: classified, scan: scan}, ctx))
 
       {:error, reason} ->
@@ -492,12 +492,12 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp condition_leaf(leaf, frame, tray_info, ctx) do
     cond do
-      BattleStrategies.tray_leaf?(leaf) -> tray_count_leaf(leaf, tray_info, ctx)
-      BattleStrategies.position_leaf?(leaf) -> position_leaf(leaf, tray_info, ctx)
-      BattleStrategies.fight_leaf?(leaf) -> fight_leaf(leaf, ctx)
-      not BattleStrategies.sinner_leaf?(leaf) -> hook_leaf(leaf, frame, ctx)
+      BattlePlans.tray_leaf?(leaf) -> tray_count_leaf(leaf, tray_info, ctx)
+      BattlePlans.position_leaf?(leaf) -> position_leaf(leaf, tray_info, ctx)
+      BattlePlans.fight_leaf?(leaf) -> fight_leaf(leaf, ctx)
+      not BattlePlans.sinner_leaf?(leaf) -> hook_leaf(leaf, frame, ctx)
       is_nil(tray_info.sinners) -> false
-      true -> BattleStrategies.sinner_count_matches?(leaf, tray_info.sinners)
+      true -> BattlePlans.sinner_count_matches?(leaf, tray_info.sinners)
     end
   end
 
@@ -516,9 +516,9 @@ defmodule StarlightBot.Automation.PlaybookRunner do
           end
       end
 
-    count = BattleStrategies.tray_count(leaf, classified, columns)
-    Ctx.log(ctx, :info, "playbook: #{BattleStrategies.condition_label(leaf, profile_names())} (counted #{count})")
-    BattleStrategies.tray_count_matches?(leaf, count)
+    count = BattlePlans.tray_count(leaf, classified, columns)
+    Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, profile_names())} (counted #{count})")
+    BattlePlans.tray_count_matches?(leaf, count)
   end
 
   defp position_leaf(leaf, %{scan: {:ok, frame, %SkillTray{sinner_of_slot: [_ | _] = sinner_of_slot} = tray}}, ctx) do
@@ -527,11 +527,11 @@ defmodule StarlightBot.Automation.PlaybookRunner do
          {:ok, column} <- locate(frame, tray, hook, profile, ctx) do
       index = Enum.at(sinner_of_slot, column)
       count = List.last(sinner_of_slot) + 1
-      Ctx.log(ctx, :info, "playbook: #{BattleStrategies.condition_label(leaf, profile_names())} (#{profile.name} is sinner #{index + 1} of #{count})")
-      BattleStrategies.position_matches?(leaf, index, count)
+      Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, profile_names())} (#{profile.name} is sinner #{index + 1} of #{count})")
+      BattlePlans.position_matches?(leaf, index, count)
     else
       :skip ->
-        Ctx.log(ctx, :info, "playbook: #{BattleStrategies.condition_label(leaf, profile_names())} can't be checked, treating it as false")
+        Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, profile_names())} can't be checked, treating it as false")
         false
     end
   end
@@ -591,7 +591,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
          {:ok, frame} <- Capture.grab_frame() do
       targets = EnemyTargets.find(frame)
 
-      case pick_enemy(BattleStrategies.filter_by_height(targets, enemy["height"]), enemy, attempt, ctx) do
+      case pick_enemy(BattlePlans.filter_by_height(targets, enemy["height"]), enemy, attempt, ctx) do
         {:ok, target} ->
           attempts = [%{frame: frame, targets: targets, chosen: target} | attempts]
           move_held(target.point)
@@ -679,7 +679,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp pick_enemy(targets, %{"pick" => "last"}, _attempt, _ctx), do: {:ok, List.last(targets)}
 
   defp pick_enemy(targets, %{"pick" => "percent", "n" => n}, _attempt, _ctx),
-    do: {:ok, Enum.at(targets, BattleStrategies.percent_index(length(targets), n))}
+    do: {:ok, Enum.at(targets, BattlePlans.percent_index(length(targets), n))}
 
   defp pick_enemy(targets, %{"pick" => "up_to", "n" => n}, _attempt, _ctx),
     do: {:ok, Enum.at(targets, min(n, length(targets)) - 1)}
@@ -695,7 +695,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp pick_text(enemy), do: base_pick_text(enemy) <> BattleStrategies.height_label(enemy["height"])
+  defp pick_text(enemy), do: base_pick_text(enemy) <> BattlePlans.height_label(enemy["height"])
 
   defp base_pick_text(%{"pick" => "percent", "n" => n}), do: "at #{n}%"
   defp base_pick_text(%{"pick" => pick, "n" => n}), do: "#{pick} #{n}"
@@ -712,12 +712,12 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp priority_row(holder, column, top, bottom, ctx) do
     top_cell = Enum.at(top, column)
     bottom_cell = Enum.at(bottom, column)
-    row = BattleStrategies.pick_row(holder, top_cell, bottom_cell)
+    row = BattlePlans.pick_row(holder, top_cell, bottom_cell)
 
     Ctx.log(
       ctx,
       :info,
-      "playbook: slot #{column + 1} #{BattleStrategies.row_label(holder)}: top #{BattleStrategies.cell_label(top_cell)}, bottom #{BattleStrategies.cell_label(bottom_cell)} -> #{row}"
+      "playbook: slot #{column + 1} #{BattlePlans.row_label(holder)}: top #{BattlePlans.cell_label(top_cell)}, bottom #{BattlePlans.cell_label(bottom_cell)} -> #{row}"
     )
 
     row
@@ -806,13 +806,13 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp pin_rows(%{"row" => "priority"} = pin, columns, {top, bottom}, ctx) do
-    rows = BattleStrategies.allocate_rows(pin, Enum.map(columns, &{&1, Enum.at(top, &1), Enum.at(bottom, &1)}))
+    rows = BattlePlans.allocate_rows(pin, Enum.map(columns, &{&1, Enum.at(top, &1), Enum.at(bottom, &1)}))
 
     Enum.each(columns, fn column ->
       Ctx.log(
         ctx,
         :info,
-        "playbook: slot #{column + 1} #{BattleStrategies.row_label(pin)}: top #{BattleStrategies.cell_label(Enum.at(top, column))}, bottom #{BattleStrategies.cell_label(Enum.at(bottom, column))} -> #{rows[column]}"
+        "playbook: slot #{column + 1} #{BattlePlans.row_label(pin)}: top #{BattlePlans.cell_label(Enum.at(top, column))}, bottom #{BattlePlans.cell_label(Enum.at(bottom, column))} -> #{rows[column]}"
       )
     end)
 
@@ -921,7 +921,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp pick_skill(columns, skill, _frame, _tray, who, ctx), do: pick_columns(columns, skill, who, ctx)
 
   defp first_with(columns, match, n, frame, tray, profile, ctx) do
-    case BattleStrategies.first_with(columns, match, n, SinColor.classify_tray(frame.mat, tray)) do
+    case BattlePlans.first_with(columns, match, n, SinColor.classify_tray(frame.mat, tray)) do
       [] ->
         Ctx.log(ctx, :info, "playbook: #{profile.name} has no #{match} skill in the tray, skipping")
         :skip

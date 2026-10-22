@@ -2,7 +2,7 @@
   <StarlightBotWeb.Layouts.flash_toasts flash={@flash} />
     <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
       <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
-        <.plan_picker id="theme-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="theme pack plan" />
+        <.plan_picker id="theme-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="pack plan" />
         <%= if @editing_id do %>
 
           <%!-- Mode schedule --%>
@@ -17,7 +17,7 @@
             </div>
             <div class="flex gap-1 flex-wrap">
               <%= for floor <- 1..max_floor(@extreme?) do %>
-                <% mode = StarlightBot.ThemePackPlans.Resolver.mode_for_floor(@plan_data["mode_schedule"], floor) %>
+                <% mode = StarlightBot.PackPlans.Resolver.mode_for_floor(@plan_data["mode_schedule"], floor) %>
                 <% breakpoint? = Enum.any?(@plan_data["mode_schedule"], &(&1["from_floor"] == floor)) %>
                 <button phx-click="toggle_breakpoint" phx-value-floor={floor}
                         class={"btn btn-xs " <> if(mode == "hard", do: "btn-secondary", else: "btn-info btn-outline") <> if(breakpoint?, do: " ring ring-offset-1 ring-base-content/30", else: "")}
@@ -112,8 +112,8 @@
                       </button>
                       <%= if @floor_editor_pack_id == pack.id do %>
                         <div class="flex flex-wrap gap-0.5 mt-0.5">
-                          <% assigned = StarlightBot.ThemePackPlans.Resolver.floors_for(@plan_data, pack.id, @active_mode, pack) %>
-                          <%= for floor <- StarlightBot.ThemePackPlans.Resolver.eligible_floors(pack, @active_mode) do %>
+                          <% assigned = StarlightBot.PackPlans.Resolver.floors_for(@plan_data, pack.id, @active_mode, pack) %>
+                          <%= for floor <- StarlightBot.PackPlans.Resolver.eligible_floors(pack, @active_mode) do %>
                             <button phx-click="toggle_pack_floor" phx-value-pack_id={pack.id} phx-value-floor={floor}
                                     class={"btn btn-2xs px-1.5 " <> if(floor in assigned, do: "btn-primary", else: "btn-outline")}>
                               <%= floor %>
@@ -149,7 +149,7 @@
                     <img src={pack.image_path} class="w-6 h-6 rounded object-cover shrink-0" />
                     <span class="text-xs flex-1 truncate" title={pack.name_en}><%= pack.name_en %></span>
                     <span class="badge badge-ghost badge-xs">
-                      <%= Enum.join(StarlightBot.ThemePackPlans.Resolver.eligible_floors(pack, @active_mode), ",") %>
+                      <%= Enum.join(StarlightBot.PackPlans.Resolver.eligible_floors(pack, @active_mode), ",") %>
                     </span>
                     <%= for priority <- priorities() do %>
                       <button phx-click="assign_priority" phx-value-pack_id={pack.id} phx-value-priority={priority}

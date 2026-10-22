@@ -1,5 +1,5 @@
 defmodule StarlightBot.StarlightBudget do
-  alias StarlightBot.ThemePackPlans.Resolver
+  alias StarlightBot.PackPlans.Resolver
 
   @base 60
   @floors 1..5

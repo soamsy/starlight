@@ -1,10 +1,10 @@
-defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
+defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   use StarlightBotWeb, :live_view
   import StarlightBotWeb.Components.ConditionTree
   import StarlightBotWeb.Components.PlanPicker
 
-  alias StarlightBot.{BattleStrategies, Conditions, Hooks, SinnerProfiles, Strategies, Teams}
-  alias StarlightBot.BattleStrategies.Resolver
+  alias StarlightBot.{BattlePlans, Conditions, Hooks, Plans, SinnerProfiles, Teams}
+  alias StarlightBot.BattlePlans.Resolver
 
   @collapsed_floors 5
   @sinner_rows [~w(yi_sang faust don_quixote ryoshu meursault hong_lu), ~w(heathcliff ishmael rodion sinclair outis gregor)]
@@ -16,39 +16,39 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
     socket =
       socket
       |> assign(:team_id, team && team.id)
-      |> assign(:strategies, Strategies.list(:battle_strategies))
+      |> assign(:plans, Plans.list(:battle_plans))
       |> assign(:hook_names, Enum.map(Hooks.list_hooks(), & &1.name))
       |> assign_profiles()
       |> reset_editor()
 
-    {:ok, if(team && team.battle_strategy_id, do: load_strategy(socket, team.battle_strategy_id), else: socket)}
+    {:ok, if(team && team.battle_plan_id, do: load_plan(socket, team.battle_plan_id), else: socket)}
   end
 
   @impl true
-  def handle_event("new_strategy", _, socket) do
-    attrs = %{name: "New Strategy #{length(socket.assigns.strategies) + 1}", data: BattleStrategies.blank()}
+  def handle_event("new_plan", _, socket) do
+    attrs = %{name: "New Plan #{length(socket.assigns.plans) + 1}", data: BattlePlans.blank()}
 
-    case Strategies.save(:battle_strategies, attrs) do
-      {:ok, id} -> {:noreply, socket |> assign(:strategies, Strategies.list(:battle_strategies)) |> load_strategy(id) |> link_team(:battle_strategy_id)}
+    case Plans.save(:battle_plans, attrs) do
+      {:ok, id} -> {:noreply, socket |> assign(:plans, Plans.list(:battle_plans)) |> load_plan(id) |> link_team(:battle_plan_id)}
       {:error, reason} -> {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
     end
   end
 
   @impl true
-  def handle_event("select_strategy", %{"id" => id}, socket) do
-    {:noreply, socket |> load_strategy(String.to_integer(id)) |> link_team(:battle_strategy_id)}
+  def handle_event("select_plan", %{"id" => id}, socket) do
+    {:noreply, socket |> load_plan(String.to_integer(id)) |> link_team(:battle_plan_id)}
   end
 
   @impl true
-  def handle_event("duplicate_strategy", %{"id" => id}, socket) do
-    case Strategies.get(:battle_strategies, String.to_integer(id)) do
+  def handle_event("duplicate_plan", %{"id" => id}, socket) do
+    case Plans.get(:battle_plans, String.to_integer(id)) do
       nil ->
-        {:noreply, put_flash(socket, :error, "Strategy not found.")}
+        {:noreply, put_flash(socket, :error, "Plan not found.")}
 
-      strategy ->
-        case Strategies.save(:battle_strategies, %{name: "#{strategy.name} (copy)", data: strategy.data}) do
+      plan ->
+        case Plans.save(:battle_plans, %{name: "#{plan.name} (copy)", data: plan.data}) do
           {:ok, new_id} ->
-            {:noreply, socket |> assign(:strategies, Strategies.list(:battle_strategies)) |> load_strategy(new_id) |> link_team(:battle_strategy_id)}
+            {:noreply, socket |> assign(:plans, Plans.list(:battle_plans)) |> load_plan(new_id) |> link_team(:battle_plan_id)}
 
           {:error, reason} ->
             {:noreply, put_flash(socket, :error, "Duplicate failed: #{inspect(reason)}")}
@@ -57,18 +57,18 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   end
 
   @impl true
-  def handle_event("delete_strategy", %{"id" => id}, socket) do
+  def handle_event("delete_plan", %{"id" => id}, socket) do
     id = String.to_integer(id)
 
-    case Strategies.delete(:battle_strategies, id) do
+    case Plans.delete(:battle_plans, id) do
       {:ok, _} ->
         socket = if socket.assigns.editing_id == id, do: reset_editor(socket), else: socket
 
         {:noreply,
          socket
-         |> assign(:strategies, Strategies.list(:battle_strategies))
-         |> link_team(:battle_strategy_id)
-         |> put_flash(:info, "Strategy deleted.")}
+         |> assign(:plans, Plans.list(:battle_plans))
+         |> link_team(:battle_plan_id)
+         |> put_flash(:info, "Plan deleted.")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Delete failed: #{inspect(reason)}")}
@@ -76,10 +76,10 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   end
 
   @impl true
-  def handle_event("rename_strategy", %{"value" => name}, socket) do
+  def handle_event("rename_plan", %{"value" => name}, socket) do
     case String.trim(name) do
       "" -> {:noreply, socket}
-      name -> {:noreply, socket |> assign(:name, name) |> persist() |> link_team(:battle_strategy_id)}
+      name -> {:noreply, socket |> assign(:name, name) |> persist() |> link_team(:battle_plan_id)}
     end
   end
 
@@ -97,8 +97,13 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   end
 
   @impl true
+  def handle_event("set_paint", %{"id" => "erase"}, socket) do
+    {:noreply, assign(socket, :paint, "erase")}
+  end
+
+  @impl true
   def handle_event("set_paint", %{"id" => id}, socket) do
-    {:noreply, assign(socket, :paint, id)}
+    {:noreply, socket |> assign(:paint, id) |> assign(:playbook_id, id)}
   end
 
   @impl true
@@ -109,13 +114,13 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
 
     cond do
       paint == "erase" ->
-        {:noreply, put_track(socket, track, BattleStrategies.erase(entries, floor))}
+        {:noreply, put_track(socket, track, BattlePlans.erase(entries, floor))}
 
       playbook = find_playbook(socket.assigns.data, paint) ->
-        if playbook["kind"] == BattleStrategies.track_kind(track) do
-          {:noreply, put_track(socket, track, BattleStrategies.paint(entries, floor, paint))}
+        if playbook["kind"] == BattlePlans.track_kind(track) do
+          {:noreply, put_track(socket, track, BattlePlans.paint(entries, floor, paint))}
         else
-          {:noreply, put_flash(socket, :error, "'#{playbook["name"]}' is a #{playbook["kind"]} playbook; it can't go on a #{BattleStrategies.track_kind(track)} track.")}
+          {:noreply, put_flash(socket, :error, "'#{playbook["name"]}' is a #{playbook["kind"]} playbook; it can't go on a #{BattlePlans.track_kind(track)} track.")}
         end
 
       true ->
@@ -126,15 +131,15 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   @impl true
   def handle_event("paint_lineup", %{"venue" => venue, "floor" => floor}, socket) do
     floor = String.to_integer(floor)
-    paint = socket.assigns.paint
-    entries = BattleStrategies.lineup_track(socket.assigns.data, venue)
+    lineup_id = socket.assigns.lineup_id
+    entries = BattlePlans.lineup_track(socket.assigns.data, venue)
 
     cond do
-      paint == "erase" ->
-        {:noreply, put_lineup_track(socket, venue, BattleStrategies.erase(entries, floor, "lineup"))}
+      socket.assigns.lineup_erase? ->
+        {:noreply, put_lineup_track(socket, venue, BattlePlans.erase(entries, floor, "lineup"))}
 
-      BattleStrategies.find_lineup(socket.assigns.data, paint) ->
-        {:noreply, put_lineup_track(socket, venue, BattleStrategies.paint(entries, floor, paint, "lineup"))}
+      BattlePlans.find_lineup(socket.assigns.data, lineup_id) ->
+        {:noreply, put_lineup_track(socket, venue, BattlePlans.paint(entries, floor, lineup_id, "lineup"))}
 
       true ->
         {:noreply, put_flash(socket, :error, "Pick a lineup to paint lineup rows with.")}
@@ -142,51 +147,68 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   end
 
   @impl true
+  def handle_event("toggle_lineup_erase", _, socket) do
+    {:noreply, update(socket, :lineup_erase?, &(not &1))}
+  end
+
+  @impl true
   def handle_event("select_playbook", %{"id" => id}, socket) do
-    {:noreply, socket |> assign(:playbook_id, id) |> assign(:lineup_id, nil) |> assign(:paint, id)}
+    {:noreply, socket |> assign(:playbook_id, id) |> assign(:paint, id)}
   end
 
   @impl true
   def handle_event("select_lineup", %{"id" => id}, socket) do
-    {:noreply, socket |> assign(:lineup_id, id) |> assign(:playbook_id, nil) |> assign(:paint, id)}
+    {:noreply, socket |> assign(:lineup_id, id) |> assign(:lineup_erase?, false)}
   end
 
   @impl true
   def handle_event("new_lineup", _, socket) do
-    lineup = BattleStrategies.new_lineup("Lineup #{length(BattleStrategies.lineups(socket.assigns.data)) + 1}")
+    lineup = BattlePlans.new_lineup("Lineup #{length(BattlePlans.lineups(socket.assigns.data)) + 1}")
 
     {:noreply,
      socket
-     |> assign(:data, Map.put(socket.assigns.data, "lineups", BattleStrategies.lineups(socket.assigns.data) ++ [lineup]))
+     |> assign(:data, Map.put(socket.assigns.data, "lineups", BattlePlans.lineups(socket.assigns.data) ++ [lineup]))
      |> assign(:lineup_id, lineup["id"])
-     |> assign(:playbook_id, nil)
-     |> assign(:paint, lineup["id"])
+     |> assign(:lineup_erase?, false)
      |> persist()}
   end
 
   @impl true
   def handle_event("delete_lineup", %{"id" => id}, socket) do
-    case BattleStrategies.venues_using(socket.assigns.data, id) do
+    case BattlePlans.venues_using(socket.assigns.data, id) do
       [] ->
-        lineups = Enum.reject(BattleStrategies.lineups(socket.assigns.data), &(&1["id"] == id))
+        lineups = Enum.reject(BattlePlans.lineups(socket.assigns.data), &(&1["id"] == id))
 
         {:noreply,
          socket
          |> assign(:data, Map.put(socket.assigns.data, "lineups", lineups))
-         |> assign(:lineup_id, nil)
-         |> assign(:paint, if(socket.assigns.paint == id, do: nil, else: socket.assigns.paint))
+         |> assign(:lineup_id, if(socket.assigns.lineup_id == id, do: get_in(List.first(lineups), ["id"]), else: socket.assigns.lineup_id))
          |> persist()}
 
       venues ->
-        {:noreply, put_flash(socket, :error, "Still assigned on: #{Enum.map_join(venues, ", ", &BattleStrategies.venue_label/1)}.")}
+        {:noreply, put_flash(socket, :error, "Still assigned on: #{Enum.map_join(venues, ", ", &BattlePlans.venue_label/1)}.")}
     end
   end
 
   @impl true
+  def handle_event("start_rename_lineup", %{"id" => id}, socket) do
+    {:noreply, socket |> assign(:lineup_id, id) |> assign(:renaming_lineup_id, id)}
+  end
+
+  @impl true
+  def handle_event("cancel_rename_lineup", _, socket) do
+    {:noreply, assign(socket, :renaming_lineup_id, nil)}
+  end
+
+  @impl true
   def handle_event("rename_lineup", %{"value" => name}, socket) do
-    case String.trim(name) do
-      "" -> {:noreply, socket}
-      name -> {:noreply, update_lineup(socket, &Map.put(&1, "name", name))}
+    id = socket.assigns.renaming_lineup_id
+    socket = assign(socket, :renaming_lineup_id, nil)
+
+    case {id, String.trim(name)} do
+      {nil, _} -> {:noreply, socket}
+      {_, ""} -> {:noreply, socket}
+      {id, name} -> {:noreply, socket |> assign(:lineup_id, id) |> update_lineup(&Map.put(&1, "name", name))}
     end
   end
 
@@ -206,7 +228,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   @impl true
   def handle_event("new_playbook", %{"kind" => kind}, socket) when kind in ~w(chain focused) do
     count = Enum.count(socket.assigns.data["playbooks"], &(&1["kind"] == kind))
-    playbook = BattleStrategies.new_playbook(kind, "#{String.capitalize(kind)} #{count + 1}")
+    playbook = BattlePlans.new_playbook(kind, "#{String.capitalize(kind)} #{count + 1}")
     {:noreply, socket |> add_playbook(playbook)}
   end
 
@@ -220,7 +242,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
 
   @impl true
   def handle_event("delete_playbook", %{"id" => id}, socket) do
-    case BattleStrategies.tracks_using(socket.assigns.data, id) do
+    case BattlePlans.tracks_using(socket.assigns.data, id) do
       [] ->
         data = Map.update!(socket.assigns.data, "playbooks", fn pbs -> Enum.reject(pbs, &(&1["id"] == id)) end)
 
@@ -246,12 +268,12 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
 
   @impl true
   def handle_event("split_phase", %{"turn" => turn}, socket) do
-    {:noreply, update_playbook(socket, &BattleStrategies.split_phase(&1, String.to_integer(turn)))}
+    {:noreply, update_playbook(socket, &BattlePlans.split_phase(&1, String.to_integer(turn)))}
   end
 
   @impl true
   def handle_event("remove_phase", %{"turn" => turn}, socket) do
-    {:noreply, update_playbook(socket, &BattleStrategies.remove_phase(&1, String.to_integer(turn)))}
+    {:noreply, update_playbook(socket, &BattlePlans.remove_phase(&1, String.to_integer(turn)))}
   end
 
   @impl true
@@ -265,7 +287,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
          Enum.map(list, fn
            %{"id" => ^parent} = block ->
              if type in branch_available_actions(kind, actions, block, branch),
-               do: Map.update!(block, branch, &(&1 ++ [BattleStrategies.new_action(type)])),
+               do: Map.update!(block, branch, &(&1 ++ [BattlePlans.new_action(type)])),
                else: block
 
            action ->
@@ -281,7 +303,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
 
     {:noreply,
      update_phase(socket, String.to_integer(turn), fn actions ->
-       if type in available_actions(playbook, actions), do: actions ++ [BattleStrategies.new_action(type)], else: actions
+       if type in available_actions(playbook, actions), do: actions ++ [BattlePlans.new_action(type)], else: actions
      end)}
   end
 
@@ -317,7 +339,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
 
   @impl true
   def handle_event("cond_add", %{"turn" => turn, "action" => action_id, "path" => path, "node" => node}, socket) do
-    leaf = BattleStrategies.hook_leaf()
+    leaf = BattlePlans.hook_leaf()
     child = if node == "group", do: Conditions.group(leaf), else: leaf
     {:noreply, update_condition(socket, turn, action_id, &Conditions.add(&1, path, child))}
   end
@@ -334,7 +356,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
 
   @impl true
   def handle_event("cond_update", %{"turn" => turn, "action" => action_id, "path" => path} = params, socket) do
-    leaf = BattleStrategies.condition_leaf(params)
+    leaf = BattlePlans.condition_leaf(params)
     {:noreply, update_condition(socket, turn, action_id, &Conditions.put_leaf(&1, path, leaf))}
   end
 
@@ -345,7 +367,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
 
   @impl true
   def handle_event("add_pin", %{"turn" => turn, "action" => action_id}, socket) do
-    {:noreply, update_action(socket, String.to_integer(turn), action_id, &Map.update!(&1, "pins", fn pins -> pins ++ [BattleStrategies.new_pin()] end))}
+    {:noreply, update_action(socket, String.to_integer(turn), action_id, &Map.update!(&1, "pins", fn pins -> pins ++ [BattlePlans.new_pin()] end))}
   end
 
   @impl true
@@ -380,7 +402,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
     {:noreply, update_action(socket, String.to_integer(turn), action_id, &Map.update!(&1, "pins", fn pins -> List.delete_at(pins, index) end))}
   end
 
-  def floors(true), do: Enum.to_list(1..BattleStrategies.max_floor())
+  def floors(true), do: Enum.to_list(1..BattlePlans.max_floor())
   def floors(false), do: Enum.to_list(1..@collapsed_floors)
 
   def track_label("normal_chain"), do: "Normal Chain"
@@ -395,19 +417,19 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   def sinner_label(key), do: key |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
 
   def lineup_color(data, id, alpha) do
-    index = Enum.find_index(BattleStrategies.lineups(data), &(&1["id"] == id)) || 0
+    index = Enum.find_index(BattlePlans.lineups(data), &(&1["id"] == id)) || 0
     "background-color: hsl(#{rem(index * 67 + 20, 360)} 45% 42% / #{alpha});"
   end
 
   def lineup_tooltip(data, entries, floor) do
     id = Resolver.lineup_id_at(entries, floor)
-    lineup = BattleStrategies.find_lineup(data, id)
+    lineup = BattlePlans.find_lineup(data, id)
     sinners = if lineup && lineup["sinners"] != [], do: Enum.map_join(lineup["sinners"], ", ", &sinner_label/1), else: "nobody"
     "Floor #{floor}: #{(lineup && lineup["name"]) || "no lineup"} (#{sinners})"
   end
 
-  def strategy_issues(%{data: data}) when is_map(data), do: BattleStrategies.lineup_issues(data)
-  def strategy_issues(_strategy), do: []
+  def plan_issues(%{data: data}) when is_map(data), do: BattlePlans.lineup_issues(data)
+  def plan_issues(_plan), do: []
 
   def action_label("win_rate"), do: "Win rate (p)"
   def action_label("damage_rate"), do: "Damage rate (p p)"
@@ -448,7 +470,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   def pick_label("first_with"), do: "first # with"
   def pick_label("percent"), do: "at %"
 
-  def skill_picks(pins?), do: BattleStrategies.skill_picks() ++ ["first_with"] ++ if(pins?, do: ["all"], else: [])
+  def skill_picks(pins?), do: BattlePlans.skill_picks() ++ ["first_with"] ++ if(pins?, do: ["all"], else: [])
 
   def numbered_pick?(%{"pick" => pick}), do: pick in ~w(exact up_to first_with)
 
@@ -494,16 +516,16 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   end
 
   def available_actions(playbook, actions) do
-    has_terminal? = Enum.any?(actions, &BattleStrategies.terminal?/1)
-    Enum.reject(BattleStrategies.action_types(playbook["kind"]), &(has_terminal? and BattleStrategies.chain_action?(&1)))
+    has_terminal? = Enum.any?(actions, &BattlePlans.terminal?/1)
+    Enum.reject(BattlePlans.action_types(playbook["kind"]), &(has_terminal? and BattlePlans.chain_action?(&1)))
   end
 
   def branch_available_actions(kind, phase_actions, block, branch) do
-    blocked? = not BattleStrategies.chain_allowed_in?(phase_actions, block["id"], branch)
-    Enum.reject(BattleStrategies.action_types(kind), &(blocked? and BattleStrategies.chain_action?(&1)))
+    blocked? = not BattlePlans.chain_allowed_in?(phase_actions, block["id"], branch)
+    Enum.reject(BattlePlans.action_types(kind), &(blocked? and BattlePlans.chain_action?(&1)))
   end
 
-  def ends_with_chain?(actions), do: actions != [] and BattleStrategies.terminal?(List.last(actions))
+  def ends_with_chain?(actions), do: actions != [] and BattlePlans.terminal?(List.last(actions))
 
   def branch_label("then"), do: "then"
   def branch_label("else"), do: "else"
@@ -522,7 +544,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
       <div class="flex flex-col gap-1 flex-1 min-w-0">
         <div class="flex items-center gap-2">
           <span class="font-semibold cursor-help" title={action_tooltip("if")}><%= action_label("if") %></span>
-          <span class="text-[11px] text-secondary truncate"><%= BattleStrategies.condition_label(@action["condition"], Map.new(@profiles, &{&1.id, &1.name})) %></span>
+          <span class="text-[11px] text-secondary truncate"><%= BattlePlans.condition_label(@action["condition"], Map.new(@profiles, &{&1.id, &1.name})) %></span>
         </div>
         <%= if @action["condition"] do %>
           <.condition_node node={@action["condition"]} path="" values={%{"turn" => @turn, "action" => @action["id"]}} leaf={&hook_leaf(Map.put(&1, :profiles, @profiles))} />
@@ -530,7 +552,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
           <button type="button" phx-click="cond_add" phx-value-turn={@turn} phx-value-action={@action["id"]} phx-value-path="" phx-value-node="leaf"
                   class="btn btn-2xs btn-ghost self-start">+ Add condition</button>
         <% end %>
-        <%= for branch <- BattleStrategies.branches() do %>
+        <%= for branch <- BattlePlans.branches() do %>
           <div class="flex flex-col gap-1 pl-3 border-l-2 border-base-300">
             <span class="text-[11px] font-medium text-base-content/70"><%= branch_label(branch) %></span>
             <%= for {child, child_index} <- Enum.with_index(@action[branch], 1) do %>
@@ -588,7 +610,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
             <.row_picker holder={@action} prefix="" />
             <span class="text-base-content/60">enemy</span>
             <select name="enemy_pick" class="select select-bordered select-xs">
-              <%= for pick <- BattleStrategies.enemy_picks() do %>
+              <%= for pick <- BattlePlans.enemy_picks() do %>
                 <option value={pick} selected={@action["enemy"]["pick"] == pick}><%= pick_label(pick) %></option>
               <% end %>
             </select>
@@ -616,7 +638,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
 
           <%= if @action["type"] == "ego" do %>
             <select name="grade" class="select select-bordered select-xs">
-              <%= for grade <- BattleStrategies.grades() do %>
+              <%= for grade <- BattlePlans.grades() do %>
                 <option value={grade} selected={@action["grade"] == grade}><%= String.upcase(grade) %></option>
               <% end %>
             </select>
@@ -674,7 +696,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   def match_picker(assigns) do
     ~H"""
     <select name={@name} class="select select-bordered select-xs">
-      <%= for {group, values} <- [{"skill", BattleStrategies.tiers()}, {"sin", BattleStrategies.sins()}] do %>
+      <%= for {group, values} <- [{"skill", BattlePlans.tiers()}, {"sin", BattlePlans.sins()}] do %>
         <optgroup label={group}>
           <option :for={value <- values} value={value} selected={@value == value}><%= value %></option>
         </optgroup>
@@ -724,11 +746,11 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
 
   def row_picker(assigns) do
     priority = assigns.holder["priority"]
-    assigns = assign(assigns, priority: priority, order: priority && priority["order"], values: BattleStrategies.priority_values())
+    assigns = assign(assigns, priority: priority, order: priority && priority["order"], values: BattlePlans.priority_values())
 
     ~H"""
     <select name={field_name(@prefix, "row")} class="select select-bordered select-xs">
-      <%= for row <- BattleStrategies.rows() do %>
+      <%= for row <- BattlePlans.rows() do %>
         <option value={row} selected={@holder["row"] == row}><%= row %></option>
       <% end %>
     </select>
@@ -757,7 +779,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   end
 
   defp priority_options(order, chosen) do
-    [{"skill", BattleStrategies.tiers()}, {"sin", BattleStrategies.sins()}, {"other", ["dodge"]}]
+    [{"skill", BattlePlans.tiers()}, {"sin", BattlePlans.sins()}, {"other", ["dodge"]}]
     |> Enum.map(fn {group, values} -> {group, Enum.filter(values, &(&1 == chosen or &1 not in order))} end)
     |> Enum.reject(fn {_group, values} -> values == [] end)
   end
@@ -779,9 +801,9 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
       <option value="not_boss_fight" selected={@node["op"] == "not_boss_fight"}>not boss fight</option>
     </select>
     <%= cond do %>
-    <% BattleStrategies.sinner_leaf?(@node) -> %>
+    <% BattlePlans.sinner_leaf?(@node) -> %>
       <input type="number" name="value" min="1" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
-    <% BattleStrategies.tray_leaf?(@node) -> %>
+    <% BattlePlans.tray_leaf?(@node) -> %>
       <select name="profile_id" class="select select-bordered select-xs" title="Only count this sinner's slots">
         <option value="" selected={is_nil(@node["profile_id"])}>(anyone)</option>
         <%= for p <- @profiles do %>
@@ -789,7 +811,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
         <% end %>
       </select>
       <select name="match" class="select select-bordered select-xs">
-        <%= for {group, values} <- [{"skill", BattleStrategies.tiers()}, {"sin", BattleStrategies.sins()}] do %>
+        <%= for {group, values} <- [{"skill", BattlePlans.tiers()}, {"sin", BattlePlans.sins()}] do %>
           <optgroup label={group}>
             <option :for={value <- values} value={value} selected={@node["match"] == value}><%= value %></option>
           </optgroup>
@@ -801,8 +823,8 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
         <option value="lte" selected={@node["cmp"] == "lte"}>at most</option>
       </select>
       <input type="number" name="value" min="0" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
-    <% BattleStrategies.fight_leaf?(@node) -> %>
-    <% BattleStrategies.position_leaf?(@node) -> %>
+    <% BattlePlans.fight_leaf?(@node) -> %>
+    <% BattlePlans.position_leaf?(@node) -> %>
       <select name="profile_id" class="select select-bordered select-xs">
         <option value="" selected={is_nil(@node["profile_id"])}>(pick sinner)</option>
         <%= for p <- @profiles do %>
@@ -839,37 +861,40 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
     |> assign(:data, nil)
     |> assign(:playbook_id, nil)
     |> assign(:lineup_id, nil)
+    |> assign(:lineup_erase?, false)
+    |> assign(:renaming_lineup_id, nil)
     |> assign(:paint, nil)
     |> assign(:extreme?, false)
   end
 
-  defp load_strategy(socket, id) do
-    case Strategies.get(:battle_strategies, id) do
-      %{data: %{"version" => 3} = data} = strategy ->
+  defp load_plan(socket, id) do
+    case Plans.get(:battle_plans, id) do
+      %{data: %{"version" => 3} = data} = plan ->
         first_playbook = List.first(data["playbooks"])
 
         socket
-        |> assign(:editing_id, strategy.id)
-        |> assign(:name, strategy.name)
+        |> assign(:editing_id, plan.id)
+        |> assign(:name, plan.name)
         |> assign(:data, data)
         |> assign(:playbook_id, first_playbook["id"])
-        |> assign(:lineup_id, nil)
+        |> assign(:lineup_id, get_in(List.first(BattlePlans.lineups(data)), ["id"]))
+        |> assign(:lineup_erase?, false)
         |> assign(:paint, first_playbook["id"])
         |> assign(:extreme?, Enum.any?(Map.values(data["tracks"]) ++ Map.values(data["lineup_tracks"] || %{}), &hidden_change_points?/1))
 
       nil ->
-        put_flash(socket, :error, "Strategy not found.")
+        put_flash(socket, :error, "Plan not found.")
 
       _ ->
-        put_flash(socket, :error, "Strategy data is not version 3. Run mix db.migrate.")
+        put_flash(socket, :error, "Plan data is not version 3. Run mix db.migrate.")
     end
   end
 
   defp persist(socket) do
     attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.data}
 
-    case Strategies.save(:battle_strategies, attrs) do
-      {:ok, _id} -> assign(socket, :strategies, Strategies.list(:battle_strategies))
+    case Plans.save(:battle_plans, attrs) do
+      {:ok, _id} -> assign(socket, :plans, Plans.list(:battle_plans))
       {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
     end
   end
@@ -887,14 +912,13 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
 
   defp update_lineup(socket, fun) do
     id = socket.assigns.lineup_id
-    lineups = Enum.map(BattleStrategies.lineups(socket.assigns.data), fn lineup -> if lineup["id"] == id, do: fun.(lineup), else: lineup end)
+    lineups = Enum.map(BattlePlans.lineups(socket.assigns.data), fn lineup -> if lineup["id"] == id, do: fun.(lineup), else: lineup end)
     socket |> assign(:data, Map.put(socket.assigns.data, "lineups", lineups)) |> persist()
   end
 
   defp add_playbook(socket, playbook) do
     socket
     |> assign(:data, Map.update!(socket.assigns.data, "playbooks", &(&1 ++ [playbook])))
-    |> assign(:lineup_id, nil)
     |> assign(:playbook_id, playbook["id"])
     |> assign(:paint, playbook["id"])
     |> persist()
@@ -903,7 +927,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   defp copy_playbook(source) do
     phases =
       Enum.map(source["phases"], fn phase ->
-        Map.update!(phase, "actions", fn actions -> Enum.map(actions, &BattleStrategies.refresh_ids/1) end)
+        Map.update!(phase, "actions", fn actions -> Enum.map(actions, &BattlePlans.refresh_ids/1) end)
       end)
 
     %{source | "id" => StarlightBot.GiftPlans.new_id("pb"), "name" => source["name"] <> " copy", "phases" => phases}
@@ -919,7 +943,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
     update_playbook(socket, fn playbook ->
       Map.update!(playbook, "phases", fn phases ->
         Enum.map(phases, fn phase ->
-          if phase["from_turn"] == turn, do: Map.update!(phase, "actions", &BattleStrategies.chain_last(fun.(&1))), else: phase
+          if phase["from_turn"] == turn, do: Map.update!(phase, "actions", &BattlePlans.chain_last(fun.(&1))), else: phase
         end)
       end)
     end)
@@ -937,7 +961,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
     else
       Enum.map(actions, fn
         %{"type" => "if"} = block ->
-          Enum.reduce(BattleStrategies.branches(), block, fn branch, acc -> Map.update!(acc, branch, &update_list_containing(&1, id, fun)) end)
+          Enum.reduce(BattlePlans.branches(), block, fn branch, acc -> Map.update!(acc, branch, &update_list_containing(&1, id, fun)) end)
 
         action ->
           action
@@ -955,7 +979,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
     action
     |> put_sinners(params)
     |> Map.put("skill", parse_skill(params["pick"], params["n"], params["match"]))
-    |> BattleStrategies.put_row(params["row"], params["priority_order"])
+    |> BattlePlans.put_row(params["row"], params["priority_order"])
     |> Map.put("enemy", params["enemy_pick"] |> parse_skill(params["enemy_n"]) |> put_height(params["enemy_height_dir"], params["enemy_height_pct"]))
   end
 
@@ -966,7 +990,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
     |> then(fn action ->
       if type == "ego" do
         action
-        |> Map.put("grade", if(params["grade"] in BattleStrategies.grades(), do: params["grade"], else: "zayin"))
+        |> Map.put("grade", if(params["grade"] in BattlePlans.grades(), do: params["grade"], else: "zayin"))
         |> Map.put("corrode", params["corrode"] == "true")
       else
         action
@@ -983,8 +1007,8 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
         pin
         |> put_sinners(params)
         |> Map.put("skill", parse_skill(params["pick"], params["n"], params["match"]))
-        |> BattleStrategies.put_row(params["row"], params["priority_order"])
-        |> BattleStrategies.put_keep(params["keep_min"], params["keep_max"])
+        |> BattlePlans.put_row(params["row"], params["priority_order"])
+        |> BattlePlans.put_keep(params["keep_min"], params["keep_max"])
       end)
 
     Map.put(action, "pins", pins)
@@ -1011,7 +1035,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
     %{
       "pick" => "first_with",
       "n" => max(parse_id(n) || 1, 1),
-      "match" => if(match in BattleStrategies.tiers() ++ BattleStrategies.sins(), do: match, else: "wrath")
+      "match" => if(match in BattlePlans.tiers() ++ BattlePlans.sins(), do: match, else: "wrath")
     }
   end
 
