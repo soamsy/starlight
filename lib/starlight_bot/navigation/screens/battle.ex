@@ -118,8 +118,8 @@ defmodule StarlightBot.Navigation.Screens.Battle do
 
   defp defeat_choice(choice) do
     [
-      click(choice),
-      reclick_until_gone(:battle_defeat_confirm, every: 800, tries: 3),
+      click(choice)
+    ] ++ confirm(:battle_defeat_confirm, every: 800, tries: 3) ++ [
       move_to(:battle_safe_click_spot)
     ] ++ loading()
   end
