@@ -24,6 +24,9 @@ erl_crash.dump
 # Logs and screenshots from runs
 *.log
 /screenshots/
+/log/
+master.db-wal
+master.db-shm
 /priv/static/assets
 /Charge-Grinder/
 
