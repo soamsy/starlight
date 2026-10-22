@@ -2,20 +2,17 @@
 
 An Elixir project for Limbus Company automation. `starlight_bot` is the root project (vision + navigation + automation).
 
-## Environment
+## Build requirements
 
-This project requires a split OTP environment (OTP 29 system + OTP 28 from Nix). Source `.envrc` before doing anything:
-
-```sh
-source .envrc
-```
-
-Without `.envrc`, `mix` will fail with cryptic BEAM errors.
+- **Erlang/OTP 29.1.1 and Elixir 1.20.4**, pinned in `.tool-versions`. Install them with [mise](https://mise.jdx.dev) or asdf (`mise install`), or use distro packages if the versions match. On Arch/CachyOS, Erlang is split into per-app packages; `erlang-ssl`, `erlang-public_key`, `erlang-asn1`, `erlang-inets` and `erlang-xmerl` are required alongside `erlang-core` (Hex and rebar3 need them).
+- **Rust 1.91 or newer** (rustler 0.38's minimum) plus a C linker, for the NIF in `native/starlight_native/`.
+- **libxcb**, linked by the NIF for X11 window discovery and capture.
+- **Network access on first build.** `mix deps.get` pulls from Hex, `mix compile` downloads evision's precompiled OpenCV NIF, and the first `mix assets.build` downloads the tailwind and esbuild binaries.
+- **The `vendor/EgoGiftML` submodule**, which holds the ego gift models and the data for `mix ego_gifts.setup`. Clone with `--recurse-submodules`, or run `git submodule update --init` in an existing checkout.
 
 ## Getting started (starlight_bot)
 
 ```sh
-source .envrc
 mix deps.get
 mix compile        # compiles Rust NIF — slow on first run (~30–60s)
 mix db.setup
@@ -41,6 +38,5 @@ mix phx.server     # starts at localhost:4000
 
 ## System dependencies
 
-- Rust toolchain — for the starlight_bot Rustler NIF (compiles automatically on first `mix compile`)
 - KDE Plasma 6.0+ with KWin — required for input injection via EIS (`LIBEI_SOCKET` set automatically in a KDE session)
 - XDG Remote Desktop portal — used by the EIS client when `LIBEI_SOCKET` is not set directly

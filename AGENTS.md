@@ -22,13 +22,7 @@ Guidelines for AI agents (Claude, Codex, etc.) working in this repository.
 
 ## Environment Setup
 
-This project requires a split OTP environment (OTP 29 system + OTP 28 from Nix). Source `.envrc` before doing anything:
-
-```sh
-source .envrc      # sets ERL_LIBS, ERL_FLAGS, PATH
-```
-
-Without `.envrc`, `mix` will fail with cryptic BEAM errors.
+Erlang/OTP and Elixir versions are pinned in `.tool-versions` (install with `mise install` or asdf). Distro packages are fine if the versions match; on Arch/CachyOS make sure the split `erlang-ssl`, `erlang-public_key`, `erlang-asn1`, `erlang-inets` and `erlang-xmerl` packages are installed, not just `erlang-core`.
 
 **Check your environment is correct:**
 
@@ -215,6 +209,6 @@ The entire pipeline is lossless: MIT-SHM `GetImage` of the composite window pixm
 
 ## Before Opening a PR
 
-1. `source .envrc && mix compile --warnings-as-errors` — zero warnings
+1. `mix compile --warnings-as-errors` — zero warnings
 2. `mix test` — all tests pass (including migration count test, which covers all migrations applying cleanly)
 3. `cargo clippy --manifest-path native/starlight_native/Cargo.toml` — no warnings
