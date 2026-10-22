@@ -1,46 +1,9 @@
 <div class="flex flex-col h-full gap-3 overflow-hidden">
-  <div class="grid grid-cols-[24fr_76fr] grid-rows-1 gap-2 flex-1 min-h-0">
-
-    <%!-- Left: Plan List --%>
-    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
-      <div class="card-body p-3 flex flex-col flex-1 min-h-0">
-        <div class="flex items-center gap-3 mb-2">
-          <h2 class="card-title text-lg">Plans</h2>
-          <span class="badge badge-neutral badge-sm"><%= length(@plans) %></span>
-          <button phx-click="new_plan" class="btn btn-primary btn-sm ml-auto">+ New</button>
-        </div>
-
-        <div class="overflow-y-auto flex-1 min-h-0">
-          <table class="table table-xs table-pin-rows">
-            <tbody>
-              <%= for plan <- @plans do %>
-                <tr phx-click="select_plan" phx-value-id={plan.id}
-                    class={"cursor-pointer hover:bg-base-200 " <> if(@editing_id == plan.id, do: "bg-primary/10 border-l-2 border-primary", else: "")}>
-                  <td class="font-mono text-xs"><%= plan.name %></td>
-                  <td class="text-right whitespace-nowrap">
-                    <button phx-click="duplicate_plan" phx-value-id={plan.id} class="btn btn-xs btn-ghost">Dup</button>
-                    <button phx-click="delete_plan" phx-value-id={plan.id}
-                            data-confirm={"Delete '#{plan.name}'?"}
-                            class="btn btn-xs btn-ghost text-error">Del</button>
-                  </td>
-                </tr>
-              <% end %>
-              <%= if @plans == [] do %>
-                <tr><td colspan="2" class="text-center text-base-content/40 py-4">No plans yet — create one.</td></tr>
-              <% end %>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <%!-- Right: Editor --%>
-    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
+  <StarlightBotWeb.Layouts.flash_toasts flash={@flash} />
+    <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
       <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
+        <.plan_picker id="theme-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="theme pack plan" />
         <%= if @editing_id do %>
-
-          <input type="text" value={@name} phx-blur="rename_plan"
-                 class="input input-bordered input-sm w-64 font-semibold" placeholder="Plan name" />
 
           <%!-- Mode schedule --%>
           <div class="flex flex-col gap-1">
@@ -206,11 +169,9 @@
 
         <% else %>
           <div class="flex-1 flex items-center justify-center text-base-content/40 text-sm">
-            Select or create a plan to edit.
+            Pick or create a plan for this team.
           </div>
         <% end %>
       </div>
     </div>
-
-  </div>
 </div>

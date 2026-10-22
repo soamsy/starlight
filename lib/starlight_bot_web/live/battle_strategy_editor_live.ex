@@ -1,41 +1,27 @@
 defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   use StarlightBotWeb, :live_view
   import StarlightBotWeb.Components.ConditionTree
+  import StarlightBotWeb.Components.PlanPicker
 
-  alias StarlightBot.{BattleStrategies, Conditions, Hooks, SinnerProfiles, Strategies}
+  alias StarlightBot.{BattleStrategies, Conditions, Hooks, SinnerProfiles, Strategies, Teams}
   alias StarlightBot.BattleStrategies.Resolver
-  alias StarlightBot.Vision.{Capture, Matcher, SkillTray}
 
   @collapsed_floors 5
   @sinner_rows [~w(yi_sang faust don_quixote ryoshu meursault hong_lu), ~w(heathcliff ishmael rodion sinclair outis gregor)]
 
   @impl true
-  def mount(_params, _session, socket) do
-    {:ok,
-     socket
-     |> assign(:tab, "strategies")
-     |> assign(:strategies, Strategies.list(:battle_strategies))
-     |> assign(:hook_names, Enum.map(Hooks.list_hooks(), & &1.name))
-     |> assign(:locator_names, Hooks.list_names("locator"))
-     |> assign(:profile_tests, %{})
-     |> assign_profiles()
-     |> reset_editor()}
-  end
+  def mount(_params, session, socket) do
+    team = session["team_id"] && Teams.get_team(session["team_id"])
 
-  @impl true
-  def handle_params(%{"id" => id}, _uri, socket) do
-    case Integer.parse(id) do
-      {int_id, _} -> {:noreply, load_strategy(socket, int_id)}
-      :error -> {:noreply, socket}
-    end
-  end
+    socket =
+      socket
+      |> assign(:team_id, team && team.id)
+      |> assign(:strategies, Strategies.list(:battle_strategies))
+      |> assign(:hook_names, Enum.map(Hooks.list_hooks(), & &1.name))
+      |> assign_profiles()
+      |> reset_editor()
 
-  @impl true
-  def handle_params(_params, _uri, socket), do: {:noreply, socket}
-
-  @impl true
-  def handle_event("set_tab", %{"tab" => tab}, socket) when tab in ~w(strategies profiles) do
-    {:noreply, assign(socket, :tab, tab)}
+    {:ok, if(team && team.battle_strategy_id, do: load_strategy(socket, team.battle_strategy_id), else: socket)}
   end
 
   @impl true
@@ -43,14 +29,14 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
     attrs = %{name: "New Strategy #{length(socket.assigns.strategies) + 1}", data: BattleStrategies.blank()}
 
     case Strategies.save(:battle_strategies, attrs) do
-      {:ok, id} -> {:noreply, socket |> assign(:strategies, Strategies.list(:battle_strategies)) |> load_strategy(id)}
+      {:ok, id} -> {:noreply, socket |> assign(:strategies, Strategies.list(:battle_strategies)) |> load_strategy(id) |> link_team(:battle_strategy_id)}
       {:error, reason} -> {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
     end
   end
 
   @impl true
   def handle_event("select_strategy", %{"id" => id}, socket) do
-    {:noreply, load_strategy(socket, String.to_integer(id))}
+    {:noreply, socket |> load_strategy(String.to_integer(id)) |> link_team(:battle_strategy_id)}
   end
 
   @impl true
@@ -62,7 +48,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
       strategy ->
         case Strategies.save(:battle_strategies, %{name: "#{strategy.name} (copy)", data: strategy.data}) do
           {:ok, new_id} ->
-            {:noreply, socket |> assign(:strategies, Strategies.list(:battle_strategies)) |> assign_profiles() |> load_strategy(new_id)}
+            {:noreply, socket |> assign(:strategies, Strategies.list(:battle_strategies)) |> load_strategy(new_id) |> link_team(:battle_strategy_id)}
 
           {:error, reason} ->
             {:noreply, put_flash(socket, :error, "Duplicate failed: #{inspect(reason)}")}
@@ -81,7 +67,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
         {:noreply,
          socket
          |> assign(:strategies, Strategies.list(:battle_strategies))
-         |> assign_profiles()
+         |> link_team(:battle_strategy_id)
          |> put_flash(:info, "Strategy deleted.")}
 
       {:error, reason} ->
@@ -93,7 +79,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
   def handle_event("rename_strategy", %{"value" => name}, socket) do
     case String.trim(name) do
       "" -> {:noreply, socket}
-      name -> {:noreply, socket |> assign(:name, name) |> persist()}
+      name -> {:noreply, socket |> assign(:name, name) |> persist() |> link_team(:battle_strategy_id)}
     end
   end
 
@@ -393,49 +379,6 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
     index = String.to_integer(index)
     {:noreply, update_action(socket, String.to_integer(turn), action_id, &Map.update!(&1, "pins", fn pins -> List.delete_at(pins, index) end))}
   end
-
-  @impl true
-  def handle_event("new_profile", _, socket) do
-    case SinnerProfiles.save(%{name: "New Profile #{length(socket.assigns.profiles) + 1}"}) do
-      {:ok, _id} -> {:noreply, assign_profiles(socket)}
-      {:error, reason} -> {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
-    end
-  end
-
-  @impl true
-  def handle_event("save_profile", %{"profile_id" => id} = params, socket) do
-    attrs = %{
-      id: String.to_integer(id),
-      name: String.trim(params["name"] || ""),
-      sinner: blank_to_nil(params["sinner"]),
-      locator_hook: blank_to_nil(String.trim(params["locator_hook"] || ""))
-    }
-
-    case SinnerProfiles.save(attrs) do
-      {:ok, _id} -> {:noreply, assign_profiles(socket)}
-      {:error, reason} -> {:noreply, socket |> assign_profiles() |> put_flash(:error, "Save failed: #{inspect(reason)}")}
-    end
-  end
-
-  @impl true
-  def handle_event("delete_profile", %{"id" => id}, socket) do
-    id = String.to_integer(id)
-
-    if Map.get(socket.assigns.profile_usage, id, 0) > 0 do
-      {:noreply, put_flash(socket, :error, "Profile is still used by a playbook.")}
-    else
-      SinnerProfiles.delete(id)
-      {:noreply, assign_profiles(socket)}
-    end
-  end
-
-  @impl true
-  def handle_event("test_profile", %{"id" => id}, socket) do
-    id = String.to_integer(id)
-    profile = Enum.find(socket.assigns.profiles, &(&1.id == id))
-    {:noreply, update(socket, :profile_tests, &Map.put(&1, id, test_locator(profile)))}
-  end
-
 
   def floors(true), do: Enum.to_list(1..BattleStrategies.max_floor())
   def floors(false), do: Enum.to_list(1..@collapsed_floors)
@@ -926,30 +869,12 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
     attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.data}
 
     case Strategies.save(:battle_strategies, attrs) do
-      {:ok, _id} -> socket |> assign(:strategies, Strategies.list(:battle_strategies)) |> assign_profiles()
+      {:ok, _id} -> assign(socket, :strategies, Strategies.list(:battle_strategies))
       {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
     end
   end
 
-  defp assign_profiles(socket) do
-    profiles = SinnerProfiles.list()
-
-    usage =
-      socket.assigns.strategies
-      |> Enum.flat_map(fn s -> if is_map(s.data), do: Enum.to_list(BattleStrategies.profile_ids_used(s.data)), else: [] end)
-      |> Enum.frequencies()
-
-    thumbs =
-      Map.new(profiles, fn p ->
-        image = p.locator_hook && Hooks.get_hook(p.locator_hook)
-        {p.id, image && image.image && Base.encode64(image.image)}
-      end)
-
-    socket
-    |> assign(:profiles, profiles)
-    |> assign(:profile_usage, usage)
-    |> assign(:profile_thumbs, thumbs)
-  end
+  defp assign_profiles(socket), do: assign(socket, :profiles, SinnerProfiles.list())
 
   defp put_track(socket, track, entries) do
     socket |> assign(:data, put_in(socket.assigns.data, ["tracks", track], entries)) |> persist()
@@ -1110,31 +1035,5 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
       {n, _} -> n
       :error -> nil
     end
-  end
-
-  defp blank_to_nil(""), do: nil
-  defp blank_to_nil(value), do: value
-
-  defp test_locator(%{locator_hook: hook}) when hook in [nil, ""], do: "No locator hook set."
-
-  defp test_locator(%{locator_hook: hook}) do
-    hook_atom = String.to_existing_atom(hook)
-
-    with {:ok, frame} <- Capture.grab_frame(),
-         {:ok, tray} <- SkillTray.scan(frame),
-         [_ | _] = rects <- Matcher.find_all(frame, hook_atom) do
-      {x, _y, w, _h} = Enum.min_by(rects, &elem(&1, 0))
-      column = SkillTray.column_at(tray, x + w / 2)
-      slots = SkillTray.owned_columns(tray, column)
-
-      extra = if length(rects) > 1, do: " (#{length(rects)} matches, used leftmost)", else: ""
-      "Matched column #{column + 1}, owner slots #{Enum.min(slots) + 1}-#{Enum.max(slots) + 1} (#{length(slots)} skill(s))#{extra}"
-    else
-      [] -> "Locator hook didn't match."
-      :not_found -> "Skill tray not found. Is a battle turn on screen?"
-      {:error, reason} -> "Failed: #{inspect(reason)}"
-    end
-  rescue
-    ArgumentError -> "Hook '#{hook}' isn't loaded."
   end
 end

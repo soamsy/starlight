@@ -2,11 +2,11 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
   alias StarlightBot.{GiftPlans, StarlightBudget, Strategies, Teams, ThemePacks}
-  alias StarlightBotWeb.Live.GiftPlanEditorLive
+  alias StarlightBotWeb.Live.{BattleStrategyEditorLive, GiftPlanEditorLive, ThemePackPlanEditorLive}
   alias StarlightBot.Navigation.Navigator
 
-  @gift_affinities ~w(burn bleed tremor rupture sinking poise charge)
   @countdown_secs 2
+  @panes %{"themes" => ThemePackPlanEditorLive, "gifts" => GiftPlanEditorLive, "strategies" => BattleStrategyEditorLive}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -17,22 +17,38 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      socket
      |> assign(:teams, Teams.list_teams())
      |> assign(:gift_strategies, Strategies.list(:gift_strategies))
-     |> assign(:battle_strategies, Strategies.list(:battle_strategies))
      |> assign(:theme_pack_plans, Strategies.list(:theme_pack_plans))
      |> assign(:team_hooks, Teams.team_hooks())
      |> assign(:theme_packs, ThemePacks.list_theme_packs())
-     |> assign(:gift_affinities, @gift_affinities)
      |> assign(:form, blank_form())
      |> assign(:editing_id, nil)
      |> assign(:hooks, [])
-     |> assign(:active, false)
+     |> assign(:expanded?, false)
+     |> assign(:budget_open?, false)
      |> assign(:selected_ids, blank_selected_ids())
-     |> assign(:strategy_forms, blank_strategy_forms())
      |> assign(:budget_inputs, blank_budget_inputs())
      |> assign(:phase, nav.phase)
      |> assign(:log, nav.log)
      |> assign(:pending_action, nil)
-     |> assign(:countdown, nil)}
+     |> assign(:countdown, nil)
+     |> assign(:tab, "teams")
+     |> assign(:pane, "strategies")}
+  end
+
+  @impl true
+  def handle_params(params, _uri, socket) do
+    team_id = parse_id(params["team"])
+
+    socket =
+      socket
+      |> assign(:tab, if(params["tab"] == "profiles", do: "profiles", else: "teams"))
+      |> assign(:pane, if(Map.has_key?(@panes, params["pane"]), do: params["pane"], else: socket.assigns.pane))
+
+    cond do
+      team_id && team_id != socket.assigns.editing_id -> {:noreply, socket |> load_team(team_id) |> assign(:expanded?, true)}
+      is_nil(team_id) -> {:noreply, reset_editor(socket)}
+      true -> {:noreply, socket}
+    end
   end
 
   @impl true
@@ -42,7 +58,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         {:noreply,
          socket
          |> assign(:teams, Teams.list_teams())
-         |> load_team(id)
+         |> push_patch(to: ~p"/teams?team=#{id}&pane=#{socket.assigns.pane}")
          |> put_flash(:info, "Team created.")}
 
       {:error, reason} ->
@@ -57,7 +73,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         {:noreply,
          socket
          |> assign(:teams, Teams.list_teams())
-         |> load_team(new_id)
+         |> push_patch(to: ~p"/teams?team=#{new_id}&pane=#{socket.assigns.pane}")
          |> put_flash(:info, "Team duplicated.")}
 
       {:error, reason} ->
@@ -66,8 +82,16 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
-  def handle_event("edit_team", %{"id" => id}, socket) do
-    {:noreply, load_team(socket, String.to_integer(id))}
+  def handle_event("click_team", %{"id" => id}, socket) do
+    case String.to_integer(id) do
+      id when id == socket.assigns.editing_id -> {:noreply, update(socket, :expanded?, &(not &1))}
+      id -> {:noreply, push_patch(socket, to: ~p"/teams?team=#{id}&pane=#{socket.assigns.pane}")}
+    end
+  end
+
+  @impl true
+  def handle_event("toggle_budget", _, socket) do
+    {:noreply, update(socket, :budget_open?, &(not &1))}
   end
 
   @impl true
@@ -117,7 +141,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
     case Teams.delete_team(id) do
       {:ok, _} ->
-        socket = if socket.assigns.editing_id == id, do: reset_editor(socket), else: socket
+        socket = if socket.assigns.editing_id == id, do: push_patch(socket, to: ~p"/teams"), else: socket
 
         {:noreply,
          socket
@@ -127,16 +151,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Delete failed: #{inspect(reason)}")}
     end
-  end
-
-  @impl true
-  def handle_event("select_strategy", %{"kind" => kind, "id" => id}, socket) do
-    socket =
-      socket
-      |> update(:selected_ids, &Map.put(&1, kind, parse_id(id)))
-      |> persist_team()
-
-    {:noreply, socket}
   end
 
   @impl true
@@ -152,41 +166,8 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
-  def handle_event("toggle_new_strategy", %{"kind" => kind}, socket) do
-    {:noreply, update(socket, :strategy_forms, &Map.update!(&1, kind, fn open -> not open end))}
-  end
-
-  @impl true
-  def handle_event("save_strategy", %{"kind" => kind, "name" => name} = params, socket) do
-    name = String.trim(name)
-
-    if name == "" do
-      {:noreply, put_flash(socket, :error, "Strategy name is required.")}
-    else
-      table = kind_table(kind)
-      data = strategy_data(kind, params)
-
-      case Strategies.save(table, %{name: name, data: data}) do
-        {:ok, id} ->
-          {:noreply,
-           socket
-           |> assign(table, Strategies.list(table))
-           |> update(:selected_ids, &Map.put(&1, kind, id))
-           |> update(:strategy_forms, &Map.put(&1, kind, false))
-           |> persist_team()
-           |> put_flash(:info, "'#{name}' saved.")}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, "Save failed: #{inspect(reason)}")}
-      end
-    end
-  end
-
-  @impl true
-  def handle_event("select_team_on_screen", %{"id" => id}, socket) do
-    id = String.to_integer(id)
-    team = Enum.find(socket.assigns.teams, &(&1.id == id))
-    {:noreply, start_countdown(socket, {:select_team_on_screen, id, team && team.name})}
+  def handle_event("select_team_on_screen", %{"hook" => hook}, socket) do
+    {:noreply, start_countdown(socket, {:select_team_on_screen, socket.assigns.editing_id, hook, socket.assigns.form[:name].value})}
   end
 
   @impl true
@@ -212,6 +193,20 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
+  def handle_info(:team_plans_changed, socket) do
+    socket =
+      socket
+      |> assign(:teams, Teams.list_teams())
+      |> assign(:gift_strategies, Strategies.list(:gift_strategies))
+      |> assign(:theme_pack_plans, Strategies.list(:theme_pack_plans))
+
+    case socket.assigns.editing_id && Teams.get_team(socket.assigns.editing_id) do
+      nil -> {:noreply, socket}
+      team -> {:noreply, assign(socket, :selected_ids, selected_ids(team))}
+    end
+  end
+
+  @impl true
   def handle_info({:nav_state, nav}, socket) do
     {:noreply, socket |> assign(:phase, nav.phase) |> assign(:log, nav.log)}
   end
@@ -226,9 +221,9 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     |> assign(:countdown, @countdown_secs)
   end
 
-  defp run_pending_action({:select_team_on_screen, id, _name}), do: Navigator.select_team_on_screen(id)
+  defp run_pending_action({:select_team_on_screen, id, hook, _name}), do: Navigator.select_team_on_screen(id, hook)
 
-  def pending_action_label({:select_team_on_screen, _id, name}), do: "select on screen: #{name || "team"}"
+  def pending_action_label({:select_team_on_screen, _id, hook, name}), do: "select on screen: #{name || "team"} (#{Teams.hook_label(hook)})"
 
   def log_kind_class(:ok), do: "text-success"
   def log_kind_class(:error), do: "text-error"
@@ -269,25 +264,29 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         |> assign(:form, build_form(%{"name" => team.name}))
         |> assign(:editing_id, team.id)
         |> assign(:hooks, team.hooks)
-        |> assign(:active, true)
-        |> assign(:selected_ids, %{
-          "gift_strategy" => team.gift_strategy_id,
-          "battle_strategy" => team.battle_strategy_id,
-          "theme_pack_plan" => team.theme_pack_plan_id
-        })
-        |> assign(:strategy_forms, blank_strategy_forms())
+        |> assign(:budget_open?, false)
+        |> assign(:selected_ids, selected_ids(team))
         |> assign(:budget_inputs, blank_budget_inputs())
     end
   end
+
+  defp selected_ids(team) do
+    %{
+      "gift_strategy" => team.gift_strategy_id,
+      "battle_strategy" => team.battle_strategy_id,
+      "theme_pack_plan" => team.theme_pack_plan_id
+    }
+  end
+
+  def pane_view(pane), do: Map.fetch!(@panes, pane)
 
   defp reset_editor(socket) do
     socket
     |> assign(:form, blank_form())
     |> assign(:editing_id, nil)
     |> assign(:hooks, [])
-    |> assign(:active, false)
+    |> assign(:expanded?, false)
     |> assign(:selected_ids, blank_selected_ids())
-    |> assign(:strategy_forms, blank_strategy_forms())
   end
 
   defp blank_selected_ids do
@@ -345,10 +344,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   def floor_breakdown(floors), do: Enum.map_join(floors, ", ", &"F#{&1.floor} #{&1.mode} #{&1.starlight}")
 
-  defp blank_strategy_forms do
-    %{"gift_strategy" => false, "theme_pack_plan" => false}
-  end
-
   defp blank_form, do: build_form(%{})
 
   defp build_form(params) do
@@ -361,12 +356,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
     to_form(changeset, as: :team)
   end
-
-  defp kind_table("gift_strategy"), do: :gift_strategies
-  defp kind_table("theme_pack_plan"), do: :theme_pack_plans
-
-  defp strategy_data("gift_strategy", params), do: GiftPlans.blank(params["affinity"])
-  defp strategy_data("theme_pack_plan", _params), do: %{version: 1, mode_schedule: [], packs: %{}}
 
   defp parse_id(nil), do: nil
   defp parse_id(""), do: nil

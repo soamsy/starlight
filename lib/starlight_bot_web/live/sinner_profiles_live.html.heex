@@ -1,0 +1,66 @@
+<div class="flex flex-col h-full gap-2 overflow-hidden">
+  <StarlightBotWeb.Layouts.flash_toasts flash={@flash} />
+  <datalist id="locator-hook-names">
+    <%= for name <- @locator_names do %>
+      <option value={name}></option>
+    <% end %>
+  </datalist>
+  <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
+    <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-2">
+      <div class="flex items-center gap-3">
+        <h2 class="card-title text-lg">Sinner Profiles</h2>
+        <span class="badge badge-neutral badge-sm"><%= length(@profiles) %></span>
+        <span class="text-xs text-base-content/50">A profile's locator hook finds the sinner in the battle skill tray.</span>
+        <button phx-click="new_profile" class="btn btn-primary btn-sm ml-auto">+ New</button>
+      </div>
+
+      <div class="overflow-y-auto flex-1 min-h-0">
+        <table class="table table-xs table-pin-rows">
+          <thead>
+            <tr><th>Name</th><th>Sinner</th><th>Locator hook</th><th></th><th>Used by</th><th></th></tr>
+          </thead>
+          <tbody>
+            <%= for profile <- @profiles do %>
+              <tr>
+                <td colspan="3">
+                  <form phx-change="save_profile" class="flex items-center gap-2">
+                    <input type="hidden" name="profile_id" value={profile.id} />
+                    <input type="text" name="name" value={profile.name} phx-debounce="blur"
+                           class="input input-bordered input-xs w-48" />
+                    <select name="sinner" class="select select-bordered select-xs w-32">
+                      <option value="" selected={is_nil(profile.sinner)}>(sinner)</option>
+                      <%= for sinner <- StarlightBot.SinnerProfiles.sinners() do %>
+                        <option value={sinner} selected={profile.sinner == sinner}><%= sinner %></option>
+                      <% end %>
+                    </select>
+                    <input type="text" name="locator_hook" value={profile.locator_hook} list="locator-hook-names" phx-debounce="blur"
+                           placeholder="hook name"
+                           class={"input input-bordered input-xs w-64 font-mono " <> if(profile.locator_hook && profile.locator_hook not in @locator_names, do: "input-error", else: "")} />
+                  </form>
+                </td>
+                <td>
+                  <%= if @profile_thumbs[profile.id] do %>
+                    <img src={"data:image/png;base64,#{@profile_thumbs[profile.id]}"} class="h-8 rounded" />
+                  <% end %>
+                </td>
+                <td class="text-center"><%= Map.get(@profile_usage, profile.id, 0) %></td>
+                <td class="text-right whitespace-nowrap">
+                  <button phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost">Test</button>
+                  <button phx-click="delete_profile" phx-value-id={profile.id}
+                          data-confirm={"Delete '#{profile.name}'?"}
+                          class="btn btn-xs btn-ghost text-error">Del</button>
+                </td>
+              </tr>
+              <%= if @profile_tests[profile.id] do %>
+                <tr><td colspan="6" class="text-xs text-base-content/60 pl-4"><%= @profile_tests[profile.id] %></td></tr>
+              <% end %>
+            <% end %>
+            <%= if @profiles == [] do %>
+              <tr><td colspan="6" class="text-center text-base-content/40 py-4">No sinner profiles yet.</td></tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>

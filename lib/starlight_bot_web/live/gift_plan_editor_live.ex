@@ -1,6 +1,7 @@
 defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   use StarlightBotWeb, :live_view
   import StarlightBotWeb.Components.ConditionTree
+  import StarlightBotWeb.Components.PlanPicker
 
   alias StarlightBot.{Conditions, EgoGifts, GiftPlans, Strategies, Teams}
   alias StarlightBot.GiftPlans.{Routes, RouteDefaults, Combos}
@@ -81,47 +82,40 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   ]
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
     gifts = EgoGifts.list_gifts()
+    team = session["team_id"] && Teams.get_team(session["team_id"])
 
-    {:ok,
-     socket
-     |> assign(:plans, Strategies.list(:gift_strategies))
-     |> assign(:gifts, gifts)
-     |> assign(:gifts_by_name, Map.new(gifts, &{&1.name, &1}))
-     |> assign(:gifts_by_id, Map.new(gifts, &{&1.id, &1}))
-     |> assign(:sinners, Teams.all_sinners())
-     |> assign(:route_clipboard, nil)
-     |> assign(:route_defaults, RouteDefaults.all())
-     |> assign(:import_source, nil)
-     |> assign(:gift_clipboard, nil)
-     |> reset_editor()}
+    socket =
+      socket
+      |> assign(:team_id, team && team.id)
+      |> assign(:plans, Strategies.list(:gift_strategies))
+      |> assign(:gifts, gifts)
+      |> assign(:gifts_by_name, Map.new(gifts, &{&1.name, &1}))
+      |> assign(:gifts_by_id, Map.new(gifts, &{&1.id, &1}))
+      |> assign(:sinners, Teams.all_sinners())
+      |> assign(:route_clipboard, nil)
+      |> assign(:route_defaults, RouteDefaults.all())
+      |> assign(:import_source, nil)
+      |> assign(:gift_clipboard, nil)
+      |> reset_editor()
+
+    {:ok, if(team && team.gift_strategy_id, do: load_plan(socket, team.gift_strategy_id), else: socket)}
   end
-
-  @impl true
-  def handle_params(%{"id" => id}, _uri, socket) do
-    case Integer.parse(id) do
-      {int_id, _} -> {:noreply, load_plan(socket, int_id)}
-      :error -> {:noreply, socket}
-    end
-  end
-
-  @impl true
-  def handle_params(_params, _uri, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("new_plan", _, socket) do
     attrs = %{name: new_plan_name(socket.assigns.plans), data: GiftPlans.blank()}
 
     case Strategies.save(:gift_strategies, attrs) do
-      {:ok, id} -> {:noreply, socket |> refresh_plans() |> load_plan(id)}
+      {:ok, id} -> {:noreply, socket |> refresh_plans() |> load_plan(id) |> link_team(:gift_strategy_id)}
       {:error, reason} -> {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
     end
   end
 
   @impl true
   def handle_event("select_plan", %{"id" => id}, socket) do
-    {:noreply, load_plan(socket, String.to_integer(id))}
+    {:noreply, socket |> load_plan(String.to_integer(id)) |> link_team(:gift_strategy_id)}
   end
 
   @impl true
@@ -132,7 +126,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
       plan ->
         case Strategies.save(:gift_strategies, %{name: "#{plan.name} (copy)", data: plan.data}) do
-          {:ok, new_id} -> {:noreply, socket |> refresh_plans() |> load_plan(new_id)}
+          {:ok, new_id} -> {:noreply, socket |> refresh_plans() |> load_plan(new_id) |> link_team(:gift_strategy_id)}
           {:error, reason} -> {:noreply, put_flash(socket, :error, "Duplicate failed: #{inspect(reason)}")}
         end
     end
@@ -145,7 +139,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     case Strategies.delete(:gift_strategies, id) do
       {:ok, _} ->
         socket = if socket.assigns.editing_id == id, do: reset_editor(socket), else: socket
-        {:noreply, socket |> refresh_plans() |> put_flash(:info, "Plan deleted.")}
+        {:noreply, socket |> refresh_plans() |> link_team(:gift_strategy_id) |> put_flash(:info, "Plan deleted.")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Delete failed: #{inspect(reason)}")}
@@ -154,7 +148,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("rename_plan", %{"value" => name}, socket) do
-    {:noreply, socket |> assign(:name, String.trim(name)) |> persist_plan()}
+    {:noreply, socket |> assign(:name, String.trim(name)) |> persist_plan() |> link_team(:gift_strategy_id)}
   end
 
   @impl true

@@ -4,65 +4,12 @@
       <option value={name}></option>
     <% end %>
   </datalist>
-  <datalist id="locator-hook-names">
-    <%= for name <- @locator_names do %>
-      <option value={name}></option>
-    <% end %>
-  </datalist>
-  <div role="tablist" class="tabs tabs-boxed tabs-sm self-start">
-    <button role="tab" phx-click="set_tab" phx-value-tab="strategies"
-            class={"tab " <> if(@tab == "strategies", do: "tab-active", else: "")}>Strategies</button>
-    <button role="tab" phx-click="set_tab" phx-value-tab="profiles"
-            class={"tab " <> if(@tab == "profiles", do: "tab-active", else: "")}>Sinner Profiles</button>
-  </div>
-
-  <%= if @tab == "strategies" do %>
-  <div class="grid grid-cols-[24fr_76fr] grid-rows-1 gap-2 flex-1 min-h-0">
-
-    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
-      <div class="card-body p-3 flex flex-col flex-1 min-h-0">
-        <div class="flex items-center gap-3 mb-2">
-          <h2 class="card-title text-lg">Strategies</h2>
-          <span class="badge badge-neutral badge-sm"><%= length(@strategies) %></span>
-          <button phx-click="new_strategy" class="btn btn-primary btn-sm ml-auto">+ New</button>
-        </div>
-
-        <div class="overflow-y-auto flex-1 min-h-0">
-          <table class="table table-xs table-pin-rows">
-            <tbody>
-              <%= for strategy <- @strategies do %>
-                <tr phx-click="select_strategy" phx-value-id={strategy.id}
-                    class={"cursor-pointer hover:bg-base-200 " <> if(@editing_id == strategy.id, do: "bg-primary/10 border-l-2 border-primary", else: "")}>
-                  <td class="font-mono text-xs">
-                    <%= strategy.name %>
-                    <% issues = strategy_issues(strategy) %>
-                    <span :if={issues != []} class="tooltip tooltip-right" data-tip={Enum.join(issues, " ")}>
-                      <span class="badge badge-warning badge-xs">no lineup</span>
-                    </span>
-                  </td>
-                  <td class="text-right">
-                    <button phx-click="duplicate_strategy" phx-value-id={strategy.id} class="btn btn-xs btn-ghost">Dup</button>
-                    <button phx-click="delete_strategy" phx-value-id={strategy.id}
-                            data-confirm={"Delete '#{strategy.name}'?"}
-                            class="btn btn-xs btn-ghost text-error">Del</button>
-                  </td>
-                </tr>
-              <% end %>
-              <%= if @strategies == [] do %>
-                <tr><td colspan="2" class="text-center text-base-content/40 py-4">No strategies yet. Create one.</td></tr>
-              <% end %>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
+  <StarlightBotWeb.Layouts.flash_toasts flash={@flash} />
+    <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
       <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
         <%= if @data do %>
           <div class="flex items-center gap-3">
-            <input type="text" value={@name} phx-blur="rename_strategy"
-                   class="input input-bordered input-sm w-64 font-semibold" placeholder="Strategy name" />
+            <.plan_picker id="battle-strategy-picker" items={@strategies} current_id={@editing_id} name={@name} noun="strategy" label="battle strategy" />
             <form phx-change="set_max_retries" class="flex items-center gap-1 text-xs"
                   title="How many times a lost battle is retried before the run gives up.">
               <span class="text-base-content/60">Retries per battle</span>
@@ -342,71 +289,11 @@
             </div>
           </div>
         <% else %>
+          <.plan_picker id="battle-strategy-picker" items={@strategies} current_id={@editing_id} name={@name} noun="strategy" label="battle strategy" />
           <div class="flex-1 flex items-center justify-center text-base-content/40 text-sm">
-            Select or create a strategy to edit.
+            Pick or create a battle strategy for this team.
           </div>
         <% end %>
       </div>
     </div>
-  </div>
-  <% else %>
-  <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
-    <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-2">
-      <div class="flex items-center gap-3">
-        <h2 class="card-title text-lg">Sinner Profiles</h2>
-        <span class="badge badge-neutral badge-sm"><%= length(@profiles) %></span>
-        <span class="text-xs text-base-content/50">A profile's locator hook finds the sinner in the battle skill tray.</span>
-        <button phx-click="new_profile" class="btn btn-primary btn-sm ml-auto">+ New</button>
-      </div>
-
-      <div class="overflow-y-auto flex-1 min-h-0">
-        <table class="table table-xs table-pin-rows">
-          <thead>
-            <tr><th>Name</th><th>Sinner</th><th>Locator hook</th><th></th><th>Used by</th><th></th></tr>
-          </thead>
-          <tbody>
-            <%= for profile <- @profiles do %>
-              <tr>
-                <td colspan="3">
-                  <form phx-change="save_profile" class="flex items-center gap-2">
-                    <input type="hidden" name="profile_id" value={profile.id} />
-                    <input type="text" name="name" value={profile.name} phx-debounce="blur"
-                           class="input input-bordered input-xs w-48" />
-                    <select name="sinner" class="select select-bordered select-xs w-32">
-                      <option value="" selected={is_nil(profile.sinner)}>(sinner)</option>
-                      <%= for sinner <- StarlightBot.SinnerProfiles.sinners() do %>
-                        <option value={sinner} selected={profile.sinner == sinner}><%= sinner %></option>
-                      <% end %>
-                    </select>
-                    <input type="text" name="locator_hook" value={profile.locator_hook} list="locator-hook-names" phx-debounce="blur"
-                           placeholder="hook name"
-                           class={"input input-bordered input-xs w-64 font-mono " <> if(profile.locator_hook && profile.locator_hook not in @locator_names, do: "input-error", else: "")} />
-                  </form>
-                </td>
-                <td>
-                  <%= if @profile_thumbs[profile.id] do %>
-                    <img src={"data:image/png;base64,#{@profile_thumbs[profile.id]}"} class="h-8 rounded" />
-                  <% end %>
-                </td>
-                <td class="text-center"><%= Map.get(@profile_usage, profile.id, 0) %></td>
-                <td class="text-right whitespace-nowrap">
-                  <button phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost">Test</button>
-                  <button phx-click="delete_profile" phx-value-id={profile.id}
-                          data-confirm={"Delete '#{profile.name}'?"}
-                          class="btn btn-xs btn-ghost text-error">Del</button>
-                </td>
-              </tr>
-              <%= if @profile_tests[profile.id] do %>
-                <tr><td colspan="6" class="text-xs text-base-content/60 pl-4"><%= @profile_tests[profile.id] %></td></tr>
-              <% end %>
-            <% end %>
-            <%= if @profiles == [] do %>
-              <tr><td colspan="6" class="text-center text-base-content/40 py-4">No sinner profiles yet.</td></tr>
-            <% end %>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-  <% end %>
 </div>

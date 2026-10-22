@@ -117,6 +117,12 @@ defmodule StarlightBot.Teams do
     end
   end
 
+  def set_plan(team_id, field, plan_id) when is_integer(team_id) and field in [:gift_strategy_id, :battle_strategy_id, :theme_pack_plan_id] do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    {n, _} = Repo.update_all(from(t in "teams", where: t.id == ^team_id), set: [{field, plan_id}, updated_at: now])
+    if n > 0, do: {:ok, team_id}, else: {:error, :not_found}
+  end
+
   @doc "Delete a team by id."
   def delete_team(id) when is_integer(id) do
     {n, _} = Repo.delete_all(from t in "teams", where: t.id == ^id)

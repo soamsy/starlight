@@ -62,8 +62,8 @@ defmodule StarlightBot.Navigation.Navigator do
   def queue_after_run({:run_mirror_dungeon, _picks, _run_count, _config} = next),
     do: GenServer.cast(__MODULE__, {:queue_after_run, next})
 
-  def select_team_on_screen(team_id),
-    do: GenServer.cast(__MODULE__, {:select_team_on_screen, team_id})
+  def select_team_on_screen(team_id, hook),
+    do: GenServer.cast(__MODULE__, {:select_team_on_screen, team_id, hook})
 
   def run_shop_dry_run(team, floor), do: GenServer.cast(__MODULE__, {:run_shop_dry_run, team, floor})
 
@@ -339,15 +339,18 @@ defmodule StarlightBot.Navigation.Navigator do
   def handle_cast(:resume_mirror_dungeon, state), do: {:noreply, state}
 
   @impl true
-  def handle_cast({:select_team_on_screen, team_id}, state) do
+  def handle_cast({:select_team_on_screen, team_id, hook}, state) do
     state = cancel_running(state)
-    state = add_log(state, :info, "Selecting team #{team_id} on screen")
+    state = add_log(state, :info, "Selecting team #{team_id} on screen with #{hook}")
     me = self()
 
     pid =
       Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-        ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end)
+        {:ok, run_memory} = RunMemory.start_link()
+        ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end, run_memory: run_memory)
+        RunMemory.put_team(ctx, %{id: team_id, hook: hook})
         result = StarlightBot.Automation.Scripts.SelectTeamOnScreen.run(team_id, "md_battle", 1, ctx)
+        RunMemory.stop(ctx)
         send(me, {:nav_result, :select_team_on_screen, result})
       end).pid
 
