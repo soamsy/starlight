@@ -329,6 +329,9 @@ defmodule StarlightBot.GiftPlansTest do
       refute reached?(plan, "ms_late", env(["Top", "A", "K1"], 2, 0))
       refute reached?(plan, "ms_gone", env(["Top", "A", "K1"]))
       assert GiftPlans.condition_label(%{"op" => "milestone", "milestone" => "ms_shop"}, plan) == "milestone Shop Done reached"
+      assert GiftPlans.eval_condition(%{"op" => "milestone_not", "milestone" => "ms_shop"}, %{env(["Top", "A"]) | plan: plan})
+      refute GiftPlans.eval_condition(%{"op" => "milestone_not", "milestone" => "ms_shop"}, %{env(["Top", "A", "K1"]) | plan: plan})
+      assert GiftPlans.condition_label(%{"op" => "milestone_not", "milestone" => "ms_shop"}, plan) == "milestone Shop Done not reached"
       assert Enum.map(GiftPlans.milestone_entries(plan, "ms_shop"), & &1.ref["id"]) == ["fu_1", "up_1", "fu_3", "kp_1"]
     end
 
@@ -878,6 +881,18 @@ defmodule StarlightBot.GiftPlansTest do
       data = GiftPlans.import_workflows(base, source_plan(), ["wf_check"], "SinkPoise")
 
       assert Enum.map(data["workflows"], & &1["name"]) == ["ShopCheck", "ShopCheck (SinkPoise)"]
+    end
+  end
+
+  describe "mounting trials schedule" do
+    test "plans default to avoiding enemy HP from F1, and the latest row at or below the floor wins" do
+      assert GiftPlans.blank()["mounting_trials"] == [%{"from_floor" => 1, "mode" => "avoid_hp"}]
+      assert GiftPlans.normalize(Map.delete(GiftPlans.blank(), "mounting_trials"))["mounting_trials"] == [%{"from_floor" => 1, "mode" => "avoid_hp"}]
+
+      data = %{"mounting_trials" => [%{"from_floor" => 1, "mode" => "avoid_hp"}, %{"from_floor" => 5, "mode" => "best_gift"}]}
+      assert GiftPlans.mounting_trials_mode(data, 4) == "avoid_hp"
+      assert GiftPlans.mounting_trials_mode(data, 5) == "best_gift"
+      assert GiftPlans.mounting_trials_mode(%{"mounting_trials" => []}, 3) == "best_gift"
     end
   end
 end

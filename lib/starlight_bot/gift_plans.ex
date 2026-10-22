@@ -20,6 +20,7 @@ defmodule StarlightBot.GiftPlans do
   @gift_search_starlight_costs [70, 160, 270]
   @shop_tiers 1..4
   @gift_search_max_tier 3
+  @mounting_trials_modes ~w(avoid_hp best_gift)
   @starting_gifts %{
     "bleed" => ["Wound Clerid", "Little and To-Be-Naughty Plushie", "Awe"],
     "blunt" => ["Today's Expression", "Pocket Flashcards", "Temporal Bridle"],
@@ -61,6 +62,19 @@ defmodule StarlightBot.GiftPlans do
   def gift_search_starlight_cost(count), do: Enum.at(@gift_search_starlight_costs, min(count, @gift_search_max) - 1)
   def gift_search_slot_cost(slot), do: gift_search_starlight_cost(slot + 1) - gift_search_starlight_cost(slot)
   def shop_tiers, do: @shop_tiers
+  def mounting_trials_modes, do: @mounting_trials_modes
+
+  def mounting_trials_mode_label("avoid_hp"), do: "Avoid boosting enemy HP"
+  def mounting_trials_mode_label("best_gift"), do: "Best gift"
+
+  def default_mounting_trials, do: [%{"from_floor" => 1, "mode" => "avoid_hp"}]
+
+  def mounting_trials_mode(data, floor) when is_integer(floor) do
+    (data["mounting_trials"] || [])
+    |> Enum.filter(&(&1["from_floor"] <= floor))
+    |> Enum.max_by(& &1["from_floor"], fn -> %{"mode" => "best_gift"} end)
+    |> Map.fetch!("mode")
+  end
 
   def blank(affinity \\ nil) do
     keep = new_definition("lists", "Keep")
@@ -75,6 +89,7 @@ defmodule StarlightBot.GiftPlans do
       "library" => %{"lists" => [keep], "upties" => [], "fusions" => []},
       "workflows" => [workflow],
       "floor_schedule" => [%{"from_floor" => 1, "workflow" => workflow["id"]}],
+      "mounting_trials" => default_mounting_trials(),
       "milestones" => [new_milestone("Shop Done")]
     }
   end
@@ -91,6 +106,7 @@ defmodule StarlightBot.GiftPlans do
       "library" => Map.new(@library_keys, &{&1, library[&1] || []}),
       "workflows" => data["workflows"] || [],
       "floor_schedule" => data["floor_schedule"] || [],
+      "mounting_trials" => data["mounting_trials"] || default_mounting_trials(),
       "milestones" => data["milestones"] || [new_milestone("Shop Done")]
     }
   end
@@ -373,7 +389,7 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def called_milestones(milestone) do
-    conditions = for %{"op" => "milestone", "milestone" => id} <- Conditions.leaves(milestone["condition"]), is_binary(id), do: id
+    conditions = for %{"op" => op, "milestone" => id} <- Conditions.leaves(milestone["condition"]), op in ["milestone", "milestone_not"], is_binary(id), do: id
     included = for %{"lib" => "milestones", "id" => id} <- milestone_refs(milestone), do: id
     Enum.uniq(conditions ++ included)
   end
@@ -962,6 +978,7 @@ defmodule StarlightBot.GiftPlans do
   defp eval_leaf(%{"op" => "fusion_done"} = leaf, %{plan: plan, owned: owned}), do: fusion_done?(find_definition(plan, "fusions", leaf["fusion"]), owned)
   defp eval_leaf(%{"op" => "uptie_done"} = leaf, %{plan: plan, inventory: inventory}), do: uptie_done?(find_definition(plan, "upties", leaf["uptie"]), inventory)
   defp eval_leaf(%{"op" => "milestone"} = leaf, %{plan: plan} = env), do: milestone_reached?(plan, leaf["milestone"], env)
+  defp eval_leaf(%{"op" => "milestone_not"} = leaf, %{plan: plan} = env), do: not milestone_reached?(plan, leaf["milestone"], env)
 
   def fusions_complete?(data, owned) do
     fusions = data["library"]["fusions"]
@@ -1002,6 +1019,7 @@ defmodule StarlightBot.GiftPlans do
   defp leaf_label(%{"op" => "fusion_done"} = leaf, data), do: "fusion #{definition_name(data, "fusions", leaf["fusion"])} done"
   defp leaf_label(%{"op" => "uptie_done"} = leaf, data), do: "uptie #{definition_name(data, "upties", leaf["uptie"])} done"
   defp leaf_label(%{"op" => "milestone"} = leaf, data), do: "milestone #{milestone_name(data, leaf["milestone"])} reached"
+  defp leaf_label(%{"op" => "milestone_not"} = leaf, data), do: "milestone #{milestone_name(data, leaf["milestone"])} not reached"
 
   defp milestone_name(_data, nil), do: "(none picked)"
   defp milestone_name(nil, id), do: id

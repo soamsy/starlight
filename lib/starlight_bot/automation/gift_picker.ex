@@ -15,8 +15,10 @@ defmodule StarlightBot.Automation.GiftPicker do
     {frame, detections} = scan(scan_hook, ctx)
     named = detections |> anchored(frame, opts[:anchor_hook]) |> slots()
     badge_slots = badge_slots(named, tier_badges(frame, tier_hooks))
-    {selected, available} = split_selected(named ++ badge_slots, frame, opts[:selected_hook])
+    slots = assign_hp(named ++ badge_slots, hp_badges(frame, opts[:hp_hooks]))
+    {selected, available} = split_selected(slots, frame, opts[:selected_hook])
     ranked = rank(available, wanted_names(gifts_by_id, ctx), RunMemory.ego_gifts(ctx), gifts_by_id)
+    ranked = if opts[:hp_hooks], do: avoid_hp(ranked), else: ranked
     chosen = Enum.take(ranked, count)
 
     Ctx.log(
@@ -24,13 +26,33 @@ defmodule StarlightBot.Automation.GiftPicker do
       :info,
       "gift picker: #{length(named)} gift(s) found in #{scan_hook}, #{length(badge_slots)} more from tier badges, " <>
         "#{length(selected)} already selected, picking " <>
-        if(chosen == [], do: "none", else: Enum.map_join(chosen, ", ", & &1.gift_name))
+        if(chosen == [], do: "none", else: Enum.map_join(chosen, ", ", &pick_label(&1, opts[:hp_hooks])))
     )
 
     with {:ok, clicked} <- click_slots(chosen, count, pick_delay_ms, ctx) do
       fallback(count - length(clicked), clicked ++ Enum.map(selected, & &1.rect), tier_hooks, fallback_hook, pick_delay_ms, ctx)
     end
   end
+
+  defp pick_label(slot, nil), do: slot.gift_name
+  defp pick_label(slot, _hp_hooks), do: "#{slot.gift_name} (+#{slot.hp}% enemy HP)"
+
+  def assign_hp(slots, hp_badges) do
+    Enum.reduce(hp_badges, Enum.map(slots, &Map.put(&1, :hp, 0)), fn {hp, rect}, slots ->
+      {bx, _} = center(rect)
+      nearest = Enum.min_by(slots, fn %{center: {cx, _}} -> abs(cx - bx) end, fn -> nil end)
+
+      if nearest && abs(elem(nearest.center, 0) - bx) <= @slot_w / 2,
+        do: Enum.map(slots, &if(&1 == nearest, do: %{&1 | hp: max(&1.hp, hp)}, else: &1)),
+        else: slots
+    end)
+  end
+
+  def avoid_hp(ranked), do: Enum.sort_by(ranked, & &1.hp)
+
+  defp hp_badges(nil, _hp_hooks), do: []
+  defp hp_badges(_frame, nil), do: []
+  defp hp_badges(frame, hp_hooks), do: for({hook, hp} <- hp_hooks, rect <- Matcher.find_all(frame, hook), do: {hp, rect})
 
   defp anchored(detections, nil, _anchor_hook), do: detections
   defp anchored(detections, _frame, nil), do: detections

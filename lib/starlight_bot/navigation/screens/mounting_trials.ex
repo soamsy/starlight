@@ -1,8 +1,8 @@
 defmodule StarlightBot.Navigation.Screens.MountingTrials do
   use StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.Engine
-  alias StarlightBot.Automation.{GiftPicker, RewardHelpers}
-  alias StarlightBot.Ctx
+  alias StarlightBot.Automation.{GiftPicker, RewardHelpers, RunMemory}
+  alias StarlightBot.{Ctx, GiftPlans}
   alias StarlightBot.Vision.HookRegistry
 
   @pick_delay_ms 300
@@ -18,6 +18,7 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
   @selection_hooks Keyword.keys(@selection_states)
   @max_select_attempts 4
   @selected_hook :mounting_trials_selected_orange
+  @hp_hooks [mounting_trials_max_hp_text: 2.5, mounting_trials_hp_plus_2_5: 2.5, mounting_trials_hp_plus_5: 5, mounting_trials_hp_plus_7_5: 7.5]
 
   screen :mounting_trials, identity: :mounting_trials do
     transition to: :mounting_trials_over, do: [custom(&select_and_confirm_gifts/2)]
@@ -38,9 +39,11 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
           with {:ok, _} <- Engine.act([click(confirm_hook(total))], ctx), do: RewardHelpers.dismiss_ego_gift_get(ctx, leaving: :mounting_trials)
 
         {selected, total} ->
-          Ctx.log(ctx, :info, "mounting trials: #{selected}/#{total} selected, picking #{total - selected}")
+          mode = mode(ctx)
+          Ctx.log(ctx, :info, "mounting trials: #{selected}/#{total} selected, picking #{total - selected} (#{GiftPlans.mounting_trials_mode_label(mode)})")
+          opts = [selected_hook: @selected_hook] ++ if(mode == "avoid_hp", do: [hp_hooks: @hp_hooks], else: [])
 
-          with {:ok, _} <- GiftPicker.pick(scan_hook(total), total - selected, @tier_hooks, :mounting_trials, ctx, @pick_delay_ms, selected_hook: @selected_hook) do
+          with {:ok, _} <- GiftPicker.pick(scan_hook(total), total - selected, @tier_hooks, :mounting_trials, ctx, @pick_delay_ms, opts) do
             Process.sleep(@settle_ms)
             select_and_confirm(ctx, attempts - 1)
           end
@@ -48,6 +51,13 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
         nil ->
           select_and_confirm(ctx, attempts - 1)
       end
+    end
+  end
+
+  defp mode(ctx) do
+    case RunMemory.gift_plan(ctx) do
+      %{} = data -> data |> GiftPlans.normalize() |> GiftPlans.mounting_trials_mode(RunMemory.floor(ctx))
+      _ -> "best_gift"
     end
   end
 

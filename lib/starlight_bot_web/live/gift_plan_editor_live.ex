@@ -8,7 +8,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   embed_templates "gift_plan_editor/*"
 
-  @tabs ~w(workflows shop grace gift_search)a
+  @tabs ~w(workflows shop grace gift_search mounting_trials)a
   @gift_tiers 1..6
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)
   @gift_sorts ~w(default name tier affinity)
@@ -386,6 +386,35 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("add_mounting_row", _, socket) do
+    rows = socket.assigns.plan_data["mounting_trials"]
+    next_floor = (rows |> Enum.map(& &1["from_floor"]) |> Enum.max(fn -> 0 end)) |> Kernel.+(1) |> min(15)
+    mode = if rows == [], do: "avoid_hp", else: List.last(rows)["mode"]
+
+    {:noreply, update_plan(socket, &Map.put(&1, "mounting_trials", sort_schedule(rows ++ [%{"from_floor" => next_floor, "mode" => mode}])))}
+  end
+
+  @impl true
+  def handle_event("update_mounting", %{"rows" => rows}, socket) do
+    modes = GiftPlans.mounting_trials_modes()
+
+    rows =
+      rows
+      |> Enum.sort_by(fn {index, _row} -> String.to_integer(index) end)
+      |> Enum.map(fn {_index, row} ->
+        %{"from_floor" => parse_int(row["from_floor"], 1) |> max(1) |> min(15), "mode" => if(row["mode"] in modes, do: row["mode"], else: "best_gift")}
+      end)
+      |> sort_schedule()
+
+    {:noreply, update_plan(socket, &Map.put(&1, "mounting_trials", rows))}
+  end
+
+  @impl true
+  def handle_event("remove_mounting_row", %{"index" => index}, socket) do
+    {:noreply, update_plan(socket, &Map.update!(&1, "mounting_trials", fn rows -> rows |> List.delete_at(String.to_integer(index)) |> sort_schedule() end))}
+  end
+
+  @impl true
   def handle_event("add_step", %{"kind" => "workflow", "ref" => child}, socket) do
     if GiftPlans.creates_cycle?(socket.assigns.plan_data, socket.assigns.selected_workflow_id, child) do
       {:noreply, put_flash(socket, :error, "That would make the workflow run itself.")}
@@ -552,7 +581,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         op when op in ["fusions_complete", "upties_complete"] -> %{"op" => op}
         "fusion_done" -> %{"op" => "fusion_done", "fusion" => blank_to_nil(params["fusion"])}
         "uptie_done" -> %{"op" => "uptie_done", "uptie" => blank_to_nil(params["uptie"])}
-        "milestone" -> %{"op" => "milestone", "milestone" => blank_to_nil(params["milestone"])}
+        op when op in ["milestone", "milestone_not"] -> %{"op" => op, "milestone" => blank_to_nil(params["milestone"])}
         op -> %{"op" => op, "gift" => String.trim(params["gift"] || "")}
       end
 
@@ -899,8 +928,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def tab_label(:shop), do: "Shop"
   def tab_label(:grace), do: "Grace"
   def tab_label(:gift_search), do: "Gift Search"
+  def tab_label(:mounting_trials), do: "Mounting Trials"
 
-  def accent_tab?(tab), do: tab in [:grace, :gift_search]
+  def accent_tab?(tab), do: tab in [:grace, :gift_search, :mounting_trials]
 
   def searchable_gifts(gifts), do: Enum.filter(gifts, &GiftPlans.gift_searchable?/1)
 
@@ -1425,6 +1455,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <option value="fusion_done" selected={@node["op"] == "fusion_done"}>fusion done</option>
       <option value="uptie_done" selected={@node["op"] == "uptie_done"}>uptie done</option>
       <option value="milestone" selected={@node["op"] == "milestone"}>milestone reached</option>
+      <option value="milestone_not" selected={@node["op"] == "milestone_not"}>milestone not reached</option>
     </select>
     <%= cond do %>
       <% @node["op"] in ["cost_gte", "cost_lt", "refreshes_lt", "refreshes_gte"] -> %>
@@ -1441,7 +1472,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           <option value="">pick one</option>
           <option :for={uptie <- @plan_data["library"]["upties"]} value={uptie["id"]} selected={@node["uptie"] == uptie["id"]}><%= uptie["name"] %></option>
         </select>
-      <% @node["op"] == "milestone" -> %>
+      <% @node["op"] in ["milestone", "milestone_not"] -> %>
         <select name="milestone" class="select select-bordered select-xs flex-1 min-w-0">
           <option value="">pick one</option>
           <option :for={milestone <- milestone_options(@plan_data, @milestone_host)} value={milestone["id"]} selected={@node["milestone"] == milestone["id"]}><%= milestone["name"] %></option>
