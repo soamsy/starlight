@@ -363,7 +363,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("add_schedule_row", _, socket) do
     data = socket.assigns.plan_data
-    next_floor = (data["floor_schedule"] |> Enum.map(& &1["from_floor"]) |> Enum.max(fn -> 0 end)) + 1
+    next_floor = (data["floor_schedule"] |> Enum.map(& &1["from_floor"]) |> Enum.max(fn -> 0 end)) |> Kernel.+(1) |> min(15)
     row = %{"from_floor" => next_floor, "workflow" => socket.assigns.selected_workflow_id}
 
     {:noreply, update_plan(socket, &Map.put(&1, "floor_schedule", sort_schedule(&1["floor_schedule"] ++ [row])))}
@@ -374,7 +374,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     schedule =
       rows
       |> Enum.sort_by(fn {index, _row} -> String.to_integer(index) end)
-      |> Enum.map(fn {_index, row} -> %{"from_floor" => max(parse_int(row["from_floor"], 1), 1), "workflow" => row["workflow"]} end)
+      |> Enum.map(fn {_index, row} -> %{"from_floor" => parse_int(row["from_floor"], 1) |> max(1) |> min(15), "workflow" => row["workflow"]} end)
       |> sort_schedule()
 
     {:noreply, update_plan(socket, &Map.put(&1, "floor_schedule", schedule))}
@@ -382,7 +382,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("remove_schedule_row", %{"index" => index}, socket) do
-    {:noreply, update_plan(socket, &Map.update!(&1, "floor_schedule", fn rows -> List.delete_at(rows, String.to_integer(index)) end))}
+    {:noreply, update_plan(socket, &Map.update!(&1, "floor_schedule", fn rows -> rows |> List.delete_at(String.to_integer(index)) |> sort_schedule() end))}
   end
 
   @impl true
@@ -976,6 +976,17 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> Enum.filter(& &1)
   end
 
+  def uncaptured_protected(data, workflow, gifts, gifts_by_name) do
+    kept = GiftPlans.keep_gifts(data, workflow)
+
+    data
+    |> GiftPlans.derived_protected(workflow, gifts)
+    |> Enum.reject(fn name ->
+      gift = gifts_by_name[name]
+      Enum.any?(kept, &(&1 == name or (gift && GiftPlans.entry_matches?(&1, gift))))
+    end)
+  end
+
   def workflows_using_keep(data, keep_id), do: data["workflows"] |> Enum.filter(&(&1["keep"] == keep_id)) |> Enum.map(& &1["name"])
 
   def step_broken?(data, step), do: match?({:error, _}, GiftPlans.definition_for(data, step))
@@ -1328,7 +1339,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp apply_definition_params(_lib, definition, p), do: Map.put(definition, "name", p["name"] || definition["name"])
 
-  defp sort_schedule(rows), do: Enum.sort_by(rows, & &1["from_floor"])
+  defp sort_schedule(rows) do
+    case Enum.sort_by(rows, & &1["from_floor"]) do
+      [first | rest] -> [Map.put(first, "from_floor", 1) | rest]
+      [] -> []
+    end
+  end
 
   defp reorder_by_ids(items, ids, key_fun) do
     by_key = Map.new(items, &{key_fun.(&1), &1})
