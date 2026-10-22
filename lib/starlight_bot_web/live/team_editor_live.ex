@@ -4,6 +4,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   alias StarlightBot.{BattlePlans, GiftPlans, Plans, StarlightBudget, Teams, ThemePacks}
   alias StarlightBotWeb.Live.{BattlePlanEditorLive, GiftPlanEditorLive, PackPlanEditorLive}
   alias StarlightBot.Navigation.Navigator
+  import StarlightBotWeb.Components.PlanPicker, only: [pane_icon: 1]
 
   @countdown_secs 2
   @panes %{"packs" => PackPlanEditorLive, "gifts" => GiftPlanEditorLive, "battle" => BattlePlanEditorLive}
@@ -31,7 +32,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:log, nav.log)
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)
-     |> assign(:tab, "teams")
      |> assign(:pane, "battle")}
   end
 
@@ -41,8 +41,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
     socket =
       socket
-      |> assign(:tab, if(params["tab"] == "profiles", do: "profiles", else: "teams"))
-      |> assign(:pane, if(Map.has_key?(@panes, params["pane"]), do: params["pane"], else: socket.assigns.pane))
+      |> assign(:pane, if(Map.has_key?(@panes, params["pane"]) or params["pane"] == "profiles", do: params["pane"], else: socket.assigns.pane))
 
     cond do
       team_id && team_id != socket.assigns.editing_id -> {:noreply, socket |> load_team(team_id) |> assign(:expanded?, true)}
@@ -58,7 +57,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         {:noreply,
          socket
          |> assign(:teams, Teams.list_teams())
-         |> push_patch(to: ~p"/teams?team=#{id}&pane=#{socket.assigns.pane}")
+         |> push_patch(to: ~p"/teams?team=#{id}&pane=#{plan_pane(socket.assigns.pane)}")
          |> put_flash(:info, "Team created.")}
 
       {:error, reason} ->
@@ -73,7 +72,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         {:noreply,
          socket
          |> assign(:teams, Teams.list_teams())
-         |> push_patch(to: ~p"/teams?team=#{new_id}&pane=#{socket.assigns.pane}")
+         |> push_patch(to: ~p"/teams?team=#{new_id}&pane=#{plan_pane(socket.assigns.pane)}")
          |> put_flash(:info, "Team duplicated.")}
 
       {:error, reason} ->
@@ -85,7 +84,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   def handle_event("click_team", %{"id" => id}, socket) do
     case String.to_integer(id) do
       id when id == socket.assigns.editing_id -> {:noreply, update(socket, :expanded?, &(not &1))}
-      id -> {:noreply, push_patch(socket, to: ~p"/teams?team=#{id}&pane=#{socket.assigns.pane}")}
+      id -> {:noreply, push_patch(socket, to: ~p"/teams?team=#{id}&pane=#{plan_pane(socket.assigns.pane)}")}
     end
   end
 
@@ -279,6 +278,14 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   def pane_view(pane), do: Map.fetch!(@panes, pane)
+
+  defp plan_pane("profiles"), do: "battle"
+  defp plan_pane(pane), do: pane
+
+  def profiles_toggle_path(nil, "profiles"), do: ~p"/teams?pane=battle"
+  def profiles_toggle_path(nil, _pane), do: ~p"/teams?pane=profiles"
+  def profiles_toggle_path(team_id, "profiles"), do: ~p"/teams?team=#{team_id}&pane=battle"
+  def profiles_toggle_path(team_id, _pane), do: ~p"/teams?team=#{team_id}&pane=profiles"
 
   defp reset_editor(socket) do
     socket

@@ -2,7 +2,10 @@
   <StarlightBotWeb.Layouts.flash_toasts flash={@flash} />
     <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
       <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
-        <.plan_picker id="theme-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="pack plan" />
+        <div class="flex items-center gap-3">
+          <.pane_tabs team_id={@team_id} pane="packs" />
+          <.plan_picker id="theme-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="pack plan" />
+        </div>
         <%= if @editing_id do %>
 
           <div id="priority-columns" phx-hook="PriorityClipboard" class="flex-1 min-h-0 flex flex-col gap-3 min-h-0">
@@ -138,7 +141,7 @@
                     <% hard? = StarlightBot.PackPlans.Resolver.mode_for_floor(@plan_data["mode_schedule"], floor) == "hard" %>
                     <% breakpoint? = Enum.any?(@plan_data["mode_schedule"], &(&1["from_floor"] == floor)) %>
                     <% search? = floor in @plan_data["search_floors"] %>
-                    <div class={"row-start-2 flex items-center justify-between gap-1 px-1 py-1 rounded-t " <> if(hard?, do: "bg-neutral/40", else: "")}
+                    <div class={"row-start-2 flex items-center justify-between gap-1 px-1 py-1 rounded-t " <> if(hard?, do: "bg-warning/15", else: "")}
                          style={"grid-column: #{floor + 1}; " <> if(extreme_disabled? and floor >= 6, do: disabled_stripes_style(), else: "")}
                          title={if(extreme_disabled? and floor >= 6, do: "Extreme floors only matter when the plan goes hard from F1")}>
                       <div class="flex items-center gap-0.5">
@@ -154,13 +157,13 @@
                       <div class="flex items-center gap-0.5">
                         <%= if floor <= 5 do %>
                         <button phx-click="toggle_breakpoint" phx-value-floor={floor}
-                                class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(breakpoint?, do: "btn-neutral", else: "btn-ghost border-base-300")}
+                                class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(breakpoint?, do: "btn-warning", else: "btn-ghost border-base-300")}
                                 title={if breakpoint?, do: "Hard from F#{floor} on. Click to stay normal.", else: "Switch to hard from F#{floor} on"}>
                           go hard
                         </button>
                         <% end %>
                         <button phx-click="toggle_search_floor" phx-value-floor={floor}
-                                class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(search?, do: "btn-warning", else: "btn-ghost border-base-300")}
+                                class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(search?, do: "btn-error", else: "btn-ghost border-base-300")}
                                 title="Once refreshes run out, search-replace the leftmost pack with the highest unvisited non-chance Hunt pack that has a search hook">
                           search
                         </button>
@@ -169,7 +172,7 @@
                   <% end %>
                   <%= if overflow? do %>
                     <button phx-click="toggle_extreme"
-                            class={"row-start-2 flex items-center justify-center text-[11px] font-semibold text-base-content/60 rounded-t hover:bg-base-200 " <> if(hard_col, do: "bg-neutral/40", else: "")}
+                            class={"row-start-2 flex items-center justify-center text-[11px] font-semibold text-base-content/60 rounded-t hover:bg-base-200 " <> if(hard_col, do: "bg-warning/15", else: "")}
                             style={"grid-column: #{floor_count + 2}; " <> if(extreme_disabled?, do: disabled_stripes_style(), else: "")}
                             title={"Expand extreme floors F6-15" <> if(extreme_disabled?, do: " (they only matter when the plan goes hard from F1)", else: "")}>
                       F6-15 ▸
@@ -188,7 +191,7 @@
                   <% current = StarlightBot.PackPlans.Resolver.priority_for(@plan_data, pack.id, row.mode) %>
                   <div class="group col-span-full grid grid-cols-subgrid items-center rounded hover:bg-base-200">
                     <%= if hard_col do %>
-                      <div class="self-stretch -my-px bg-neutral/25" style={"grid-row: 1; grid-column: #{hard_col + 1} / -1"}></div>
+                      <div class="self-stretch -my-px bg-warning/10" style={"grid-row: 1; grid-column: #{hard_col + 1} / -1"}></div>
                     <% end %>
                     <%= if extreme_disabled? do %>
                       <div class="self-stretch -my-px" style={"grid-row: 1; grid-column: 7 / -1; " <> disabled_stripes_style()}></div>

@@ -10,6 +10,7 @@
           <% issues = GiftPlans.issues(@plan_data, @gifts_by_name) %>
 
           <div class="flex items-center gap-2 flex-wrap">
+            <.pane_tabs team_id={@team_id} pane="gifts" />
             <.plan_picker id="gift-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="gift plan" />
             <form phx-change="set_affinity" class="flex items-center gap-1">
               <span class="text-xs text-base-content/60">Affinity</span>
@@ -655,7 +656,10 @@
           </div>
 
         <% else %>
-          <.plan_picker id="gift-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="gift plan" />
+          <div class="flex items-center gap-3">
+            <.pane_tabs team_id={@team_id} pane="gifts" />
+            <.plan_picker id="gift-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="gift plan" />
+          </div>
           <div class="flex-1 flex items-center justify-center text-base-content/40 text-sm">
             Pick or create a gift plan for this team.
           </div>

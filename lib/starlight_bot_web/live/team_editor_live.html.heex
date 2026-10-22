@@ -1,13 +1,5 @@
 <div class="flex flex-col h-full gap-2 overflow-hidden">
-  <div role="tablist" class="tabs tabs-boxed tabs-sm self-start">
-    <.link role="tab" patch={~p"/teams"} class={"tab " <> if(@tab == "teams", do: "tab-active", else: "")}>Teams</.link>
-    <.link role="tab" patch={~p"/teams?tab=profiles"} class={"tab " <> if(@tab == "profiles", do: "tab-active", else: "")}>Sinner Profiles</.link>
-  </div>
-
-  <%= if @tab == "profiles" do %>
-  <%= live_render(@socket, StarlightBotWeb.Live.SinnerProfilesLive, id: "sinner-profiles", container: {:div, class: "flex flex-col flex-1 min-h-0"}) %>
-  <% else %>
-  <div class="grid grid-cols-[30fr_70fr] grid-rows-1 gap-2 flex-1 min-h-0">
+  <div class="grid grid-cols-[24fr_76fr] grid-rows-1 gap-2 flex-1 min-h-0">
 
     <%!-- Left: Team List --%>
     <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
@@ -15,6 +7,8 @@
         <div class="flex items-center gap-3 mb-2">
           <h2 class="card-title text-lg">Teams</h2>
           <span class="badge badge-neutral badge-sm"><%= length(@teams) %></span>
+          <.link patch={profiles_toggle_path(@editing_id, @pane)}
+                 class={"btn btn-sm " <> if(@pane == "profiles", do: "btn-primary", else: "btn-outline")}>Sinner Profiles</.link>
 
           <%= if @phase != :idle do %>
             <span class="flex items-center gap-1 text-sm text-base-content/60">
@@ -65,18 +59,20 @@
                   </td>
                   <td class="text-xs text-base-content/60"><%= if team.hooks == [], do: "—", else: Enum.map_join(team.hooks, ", ", &Teams.hook_label/1) %></td>
                   <td>
+                    <div class="join">
+                      <button :for={{pane, label} <- [{"battle", "Battle"}, {"packs", "Packs"}, {"gifts", "Gifts"}]}
+                              type="button" phx-click={JS.patch(~p"/teams?team=#{team.id}&pane=#{pane}")} title={label}
+                              class={"btn btn-xs btn-square join-item " <> if(selected? and @pane == pane, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+                        <.pane_icon pane={pane} class="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                  <td>
                     <%= if team.missing != [] do %>
                       <div class="tooltip" data-tip={"Missing: " <> Enum.map_join(team.missing, ", ", &missing_label/1)}>
                         <span class="badge badge-warning badge-xs">!</span>
                       </div>
                     <% end %>
-                  </td>
-                  <td class="whitespace-nowrap">
-                    <div class="join">
-                      <button :for={{pane, label} <- [{"battle", "Battle"}, {"packs", "Packs"}, {"gifts", "Gifts"}]}
-                              phx-click={JS.patch(~p"/teams?team=#{team.id}&pane=#{pane}")}
-                              class={"btn btn-xs join-item " <> if(selected? and @pane == pane, do: "btn-primary", else: "btn-outline")}><%= label %></button>
-                    </div>
                   </td>
                   <td>
                     <button phx-click="duplicate_team" phx-value-id={team.id}
@@ -92,54 +88,23 @@
                 <tr :if={selected? and @expanded?} class="bg-base-200/40 border-l-2 border-primary">
                   <td colspan="6" class="p-2">
                     <div class="flex flex-col gap-2">
-                      <.form for={@form} phx-change="validate_team" phx-submit="validate_team">
-                        <input type="text" name="team[name]" value={@form[:name].value} placeholder="Team name"
-                               class={"input input-bordered input-sm w-full font-semibold " <> if(@form[:name].errors != [], do: "input-error", else: "")} />
-                        <%= if err = List.first(@form[:name].errors) do %>
-                          <span class="text-xs text-error"><%= elem(err, 0) %></span>
-                        <% end %>
-                      </.form>
-
-                      <div class="flex flex-col gap-1">
-                        <div class="flex items-center text-xs">
-                          <span class="font-medium">Team Selectors</span>
-                          <span class="ml-auto text-base-content/50">first is the default</span>
-                        </div>
-                        <div id="team-hooks" phx-hook="SortableList" data-sort-event="reorder_team_hooks" class="flex flex-col gap-1">
-                          <%= for {hook, index} <- Enum.with_index(@hooks) do %>
-                            <div id={"team-hook-#{index}-#{hook}"} data-sort-id={index} class="flex items-center gap-1">
-                              <span data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to reorder">⠿</span>
-                              <span class="text-xs text-base-content/50 w-5 text-right"><%= index + 1 %>.</span>
-                              <span class="font-mono text-sm flex-1"><%= Teams.hook_label(hook) %></span>
-                              <button type="button" phx-click="select_team_on_screen" phx-value-hook={hook}
-                                      disabled={@phase != :idle or @countdown != nil}
-                                      class="btn btn-xs btn-outline">Select on Screen</button>
-                              <button type="button" phx-click="remove_team_hook" phx-value-index={index}
-                                      class="btn btn-ghost btn-xs text-error">✕</button>
-                            </div>
+                      <% budget = starlight_budget(@gift_plans, @pack_plans, @theme_packs, @selected_ids, @budget_inputs) %>
+                      <div class="flex items-start gap-2">
+                        <.form for={@form} class="w-1/2" phx-change="validate_team" phx-submit="validate_team">
+                          <input type="text" name="team[name]" value={@form[:name].value} placeholder="Team name"
+                                 class={"input input-bordered input-sm w-full font-semibold " <> if(@form[:name].errors != [], do: "input-error", else: "")} />
+                          <%= if err = List.first(@form[:name].errors) do %>
+                            <span class="text-xs text-error"><%= elem(err, 0) %></span>
                           <% end %>
-                        </div>
-                        <form phx-change="add_team_hook" class="mt-1">
-                          <select name="hook" class="select select-bordered select-sm w-full">
-                            <option value="" selected>+ add selector</option>
-                            <%= for {label, hooks} <- @team_hooks, hooks = Enum.reject(hooks, &(&1 in @hooks)), hooks != [] do %>
-                              <optgroup label={label}>
-                                <%= for h <- hooks do %>
-                                  <option value={h}><%= Teams.hook_label(h) %></option>
-                                <% end %>
-                              </optgroup>
-                            <% end %>
-                          </select>
-                        </form>
+                        </.form>
+                        <button type="button" phx-click="toggle_budget" title="Starlight per run, floors 1 to 5. Click for the breakdown."
+                                class={"btn btn-sm gap-1 ml-auto " <> if(budget.net >= 0, do: "btn-success btn-outline", else: "btn-error btn-outline")}>
+                          <img src={~p"/images/icons/starlight.webp"} alt="Starlight" class="h-5 w-5" />
+                          <span class="font-mono font-bold"><%= if budget.net >= 0, do: "+" %><%= budget.net %></span>
+                          <span class="text-base-content/50"><%= if @budget_open?, do: "▾", else: "▸" %></span>
+                        </button>
                       </div>
 
-                      <% budget = starlight_budget(@gift_plans, @pack_plans, @theme_packs, @selected_ids, @budget_inputs) %>
-                      <button type="button" phx-click="toggle_budget" title="Starlight per run, floors 1 to 5. Click for the breakdown."
-                              class={"btn btn-sm self-start gap-1 " <> if(budget.net >= 0, do: "btn-success btn-outline", else: "btn-error btn-outline")}>
-                        <img src={~p"/images/icons/starlight.webp"} alt="Starlight" class="h-5 w-5" />
-                        <span class="font-mono font-bold"><%= if budget.net >= 0, do: "+" %><%= budget.net %></span>
-                        <span class="text-base-content/50"><%= if @budget_open?, do: "▾", else: "▸" %></span>
-                      </button>
                       <%= if @budget_open? do %>
                         <form phx-change="budget_change" class="flex flex-wrap items-stretch gap-1.5 font-mono">
                           <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="Every run starts with this">
@@ -217,6 +182,38 @@
                           </div>
                         </form>
                       <% end %>
+                      <div class="flex flex-col gap-1">
+                        <div class="flex items-center text-xs">
+                          <span class="font-medium">Team Selectors</span>
+                          <span class="ml-auto text-base-content/50">first is the default</span>
+                        </div>
+                        <div id="team-hooks" phx-hook="SortableList" data-sort-event="reorder_team_hooks" class="flex flex-col gap-1">
+                          <%= for {hook, index} <- Enum.with_index(@hooks) do %>
+                            <div id={"team-hook-#{index}-#{hook}"} data-sort-id={index} class="flex items-center gap-1">
+                              <span data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to reorder">⠿</span>
+                              <span class="text-xs text-base-content/50 w-5 text-right"><%= index + 1 %>.</span>
+                              <span class="font-mono text-sm flex-1"><%= Teams.hook_label(hook) %></span>
+                              <button type="button" phx-click="select_team_on_screen" phx-value-hook={hook}
+                                      disabled={@phase != :idle or @countdown != nil}
+                                      class="btn btn-xs btn-outline">Select on Screen</button>
+                              <button type="button" phx-click="remove_team_hook" phx-value-index={index}
+                                      class="btn btn-ghost btn-xs text-error">✕</button>
+                            </div>
+                          <% end %>
+                        </div>
+                        <form phx-change="add_team_hook" class="mt-1">
+                          <select name="hook" class="select select-bordered select-sm w-full">
+                            <option value="" selected>+ add selector</option>
+                            <%= for {label, hooks} <- @team_hooks, hooks = Enum.reject(hooks, &(&1 in @hooks)), hooks != [] do %>
+                              <optgroup label={label}>
+                                <%= for h <- hooks do %>
+                                  <option value={h}><%= Teams.hook_label(h) %></option>
+                                <% end %>
+                              </optgroup>
+                            <% end %>
+                          </select>
+                        </form>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -232,14 +229,20 @@
       </div>
     </div>
 
-    <%= if @editing_id do %>
-    <%= live_render(@socket, pane_view(@pane), id: "pane-#{@pane}-#{@editing_id}", session: %{"team_id" => @editing_id}, container: {:div, class: "flex flex-col min-h-0 min-w-0"}) %>
-    <% else %>
+    <%= cond do %>
+    <% @pane == "profiles" -> %>
+    <%= live_render(@socket, StarlightBotWeb.Live.SinnerProfilesLive, id: "sinner-profiles", container: {:div, class: "flex flex-col min-h-0 min-w-0"}) %>
+    <% @editing_id -> %>
+    <div class="flex flex-col min-h-0 min-w-0">
+      <div :for={pane <- ~w(battle packs gifts)} class={"flex-1 min-h-0 min-w-0 flex-col " <> if(pane == @pane, do: "flex", else: "hidden")}>
+        <%= live_render(@socket, pane_view(pane), id: "pane-#{pane}-#{@editing_id}", session: %{"team_id" => @editing_id}, container: {:div, class: "flex flex-col flex-1 min-h-0 min-w-0"}) %>
+      </div>
+    </div>
+    <% true -> %>
     <div class="card bg-base-100 shadow-lg flex items-center justify-center text-sm text-base-content/40">
       Select a team, or click + New Team.
     </div>
     <% end %>
 
   </div>
-  <% end %>
 </div>
