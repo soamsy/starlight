@@ -25,7 +25,7 @@ defmodule StarlightBot.Automation.EnkephalinCharger do
   def charge(from, 0, ctx) do
     with {:ok, home} <- Engine.goto(from, :home, ctx) do
       if Engine.check(:home_enkephalin_spendable) do
-        charge_from(home, 0, ctx)
+        make_modules_from(home, ctx)
       else
         Ctx.log(ctx, :info, "no lunacy conversions and home_enkephalin_spendable is off, skipping enkephalin")
         {:ok, home}
@@ -41,16 +41,15 @@ defmodule StarlightBot.Automation.EnkephalinCharger do
 
     with {:ok, lunacy_tab} <- Engine.goto(from, :charge_enkephalin_lunacy_tab, ctx) do
       spend_lunacy(count, ctx)
-
-      with {:ok, modules_tab} <- Engine.goto(lunacy_tab, :charge_enkephalin_modules_tab, ctx) do
-        make_modules(ctx)
-        Engine.goto(modules_tab, :home, ctx)
-      end
+      make_modules_from(lunacy_tab, ctx)
     end
   end
 
-  defp spend_lunacy(0, ctx) do
-    Ctx.log(ctx, :info, "lunacy spend not requested — skipping")
+  defp make_modules_from(from, ctx) do
+    with {:ok, modules_tab} <- Engine.goto(from, :charge_enkephalin_modules_tab, ctx) do
+      make_modules(ctx)
+      Engine.goto(modules_tab, :home, ctx)
+    end
   end
 
   defp spend_lunacy(target, ctx) do
