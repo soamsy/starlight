@@ -574,9 +574,15 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp aim(_enemy, attempt, _last_point, attempts, ctx) when attempt > @target_tries do
-    Ctx.log(ctx, :error, "playbook: no enemy highlighted after #{@target_tries} tries, releasing at battle_safe_click_spot")
+  defp aim(_enemy, attempt, nil, attempts, ctx) when attempt > @target_tries do
+    Ctx.log(ctx, :error, "playbook: no enemy detected after #{@target_tries} tries, releasing at battle_safe_click_spot")
     Runner.run_steps([DSL.move_to(:battle_safe_click_spot)], ctx)
+    {:gave_up, Enum.reverse(attempts)}
+  end
+
+  defp aim(_enemy, attempt, last_point, attempts, ctx) when attempt > @target_tries do
+    Ctx.log(ctx, :error, "playbook: no enemy highlighted after #{@target_tries} tries, releasing at last detected target #{inspect(last_point)}")
+    move_held(last_point)
     {:gave_up, Enum.reverse(attempts)}
   end
 
