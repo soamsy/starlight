@@ -9,6 +9,7 @@
       <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
         <%= if @data do %>
           <div class="flex items-center gap-3">
+            <.pane_tabs team_id={@team_id} pane="battle" />
             <.plan_picker id="battle-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="battle plan" />
             <form phx-change="set_max_retries" class="flex items-center gap-1 text-xs"
                   title="How many times a lost battle is retried before the run gives up.">
@@ -90,10 +91,10 @@
                       <tr>
                         <th></th>
                         <%= for floor <- floors(@extreme?) do %>
-                          <th class="font-normal text-base-content/50 w-8"><%= floor %></th>
+                          <th class="font-normal text-base-content/50 w-8">F<%= floor %></th>
                         <% end %>
                         <%= unless @extreme? do %>
-                          <th class="font-normal text-base-content/50 w-12">6-15</th>
+                          <th class="font-normal text-base-content/50 w-12">F6-15</th>
                         <% end %>
                       </tr>
                     </thead>
@@ -181,10 +182,10 @@
                   <tr>
                     <th></th>
                     <%= for floor <- floors(@extreme?) do %>
-                      <th class="font-normal text-base-content/50 w-8"><%= floor %></th>
+                      <th class="font-normal text-base-content/50 w-8">F<%= floor %></th>
                     <% end %>
                     <%= unless @extreme? do %>
-                      <th class="font-normal text-base-content/50 w-12">6-15</th>
+                      <th class="font-normal text-base-content/50 w-12">F6-15</th>
                     <% end %>
                   </tr>
                 </thead>
@@ -315,7 +316,10 @@
             </div>
           </div>
         <% else %>
-          <.plan_picker id="battle-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="battle plan" />
+          <div class="flex items-center gap-3">
+            <.pane_tabs team_id={@team_id} pane="battle" />
+            <.plan_picker id="battle-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="battle plan" />
+          </div>
           <div class="flex-1 flex items-center justify-center text-base-content/40 text-sm">
             Pick or create a battle plan for this team.
           </div>
