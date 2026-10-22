@@ -4,6 +4,8 @@ defmodule StarlightBot.StarlightBudget do
   @base 60
   @floors 1..5
   @max_sinner_bonus 60
+  @sinner_bonus_per_deployed 5
+  @max_deployed 7
   @rest_mult_per_point_milli 17
   @max_rest_mult_milli 2000
   @railway_bonus 5
@@ -15,6 +17,7 @@ defmodule StarlightBot.StarlightBudget do
 
   def base, do: @base
   def max_sinner_bonus, do: @max_sinner_bonus
+  def default_sinner_bonus(sinner_count), do: @max_sinner_bonus - @sinner_bonus_per_deployed * min(sinner_count, @max_deployed)
   def railway_bonus, do: @railway_bonus
   def max_reward_cards, do: @max_reward_cards
 

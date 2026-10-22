@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{GiftPlans, Plans, StarlightBudget, Teams, ThemePacks}
+  alias StarlightBot.{BattlePlans, GiftPlans, Plans, StarlightBudget, Teams, ThemePacks}
   alias StarlightBotWeb.Live.{BattlePlanEditorLive, GiftPlanEditorLive, PackPlanEditorLive}
   alias StarlightBot.Navigation.Navigator
 
@@ -26,7 +26,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:expanded?, false)
      |> assign(:budget_open?, false)
      |> assign(:selected_ids, blank_selected_ids())
-     |> assign(:budget_inputs, blank_budget_inputs())
+     |> assign(:budget_inputs, blank_budget_inputs(nil))
      |> assign(:phase, nav.phase)
      |> assign(:log, nav.log)
      |> assign(:pending_action, nil)
@@ -266,7 +266,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         |> assign(:hooks, team.hooks)
         |> assign(:budget_open?, false)
         |> assign(:selected_ids, selected_ids(team))
-        |> assign(:budget_inputs, blank_budget_inputs())
+        |> assign(:budget_inputs, blank_budget_inputs(team.battle_plan_id))
     end
   end
 
@@ -293,8 +293,17 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     %{"gift_plan" => nil, "battle_plan" => nil, "pack_plan" => nil}
   end
 
-  defp blank_budget_inputs do
-    %{pack_searches: 1, sinner_bonus: div(StarlightBudget.max_sinner_bonus(), 2), railway_packs: nil, reward_cards: 0}
+  defp blank_budget_inputs(battle_plan_id) do
+    %{pack_searches: 1, sinner_bonus: StarlightBudget.default_sinner_bonus(first_lineup_size(battle_plan_id)), railway_packs: nil, reward_cards: 0}
+  end
+
+  defp first_lineup_size(nil), do: 0
+
+  defp first_lineup_size(battle_plan_id) do
+    case Plans.get(:battle_plans, battle_plan_id) do
+      %{data: data} -> length((data |> BattlePlans.lineups() |> List.first() || %{})["sinners"] || [])
+      nil -> 0
+    end
   end
 
   def starlight_budget(gift_plans, pack_plans, theme_packs, selected_ids, inputs) do
