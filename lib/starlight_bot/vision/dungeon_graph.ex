@@ -221,6 +221,34 @@ defmodule StarlightBot.Vision.DungeonGraph do
     matched_slots in [[], [{0, :mid, :mid}]]
   end
 
+  def advance_view(%__MODULE__{nodes: nodes, edges: edges}, target_level) do
+    rise = level_index(:mid) - level_index(target_level)
+
+    %{
+      nodes:
+        for {slot, node} <- nodes, {:ok, {hop, level} = shifted} <- [shift_slot(slot, rise)], into: %{} do
+          {shifted, %{node | hop: hop, level: level}}
+        end,
+      edges:
+        for edge <- edges, {:ok, from} <- [shift_slot(edge.from_node, rise)], {:ok, to} <- [shift_slot(edge.to_node, rise)] do
+          %{edge | from_node: from, to_node: to}
+        end
+    }
+  end
+
+  def merge_remembered(%__MODULE__{} = graph, %{nodes: nodes, edges: edges}) do
+    seen = MapSet.new(graph.edges, &{&1.from_node, &1.to_node})
+    unseen = Enum.reject(edges, &MapSet.member?(seen, {&1.from_node, &1.to_node}))
+    %{graph | nodes: Map.merge(nodes, graph.nodes), edges: graph.edges ++ unseen}
+  end
+
+  defp shift_slot({hop, level}, rise) do
+    index = level_index(level) + rise
+    if hop > 0 and index in 0..(length(@levels) - 1), do: {:ok, {hop - 1, Enum.at(@levels, index)}}, else: :error
+  end
+
+  defp level_index(level), do: Enum.find_index(@levels, &(&1 == level))
+
   def classify_hits(hits_by_hook) do
     hits_by_hook
     |> Enum.flat_map(fn {hook_name, rects} -> Enum.map(rects, &coin_hit(hook_name, &1)) end)

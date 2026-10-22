@@ -29,7 +29,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
 
     {direction, kind} =
       case graph_result do
-        {:ok, graph} -> best_move(graph, ctx)
+        {:ok, graph} -> graph |> recall(ctx) |> best_move(ctx)
         {:error, reason} -> default_move(ctx, reason)
       end
 
@@ -101,14 +101,42 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
     end
   end
 
+  defp recall(graph, ctx) do
+    floor = RunMemory.floor(ctx)
+
+    case RunMemory.dungeon_map(ctx) do
+      {^floor, remembered} ->
+        if hop_0_targets(remembered.edges) == hop_0_targets(graph.edges) do
+          merged = DungeonGraph.merge_remembered(graph, remembered)
+          added = length(merged.edges) - length(graph.edges)
+          if added > 0, do: Ctx.log(ctx, :info, "dungeon path planner: #{added} remembered edge(s) out of view, keeping them")
+          merged
+        else
+          Ctx.log(ctx, :info, "dungeon path planner: remembered map disagrees with this view, dropping it")
+          graph
+        end
+
+      _ ->
+        graph
+    end
+  end
+
+  defp hop_0_targets(edges), do: edges |> Enum.filter(&match?({0, _}, &1.from_node)) |> MapSet.new(& &1.to_node)
+
   defp best_move(graph, ctx) do
     case choose_target(graph) do
-      {:ok, edge} -> {direction_key(graph.current_level, elem(edge.to_node, 1)), edge_kind(edge, graph.nodes)}
-      {:error, reason} -> default_move(ctx, reason)
+      {:ok, edge} ->
+        target_level = elem(edge.to_node, 1)
+        RunMemory.put_dungeon_map(ctx, {RunMemory.floor(ctx), DungeonGraph.advance_view(graph, target_level)})
+        {direction_key(graph.current_level, target_level), edge_kind(edge, graph.nodes)}
+
+      {:error, reason} ->
+        default_move(ctx, reason)
     end
   end
 
   defp default_move(ctx, reason) do
+    RunMemory.put_dungeon_map(ctx, nil)
     Ctx.log(ctx, :info, "dungeon path planner: #{inspect(reason)} — defaulting to d")
     {:d, :unknown}
   end
@@ -188,10 +216,13 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
     end
   end
 
-  defp best_step(candidates, nodes, edges), do: Enum.min_by(candidates, &step_rank(&1, nodes, edges))
+  defp best_step(candidates, nodes, edges) do
+    horizon = edges |> Enum.map(&elem(&1.to_node, 0)) |> Enum.max()
+    Enum.min_by(candidates, &step_rank(&1, nodes, edges, horizon))
+  end
 
-  defp step_rank(edge, nodes, edges) do
-    costs = edge |> full_paths(edges) |> Enum.map(&path_cost(&1, nodes))
+  defp step_rank(edge, nodes, edges, horizon) do
+    costs = edge |> full_paths(edges) |> Enum.map(&(path_cost(&1, nodes) + unseen_cost(List.last(&1), horizon)))
     cheapest = Enum.min(costs)
     {cheapest, -Enum.count(costs, &(&1 == cheapest)), -MapSet.size(reachable_from(edge.to_node, edges))}
   end
@@ -202,6 +233,9 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
       next -> for n <- next, rest <- full_paths(n, edges), do: [edge | rest]
     end
   end
+
+  defp unseen_cost(%{variant: variant}, _horizon) when variant in [:boss, :shop], do: 0
+  defp unseen_cost(%{to_node: {hop, _}}, horizon), do: (horizon - hop) * @node_cost.battle
 
   defp path_cost(path, nodes), do: path |> Enum.map(&edge_cost(&1, nodes)) |> Enum.sum()
 

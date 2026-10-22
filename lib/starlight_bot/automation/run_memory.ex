@@ -143,6 +143,10 @@ defmodule StarlightBot.Automation.RunMemory do
     end
   end
 
+  def dungeon_map(ctx), do: get(ctx, :dungeon_map, nil)
+
+  def put_dungeon_map(ctx, map), do: put(ctx, :dungeon_map, map)
+
   def visited_packs(ctx), do: get(ctx, :visited_packs, [])
 
   def add_visited_pack(ctx, pack_id) do
