@@ -2,7 +2,7 @@ defmodule StarlightBot.Navigation.Screens.Home do
   use StarlightBot.Navigation.DSL
 
   screen :home, identity: :home_lunacy do
-    transition to: :charge_enkephalin, do: [reclick_until_arrived(:home_lunacy)]
+    transition to: :charge_enkephalin, do: [reclick_until_arrived(:home_lunacy, every: 1500, timeout: 5000)]
   end
 
   screen :home_window, identity: :home_window_selected, refines: :home do
