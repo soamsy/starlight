@@ -7,7 +7,7 @@ defmodule StarlightBot.Navigation.Screens.TeamSelect do
       [
         await(:to_battle, timeout: 1_000),
         retry_until(any_of([:loading_stage_1, :loading_stage_2]), [key(:enter)], every: 200, timeout: 15_000)
-      ] ++ loading()
+      ] ++ loading() ++ [await(:battle_settings, timeout: 5_000, premove: false)]
     end
   end
 
