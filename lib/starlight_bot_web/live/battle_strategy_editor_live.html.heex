@@ -4,6 +4,11 @@
       <option value={name}></option>
     <% end %>
   </datalist>
+  <datalist id="locator-hook-names">
+    <%= for name <- @locator_names do %>
+      <option value={name}></option>
+    <% end %>
+  </datalist>
   <div role="tablist" class="tabs tabs-boxed tabs-sm self-start">
     <button role="tab" phx-click="set_tab" phx-value-tab="strategies"
             class={"tab " <> if(@tab == "strategies", do: "tab-active", else: "")}>Strategies</button>
@@ -373,9 +378,9 @@
                         <option value={sinner} selected={profile.sinner == sinner}><%= sinner %></option>
                       <% end %>
                     </select>
-                    <input type="text" name="locator_hook" value={profile.locator_hook} list="hook-names" phx-debounce="blur"
+                    <input type="text" name="locator_hook" value={profile.locator_hook} list="locator-hook-names" phx-debounce="blur"
                            placeholder="hook name"
-                           class={"input input-bordered input-xs w-64 font-mono " <> if(profile.locator_hook && profile.locator_hook not in @hook_names, do: "input-error", else: "")} />
+                           class={"input input-bordered input-xs w-64 font-mono " <> if(profile.locator_hook && profile.locator_hook not in @locator_names, do: "input-error", else: "")} />
                   </form>
                 </td>
                 <td>

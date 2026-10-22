@@ -16,6 +16,7 @@ defmodule StarlightBotWeb.Live.BattleStrategyEditorLive do
      |> assign(:tab, "strategies")
      |> assign(:strategies, Strategies.list(:battle_strategies))
      |> assign(:hook_names, Enum.map(Hooks.list_hooks(), & &1.name))
+     |> assign(:locator_names, Hooks.list_names("locator"))
      |> assign(:profile_tests, %{})
      |> assign_profiles()
      |> reset_editor()}

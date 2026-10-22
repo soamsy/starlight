@@ -5,6 +5,24 @@ defmodule StarlightBot.Hooks do
   alias StarlightBot.Repo
   alias StarlightBot.Vision.HookRegistry
 
+  @categories ~w(general sleeve sleevesearch locator team team_selected)
+
+  def categories, do: @categories
+
+  def category_for("sleevesearch_" <> _), do: "sleevesearch"
+  def category_for("sleeve_" <> _), do: "sleeve"
+  def category_for("locator_" <> _), do: "locator"
+  def category_for("team_select" <> _), do: "general"
+
+  def category_for("team_" <> rest) do
+    if String.ends_with?(rest, "_selected"), do: "team_selected", else: "team"
+  end
+
+  def category_for(_name), do: "general"
+
+  def resolve_category(category, _name) when category in @categories, do: category
+  def resolve_category(_category, name), do: category_for(name)
+
   def image_path(name) when is_binary(name) do
     if Regex.match?(~r/\A[a-z0-9_]+\z/, name) do
       Path.join(Application.fetch_env!(:starlight_bot, :hook_image_dir), name <> ".png")
@@ -13,42 +31,64 @@ defmodule StarlightBot.Hooks do
 
   @doc "List all hooks (metadata only, no image binary) ordered by name."
   def list_hooks do
-    Repo.all(
-      from h in "hooks",
-        order_by: [asc: h.name],
-        select: %{
-          name: h.name,
-          region_x: h.region_x,
-          region_y: h.region_y,
-          region_w: h.region_w,
-          region_h: h.region_h,
-          click_x: h.click_x,
-          click_y: h.click_y,
-          click_w: h.click_w,
-          click_h: h.click_h,
-          scan_x: h.scan_x,
-          scan_y: h.scan_y,
-          scan_w: h.scan_w,
-          scan_h: h.scan_h,
-          mask: h.mask,
-          color_h: h.color_h,
-          color_s: h.color_s,
-          color_v: h.color_v,
-          min_cluster_size: h.min_cluster_size,
-          match_method: h.match_method,
-          feature_channel: h.feature_channel,
-          confidence: h.confidence,
-          notes: h.notes,
-          inserted_at: h.inserted_at
-        }
-    )
+    Repo.all(hooks_query(from(h in "hooks")))
   rescue
     _ -> []
   end
 
+  def list_hooks(category) when category in @categories do
+    Repo.all(hooks_query(from(h in "hooks", where: h.category == ^category)))
+  rescue
+    _ -> []
+  end
+
+  def list_names(category) when category in @categories do
+    Repo.all(from h in "hooks", where: h.category == ^category, order_by: [asc: h.name], select: h.name)
+  rescue
+    _ -> []
+  end
+
+  def category_counts do
+    counts = Repo.all(from h in "hooks", group_by: h.category, select: {h.category, count()}) |> Map.new()
+    Map.new(@categories, &{&1, Map.get(counts, &1, 0)})
+  rescue
+    _ -> Map.new(@categories, &{&1, 0})
+  end
+
+  defp hooks_query(query) do
+    from h in query,
+      order_by: [asc: h.name],
+      select: %{
+        name: h.name,
+        region_x: h.region_x,
+        region_y: h.region_y,
+        region_w: h.region_w,
+        region_h: h.region_h,
+        click_x: h.click_x,
+        click_y: h.click_y,
+        click_w: h.click_w,
+        click_h: h.click_h,
+        scan_x: h.scan_x,
+        scan_y: h.scan_y,
+        scan_w: h.scan_w,
+        scan_h: h.scan_h,
+        mask: h.mask,
+        color_h: h.color_h,
+        color_s: h.color_s,
+        color_v: h.color_v,
+        min_cluster_size: h.min_cluster_size,
+        match_method: h.match_method,
+        feature_channel: h.feature_channel,
+        confidence: h.confidence,
+        notes: h.notes,
+        category: h.category,
+        inserted_at: h.inserted_at
+      }
+  end
+
   @doc "Map of hook name => updated_at for hooks that have a template image, used to version thumbnail URLs."
-  def hook_thumbnails do
-    Repo.all(from h in "hooks", select: {h.name, h.updated_at})
+  def hook_thumbnails(category) when category in @categories do
+    Repo.all(from h in "hooks", where: h.category == ^category, select: {h.name, h.updated_at})
     |> Enum.filter(fn {name, _} -> File.exists?(image_path(name)) end)
     |> Map.new()
   rescue
@@ -92,7 +132,8 @@ defmodule StarlightBot.Hooks do
           match_method: h.match_method,
           feature_channel: h.feature_channel,
           confidence: h.confidence,
-          notes: h.notes
+          notes: h.notes,
+          category: h.category
         }
     )
     |> case do
@@ -279,6 +320,7 @@ defmodule StarlightBot.Hooks do
       feature_channel: feature_channel_value(attrs[:feature_channel]),
       confidence: attrs[:confidence] || attrs.confidence || 0.85,
       notes: attrs[:notes],
+      category: resolve_category(attrs[:category], name),
       inserted_at: now,
       updated_at: now
     }
@@ -372,11 +414,15 @@ defmodule StarlightBot.Hooks do
             []
         end
 
+      category_update =
+        if attrs[:category] in @categories, do: [category: attrs[:category]], else: []
+
       updates =
         region_update ++
           click_update ++
           scan_update ++
           color_update ++
+          category_update ++
           [
             match_method: attrs[:match_method] || attrs.match_method || "gray",
             feature_channel: feature_channel_value(attrs[:feature_channel]),

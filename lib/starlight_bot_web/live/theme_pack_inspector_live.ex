@@ -13,7 +13,7 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
     {:ok,
      socket
      |> assign(:theme_packs, ThemePacks.list_theme_packs())
-     |> assign(:hook_names, Enum.map(Hooks.list_hooks(), & &1.name))
+     |> assign(:hook_names, Hooks.list_names("sleevesearch"))
      |> assign(:filter, "")
      |> assign(:scan_status, :idle)
      |> assign(:scan_matched_ids, nil)

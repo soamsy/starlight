@@ -8,7 +8,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   def mount(_params, _session, socket) do
     {:ok,
      socket
-     |> refresh_hooks()
+     |> assign(:category, "general")
      |> assign(:hooks_filter, "")
      |> assign(:sort_by, :inserted_at)
      |> assign(:sort_dir, :desc)
@@ -212,7 +212,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
              {:ok, saved_name} <- Hooks.save_hook(attrs) do
           {:noreply,
            socket
-           |> refresh_hooks()
+           |> show_category(attrs.category)
            |> assign(:editing_name, saved_name)
            |> assign(:saved_params, Map.put(params, "name", saved_name))
            |> assign(:test_result, nil)
@@ -227,7 +227,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
             {:ok, name} ->
               base =
                 socket
-                |> refresh_hooks()
+                |> show_category(attrs.category)
                 |> assign(:test_result, nil)
                 |> put_flash(:info, "Hook '#{name}' saved.")
 
@@ -455,6 +455,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
           "feature_channel" => hook.feature_channel || "gray",
           "confidence" => to_string(hook.confidence),
           "notes" => hook.notes || "",
+          "category" => hook.category,
           "region_x" => to_string(hook.region_x || ""),
           "region_y" => to_string(hook.region_y || ""),
           "region_w" => to_string(hook.region_w || ""),
@@ -559,7 +560,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
 
         {:noreply,
          socket
-         |> assign(:hooks, Hooks.list_hooks())
+         |> refresh_hooks()
          |> assign(:editing_name, editing_name)
          |> put_flash(:info, "Deleted '#{name}'.")}
 
@@ -803,23 +804,25 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   @impl true
-  def handle_params(%{"from_cache" => "1"}, _uri, socket) do
-    case load_handoff_screenshot() do
-      {:ok, mat, b64} ->
-        {:noreply,
-         socket
-         |> assign(:screenshot_mat, mat)
-         |> assign(:screenshot_status, :done)
-         |> push_event("load_screenshot", %{data: b64})}
+  def handle_params(params, _uri, socket) do
+    category = if params["cat"] in Hooks.categories(), do: params["cat"], else: "general"
+    socket = socket |> assign(:category, category) |> refresh_hooks()
 
-      _ ->
-        {:noreply, put_flash(socket, :error, "Failed to load frame from screenshot stream.")}
+    if params["from_cache"] == "1" do
+      case load_handoff_screenshot() do
+        {:ok, mat, b64} ->
+          {:noreply,
+           socket
+           |> assign(:screenshot_mat, mat)
+           |> assign(:screenshot_status, :done)
+           |> push_event("load_screenshot", %{data: b64})}
+
+        _ ->
+          {:noreply, put_flash(socket, :error, "Failed to load frame from screenshot stream.")}
+      end
+    else
+      {:noreply, socket}
     end
-  end
-
-  @impl true
-  def handle_params(_params, _uri, socket) do
-    {:noreply, socket}
   end
 
   @impl true
@@ -859,9 +862,18 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   defp refresh_hooks(socket) do
+    category = socket.assigns.category
+
     socket
-    |> assign(:hooks, Hooks.list_hooks())
-    |> assign(:hook_thumbnails, Hooks.hook_thumbnails())
+    |> assign(:hooks, Hooks.list_hooks(category))
+    |> assign(:hook_thumbnails, Hooks.hook_thumbnails(category))
+    |> assign(:category_counts, Hooks.category_counts())
+  end
+
+  defp show_category(socket, category) do
+    if category == socket.assigns.category,
+      do: refresh_hooks(socket),
+      else: push_patch(socket, to: ~p"/hooks?#{[cat: category]}")
   end
 
   defp blank_form do
@@ -875,6 +887,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       feature_channel: :string,
       confidence: :float,
       notes: :string,
+      category: :string,
       region_x: :integer,
       region_y: :integer,
       region_w: :integer,
@@ -973,7 +986,8 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
            match_method: params["match_method"] || "gray",
            feature_channel: params["feature_channel"] || "gray",
            confidence: parse_float(params["confidence"], 0.85),
-           notes: params["notes"]
+           notes: params["notes"],
+           category: Hooks.resolve_category(params["category"], name)
          }}
       end
     end
@@ -1087,6 +1101,13 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   def sorted_hooks(hooks, sort_by, sort_dir) do
     Enum.sort_by(hooks, &sort_key(&1, sort_by), sort_dir)
   end
+
+  def category_label("general"), do: "General"
+  def category_label("sleeve"), do: "Sleeve"
+  def category_label("sleevesearch"), do: "Sleeve search"
+  def category_label("locator"), do: "Locator"
+  def category_label("team"), do: "Team"
+  def category_label("team_selected"), do: "Team selected"
 
   def thumb_src(_name, nil), do: nil
   def thumb_src(name, version), do: ~p"/hooks/#{name}/thumb.png?#{[v: version]}"

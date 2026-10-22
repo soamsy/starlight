@@ -128,12 +128,19 @@ defmodule StarlightBot.Teams do
   end
 
   def team_hooks do
-    names = StarlightBot.Hooks.list_hooks() |> MapSet.new(& &1.name)
+    names = StarlightBot.Hooks.list_names("team")
+    grouped = Enum.map(@team_types, &"team_#{&1}")
 
-    for {label, types} <- @team_groups,
-        hooks = types |> Enum.map(&"team_#{&1}") |> Enum.filter(&MapSet.member?(names, &1)),
-        hooks != [],
-        do: {label, hooks}
+    groups =
+      for {label, types} <- @team_groups,
+          hooks = types |> Enum.map(&"team_#{&1}") |> Enum.filter(&(&1 in names)),
+          hooks != [],
+          do: {label, hooks}
+
+    case names -- grouped do
+      [] -> groups
+      other -> groups ++ [{"Other", other}]
+    end
   end
 
   def hook_label("team_" <> type), do: String.upcase(type)

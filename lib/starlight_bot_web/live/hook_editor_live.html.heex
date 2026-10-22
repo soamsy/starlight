@@ -161,6 +161,23 @@
                   <% end %>
                 </div>
 
+                <div class="form-control">
+                  <label class="label py-0.5">
+                    <span class="label-text text-sm font-medium flex items-center gap-1">
+                      Category
+                      <span :if={field_dirty?(@form, @saved_params, :category)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                    </span>
+                  </label>
+                  <select name="hook[category]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :category), do: "select-warning"}"}>
+                    <option value="" selected={to_string(@form[:category].value) == ""}>auto (from name)</option>
+                    <%= for category <- StarlightBot.Hooks.categories() do %>
+                      <option value={category} selected={to_string(@form[:category].value) == category}>
+                        <%= category_label(category) %>
+                      </option>
+                    <% end %>
+                  </select>
+                </div>
+
                 <%!-- Method --%>
                 <div class="form-control">
                   <label class="label py-0.5">
@@ -646,10 +663,15 @@
       </div>
 
       <div class="flex items-center justify-between pt-2">
-        <h2 class="card-title text-base">
-          Hooks
-          <span class="badge badge-neutral badge-sm"><%= length(@hooks) %></span>
-        </h2>
+        <div role="tablist" class="tabs tabs-boxed tabs-sm">
+          <%= for category <- StarlightBot.Hooks.categories() do %>
+            <.link patch={~p"/hooks?#{[cat: category]}"} role="tab"
+                   class={"tab gap-1 #{if category == @category, do: "tab-active"}"}>
+              <%= category_label(category) %>
+              <span class="badge badge-neutral badge-sm"><%= @category_counts[category] %></span>
+            </.link>
+          <% end %>
+        </div>
         <input
           type="text"
           placeholder="Filter by name…"
