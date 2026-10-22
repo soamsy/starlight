@@ -125,6 +125,13 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
       assert ThemePackSelector.search_target(Map.delete(plan, "search_floors"), packs, "normal", 2, [], fn _ -> true end) == nil
     end
 
+    test "follows hunt order and skips chance packs", %{packs: packs, plan: plan} do
+      assert %{id: "thm_b"} = ThemePackSelector.search_target(Map.put(plan, "hunt_order", %{"normal" => ["thm_b", "thm_a"]}), packs, "normal", 2, [], fn _ -> true end)
+
+      chance_a = put_in(plan, ["packs", "thm_a", "normal", "chance"], true)
+      assert %{id: "thm_b"} = ThemePackSelector.search_target(chance_a, packs, "normal", 2, [], fn _ -> true end)
+    end
+
     test "skips visited packs and packs without a usable search hook", %{packs: packs, plan: plan} do
       assert %{id: "thm_b"} = ThemePackSelector.search_target(plan, packs, "normal", 2, ["thm_a"], fn _ -> true end)
       assert %{id: "thm_b"} = ThemePackSelector.search_target(plan, packs, "normal", 2, [], &(&1.id != "thm_a"))
@@ -137,20 +144,24 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
       assert ThemePackSelector.pick_winner([], %{}, %{}, "hard", 1) == :none
     end
 
-    test "bonus beats hunt beats fine" do
+    test "hunt packs win in hunt order" do
       plan = %{
         "packs" => %{
-          "thm_bonus" => %{"hard" => %{"priority" => "bonus"}},
+          "thm_chance" => %{"hard" => %{"priority" => "hunt", "chance" => true}},
           "thm_hunt" => %{"hard" => %{"priority" => "hunt"}}
-        }
+        },
+        "hunt_order" => %{"hard" => ["thm_chance", "thm_hunt"]}
       }
 
       pack_a = pack("thm_hunt", [1], [1])
-      pack_b = pack("thm_bonus", [1], [1])
-      matched_pairs = [{pack_a, :hook_hunt}, {pack_b, :hook_bonus}]
-      matched_hooks = %{hook_hunt: {1, 1, 10, 10}, hook_bonus: {2, 2, 10, 10}}
+      pack_b = pack("thm_chance", [1], [1])
+      matched_pairs = [{pack_a, :hook_hunt}, {pack_b, :hook_chance}]
+      matched_hooks = %{hook_hunt: {1, 1, 10, 10}, hook_chance: {2, 2, 10, 10}}
 
       assert ThemePackSelector.pick_winner(matched_pairs, matched_hooks, plan, "hard", 1) == {:ok, pack_b, {2, 2, 10, 10}}
+
+      reordered = put_in(plan, ["hunt_order", "hard"], ["thm_hunt", "thm_chance"])
+      assert ThemePackSelector.pick_winner(matched_pairs, matched_hooks, reordered, "hard", 1) == {:ok, pack_a, {1, 1, 10, 10}}
     end
 
     test "falls back through the tiers when a higher one has no match" do

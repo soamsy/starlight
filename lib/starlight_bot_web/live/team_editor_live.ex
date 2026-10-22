@@ -313,8 +313,8 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     floor_total = floors |> Enum.map(& &1.starlight) |> Enum.sum()
     max_pack_searches = StarlightBudget.max_pack_searches(plan_data)
     pack_searches = min(inputs.pack_searches || max_pack_searches, max_pack_searches)
-    max_railway_packs = length(StarlightBudget.railway_floors(plan_data, theme_packs, ~w(hunt bonus fine)))
-    planned_railway_packs = length(StarlightBudget.railway_floors(plan_data, theme_packs, ~w(hunt bonus)))
+    max_railway_packs = length(StarlightBudget.railway_floors(plan_data, theme_packs, ~w(hunt fine)))
+    planned_railway_packs = length(StarlightBudget.railway_floors(plan_data, theme_packs, ~w(hunt)))
     railway_packs = min(inputs.railway_packs || planned_railway_packs, max_railway_packs)
     gift_searches = length(gift_data["gift_search"] || [])
 

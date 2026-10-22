@@ -506,13 +506,54 @@ const PriorityClipboard = {
       const btn = e.target.closest("[data-paste-priority]")
       if (!btn) return
       const priority = btn.dataset.pastePriority
+      const mode = btn.dataset.pasteMode
 
       navigator.clipboard.readText()
-        .then(text => this.pushEvent("paste_priority", { priority, text }))
+        .then(text => this.pushEvent("paste_priority", { priority, mode, text }))
         .catch(err => {
           this.pushEvent("paste_priority_failed", { message: `Couldn't read clipboard: ${err.message || err}` })
         })
     })
+  }
+}
+
+const DragScroll = {
+  mounted() {
+    this.syncPannable()
+    this.resizeObserver = new ResizeObserver(() => this.syncPannable())
+    this.resizeObserver.observe(this.el)
+
+    this.el.addEventListener("mousedown", (e) => {
+      if (!this.el.dataset.pan || e.button !== 0 || eventElement(e)?.closest("[data-no-pan], button, input")) return
+      e.preventDefault()
+      const startX = e.clientX
+      const startScroll = this.el.scrollLeft
+      this.el.dataset.pan = "active"
+
+      const onMove = (ev) => { this.el.scrollLeft = startScroll - (ev.clientX - startX) }
+      const onUp = (ev) => {
+        this.syncPannable()
+        if (Math.abs(ev.clientX - startX) > 3) {
+          const swallow = (ce) => { ce.stopPropagation(); ce.preventDefault() }
+          this.el.addEventListener("click", swallow, { capture: true, once: true })
+          setTimeout(() => this.el.removeEventListener("click", swallow, { capture: true }), 0)
+        }
+        window.removeEventListener("mousemove", onMove)
+        window.removeEventListener("mouseup", onUp)
+      }
+      window.addEventListener("mousemove", onMove)
+      window.addEventListener("mouseup", onUp)
+    })
+  },
+  updated() {
+    this.syncPannable()
+  },
+  destroyed() {
+    this.resizeObserver.disconnect()
+  },
+  syncPannable() {
+    if (this.el.scrollWidth > this.el.clientWidth) this.el.dataset.pan = "ready"
+    else delete this.el.dataset.pan
   }
 }
 
@@ -615,7 +656,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, DblClickEvent }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, DblClickEvent, DragScroll }
 })
 
 liveSocket.connect()

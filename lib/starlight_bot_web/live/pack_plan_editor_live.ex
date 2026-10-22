@@ -6,7 +6,8 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   alias StarlightBot.{Plans, Teams, ThemePacks}
   alias StarlightBot.PackPlans.Resolver
 
-  @priorities ~w(hunt banned bonus)
+  @priorities ~w(hunt banned)
+  @modes ~w(normal hard)
 
   @impl true
   def mount(_params, session, socket) do
@@ -87,11 +88,6 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   @impl true
-  def handle_event("set_mode_tab", %{"mode" => mode}, socket) do
-    {:noreply, socket |> assign(:active_mode, mode) |> assign(:floor_filter, nil)}
-  end
-
-  @impl true
   def handle_event("toggle_breakpoint", %{"floor" => floor}, socket) do
     floor = String.to_integer(floor)
     schedule = toggle_breakpoint(socket.assigns.plan_data["mode_schedule"], floor)
@@ -124,8 +120,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   @impl true
-  def handle_event("assign_priority", %{"pack_id" => pack_id, "priority" => priority}, socket) do
-    mode = socket.assigns.active_mode
+  def handle_event("assign_priority", %{"pack_id" => pack_id, "priority" => priority, "mode" => mode}, socket) when mode in @modes do
     pack = socket.assigns.packs_by_id[pack_id]
 
     if pack && Resolver.eligible_floors(pack, mode) != [] do
@@ -137,12 +132,12 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   @impl true
-  def handle_event("toggle_pack_floor", %{"pack_id" => pack_id, "floor" => floor}, socket) do
+  def handle_event("toggle_pack_floor", %{"pack_id" => pack_id, "floor" => floor, "mode" => mode}, socket) when mode in @modes do
     floor = String.to_integer(floor)
     pack = socket.assigns.packs_by_id[pack_id]
 
     if pack do
-      plan_data = toggle_pack_floor(socket.assigns.plan_data, pack, socket.assigns.active_mode, floor)
+      plan_data = toggle_pack_floor(socket.assigns.plan_data, pack, mode, floor)
       {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
     else
       {:noreply, socket}
@@ -150,21 +145,55 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   @impl true
-  def handle_event("toggle_floor_editor", %{"pack_id" => pack_id}, socket) do
-    current = socket.assigns.floor_editor_pack_id
-    {:noreply, assign(socket, :floor_editor_pack_id, if(current == pack_id, do: nil, else: pack_id))}
+  def handle_event("toggle_chance", %{"pack_id" => pack_id, "mode" => mode}, socket) when mode in @modes do
+    if Resolver.priority_for(socket.assigns.plan_data, pack_id, mode) == "hunt" do
+      plan_data = update_in(socket.assigns.plan_data, ["packs", pack_id, mode], &toggle_chance/1)
+      {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
-  def handle_event("copy_priority", %{"priority" => priority}, socket) when priority in @priorities do
-    text = copy_payload(socket.assigns.plan_data, socket.assigns.theme_packs, socket.assigns.active_mode, priority)
+  def handle_event("reorder_hunt", %{"scope" => mode, "ids" => ids}, socket) when mode in @modes do
+    current = socket.assigns.plan_data |> packs_with_priority(socket.assigns.theme_packs, mode, "hunt") |> Enum.map(& &1.id)
+
+    if Enum.sort(ids) == Enum.sort(current) do
+      plan_data = put_in(socket.assigns.plan_data, [Access.key("hunt_order", %{}), mode], ids)
+      {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("toggle_span_floors", %{"pack_id" => pack_id, "floors" => floors, "mode" => mode}, socket) when mode in @modes do
+    pack = socket.assigns.packs_by_id[pack_id]
+    floors = floors |> String.split(",") |> Enum.map(&String.to_integer/1)
+
+    if pack && floors != [] && Enum.all?(floors, &(&1 in Resolver.eligible_floors(pack, mode))) do
+      plan_data = toggle_span_floors(socket.assigns.plan_data, pack, mode, floors)
+      {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("toggle_floor_editor", %{"pack_id" => pack_id, "mode" => mode}, socket) when mode in @modes do
+    key = {mode, pack_id}
+    {:noreply, assign(socket, :floor_editor, if(socket.assigns.floor_editor == key, do: nil, else: key))}
+  end
+
+  @impl true
+  def handle_event("copy_priority", %{"priority" => priority, "mode" => mode}, socket) when priority in @priorities and mode in @modes do
+    text = copy_payload(socket.assigns.plan_data, socket.assigns.theme_packs, mode, priority)
     {:noreply, push_event(socket, "copy_priority_json", %{text: text})}
   end
 
   @impl true
-  def handle_event("paste_priority", %{"priority" => priority, "text" => text}, socket) when priority in @priorities do
-    mode = socket.assigns.active_mode
-
+  def handle_event("paste_priority", %{"priority" => priority, "mode" => mode, "text" => text}, socket)
+      when priority in @priorities and mode in @modes do
     case parse_paste(text, socket.assigns.theme_packs, mode) do
       {:ok, entries} ->
         plan_data = apply_priority_paste(socket.assigns.plan_data, socket.assigns.theme_packs, priority, mode, entries)
@@ -192,43 +221,129 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
 
   def priorities, do: @priorities
 
+  def modes, do: @modes
+
   def priority_label("banned"), do: "Banned"
   def priority_label("hunt"), do: "Hunt"
-  def priority_label("bonus"), do: "Bonus"
   def priority_label("fine"), do: "Fine"
 
   def priority_tooltip("banned"),
     do: "Never picked voluntarily. Only taken if nothing else is shown and no refreshes are left."
 
   def priority_tooltip("hunt"),
-    do: "Picked immediately if shown. If none are shown and refreshes remain, keep refreshing to find one."
-
-  def priority_tooltip("bonus"),
-    do: "Picked immediately if shown, but its absence never triggers a refresh."
+    do: "Picked immediately if shown, highest in the list first. If none are shown and refreshes remain, keep refreshing to find one. Starred chance packs are picked on sight but never refreshed or searched for."
 
   def priority_tooltip("fine"),
     do: "The default. Acceptable filler, picked when nothing better is shown."
 
-  def floors_in_range(schedule, mode, max_floor) do
-    Enum.filter(1..max_floor, &(Resolver.mode_for_floor(schedule, &1) == mode))
-  end
-
-  def floor_covered?(plan_data, all_packs, mode, floor) do
-    Resolver.priority_in_play?(plan_data, all_packs, mode, floor, "hunt") or
-      Resolver.priority_in_play?(plan_data, all_packs, mode, floor, "bonus")
+  def packs_with_priority(plan_data, theme_packs, mode, "hunt") do
+    theme_packs
+    |> Enum.filter(&(Resolver.priority_for(plan_data, &1.id, mode) == "hunt"))
+    |> Resolver.sort_hunt(plan_data, mode)
   end
 
   def packs_with_priority(plan_data, theme_packs, mode, priority) do
     Enum.filter(theme_packs, &(Resolver.priority_for(plan_data, &1.id, mode) == priority))
   end
 
-  def fine_candidates(plan_data, theme_packs, mode, filter, floor_filter) do
+  def chart_rows(plan_data, theme_packs, filter, floor_filter, floor_count) do
+    schedule = plan_data["mode_schedule"]
+
     theme_packs
-    |> Enum.filter(&(Resolver.priority_for(plan_data, &1.id, mode) == "fine"))
-    |> Enum.filter(&(Resolver.eligible_floors(&1, mode) != []))
     |> Enum.filter(&matches_filter?(&1, filter))
-    |> Enum.filter(&matches_floor_filter?(&1, mode, floor_filter))
+    |> Enum.flat_map(fn pack ->
+      Enum.map(@modes, fn mode ->
+        floors = Enum.filter(Resolver.eligible_floors(pack, mode), &(Resolver.mode_for_floor(schedule, &1) == mode))
+        %{pack: pack, mode: mode, floors: floors}
+      end)
+    end)
+    |> Enum.filter(&(&1.floors != [] and Enum.min(&1.floors) <= floor_count))
+    |> Enum.filter(&(floor_filter == nil or floor_filter in &1.floors))
+    |> Enum.sort_by(&Enum.min_max(&1.floors))
   end
+
+  def priority_button_class("hunt"), do: "btn-success"
+  def priority_button_class("banned"), do: "btn-error"
+
+  def priority_fill_class("hunt"), do: "bg-success/30"
+  def priority_fill_class("banned"), do: "bg-error/30"
+
+  def overflow?(extreme?), do: not extreme?
+
+  def likely_path(plan_data, theme_packs, floor_count) do
+    {path, _picked} =
+      Enum.map_reduce(1..floor_count, MapSet.new(), fn floor, picked ->
+        mode = Resolver.mode_for_floor(plan_data["mode_schedule"], floor)
+
+        theme_packs
+        |> Enum.filter(&(floor in Resolver.eligible_floors(&1, mode) and Resolver.priority_at(plan_data, &1, mode, floor) == "hunt"))
+        |> Enum.reject(&MapSet.member?(picked, &1.id))
+        |> Resolver.sort_hunt(plan_data, mode)
+        |> case do
+          [] -> {{floor, nil}, picked}
+          [top | rest] -> {{floor, {top, length(rest)}}, MapSet.put(picked, top.id)}
+        end
+      end)
+
+    Map.new(path)
+  end
+
+  def extreme_disabled?(plan_data), do: plan_data["mode_schedule"] != [%{"from_floor" => 1, "mode" => "hard"}]
+
+  def disabled_stripes_style do
+    "background-image: repeating-linear-gradient(135deg, color-mix(in oklab, var(--color-base-content) 14%, transparent) 0 4px, transparent 4px 10px)"
+  end
+
+  def hard_column(plan_data, floor_count, overflow?) do
+    from =
+      case plan_data["mode_schedule"] do
+        [%{"from_floor" => from} | _] -> min(from, 6)
+        _ -> 6
+      end
+
+    cond do
+      from <= floor_count -> from
+      overflow? -> floor_count + 1
+      true -> nil
+    end
+  end
+
+  def span_style(row, floor_count, overflow?) do
+    first = Enum.min(row.floors)
+    last_col = row |> visible_floors(floor_count, overflow?) |> Enum.max() |> column_of(floor_count)
+    "grid-column: #{first + 1} / span #{last_col - first + 1}"
+  end
+
+  def span_cells(row, floor_count, overflow?) do
+    first = Enum.min(row.floors)
+    {shown, hidden} = Enum.split_with(row.floors, &(&1 <= floor_count))
+    cells = Enum.map(shown, &{&1 - first + 1, [&1], "F#{&1}"})
+
+    if overflow? and hidden != [],
+      do: cells ++ [{floor_count + 2 - first, hidden, "F#{Enum.min(hidden)}-#{Enum.max(hidden)}"}],
+      else: cells
+  end
+
+  def highlight_columns(plan_data, row, floor_count, overflow?) do
+    if Resolver.priority_for(plan_data, row.pack.id, row.mode) == "fine" do
+      []
+    else
+      first = Enum.min(row.floors)
+
+      plan_data
+      |> Resolver.floors_for(row.pack.id, row.mode, row.pack)
+      |> Enum.filter(&(&1 in row.floors))
+      |> then(&visible_floors(%{floors: &1}, floor_count, overflow?))
+      |> Enum.map(&(column_of(&1, floor_count) - first + 1))
+      |> Enum.uniq()
+    end
+  end
+
+  defp visible_floors(row, floor_count, overflow?) do
+    if overflow?, do: row.floors, else: Enum.filter(row.floors, &(&1 <= floor_count))
+  end
+
+  defp column_of(floor, floor_count), do: min(floor, floor_count + 1)
 
   def pack_floor_label(plan_data, pack, mode) do
     floors = Resolver.floors_for(plan_data, pack.id, mode, pack)
@@ -317,18 +432,14 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   defp matches_filter?(_pack, ""), do: true
   defp matches_filter?(pack, filter), do: String.contains?(String.downcase(pack.name_en || ""), String.downcase(filter))
 
-  defp matches_floor_filter?(_pack, _mode, nil), do: true
-  defp matches_floor_filter?(pack, mode, floor), do: floor in Resolver.eligible_floors(pack, mode)
-
   defp reset_editor(socket) do
     socket
     |> assign(:editing_id, nil)
     |> assign(:name, "")
     |> assign(:plan_data, blank_plan_data())
-    |> assign(:active_mode, "normal")
     |> assign(:floor_filter, nil)
     |> assign(:filter, "")
-    |> assign(:floor_editor_pack_id, nil)
+    |> assign(:floor_editor, nil)
   end
 
   defp load_plan(socket, id) do
@@ -340,10 +451,10 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
         socket
         |> assign(:editing_id, plan.id)
         |> assign(:name, plan.name)
-        |> assign(:plan_data, normalize_plan_data(plan.data))
+        |> assign(:plan_data, plan.data |> normalize_plan_data() |> materialize_hunt_order(socket.assigns.theme_packs))
         |> assign(:floor_filter, nil)
         |> assign(:filter, "")
-        |> assign(:floor_editor_pack_id, nil)
+        |> assign(:floor_editor, nil)
     end
   end
 
@@ -392,14 +503,30 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     packs = Map.get(plan_data, "packs", %{})
     pack_entry = packs |> Map.get(pack_id, %{}) |> Map.delete(mode)
     packs = if pack_entry == %{}, do: Map.delete(packs, pack_id), else: Map.put(packs, pack_id, pack_entry)
-    Map.put(plan_data, "packs", packs)
+    plan_data |> Map.put("packs", packs) |> put_hunt_order(pack_id, mode, "fine")
   end
 
   defp put_priority(plan_data, pack_id, mode, priority) do
     packs = Map.get(plan_data, "packs", %{})
     pack_entry = packs |> Map.get(pack_id, %{}) |> Map.put(mode, %{"priority" => priority})
-    Map.put(plan_data, "packs", Map.put(packs, pack_id, pack_entry))
+    plan_data |> Map.put("packs", Map.put(packs, pack_id, pack_entry)) |> put_hunt_order(pack_id, mode, priority)
   end
+
+  defp put_hunt_order(plan_data, pack_id, mode, priority) do
+    order = plan_data |> get_in(["hunt_order", mode]) |> List.wrap() |> List.delete(pack_id)
+    order = if priority == "hunt", do: order ++ [pack_id], else: order
+    put_in(plan_data, [Access.key("hunt_order", %{}), mode], order)
+  end
+
+  defp materialize_hunt_order(plan_data, theme_packs) do
+    Enum.reduce(~w(normal hard), plan_data, fn mode, acc ->
+      ids = acc |> packs_with_priority(theme_packs, mode, "hunt") |> Enum.map(& &1.id)
+      put_in(acc, [Access.key("hunt_order", %{}), mode], ids)
+    end)
+  end
+
+  defp toggle_chance(%{"chance" => true} = entry), do: Map.delete(entry, "chance")
+  defp toggle_chance(entry), do: Map.put(entry, "chance", true)
 
   defp toggle_pack_floor(plan_data, pack, mode, floor) do
     pack_id = pack.id
@@ -431,6 +558,19 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       acc = put_priority(acc, pack_id, mode, priority)
       if floors, do: set_pack_floors(acc, pack_id, mode, floors), else: acc
     end)
+  end
+
+  defp toggle_span_floors(plan_data, pack, mode, floors) do
+    if Resolver.priority_for(plan_data, pack.id, mode) == "fine" do
+      plan_data |> put_priority(pack.id, mode, "hunt") |> set_pack_floors(pack.id, mode, floors)
+    else
+      current = Resolver.floors_for(plan_data, pack.id, mode, pack)
+      new_floors = if Enum.all?(floors, &(&1 in current)), do: current -- floors, else: Enum.sort(Enum.uniq(current ++ floors))
+
+      if new_floors == [],
+        do: put_priority(plan_data, pack.id, mode, "fine"),
+        else: set_pack_floors(plan_data, pack.id, mode, new_floors)
+    end
   end
 
   defp set_pack_floors(plan_data, pack_id, mode, floors) do

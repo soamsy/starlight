@@ -5,126 +5,81 @@
         <.plan_picker id="theme-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="pack plan" />
         <%= if @editing_id do %>
 
-          <%!-- Mode schedule --%>
-          <div class="flex flex-col gap-1">
-            <div class="flex items-center gap-2 text-xs text-base-content/60">
-              <span class="font-medium">Mode schedule</span>
-              <span>— click a floor to switch to hard from there on (one-way: normal → hard only)</span>
-              <label class="ml-auto flex items-center gap-1 cursor-pointer">
-                <input type="checkbox" checked={@extreme?} phx-click="toggle_extreme" class="checkbox checkbox-xs" />
-                show extreme floors (6-15)
-              </label>
-            </div>
-            <div class="flex gap-1 flex-wrap">
-              <%= for floor <- 1..max_floor(@extreme?) do %>
-                <% mode = StarlightBot.PackPlans.Resolver.mode_for_floor(@plan_data["mode_schedule"], floor) %>
-                <% breakpoint? = Enum.any?(@plan_data["mode_schedule"], &(&1["from_floor"] == floor)) %>
-                <button phx-click="toggle_breakpoint" phx-value-floor={floor}
-                        class={"btn btn-xs " <> if(mode == "hard", do: "btn-secondary", else: "btn-info btn-outline") <> if(breakpoint?, do: " ring ring-offset-1 ring-base-content/30", else: "")}
-                        title={"Floor #{floor}: #{mode}"}>
-                  <%= floor %>
-                </button>
-              <% end %>
-            </div>
-          </div>
-
-          <div class="flex flex-col gap-1">
-            <span class="text-xs text-base-content/60">
-              <span class="font-medium">Pack search</span>
-              <span>(on highlighted floors, once refreshes run out, search-replace the leftmost pack with the first unvisited Hunt pack that has a search hook)</span>
-            </span>
-            <div class="flex gap-1 flex-wrap">
-              <%= for floor <- 1..max_floor(@extreme?) do %>
-                <% search? = floor in @plan_data["search_floors"] %>
-                <button phx-click="toggle_search_floor" phx-value-floor={floor}
-                        class={"btn btn-xs " <> if(search?, do: "btn-warning", else: "btn-ghost border-base-300")}
-                        title={"Floor #{floor}: " <> if(search?, do: "search when out of refreshes", else: "no search")}>
-                  <%= floor %>
-                </button>
-              <% end %>
-            </div>
-          </div>
-
-          <div class="divider my-0"></div>
-
-          <%!-- Mode tabs --%>
-          <div class="flex gap-1">
-            <button phx-click="set_mode_tab" phx-value-mode="normal"
-                    class={"btn btn-sm " <> if(@active_mode == "normal", do: "btn-primary", else: "btn-ghost")}>
-              Normal
-            </button>
-            <button phx-click="set_mode_tab" phx-value-mode="hard"
-                    class={"btn btn-sm " <> if(@active_mode == "hard", do: "btn-primary", else: "btn-ghost")}>
-              Hard
-            </button>
-          </div>
-
-          <%!-- Floor coverage strip --%>
-          <div class="flex flex-col gap-1">
-            <span class="text-xs text-base-content/60">
-              Floor coverage — dashed = no Hunt/Bonus pack assigned yet, click to search that floor
-            </span>
-            <div class="flex gap-1 flex-wrap">
-              <%= for floor <- floors_in_range(@plan_data["mode_schedule"], @active_mode, max_floor(@extreme?)) do %>
-                <% covered? = floor_covered?(@plan_data, @theme_packs, @active_mode, floor) %>
-                <button phx-click="set_floor_filter" phx-value-floor={floor}
-                        class={"btn btn-xs " <>
-                          cond do
-                            @floor_filter == floor -> "btn-accent"
-                            covered? -> "btn-success btn-outline"
-                            true -> "btn-outline border-dashed text-base-content/50"
-                          end}>
-                  <%= floor %>
-                </button>
-              <% end %>
-            </div>
-          </div>
-
           <div id="priority-columns" phx-hook="PriorityClipboard" class="flex-1 min-h-0 flex flex-col gap-3 min-h-0">
 
             <%!-- Priority columns --%>
-            <div class="grid grid-cols-[3fr_3fr_1fr] gap-2">
+            <div class="grid grid-cols-2 gap-2">
               <%= for priority <- priorities() do %>
                 <div class="border border-base-300 rounded-lg p-2 flex flex-col gap-1 min-h-24 max-h-72 overflow-y-auto">
-                  <div class="text-xs font-semibold text-base-content/70 flex items-center gap-1 flex-wrap">
-                    <%= priority_label(priority) %>
-                    <span class="text-base-content/40 cursor-help" title={priority_tooltip(priority)}>ⓘ</span>
-                    <button type="button" phx-click="copy_priority" phx-value-priority={priority}
-                            class="btn btn-ghost btn-2xs px-1 ml-auto" title={"Copy #{priority_label(priority)} list to clipboard"}>
-                      ⧉
-                    </button>
-                    <button type="button" data-paste-priority={priority}
-                            class="btn btn-ghost btn-2xs px-1" title={"Paste clipboard JSON, replacing the #{priority_label(priority)} list"}>
-                      📥
-                    </button>
-                  </div>
-                  <%= for pack <- packs_with_priority(@plan_data, @theme_packs, @active_mode, priority) do %>
-                    <div class="flex flex-col gap-0.5 bg-base-200 rounded p-1">
-                      <div class="flex items-center gap-1">
-                        <img src={pack.image_path} class="w-6 h-6 rounded object-cover shrink-0" />
-                        <span class="text-[11px] truncate flex-1" title={pack.name_en}><%= pack.name_en %></span>
-                        <button phx-click="assign_priority" phx-value-pack_id={pack.id} phx-value-priority="fine"
-                                class="btn btn-ghost btn-xs px-1" title="Reset to fine">✕</button>
+                  <%= for mode <- modes() do %>
+                    <%= if mode == "normal" do %>
+                      <div class="text-xs font-semibold text-base-content/70 flex items-center gap-1 flex-wrap">
+                        <%= priority_label(priority) %>
+                        <span class="text-base-content/40 cursor-help" title={priority_tooltip(priority)}>ⓘ</span>
+                        <button type="button" phx-click="copy_priority" phx-value-priority={priority} phx-value-mode={mode}
+                                class="btn btn-ghost btn-2xs px-1 ml-auto" title={"Copy normal #{priority_label(priority)} list to clipboard"}>
+                          ⧉
+                        </button>
+                        <button type="button" data-paste-priority={priority} data-paste-mode={mode}
+                                class="btn btn-ghost btn-2xs px-1" title={"Paste clipboard JSON, replacing the normal #{priority_label(priority)} list"}>
+                          📥
+                        </button>
                       </div>
-                      <button phx-click="toggle_floor_editor" phx-value-pack_id={pack.id}
-                              class="text-[10px] text-base-content/60 self-start hover:underline">
-                        floors: <%= pack_floor_label(@plan_data, pack, @active_mode) %> ▾
-                      </button>
-                      <%= if @floor_editor_pack_id == pack.id do %>
-                        <div class="flex flex-wrap gap-0.5 mt-0.5">
-                          <% assigned = StarlightBot.PackPlans.Resolver.floors_for(@plan_data, pack.id, @active_mode, pack) %>
-                          <%= for floor <- StarlightBot.PackPlans.Resolver.eligible_floors(pack, @active_mode) do %>
-                            <button phx-click="toggle_pack_floor" phx-value-pack_id={pack.id} phx-value-floor={floor}
-                                    class={"btn btn-2xs px-1.5 " <> if(floor in assigned, do: "btn-primary", else: "btn-outline")}>
-                              <%= floor %>
-                            </button>
+                    <% else %>
+                      <div class="text-[10px] font-semibold uppercase tracking-wide text-base-content/60 flex items-center gap-1 border-t border-base-300 pt-1 mt-1">
+                        Hard
+                        <button type="button" phx-click="copy_priority" phx-value-priority={priority} phx-value-mode={mode}
+                                class="btn btn-ghost btn-2xs px-1 ml-auto" title={"Copy hard #{priority_label(priority)} list to clipboard"}>
+                          ⧉
+                        </button>
+                        <button type="button" data-paste-priority={priority} data-paste-mode={mode}
+                                class="btn btn-ghost btn-2xs px-1" title={"Paste clipboard JSON, replacing the hard #{priority_label(priority)} list"}>
+                          📥
+                        </button>
+                      </div>
+                    <% end %>
+                    <div id={"priority-list-#{priority}-#{mode}"} phx-hook={if priority == "hunt", do: "SortableList"}
+                         data-sort-event="reorder_hunt" data-sort-scope={mode} class="flex flex-col gap-1">
+                      <%= for pack <- packs_with_priority(@plan_data, @theme_packs, mode, priority) do %>
+                        <div id={"priority-#{priority}-#{mode}-#{pack.id}"} data-sort-id={pack.id} class="flex flex-col gap-0.5 bg-base-200 rounded p-1">
+                          <div class="flex items-center gap-1">
+                            <%= if priority == "hunt" do %>
+                              <span data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to reorder">⠿</span>
+                            <% end %>
+                            <img src={pack.image_path} class="w-6 h-6 rounded object-cover shrink-0" />
+                            <span class="text-[11px] truncate flex-1" title={pack.name_en}><%= pack.name_en %></span>
+                            <%= if priority == "hunt" do %>
+                              <% chance? = StarlightBot.PackPlans.Resolver.chance?(@plan_data, pack.id, mode) %>
+                              <button phx-click="toggle_chance" phx-value-pack_id={pack.id} phx-value-mode={mode}
+                                      class={"btn btn-ghost btn-xs px-1 whitespace-nowrap " <> if(chance?, do: "text-warning", else: "text-base-content/40")}
+                                      title={if chance?, do: "Chance pack: grabbed on sight, never refreshed or searched for. Click to make it a normal Hunt pack.", else: "Mark as chance pack: grabbed on sight, never refreshed or searched for"}>
+                                <%= if chance?, do: "★ chance pack", else: "☆" %>
+                              </button>
+                            <% end %>
+                            <button phx-click="assign_priority" phx-value-pack_id={pack.id} phx-value-priority="fine" phx-value-mode={mode}
+                                    class="btn btn-ghost btn-xs px-1" title="Reset to fine">✕</button>
+                          </div>
+                          <button phx-click="toggle_floor_editor" phx-value-pack_id={pack.id} phx-value-mode={mode}
+                                  class="text-[10px] text-base-content/60 self-start hover:underline">
+                            floors: <%= pack_floor_label(@plan_data, pack, mode) %> ▾
+                          </button>
+                          <%= if @floor_editor == {mode, pack.id} do %>
+                            <div class="flex flex-wrap gap-0.5 mt-0.5">
+                              <% assigned = StarlightBot.PackPlans.Resolver.floors_for(@plan_data, pack.id, mode, pack) %>
+                              <%= for floor <- StarlightBot.PackPlans.Resolver.eligible_floors(pack, mode) do %>
+                                <button phx-click="toggle_pack_floor" phx-value-pack_id={pack.id} phx-value-floor={floor} phx-value-mode={mode}
+                                        class={"btn btn-2xs px-1.5 " <> if(floor in assigned, do: "btn-primary", else: "btn-outline")}>
+                                  <%= floor %>
+                                </button>
+                              <% end %>
+                            </div>
                           <% end %>
                         </div>
                       <% end %>
                     </div>
-                  <% end %>
-                  <%= if packs_with_priority(@plan_data, @theme_packs, @active_mode, priority) == [] do %>
-                    <div class="text-[11px] text-base-content/30 italic">none</div>
+                    <%= if packs_with_priority(@plan_data, @theme_packs, mode, priority) == [] do %>
+                      <div class="text-[11px] text-base-content/30 italic">none</div>
+                    <% end %>
                   <% end %>
                 </div>
               <% end %>
@@ -133,34 +88,147 @@
             <div class="divider my-0"></div>
 
             <%!-- Assign panel --%>
+            <% floor_count = max_floor(@extreme?) %>
+            <% overflow? = overflow?(@extreme?) %>
+            <% hard_col = hard_column(@plan_data, floor_count, overflow?) %>
+            <% extreme_disabled? = extreme_disabled?(@plan_data) %>
+            <% path = likely_path(@plan_data, @theme_packs, floor_count) %>
+            <% rows = chart_rows(@plan_data, @theme_packs, @filter, @floor_filter, floor_count) %>
             <div class="flex-1 min-h-0 flex flex-col gap-1">
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-3">
                 <span class="text-xs font-medium text-base-content/70">
                   Assign a pack
-                  <%= if @floor_filter, do: " — eligible for floor #{@floor_filter}" %>
+                  <%= if @floor_filter, do: " (eligible for F#{@floor_filter})" %>
                 </span>
                 <input type="text" placeholder="Search packs…" value={@filter} phx-keyup="filter_packs"
                        class="input input-bordered input-xs w-48 ml-auto" />
               </div>
-
-              <div class="flex-1 min-h-0 flex flex-col gap-1 overflow-y-auto">
-                <%= for pack <- fine_candidates(@plan_data, @theme_packs, @active_mode, @filter, @floor_filter) do %>
-                  <div class="flex items-center gap-2 p-1 rounded hover:bg-base-200">
-                    <img src={pack.image_path} class="w-6 h-6 rounded object-cover shrink-0" />
-                    <span class="text-xs flex-1 truncate" title={pack.name_en}><%= pack.name_en %></span>
-                    <span class="badge badge-ghost badge-xs">
-                      <%= Enum.join(StarlightBot.PackPlans.Resolver.eligible_floors(pack, @active_mode), ",") %>
-                    </span>
-                    <%= for priority <- priorities() do %>
-                      <button phx-click="assign_priority" phx-value-pack_id={pack.id} phx-value-priority={priority}
-                              class="btn btn-2xs btn-outline">
-                        <%= priority_label(priority) %>
-                      </button>
+              <div id="assign-waterfall" phx-hook="DragScroll"
+                   class="group/pan flex-1 min-h-0 grid content-start gap-x-2 gap-y-0.5 overflow-auto data-[pan=ready]:cursor-grab data-[pan=active]:cursor-grabbing"
+                   style={"grid-template-columns: auto repeat(#{floor_count}, minmax(#{if @extreme?, do: "calc(6rem + 100px)", else: "6rem"}, 1fr))#{if overflow?, do: " 5rem"}"}>
+                <div class="col-span-full grid grid-cols-subgrid sticky top-0 bg-base-100 z-10 border-b border-base-300">
+                  <span class="row-start-2 col-start-1 sticky left-0 z-20 bg-base-100 text-[10px] text-base-content/40 px-1 whitespace-nowrap self-end" data-no-pan><span class="invisible group-data-[pan]/pan:visible">drag chart to pan ⇆</span></span>
+                  <span class="row-start-1 col-start-1 sticky left-0 z-20 bg-base-100 text-[10px] font-medium text-base-content/50 px-1 whitespace-nowrap self-center text-right" data-no-pan>likely path ▸</span>
+                  <%= for floor <- 1..floor_count do %>
+                    <% hard? = StarlightBot.PackPlans.Resolver.mode_for_floor(@plan_data["mode_schedule"], floor) == "hard" %>
+                    <div class="row-start-1 relative flex items-center py-1 pr-3 min-w-0" style={"grid-column: #{floor + 1}"}>
+                      <%= case path[floor] do %>
+                        <% {pack, others} -> %>
+                          <% chance? = StarlightBot.PackPlans.Resolver.chance?(@plan_data, pack.id, if(hard?, do: "hard", else: "normal")) %>
+                          <div class={"flex-1 min-w-0 flex items-center gap-1 rounded-full border pl-0.5 pr-1 py-0.5 text-[10px] shadow-sm " <> if(hard?, do: "border-warning bg-warning/15", else: "border-success/60 bg-success/10")}
+                               title={"F#{floor}: #{pack.name_en}" <> if(chance?, do: " (chance pack)", else: "") <> if(others > 0, do: ", then #{others} more in Hunt order", else: "")}>
+                            <img src={pack.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                            <span class="truncate font-medium flex-1"><%= if chance?, do: "★ " %><%= pack.name_en %></span>
+                            <%= if others > 0 do %>
+                              <span class="shrink-0 rounded-full bg-base-content/10 px-1 text-[9px] text-base-content/60">+<%= others %></span>
+                            <% end %>
+                          </div>
+                        <% nil -> %>
+                          <div class="flex-1 min-w-0 rounded-full border border-dashed border-base-content/20 px-1.5 py-0.5 text-[10px] italic text-base-content/30 truncate">
+                            no Hunt pack
+                          </div>
+                      <% end %>
+                      <%= if floor < floor_count do %>
+                        <span class="absolute top-1/2 -right-2 w-5 h-px bg-base-content/40"></span>
+                        <span class="absolute top-1/2 -right-2 -translate-y-1/2 border-y-[4px] border-y-transparent border-l-[6px] border-l-base-content/40"></span>
+                      <% end %>
+                    </div>
+                  <% end %>
+                  <%= for floor <- 1..floor_count do %>
+                    <% hard? = StarlightBot.PackPlans.Resolver.mode_for_floor(@plan_data["mode_schedule"], floor) == "hard" %>
+                    <% breakpoint? = Enum.any?(@plan_data["mode_schedule"], &(&1["from_floor"] == floor)) %>
+                    <% search? = floor in @plan_data["search_floors"] %>
+                    <div class={"row-start-2 flex items-center justify-between gap-1 px-1 py-1 rounded-t " <> if(hard?, do: "bg-neutral/40", else: "")}
+                         style={"grid-column: #{floor + 1}; " <> if(extreme_disabled? and floor >= 6, do: disabled_stripes_style(), else: "")}
+                         title={if(extreme_disabled? and floor >= 6, do: "Extreme floors only matter when the plan goes hard from F1")}>
+                      <div class="flex items-center gap-0.5">
+                        <%= if floor == 6 do %>
+                          <button phx-click="toggle_extreme" class="text-[11px] px-1 rounded text-base-content/50 hover:bg-base-200" title="Collapse F6-15 into one column">◂</button>
+                        <% end %>
+                        <button phx-click="set_floor_filter" phx-value-floor={floor}
+                                class={"text-[11px] font-semibold px-1.5 rounded " <> if(@floor_filter == floor, do: "bg-success text-success-content", else: "text-base-content/70 hover:bg-base-200")}
+                                title={"Only show packs that can appear on F#{floor}"}>
+                          F<%= floor %>
+                        </button>
+                      </div>
+                      <div class="flex items-center gap-0.5">
+                        <%= if floor <= 5 do %>
+                        <button phx-click="toggle_breakpoint" phx-value-floor={floor}
+                                class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(breakpoint?, do: "btn-neutral", else: "btn-ghost border-base-300")}
+                                title={if breakpoint?, do: "Hard from F#{floor} on. Click to stay normal.", else: "Switch to hard from F#{floor} on"}>
+                          go hard
+                        </button>
+                        <% end %>
+                        <button phx-click="toggle_search_floor" phx-value-floor={floor}
+                                class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(search?, do: "btn-warning", else: "btn-ghost border-base-300")}
+                                title="Once refreshes run out, search-replace the leftmost pack with the highest unvisited non-chance Hunt pack that has a search hook">
+                          search
+                        </button>
+                      </div>
+                    </div>
+                  <% end %>
+                  <%= if overflow? do %>
+                    <button phx-click="toggle_extreme"
+                            class={"row-start-2 flex items-center justify-center text-[11px] font-semibold text-base-content/60 rounded-t hover:bg-base-200 " <> if(hard_col, do: "bg-neutral/40", else: "")}
+                            style={"grid-column: #{floor_count + 2}; " <> if(extreme_disabled?, do: disabled_stripes_style(), else: "")}
+                            title={"Expand extreme floors F6-15" <> if(extreme_disabled?, do: " (they only matter when the plan goes hard from F1)", else: "")}>
+                      F6-15 ▸
+                    </button>
+                  <% end %>
+                  <%= if extreme_disabled? do %>
+                    <div class="row-start-2 self-end relative z-[1] pointer-events-none" style="grid-column: 7 / -1">
+                      <span class={"absolute top-full inset-x-0 mt-3 px-1 font-bold leading-tight text-center text-base-content/60 " <> if(@extreme?, do: "text-2xl", else: "text-sm")}>
+                        N/A until F1 starts hard
+                      </span>
+                    </div>
+                  <% end %>
+                </div>
+                <%= for row <- rows do %>
+                  <% pack = row.pack %>
+                  <% current = StarlightBot.PackPlans.Resolver.priority_for(@plan_data, pack.id, row.mode) %>
+                  <div class="group col-span-full grid grid-cols-subgrid items-center rounded hover:bg-base-200">
+                    <%= if hard_col do %>
+                      <div class="self-stretch -my-px bg-neutral/25" style={"grid-row: 1; grid-column: #{hard_col + 1} / -1"}></div>
                     <% end %>
+                    <%= if extreme_disabled? do %>
+                      <div class="self-stretch -my-px" style={"grid-row: 1; grid-column: 7 / -1; " <> disabled_stripes_style()}></div>
+                    <% end %>
+                    <div class="sticky left-0 z-[5] flex gap-1 px-1 bg-base-100 group-hover:bg-base-200 cursor-default" style="grid-row: 1; grid-column: 1" data-no-pan>
+                      <%= for priority <- priorities() do %>
+                        <%= if current == priority do %>
+                          <button phx-click="assign_priority" phx-value-pack_id={pack.id} phx-value-priority="fine" phx-value-mode={row.mode}
+                                  class={"btn btn-xs h-5 min-h-0 px-1.5 text-[10px] " <> priority_button_class(priority)} title={"Remove from #{row.mode} #{priority_label(priority)}"}>
+                            <%= priority_label(priority) %>
+                          </button>
+                        <% else %>
+                          <button phx-click="assign_priority" phx-value-pack_id={pack.id} phx-value-priority={priority} phx-value-mode={row.mode}
+                                  class="btn btn-xs h-5 min-h-0 px-1.5 text-[10px] btn-outline">
+                            <%= priority_label(priority) %>
+                          </button>
+                        <% end %>
+                      <% end %>
+                    </div>
+                    <div class="grid grid-cols-subgrid min-w-0 rounded border border-base-300 bg-base-200 overflow-hidden"
+                         style={"grid-row: 1; " <> span_style(row, floor_count, overflow?)}
+                         title={"#{pack.name_en} (#{row.mode} floors #{Enum.join(row.floors, ",")})"}>
+                      <%= for col <- highlight_columns(@plan_data, row, floor_count, overflow?) do %>
+                        <div class={"-mx-1 " <> priority_fill_class(current)} style={"grid-row: 1; grid-column: #{col}"}></div>
+                      <% end %>
+                      <div class="relative pointer-events-none flex items-center gap-1.5 px-1 min-w-0" style="grid-row: 1; grid-column: 1 / -1">
+                        <img src={pack.image_path} class="w-5 h-5 rounded-sm object-cover shrink-0" draggable="false" />
+                        <span class="text-xs flex-1 truncate"><%= pack.name_en %></span>
+                      </div>
+                      <%= for {col, floors, label} <- span_cells(row, floor_count, overflow?) do %>
+                        <div phx-click="toggle_span_floors" phx-value-pack_id={pack.id} phx-value-floors={Enum.join(floors, ",")} phx-value-mode={row.mode}
+                             class="relative z-[1] -mx-1 cursor-pointer hover:bg-base-content/10"
+                             style={"grid-row: 1; grid-column: #{col}"}
+                             title={"#{pack.name_en}: toggle #{label}"}></div>
+                      <% end %>
+                    </div>
                   </div>
                 <% end %>
-                <%= if fine_candidates(@plan_data, @theme_packs, @active_mode, @filter, @floor_filter) == [] do %>
-                  <div class="text-xs text-base-content/40 italic p-1">No matching packs.</div>
+                <%= if rows == [] do %>
+                  <div class="col-span-full text-xs text-base-content/40 italic p-1">No matching packs.</div>
                 <% end %>
               </div>
             </div>

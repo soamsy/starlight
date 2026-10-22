@@ -1,6 +1,8 @@
 defmodule StarlightBot.PackPlans.Resolver do
   alias StarlightBot.ThemePacks
 
+  def mode_for_floor(mode_schedule, floor) when is_list(mode_schedule) and is_integer(floor) and floor > 5, do: "hard"
+
   def mode_for_floor(mode_schedule, floor) when is_list(mode_schedule) and is_integer(floor) do
     mode_schedule
     |> Enum.filter(&(&1["from_floor"] <= floor))
@@ -35,48 +37,46 @@ defmodule StarlightBot.PackPlans.Resolver do
     end
   end
 
-  def priority_in_play?(plan_data, all_packs, mode, floor, priority) do
-    packs_by_id = Map.new(all_packs, &{&1.id, &1})
-
-    plan_data
-    |> Map.get("packs", %{})
-    |> Enum.any?(fn {pack_id, modes} ->
-      with %{"priority" => ^priority} <- modes[mode],
-           pack when not is_nil(pack) <- packs_by_id[pack_id] do
-        floor in floors_for(plan_data, pack_id, mode, pack)
-      else
-        _ -> false
-      end
-    end)
+  def hunt_in_play?(plan_data, all_packs, mode, floor) do
+    Enum.any?(all_packs, &(priority_at(plan_data, &1, mode, floor) == "hunt" and not chance?(plan_data, &1.id, mode)))
   end
 
-  def hunt_in_play?(plan_data, all_packs, mode, floor) do
-    priority_in_play?(plan_data, all_packs, mode, floor, "hunt")
+  def chance?(plan_data, pack_id, mode) do
+    get_in(plan_data, ["packs", pack_id, mode, "chance"]) == true
+  end
+
+  def hunt_rank(plan_data, mode) do
+    order = get_in(plan_data, ["hunt_order", mode]) || []
+    ranks = order |> Enum.with_index() |> Map.new()
+    &Map.get(ranks, &1, length(order))
+  end
+
+  def sort_hunt(packs, plan_data, mode) do
+    rank = hunt_rank(plan_data, mode)
+    Enum.sort_by(packs, &rank.(&1.id))
   end
 
   def choose(shown_packs, all_packs, plan_data, mode, floor, refreshes_left) do
-    classified = Enum.map(shown_packs, &{&1.id, priority_at(plan_data, &1, mode, floor)})
+    classified = Enum.map(shown_packs, &{&1, priority_at(plan_data, &1, mode, floor)})
+    hunt = for {pack, "hunt"} <- classified, do: pack
 
     cond do
-      bonus = Enum.find(classified, fn {_, p} -> p == "bonus" end) ->
-        {:pick, elem(bonus, 0)}
-
-      hunt = Enum.find(classified, fn {_, p} -> p == "hunt" end) ->
-        {:pick, elem(hunt, 0)}
+      hunt != [] ->
+        {:pick, hd(sort_hunt(hunt, plan_data, mode)).id}
 
       fine = Enum.find(classified, fn {_, p} -> p == "fine" end) ->
         if refreshes_left > 0 and hunt_in_play?(plan_data, all_packs, mode, floor) do
           :refresh
         else
-          {:pick, elem(fine, 0)}
+          {:pick, elem(fine, 0).id}
         end
 
       refreshes_left > 0 ->
         :refresh
 
       true ->
-        {forced_id, _} = hd(classified)
-        {:forced_pick, forced_id}
+        {forced, _} = hd(classified)
+        {:forced_pick, forced.id}
     end
   end
 end

@@ -57,14 +57,14 @@ defmodule StarlightBot.StarlightBudgetTest do
     ]
 
     all_hard = %{"mode_schedule" => [%{"from_floor" => 1, "mode" => "hard"}]}
-    assert StarlightBudget.railway_floors(all_hard, packs, ~w(hunt bonus fine)) == [4, 5]
-    assert StarlightBudget.railway_floors(all_hard, packs, ~w(hunt bonus)) == []
+    assert StarlightBudget.railway_floors(all_hard, packs, ~w(hunt fine)) == [4, 5]
+    assert StarlightBudget.railway_floors(all_hard, packs, ~w(hunt)) == []
 
     hunt_l1 = Map.put(all_hard, "packs", %{"l1" => %{"hard" => %{"priority" => "hunt"}}, "l2" => %{"hard" => %{"priority" => "banned"}}})
-    assert StarlightBudget.railway_floors(hunt_l1, packs, ~w(hunt bonus fine)) == [5]
-    assert StarlightBudget.railway_floors(hunt_l1, packs, ~w(hunt bonus)) == [5]
+    assert StarlightBudget.railway_floors(hunt_l1, packs, ~w(hunt fine)) == [5]
+    assert StarlightBudget.railway_floors(hunt_l1, packs, ~w(hunt)) == [5]
 
-    assert StarlightBudget.railway_floors(%{}, packs, ~w(hunt bonus fine)) == []
+    assert StarlightBudget.railway_floors(%{}, packs, ~w(hunt fine)) == []
   end
 
   test "cards_gain/1 is a flat amount per card" do
