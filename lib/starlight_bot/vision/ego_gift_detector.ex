@@ -9,6 +9,8 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
   @letterbox_gray {114.0, 114.0, 114.0, 0.0}  # must match training's "nothing space" fill color
   @classifier_input_size 160
 
+  @models_dir Path.expand("../../../vendor/EgoGiftML/models/best", __DIR__)
+
   @default_det_imgsz 384
   @default_det_conf 0.25
   @default_det_iou 0.45
@@ -40,7 +42,7 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
   end
 
   defp load_models do
-    dir = Path.join([:code.priv_dir(:starlight_bot), "models", "ego_gifts"])
+    dir = @models_dir
     detector_path = Path.join(dir, "detector.onnx")
     classifier_path = Path.join(dir, "classifier.onnx")
     classes_path = Path.join(dir, "classifier_classes.json")
@@ -67,7 +69,7 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
       end
     else
       Logger.warning(
-        "EgoGiftDetector: models not found under #{dir} — run `mix ego_gifts.fetch_model`",
+        "EgoGiftDetector: models not found under #{dir}, run `git submodule update --init`",
         module: __MODULE__
       )
 
