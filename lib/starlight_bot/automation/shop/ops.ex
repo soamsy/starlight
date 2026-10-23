@@ -28,6 +28,9 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @sell_scroll_bottom_hook :shop_sell_popup_scroll_bottom
   @sell_scroll_track_hook :shop_sell_popup_scroll_track
   @sell_scroll_hooks [@sell_scroll_top_hook, @sell_scroll_bottom_hook, @sell_scroll_track_hook]
+  @sell_nothing_selected_hook :shop_sell_popup_nothing_selected
+  @sell_select_check_ms 800
+  @sell_select_tries 3
   @sell_scroll_clicks 4
   @sell_scroll_settle_ms 400
   @scroll_poll_ms 50
@@ -66,6 +69,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
   }
 
   @fuse_open_hook :shop_fuse
+  @fuse_open_retry_ms 1_500
+  @fuse_open_tries 4
   @fuse_popup_hook :shop_fuse_popup
   @fuse_select_keyword_hook :shop_fuse_popup_select_a_keyword
   @fuse_affinity_confirm_hook :shop_fuse_popup_affinity_popup_confirm
@@ -81,7 +86,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
   @heal_confirm_timeout 1_500
-  @heal_select_retry_ms 500
+  @heal_select_retry_ms 1_000
   @heal_result_timeout 5_000
   @replace_popup_hook :shop_replace_popup
   @replace_confirm_hook :shop_replace_popup_confirm
@@ -261,7 +266,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
 
   defp finish_heal(steps, ctx) do
     select_until_healed =
-      retry_until(:shop_heal_heal_again, [branch([{:shop_heal_confirm, [click(:shop_heal_confirm)]}])], every: @heal_select_retry_ms, timeout: @heal_result_timeout)
+      retry_until(:shop_heal_heal_again, [branch([{all_of([:shop_heal_confirm, not_hook(:shop_heal_heal_again)]), [click(:shop_heal_confirm)]}])], every: @heal_select_retry_ms, timeout: @heal_result_timeout)
 
     case Engine.act(steps ++ [select_until_healed | confirm(:shop_heal_heal_again)], ctx) do
       {:ok, _} -> :ok
@@ -814,7 +819,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
       {:ok, :already_open}
     else
       RunMemory.put(ctx, @fuse_affinity_key, nil)
-      Engine.act([click(@fuse_open_hook), await(@fuse_popup_hook)], ctx)
+      Engine.act([retry_until(@fuse_popup_hook, [click(@fuse_open_hook)], every: @fuse_open_retry_ms, tries: @fuse_open_tries, retry_if: @fuse_open_hook)], ctx)
     end
   end
 
@@ -1070,7 +1075,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   def sell_gift(gift_id, ctx) do
-    with :ok <- find_and_click_gift(@sell_popup, gift_id, ctx),
+    with :ok <- select_sell_gift(gift_id, ctx, 1),
          {:ok, _} <-
            Engine.act(
              [click(:shop_sell_popup_confirm)] ++
@@ -1084,6 +1089,22 @@ defmodule StarlightBot.Automation.Shop.Ops do
       {:error, reason} = err ->
         Ctx.log(ctx, :error, "shop sell: #{gift_id} — #{inspect(reason)}")
         err
+    end
+  end
+
+  defp select_sell_gift(gift_id, ctx, attempt) do
+    with :ok <- find_and_click_gift(@sell_popup, gift_id, ctx) do
+      cond do
+        Engine.check_within(not_hook(@sell_nothing_selected_hook), @sell_select_check_ms) ->
+          :ok
+
+        attempt >= @sell_select_tries ->
+          {:error, {:not_selected, gift_id}}
+
+        true ->
+          Ctx.log(ctx, :info, "shop sell: #{gift_id} click didn't select it, rescanning (#{attempt}/#{@sell_select_tries})")
+          select_sell_gift(gift_id, ctx, attempt + 1)
+      end
     end
   end
 

@@ -1,8 +1,10 @@
 defmodule StarlightBot.Automation.Shop.Actions.Heal do
-  alias StarlightBot.Automation.RunMemory
+  alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Automation.Shop.Ops
+  alias StarlightBot.Ctx
   alias StarlightBot.GiftPlans
 
+  @menu_check_ms 1_000
   @heal_settle_ms 500
   @heal_settle_poll_ms 100
   @first_check_settle_ms 500
@@ -101,7 +103,14 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
 
   defp close_menu(state, _ctx), do: state
 
-  defp open_menu(%{heal_menu_open: true} = state, _ctx), do: {:ok, state}
+  defp open_menu(%{heal_menu_open: true} = state, ctx) do
+    if Engine.check_within(:shop_heal_menu, @menu_check_ms) do
+      {:ok, state}
+    else
+      Ctx.log(ctx, :info, "shop heal: heal menu closed on its own, reopening it")
+      open_menu(%{state | heal_menu_open: false}, ctx)
+    end
+  end
 
   defp open_menu(state, ctx) do
     with :ok <- Ops.open_heal_menu(ctx), do: {:ok, %{state | heal_menu_open: true}}
