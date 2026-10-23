@@ -157,6 +157,10 @@ defmodule StarlightBot.Navigation.DSL do
 
   def mouse_up(button \\ :left), do: {:mouse_button, button, false}
 
+  def result(value), do: {:__done__, value}
+
+  def capture(steps, opts) when is_list(steps), do: {:capture, steps, continuation(Keyword.fetch!(opts, :then))}
+
   def goto(from, to, opts \\ []) when is_atom(from) and is_atom(to),
     do: {:goto, from, to, continuation(Keyword.validate!(opts, [:then])[:then])}
 

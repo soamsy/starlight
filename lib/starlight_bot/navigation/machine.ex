@@ -21,6 +21,7 @@ defmodule StarlightBot.Navigation.Machine do
     :ensure,
     :goto,
     :locate_screen,
+    :capture,
     :__mark__,
     :__verify__,
     :__retry_after__,
@@ -206,6 +207,8 @@ defmodule StarlightBot.Navigation.Machine do
 
     push(with_delivery(steps, then), data.frame, data)
   end
+
+  defp exec_internal({:capture, steps, then}, data), do: push(with_delivery(steps, then), data.frame, data)
 
   defp exec_internal({:locate_screen, timeout_ms, then}, data) do
     data = %{data | stack: with_delivery([], then) ++ data.stack}

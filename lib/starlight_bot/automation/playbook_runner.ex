@@ -1,5 +1,5 @@
 defmodule StarlightBot.Automation.PlaybookRunner do
-  alias StarlightBot.Automation.{BattleChain, Engine, RunMemory, TrayWatch}
+  alias StarlightBot.Automation.{BattleChain, RunMemory, TrayWatch}
   alias StarlightBot.{BattlePlans, Conditions, Ctx, SinnerProfiles}
   alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Input.Mouse
@@ -49,9 +49,9 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @ego_warning :battle_ego_warning
   @hover_label :enemy_target_hovering_label
 
-  def play_chain_turn(_last_frame, ctx), do: play_turn("chain", ctx)
+  def play_chain_turn(_last_frame, ctx), do: start_turn("chain", ctx)
 
-  def play_focused_turn(_last_frame, ctx), do: play_turn("focused", ctx)
+  def play_focused_turn(_last_frame, ctx), do: start_turn("focused", ctx)
 
   def preview_target(enemy_pick, ctx) do
     Process.sleep(@preview_alt_tab_ms)
@@ -105,7 +105,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     {:ok, last_frame}
   end
 
-  defp play_turn(kind, ctx) do
+  defp start_turn(kind, ctx) do
     turn = RunMemory.battle_turn(ctx)
     track = RunMemory.battle_track(ctx, kind)
     floor = if BattlePlans.lux_track?(track), do: 1, else: RunMemory.floor(ctx)
@@ -121,12 +121,62 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     scan = if Enum.any?(BattlePlans.flatten_actions(actions), &needs_tray?/1), do: scan(ctx), else: :skip
     RunMemory.put(ctx, :target_panned?, false)
 
-    with {:ok, state} <- run_actions(actions |> merge_keys() |> commit_trailing_damage_rate(), %{kind: kind, scan: scan}, ctx),
-         :ok <- ensure_started(state, kind, ctx) do
-      RunMemory.put_battle_turn(ctx, turn + 1)
+    turn_state = %{kind: kind, scan: scan, number: turn}
+    {:steps, [run_actions(actions |> merge_keys() |> commit_trailing_damage_rate(), turn_state)]}
+  end
+
+  def run_actions([], turn, _frame, _ctx), do: {:steps, [DSL.call(__MODULE__, :finish_turn, [:pending, turn])]}
+
+  def run_actions([action | rest], turn, _frame, ctx) do
+    case run_action(action, turn, ctx) do
+      :pending ->
+        {:steps, [run_actions(rest, turn)]}
+
+      {:then, actions} ->
+        {:steps, [run_actions(actions ++ rest, turn)]}
+
+      {:steps, steps} ->
+        {:steps, steps ++ [run_actions(rest, turn)]}
+
+      :started ->
+        if rest != [], do: Ctx.log(ctx, :info, "playbook: turn started, skipping #{length(rest)} remaining action(s)")
+        {:steps, [DSL.call(__MODULE__, :finish_turn, [:started, turn])]}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  def finish_turn(state, turn, _frame, ctx) do
+    with :ok <- ensure_started(state, turn.kind, ctx) do
+      RunMemory.put_battle_turn(ctx, turn.number + 1)
       {:ok, nil}
     end
   end
+
+  def after_retry({:ok, _}, _frame, _ctx), do: {:error, :battle_left}
+  def after_retry({:error, _} = error, _frame, _ctx), do: error
+
+  def dodge_column(tray, column, _frame, ctx) do
+    click_dodge(tray, column, ctx)
+    {:ok, nil}
+  end
+
+  def ego_column(action, tray, column, _frame, ctx) do
+    with {:ok, point} <- slot_point(tray, column, ctx) do
+      Ctx.log(ctx, :info, "playbook: #{action["grade"]} EGO#{if action["corrode"], do: " (corroded)"} on slot #{column + 1}")
+      use_ego(point, action, ctx)
+    end
+
+    {:ok, nil}
+  end
+
+  def target_column(action, scan_frame, tray, column, _frame, ctx) do
+    target_or_dodge(resolve_row(action, column, scan_frame, tray, ctx), action, tray, column, ctx)
+    {:ok, nil}
+  end
+
+  defp run_actions(actions, turn), do: DSL.call(__MODULE__, :run_actions, [actions, turn])
 
   defp playbook(ctx, track, floor, kind) do
     case RunMemory.battle_plan(ctx) |> Resolver.playbook_for(track, floor) do
@@ -163,24 +213,6 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp run_actions([], _turn, _ctx), do: {:ok, :pending}
-
-  defp run_actions([action | rest], turn, ctx) do
-    with :ok <- guard(ctx) do
-      case run_action(action, turn, ctx) do
-        :pending ->
-          run_actions(rest, turn, ctx)
-
-        :started ->
-          if rest != [], do: Ctx.log(ctx, :info, "playbook: turn started, skipping #{length(rest)} remaining action(s)")
-          {:ok, :started}
-
-        {:error, _} = error ->
-          error
-      end
-    end
-  end
-
   defp run_action(%{"type" => "if"} = block, turn, ctx) do
     branch = if condition_met?(block["condition"], turn.scan, ctx), do: "then", else: "else"
     actions = block[branch] |> order_actions() |> merge_keys()
@@ -191,10 +223,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       "playbook: if #{BattlePlans.condition_label(block["condition"], profile_names())} -> #{branch} [#{Enum.map_join(actions, ", ", & &1["type"])}]"
     )
 
-    case run_actions(actions, turn, ctx) do
-      {:ok, state} -> state
-      {:error, _} = error -> error
-    end
+    {:then, actions}
   end
 
   defp run_action(%{"type" => "retry"}, _turn, ctx) do
@@ -209,10 +238,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
           :battle_given_up
       end
 
-    case Engine.goto(:battle_turn, target, ctx) do
-      {:ok, _} -> {:error, :battle_left}
-      {:error, _} = error -> error
-    end
+    {:steps, [DSL.goto(:battle_turn, target, then: {__MODULE__, :after_retry, []})]}
   end
 
   defp run_action(%{"type" => "win_rate_commit"}, %{kind: kind}, ctx) do
@@ -260,33 +286,28 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp run_action(%{"type" => "dodge"} = action, turn, ctx) do
     with {:ok, frame, tray} <- turn.scan,
          {:ok, columns} <- action_columns(action, frame, tray, profiles(), ctx) do
-      Enum.each(columns, &click_dodge(tray, &1, ctx))
+      {:steps, Enum.map(columns, &DSL.call(__MODULE__, :dodge_column, [tray, &1]))}
+    else
+      _ -> :pending
     end
-
-    :pending
   end
 
   defp run_action(%{"type" => "ego"} = action, turn, ctx) do
     with {:ok, frame, tray} <- turn.scan,
          {:ok, columns} <- action_columns(action, frame, tray, profiles(), ctx) do
-      Enum.each(columns, fn column ->
-        with {:ok, point} <- slot_point(tray, column, ctx) do
-          Ctx.log(ctx, :info, "playbook: #{action["grade"]} EGO#{if action["corrode"], do: " (corroded)"} on slot #{column + 1}")
-          use_ego(point, action, ctx)
-        end
-      end)
+      {:steps, Enum.map(columns, &DSL.call(__MODULE__, :ego_column, [action, tray, &1]))}
+    else
+      _ -> :pending
     end
-
-    :pending
   end
 
   defp run_action(%{"type" => "target"} = action, turn, ctx) do
     with {:ok, frame, tray} <- turn.scan,
          {:ok, columns} <- action_columns(action, frame, tray, profiles(), ctx) do
-      Enum.each(columns, &target_or_dodge(resolve_row(action, &1, frame, tray, ctx), action, tray, &1, ctx))
+      {:steps, Enum.map(columns, &DSL.call(__MODULE__, :target_column, [action, frame, tray, &1]))}
+    else
+      _ -> :pending
     end
-
-    :pending
   end
 
   defp run_action(%{"type" => chain_type} = action, turn, ctx) when chain_type in ~w(chain_fast chain_a_res) do
