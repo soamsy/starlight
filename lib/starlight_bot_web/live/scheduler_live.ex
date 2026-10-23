@@ -88,7 +88,6 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     |> assign(:settings, status.settings)
     |> assign(:activity, status.activity)
     |> assign(:retry_after_ms, status.retry_after_ms)
-    |> assign(:events, status.events)
   end
 
   defp assign_runner_actions(socket) do
@@ -147,7 +146,4 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def window_label({_x, _y, w, h} = rect),
     do: "Limbus window #{w}x#{h}" <> if(GameWindow.aspect_ok?(rect), do: " (16:9)", else: " (not 16:9)")
 
-  def event_class(:ok), do: "text-success"
-  def event_class(:error), do: "text-error"
-  def event_class(_), do: "text-base-content/60"
 end

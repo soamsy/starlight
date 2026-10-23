@@ -4,10 +4,13 @@ defmodule StarlightBotWeb.Live.LogLive do
   alias StarlightBot.Navigation.MachineStatus
 
   @page_size 2000
+  @embedded_lines 300
   @machine_refresh_ms 500
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
+    embedded? = Map.has_key?(session, "max_lines")
+
     if connected?(socket) do
       LogStore.subscribe()
       :timer.send_interval(@machine_refresh_ms, :refresh_machines)
@@ -15,6 +18,8 @@ defmodule StarlightBotWeb.Live.LogLive do
 
     {:ok,
      socket
+     |> assign(:embedded?, embedded?)
+     |> assign(:max_lines, Map.get(session, "max_lines", @page_size))
      |> assign(:machines, machine_rows())
      |> assign(:file_path, LogStore.file_path())
      |> assign(:memory_limit, LogStore.memory_limit())
@@ -61,13 +66,23 @@ defmodule StarlightBotWeb.Live.LogLive do
   def handle_info({:log_entry, entry}, socket) do
     socket = update(socket, :oldest_seq, &(&1 || entry.seq))
 
-    if visible?(entry, socket.assigns),
-      do: {:noreply, socket |> update(:shown, &(&1 + 1)) |> stream_insert(:entries, entry, at: 0)},
-      else: {:noreply, socket}
+    cond do
+      not visible?(entry, socket.assigns) -> {:noreply, socket}
+      socket.assigns.embedded? -> {:noreply, socket |> update(:shown, &min(&1 + 1, socket.assigns.max_lines)) |> stream_insert(:entries, entry, at: 0, limit: socket.assigns.max_lines)}
+      true -> {:noreply, socket |> update(:shown, &(&1 + 1)) |> stream_insert(:entries, entry, at: 0)}
+    end
+  end
+
+  def panel(assigns) do
+    assigns = assigns |> assign_new(:class, fn -> "flex-1 min-h-0" end) |> assign(:embedded_lines, @embedded_lines)
+
+    ~H"""
+    {live_render(@socket, __MODULE__, id: @id, session: %{"max_lines" => @embedded_lines}, container: {:div, class: "flex flex-col #{@class}"})}
+    """
   end
 
   defp reload(socket) do
-    entries = LogStore.recent(@page_size)
+    entries = LogStore.recent(socket.assigns.max_lines)
     visible = Enum.filter(entries, &visible?(&1, socket.assigns))
 
     socket

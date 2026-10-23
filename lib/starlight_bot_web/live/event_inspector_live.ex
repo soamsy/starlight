@@ -1,12 +1,11 @@
 defmodule StarlightBotWeb.Live.EventInspectorLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.Ctx
+  alias StarlightBot.{Ctx, LogStore}
   alias StarlightBot.Navigation.{Catalog, Runner}
   alias StarlightBot.Vision.{Capture, Matcher}
 
   @tmp_jpeg "/tmp/_starlight_event_inspector.jpg"
   @countdown_secs 2
-  @log_limit 1000
 
   @impl true
   def mount(_params, _session, socket) do
@@ -14,7 +13,6 @@ defmodule StarlightBotWeb.Live.EventInspectorLive do
      socket
      |> assign(:status, :idle)
      |> assign(:countdown, nil)
-     |> assign(:log, [])
      |> assign(:frame_b64, nil)}
   end
 
@@ -52,11 +50,6 @@ defmodule StarlightBotWeb.Live.EventInspectorLive do
   end
 
   @impl true
-  def handle_info({:event_log, kind, text}, socket) do
-    {:noreply, update(socket, :log, &add_log(&1, kind, text))}
-  end
-
-  @impl true
   def handle_info({:event_result, result}, socket) do
     {kind, text} =
       case result do
@@ -64,17 +57,15 @@ defmodule StarlightBotWeb.Live.EventInspectorLive do
         {:error, reason} -> {:error, "failed: #{inspect(reason)}"}
       end
 
-    {:noreply,
-     socket
-     |> assign(:status, :done)
-     |> update(:log, &add_log(&1, kind, text))}
+    LogStore.append(kind, "event inspector: #{text}")
+    {:noreply, assign(socket, :status, :done)}
   end
 
   defp start_event_run do
     me = self()
 
     Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn ->
-      ctx = Ctx.new(log_to: {me, :event_log})
+      ctx = Ctx.new()
 
       case Capture.grab_frame() do
         {:ok, frame} ->
@@ -82,7 +73,7 @@ defmodule StarlightBotWeb.Live.EventInspectorLive do
           run_if_at_event(frame, ctx, me)
 
         {:error, reason} ->
-          send(me, {:event_log, :error, "screenshot failed: #{inspect(reason)}"})
+          LogStore.append(:error, "event inspector: screenshot failed: #{inspect(reason)}")
           send(me, {:event_result, {:error, reason}})
       end
     end)
@@ -105,10 +96,6 @@ defmodule StarlightBotWeb.Live.EventInspectorLive do
     end
   end
 
-  defp add_log(log, kind, text) do
-    [%{kind: kind, text: text} | log] |> Enum.take(@log_limit)
-  end
-
   defp encode_jpeg(mat) do
     Evision.imwrite(@tmp_jpeg, mat)
 
@@ -125,8 +112,4 @@ defmodule StarlightBotWeb.Live.EventInspectorLive do
   def status_label(:running), do: "Running…"
   def status_label(:done), do: "Done"
 
-  def log_kind_class(:ok), do: "text-success"
-  def log_kind_class(:error), do: "text-error"
-  def log_kind_class(:info), do: "text-base-content/60"
-  def log_kind_class(_), do: "text-base-content/40"
 end

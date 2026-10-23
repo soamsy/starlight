@@ -119,16 +119,6 @@
       </div>
     </div>
 
-    <div id="scheduler-log" phx-hook="ScrollToBottom" class="flex-1 min-h-0 overflow-y-auto bg-base-200 rounded-xl p-3 font-mono text-xs flex flex-col gap-0.5">
-      <%= if @events == [] do %>
-        <div class="text-base-content/30 text-center py-4 select-none">No scheduler activity yet</div>
-      <% else %>
-        <%= for event <- Enum.reverse(@events) do %>
-          <div class={"leading-snug #{event_class(event.kind)}"}>
-            <span class="text-base-content/40"><%= clock(event.at) %></span> <%= event.text %>
-          </div>
-        <% end %>
-      <% end %>
-    </div>
+    <StarlightBotWeb.Live.LogLive.panel socket={@socket} id="scheduler-log" class="flex-1 min-h-0" />
   </div>
 </div>

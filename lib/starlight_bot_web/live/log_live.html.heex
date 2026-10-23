@@ -1,7 +1,7 @@
-<div class="flex flex-col h-full gap-2 overflow-hidden">
+<div class="flex flex-col h-full min-h-0 gap-2 overflow-hidden">
   <div class="flex flex-wrap items-center gap-x-4 gap-y-2 shrink-0">
-    <h2 class="text-lg font-semibold">Log</h2>
-    <span class="badge badge-ghost font-mono">{@shown} lines</span>
+    <h2 :if={not @embedded?} class="text-lg font-semibold">Log</h2>
+    <span class="badge badge-ghost badge-sm font-mono">{@shown} lines</span>
 
     <label class="flex items-center gap-1.5 text-sm cursor-pointer select-none">
       <input type="checkbox" class="toggle toggle-xs" checked={@show_steps} phx-click="toggle_steps" /> steps
@@ -17,11 +17,11 @@
       </span>
     <% end %>
 
-    <%= if older_available?(@oldest_seq) do %>
+    <%= if not @embedded? and older_available?(@oldest_seq) do %>
       <button class="btn btn-xs" phx-click="load_older">Load older</button>
     <% end %>
 
-    <span class="ml-auto text-xs text-base-content/50 font-mono select-all truncate">
+    <span :if={not @embedded?} class="ml-auto text-xs text-base-content/50 font-mono select-all truncate">
       <%= if @file_path do %>
         {@file_path}
       <% else %>
@@ -52,7 +52,7 @@
     </div>
   </details>
 
-  <%= if trimmed?(@oldest_seq) do %>
+  <%= if not @embedded? and trimmed?(@oldest_seq) do %>
     <div class="text-xs text-base-content/50 shrink-0">
       Only the last {@memory_limit} lines are kept in memory. Older lines are in the log file.
     </div>

@@ -212,17 +212,7 @@
     </div>
 
     <%!-- Right: log --%>
-    <div id="mirror-dungeon-log" phx-hook="ScrollToBottom" class="flex-1 min-h-0 overflow-y-auto bg-base-200 rounded-xl p-3 font-mono text-xs flex flex-col gap-0.5">
-      <%= if @log == [] do %>
-        <div class="text-base-content/30 text-center py-4 select-none">Log empty</div>
-      <% else %>
-        <%= for entry <- Enum.reverse(@log) do %>
-          <div class={"leading-snug #{log_kind_class(entry.kind)}"}>
-            <%= entry.text %>
-          </div>
-        <% end %>
-      <% end %>
-    </div>
+    <StarlightBotWeb.Live.LogLive.panel socket={@socket} id="mirror-dungeon-log" class="flex-1 min-h-0" />
 
     <%!-- Right: run times --%>
     <div class="w-56 shrink-0 bg-base-200 rounded-xl p-3 flex flex-col gap-2 min-h-0 overflow-y-auto">

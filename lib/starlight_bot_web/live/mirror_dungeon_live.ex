@@ -25,7 +25,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:phase, nav.phase)
      |> assign(:pause_requested, nav.pause_requested)
      |> assign(:other_running?, nav.run_kind == :luxcavation)
-     |> assign(:log, nav.log)
      |> assign(:run_memory, nav.run_memory)
      |> assign_clock(nav.run_clock)
      |> assign(:run_splits, nav.run_splits)
@@ -205,7 +204,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:phase, nav.phase)
      |> assign(:pause_requested, nav.pause_requested)
      |> assign(:other_running?, nav.run_kind == :luxcavation)
-     |> assign(:log, nav.log)
      |> assign(:run_memory, nav.run_memory)
      |> assign_clock(nav.run_clock)
      |> assign(:run_splits, nav.run_splits)
@@ -540,8 +538,4 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   def phase_label(:running), do: "Running…"
   def phase_label(:paused), do: "Paused"
 
-  def log_kind_class(:ok), do: "text-success"
-  def log_kind_class(:error), do: "text-error"
-  def log_kind_class(:info), do: "text-base-content/60"
-  def log_kind_class(_), do: "text-base-content/40"
 end

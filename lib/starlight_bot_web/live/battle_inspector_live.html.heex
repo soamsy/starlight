@@ -223,13 +223,9 @@
           <span class={if @target_preview_status == :error, do: "text-error", else: "text-base-content"}>(<%= @target_preview_outcome %>)</span>
         <% end %>
       </div>
-      <%= if @target_preview_log != [] do %>
-        <div class="text-xs font-mono text-base-content/70 flex flex-col">
-          <%= for line <- @target_preview_log do %>
-            <span><%= line %></span>
-          <% end %>
-        </div>
-      <% end %>
+      <div class="h-48 shrink-0 flex flex-col">
+        <StarlightBotWeb.Live.LogLive.panel socket={@socket} id="battle-inspector-log" />
+      </div>
       <div class="flex items-center justify-center bg-base-200 rounded-lg border border-base-300 shrink-0" style="aspect-ratio: 16/9;">
         <%= if @target_preview_ready? do %>
           <canvas id="target-preview-canvas" phx-hook="TargetPreviewCanvas" phx-update="ignore"

@@ -60,7 +60,6 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
       |> assign(:target_preview_status, :idle)
       |> assign(:target_preview_ready?, false)
       |> assign(:target_preview_outcome, nil)
-      |> assign(:target_preview_log, [])
 
     case {connected?(socket), tray_watch.latest} do
       {true, {frame, at}} -> {:ok, socket |> show_frame(frame) |> assign(:last_watched_at, at)}
@@ -133,26 +132,24 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
 
   def handle_event("preview_target", %{"enemy" => enemy}, socket) when enemy in ~w(first last) do
     me = self()
-    ctx = Ctx.new(log_to: {me, :target_preview_log})
+    ctx = Ctx.new()
     Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn -> send(me, {:target_preview_result, PlaybookRunner.preview_target(enemy, ctx)}) end)
 
     {:noreply,
      socket
      |> assign(:target_preview_status, :running)
-     |> assign(:target_preview_outcome, nil)
-     |> assign(:target_preview_log, [])}
+     |> assign(:target_preview_outcome, nil)}
   end
 
   def handle_event("preview_target_everyone", _, socket) do
     me = self()
-    ctx = Ctx.new(log_to: {me, :target_preview_log})
+    ctx = Ctx.new()
     Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn -> send(me, {:target_preview_result, PlaybookRunner.preview_target_everyone(ctx)}) end)
 
     {:noreply,
      socket
      |> assign(:target_preview_status, :running)
-     |> assign(:target_preview_outcome, nil)
-     |> assign(:target_preview_log, [])}
+     |> assign(:target_preview_outcome, nil)}
   end
 
   @impl true
@@ -192,10 +189,6 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
          |> assign(:chain_preview_status, :error)
          |> assign(:chain_preview_error, "Encode failed: #{inspect(reason)}")}
     end
-  end
-
-  def handle_info({:target_preview_log, _kind, text}, socket) do
-    {:noreply, update(socket, :target_preview_log, &(&1 ++ [text]))}
   end
 
   def handle_info({:target_preview_result, {:ok, {outcome, attempts}}}, socket) do

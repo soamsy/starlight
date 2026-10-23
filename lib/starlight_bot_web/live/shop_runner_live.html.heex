@@ -157,17 +157,7 @@
         <% end %>
       </div>
 
-      <div id="shop-runner-log" phx-hook="ScrollToBottom" class="flex-[3] min-h-0 overflow-y-auto bg-base-200 rounded-xl p-3 font-mono text-xs flex flex-col gap-0.5">
-        <%= if @log == [] do %>
-          <div class="text-base-content/30 text-center py-4 select-none">Log empty</div>
-        <% else %>
-          <%= for entry <- Enum.reverse(@log) do %>
-            <div class={"leading-snug #{log_kind_class(entry.kind)}"}>
-              <%= entry.text %>
-            </div>
-          <% end %>
-        <% end %>
-      </div>
+      <StarlightBotWeb.Live.LogLive.panel socket={@socket} id="shop-runner-log" class="flex-[3] min-h-0" />
 
     </div>
 

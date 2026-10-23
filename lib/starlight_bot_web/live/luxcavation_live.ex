@@ -24,7 +24,6 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:phase, nav.phase)
      |> assign(:pause_requested, nav.pause_requested)
      |> assign(:other_running?, nav.run_kind == :mirror_dungeon)
-     |> assign(:log, nav.log)
      |> assign(:teams, teams)
      |> assign(:team_id, default_team_id(teams))
      |> assign(:team_hook, nil)
@@ -143,8 +142,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:phase, nav.phase)
      |> assign(:pause_requested, nav.pause_requested)
      |> assign(:other_running?, nav.run_kind == :mirror_dungeon)
-     |> assign(:queued_next, nav.next_run)
-     |> assign(:log, nav.log)}
+     |> assign(:queued_next, nav.next_run)}
   end
 
   @impl true
@@ -280,8 +278,4 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   def phase_label(:running), do: "Running…"
   def phase_label(:paused), do: "Paused"
 
-  def log_kind_class(:ok), do: "text-success"
-  def log_kind_class(:error), do: "text-error"
-  def log_kind_class(:info), do: "text-base-content/60"
-  def log_kind_class(_), do: "text-base-content/40"
 end

@@ -16,7 +16,6 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
      socket
      |> assign(:current_screen, nav.current_screen)
      |> assign(:phase, nav.phase)
-     |> assign(:log, nav.log)
      |> assign(:run_memory, nav.run_memory)
      |> assign(:teams, teams)
      |> assign(:team_id, default_team_id(teams))
@@ -86,7 +85,6 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
      socket
      |> assign(:current_screen, nav.current_screen)
      |> assign(:phase, nav.phase)
-     |> assign(:log, nav.log)
      |> assign(:run_memory, nav.run_memory)}
   end
 
@@ -161,8 +159,4 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
   def outcome_class(:failed), do: "badge-error"
   def outcome_class(_outcome), do: "badge-ghost"
 
-  def log_kind_class(:ok), do: "text-success"
-  def log_kind_class(:error), do: "text-error"
-  def log_kind_class(:info), do: "text-base-content/60"
-  def log_kind_class(_), do: "text-base-content/40"
 end

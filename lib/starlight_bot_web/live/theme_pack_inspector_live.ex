@@ -6,7 +6,6 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
   alias StarlightBot.Automation.Scripts.ThemePackSelector
 
   @countdown_secs 2
-  @log_limit 1000
 
   @impl true
   def mount(_params, _session, socket) do
@@ -21,8 +20,7 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
      |> assign(:scan_total_ms, nil)
      |> assign(:search_pack_id, nil)
      |> assign(:search_status, :idle)
-     |> assign(:countdown, nil)
-     |> assign(:search_log, [])}
+     |> assign(:countdown, nil)}
   end
 
   @impl true
@@ -62,8 +60,7 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
      socket
      |> assign(:search_pack_id, pack_id)
      |> assign(:search_status, :counting_down)
-     |> assign(:countdown, @countdown_secs)
-     |> assign(:search_log, [])}
+     |> assign(:countdown, @countdown_secs)}
   end
 
   @impl true
@@ -111,11 +108,6 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
   end
 
   @impl true
-  def handle_info({:search_log, kind, text}, socket) do
-    {:noreply, update(socket, :search_log, &Enum.take([%{kind: kind, text: text} | &1], @log_limit))}
-  end
-
-  @impl true
   def handle_info({:search_result, result}, socket) do
     socket = assign(socket, :search_status, :idle)
 
@@ -160,7 +152,7 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
     me = self()
 
     Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn ->
-      ctx = Ctx.new(log_to: {me, :search_log})
+      ctx = Ctx.new()
       send(me, {:search_result, ThemePackSelector.search_replace(pack, ctx)})
     end)
   end

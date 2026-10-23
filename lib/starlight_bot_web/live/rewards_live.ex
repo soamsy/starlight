@@ -14,7 +14,6 @@ defmodule StarlightBotWeb.Live.RewardsLive do
     {:ok,
      socket
      |> assign(:phase, nav.phase)
-     |> assign(:log, nav.log)
      |> assign(:reward_type, "cabinet_reward")
      |> assign(:action, "claim")
      |> assign(:weekly_bonus, true)
@@ -77,7 +76,7 @@ defmodule StarlightBotWeb.Live.RewardsLive do
 
   @impl true
   def handle_info({:nav_state, nav}, socket) do
-    {:noreply, socket |> assign(:phase, nav.phase) |> assign(:log, nav.log)}
+    {:noreply, socket |> assign(:phase, nav.phase)}
   end
 
   defp start_countdown(socket, action) do
@@ -105,8 +104,4 @@ defmodule StarlightBotWeb.Live.RewardsLive do
   def phase_label(:running), do: "Running…"
   def phase_label(:paused), do: "Paused"
 
-  def log_kind_class(:ok), do: "text-success"
-  def log_kind_class(:error), do: "text-error"
-  def log_kind_class(:info), do: "text-base-content/60"
-  def log_kind_class(_), do: "text-base-content/40"
 end

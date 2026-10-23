@@ -119,4 +119,23 @@ defmodule StarlightBotWeb.Live.LogLiveTest do
     FakeWorld.show(:fw_done)
     assert {:ok, _} = Task.await(run)
   end
+
+  test "embedded in another page it keeps only its line cap and drops the page-only controls" do
+    marker = "log-embedded-#{System.unique_integer([:positive])}"
+    for n <- 1..5, do: LogStore.append(:info, "#{marker} #{n}")
+    :sys.get_state(LogStore)
+
+    {:ok, socket} = LogLive.mount(%{}, %{"max_lines" => 3}, socket())
+    rendered = html(socket)
+    assert socket.assigns.shown == 3
+    assert rendered =~ "#{marker} 5"
+    refute rendered =~ "#{marker} 2"
+    refute rendered =~ ">Log</h2>"
+    refute rendered =~ "Load older"
+
+    entry = %{seq: 999_999_997, at: LogStore.now(), kind: :info, text: "#{marker} live", lineage: []}
+    {:noreply, socket} = LogLive.handle_info({:log_entry, entry}, settle(socket))
+    assert socket.assigns.shown == 3
+    assert html(socket) =~ "#{marker} live"
+  end
 end

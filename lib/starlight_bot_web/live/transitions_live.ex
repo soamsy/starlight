@@ -35,7 +35,6 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
      |> assign(:current_screen, nav.current_screen)
      |> assign(:goal, nav.goal)
      |> assign(:phase, nav.phase)
-     |> assign(:log, nav.log)
      |> assign(:frame_b64, nil)
      |> assign(:frame_age_ms, nil)
      |> assign(:transitions, transitions_for(nav.current_screen))
@@ -179,7 +178,6 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
      |> assign(:current_screen, nav.current_screen)
      |> assign(:goal, nav.goal)
      |> assign(:phase, nav.phase)
-     |> assign(:log, nav.log)
      |> assign(:transitions, transitions_for(nav.current_screen))
      |> assign(:hop_actions, hop_actions_for(nav.current_screen))
      |> assign(:actions, actions_for(nav.current_screen))}
@@ -415,10 +413,6 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
   def phase_label(:running), do: "Running…"
   def phase_label(:paused), do: "Paused"
 
-  def log_kind_class(:ok), do: "text-success"
-  def log_kind_class(:error), do: "text-error"
-  def log_kind_class(:info), do: "text-base-content/60"
-  def log_kind_class(_), do: "text-base-content/40"
 
   def filtered_hooks(hooks, ""), do: hooks
 
