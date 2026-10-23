@@ -11,13 +11,6 @@ Guidelines for AI agents (Claude, Codex, etc.) working in this repository.
 - **Self-check before finishing**: scan the diff for any comment line that wasn't there before. Delete it if found, even if it felt justified when written.
 - **Only exception**: the user explicitly asks for a comment or docstring in that turn. Write only what was asked, nothing extra.
 
-## Retry Strategy
-
-- **Fail fast**: If an edit fails 2+ times, re-read the file to understand current state before retrying
-- **Change approach**: After repeated failures, try a different strategy rather than the same failing method
-- **Validate assumptions**: When something doesn't work, check if underlying assumptions about file content or structure are still valid
-- **Ask for clarification**: When stuck, ask a specific question rather than repeatedly attempting the same failed approach
-
 ---
 
 ## Environment Setup
@@ -71,7 +64,7 @@ explain what a toggle/button means, what state it indicates, or automation
 gotchas (e.g. "arrow diagrams interfere with OpenCV detection").
 
 Before designing automation logic, a state machine, or the screen-detection
-system (see "What's Not Implemented Yet" below), scan existing hook notes for
+system, scan existing hook notes for
 relevant context rather than guessing at screen semantics from names alone:
 
 ```sh
@@ -140,70 +133,6 @@ cargo clippy --manifest-path native/starlight_native/Cargo.toml   # Rust lints
 - **Ecto migration syntax:** `add :col, references(:table, ...)` — `references()` is the type, not an option. Passing `add :col, :integer, references(...)` is wrong and will crash `mix db.setup`.
 - **Don't remove the focus-loss check in `Navigation.Runner.run_steps/3`** (`Capture.focused?/0` before every step). It's the alt-tab safety net — without it, a script keeps injecting clicks/keys into whatever window the user switched to.
 - **Don't spin up headless Chromium/CDP to click through Phoenix LiveView pages as a verification step.** It's unnecessary — confirm changes by compiling (`mix compile --warnings-as-errors`), running any relevant `mix test`, and/or exercising the logic directly via `mix run -e '...'` against the actual modules. If a change genuinely needs visual/browser confirmation, ask the user to check it themselves rather than automating a browser session.
-
----
-
-## Architecture Overview
-
-```
-(root = starlight_bot)
-master.db                # single SQLite db, all app data (committed)
-
-lib/starlight_bot/
-  application.ex        # OTP supervisor tree
-  vision/               # frame capture, OCR prep, hook matching
-    capture.ex          # Capture.grab_frame/0 (single-shot) + cache start/stop
-    frame.ex            # %Frame{} struct
-    hook.ex             # %Hook{} struct, gray_mat precomputed at load
-    hook_registry.ex    # GenServer: loaded hooks keyed by atom name
-    matcher.ex          # Evision matchTemplate (TM_CCOEFF_NORMED / TM_CCORR_NORMED)
-  input/                # mouse, keyboard via EIS NIF
-  automation/           # game logic, state machines (in progress)
-  repo.ex               # Ecto SQLite3 repo (master.db)
-
-native/starlight_native/
-  src/
-    cache/
-      mod.rs            # start/stop/grab API; OnceLock FRAME+STOP, Mutex THREAD
-      x11_poll.rs       # ~30fps polling loop via x11::locate (validated cached window)
-    capture/
-      x11.rs            # per-display xcb connections, window search, geometry, focus, MIT-SHM capture
-      x11_capture.rs    # single-shot grab + window geometry API used by the NIFs
-    input/eis.rs        # libei EIS input injection (Linux only)
-    movement/           # bezier mouse trajectory
-    scale.rs            # rgba_to_bgr, resize_rgba (NORM_W=1920, NORM_H=1080)
-    error.rs            # NativeError enum
-
-priv/repo/
-  migrations/           # 9 schema migrations for master.db
-
-config/
-  config.exs            # base config
-  dev.exs               # dev overrides
-  test.exs              # test pool = Sandbox, DB = /tmp/starlight_test.db
-
-lib/starlight_bot_web/
-  live/
-    hook_editor_live.ex           # /hooks — create/edit/test hooks; ?from_cache=1 loads handoff image
-    screenshot_viewer_live.ex     # /screenshots — live X11 capture stream, 40-frame timeline, hook overlay
-    screenshot_viewer_live.html.heex
-    hook_editor_live.html.heex
-  router.ex             # / and /hooks → HookEditorLive; /screenshots → ScreenshotViewerLive
-```
-
-### Screenshot cache pipeline
-
-`Capture.start_cache/0` → `Native.cache_start/1` (DirtyIo NIF, joins old thread ~33ms) → `x11_poll` thread calls `x11::locate` each frame (one `GetGeometry` round trip to validate the cached window, full display scan only when it's gone), writes `CachedFrame{bgr, width, height}` into `OnceLock<Arc<RwLock<Option<CachedFrame>>>>`.
-
-`Native.cache_stop/0` sets the stop flag and immediately clears the FRAME store so subsequent `cache_grab_frame` calls return `{:error, :not_ready}` rather than a stale frame.
-
-### Hook handoff
-
-Screenshot viewer writes the selected frame as `/tmp/_starlight_hook_handoff.jpg`, then navigates to `/hooks?from_cache=1`. Hook editor's `handle_params/3` detects the query param and loads the file via `Evision.imread`, skipping the normal "take screenshot" flow.
-
-### Template image quality
-
-The entire pipeline is lossless: MIT-SHM `GetImage` of the composite window pixmap (socket `GetImage` fallback) → 1920×1080 BGR `Vec<u8>` → PNG on disk → `Evision.Mat` → PNG blob in DB. `gray_mat` is precomputed at hook load time in `Hook.from_db_row/1`. Template matching uses `TM_CCOEFF_NORMED` for `:gray`/`:rgb` modes and `TM_CCORR_NORMED` for `:binary_thresh`.
 
 ---
 
