@@ -2,7 +2,7 @@ defmodule Mix.Tasks.ThemePacks.Hooks do
   @shortdoc "Generate detection hooks from imported theme pack poster images"
   @moduledoc """
   For each row in `theme_packs`, ensure a `sleeve_<slug>` hook exists.
-  Upsert to hooks table appropriately on run.
+  Packs already mapped to an existing hook are left untouched; existing hooks are never modified.
 
       mix theme_packs.hooks
   """
@@ -28,30 +28,37 @@ defmodule Mix.Tasks.ThemePacks.Hooks do
     themes =
       Repo.all(
         from t in "theme_packs",
-          select: %{id: t.id, name_en: t.name_en}
+          order_by: [asc: t.id],
+          select: %{id: t.id, name_en: t.name_en, hook_name: t.hook_name}
       )
 
-    {_used, count} =
-      Enum.reduce(themes, {MapSet.new(), 0}, fn theme, {used, count} ->
-        case generate_hook(theme, used) do
-          {:ok, hook_name} ->
-            update_theme_pack_hook(theme.id, hook_name)
-            {MapSet.put(used, hook_name), count + 1}
+    taken = themes |> Enum.map(& &1.hook_name) |> Enum.reject(&is_nil/1) |> MapSet.new()
 
-          {:error, reason} ->
-            Mix.shell().error("#{theme.id}: #{reason}")
-            {used, count}
+    {_used, count} =
+      Enum.reduce(themes, {taken, 0}, fn theme, {used, count} ->
+        if theme.hook_name && Hooks.get_hook(theme.hook_name) do
+          {used, count}
+        else
+          case generate_hook(theme, used) do
+            {:ok, hook_name} ->
+              update_theme_pack_hook(theme.id, hook_name)
+              {MapSet.put(used, hook_name), count + 1}
+
+            {:error, reason} ->
+              Mix.shell().error("#{theme.id}: #{reason}")
+              {used, count}
+          end
         end
       end)
 
-    Mix.shell().info("Generated/updated #{count} hook(s)")
+    Mix.shell().info("Generated/mapped #{count} hook(s)")
   end
 
   defp generate_hook(theme, used) do
     hook_name = unique_slug(theme.name_en, theme.id, used)
 
     if Hooks.get_hook(hook_name) do
-      {:ok, update_metadata_only(hook_name, theme.name_en)}
+      {:ok, hook_name}
     else
       insert_new_hook(theme, hook_name)
     end
@@ -83,18 +90,6 @@ defmodule Mix.Tasks.ThemePacks.Hooks do
       {:ok, name} -> {:ok, name}
       {:error, reason} -> {:error, inspect(reason)}
     end
-  end
-
-  defp update_metadata_only(hook_name, notes) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-    Repo.update_all(
-      from(h in "hooks", where: h.name == ^hook_name),
-      set: [notes: notes, match_method: @match_method, confidence: 0.65, updated_at: now]
-    )
-
-    StarlightBot.Vision.HookRegistry.invalidate(String.to_atom(hook_name))
-    hook_name
   end
 
   defp update_theme_pack_hook(theme_id, hook_name) do
