@@ -11,7 +11,11 @@
         <h2 class="card-title text-lg">Sinner Profiles</h2>
         <span class="badge badge-neutral badge-sm"><%= length(@profiles) %></span>
         <span class="text-xs text-base-content/50">A profile's locator hook finds the sinner in the battle skill tray.</span>
-        <button phx-click="new_profile" class="btn btn-primary btn-sm ml-auto">+ New</button>
+        <form phx-change="search" phx-submit="search" class="ml-auto">
+          <input type="search" name="q" value={@search} placeholder="Search profiles..." phx-debounce="150"
+                 autocomplete="off" class="input input-bordered input-sm w-64" />
+        </form>
+        <button phx-click="new_profile" class="btn btn-primary btn-sm">+ New</button>
       </div>
 
       <div class="overflow-y-auto flex-1 min-h-0">
@@ -20,12 +24,13 @@
             <tr><th>Name</th><th>Sinner</th><th>Locator hook</th><th></th><th>Used by</th><th></th></tr>
           </thead>
           <tbody>
-            <%= for profile <- @profiles do %>
+            <%= for profile <- visible_profiles(@profiles, @search) do %>
               <tr>
                 <td colspan="3">
                   <form phx-change="save_profile" class="flex items-center gap-2">
                     <input type="hidden" name="profile_id" value={profile.id} />
                     <input type="text" name="name" value={profile.name} phx-debounce="blur"
+                           phx-mounted={if profile.id == @focus_id, do: JS.focus()}
                            class="input input-bordered input-xs w-48" />
                     <select name="sinner" class="select select-bordered select-xs w-32">
                       <option value="" selected={is_nil(profile.sinner)}>(sinner)</option>
@@ -45,6 +50,8 @@
                 </td>
                 <td class="text-center"><%= Map.get(@profile_usage, profile.id, 0) %></td>
                 <td class="text-right whitespace-nowrap">
+                  <button phx-click="capture_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost"
+                          title="Capture sinner png from live battle">Capture</button>
                   <button phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost">Test</button>
                   <button phx-click="delete_profile" phx-value-id={profile.id}
                           data-confirm={"Delete '#{profile.name}'?"}
@@ -63,4 +70,45 @@
       </div>
     </div>
   </div>
+
+  <%= if @picking_sinner do %>
+    <div class="modal modal-open">
+      <div class="modal-box">
+        <h3 class="font-bold mb-3">New profile for which sinner?</h3>
+        <div class="grid grid-cols-6 gap-2">
+          <%= for sinner <- StarlightBot.SinnerProfiles.sinners() do %>
+            <button phx-click="create_profile" phx-value-sinner={sinner} class="btn btn-sm h-14 text-xs leading-tight">
+              <%= sinner_label(sinner) %>
+            </button>
+          <% end %>
+        </div>
+        <div class="modal-action">
+          <button phx-click="cancel_new" class="btn btn-sm">Cancel</button>
+        </div>
+      </div>
+    </div>
+  <% end %>
+
+  <%= if @capture do %>
+    <div class="modal modal-open">
+      <div class="modal-box max-w-3xl">
+        <h3 class="font-bold">Pick <%= @capture.profile.name %></h3>
+        <p class="text-xs text-base-content/60 mb-3">
+          Click the slot that shows this sinner. Its crop replaces <span class="font-mono"><%= @capture.profile.locator_hook %></span>.
+        </p>
+        <div class="flex flex-wrap gap-3">
+          <%= for candidate <- @capture.candidates do %>
+            <button phx-click="pick_capture" phx-value-column={candidate.column}
+                    class="flex flex-col items-center gap-1 p-2 rounded border border-base-300 hover:border-primary">
+              <img src={"data:image/png;base64,#{candidate.png_b64}"} class="h-20" style="image-rendering: pixelated" />
+              <span class="text-xs">Slot <%= candidate.column + 1 %></span>
+            </button>
+          <% end %>
+        </div>
+        <div class="modal-action">
+          <button phx-click="cancel_capture" class="btn btn-sm">Cancel</button>
+        </div>
+      </div>
+    </div>
+  <% end %>
 </div>

@@ -7,12 +7,23 @@ defmodule StarlightBot.SinnerProfiles do
 
   def sinners, do: @sinners
 
+  def label(sinner) when is_binary(sinner), do: sinner |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
+
   def list do
-    Repo.all(
-      from p in "sinner_profiles",
-        order_by: [asc: p.name],
-        select: %{id: p.id, name: p.name, sinner: p.sinner, locator_hook: p.locator_hook}
+    from(p in "sinner_profiles",
+      select: %{
+        id: p.id,
+        name: p.name,
+        sinner: p.sinner,
+        locator_hook: p.locator_hook,
+        name_en: p.name_en,
+        released_on: p.released_on
+      }
     )
+    |> Repo.all()
+    |> Enum.sort_by(& &1.name)
+    |> Enum.sort_by(& &1.released_on, :desc)
+    |> Enum.sort_by(&sinner_rank(&1.sinner))
   rescue
     _ -> []
   end
@@ -27,7 +38,8 @@ defmodule StarlightBot.SinnerProfiles do
         if n > 0, do: {:ok, id}, else: {:error, :not_found}
 
       _ ->
-        row = Map.new(fields ++ [inserted_at: now, updated_at: now])
+        released_on = attrs[:released_on] || Date.to_iso8601(Date.utc_today())
+        row = Map.new(fields ++ [released_on: released_on, inserted_at: now, updated_at: now])
 
         case Repo.insert_all("sinner_profiles", [row], returning: [:id]) do
           {1, [%{id: id}]} -> {:ok, id}
@@ -41,6 +53,8 @@ defmodule StarlightBot.SinnerProfiles do
   end
 
   def save(_attrs), do: {:error, :name_required}
+
+  defp sinner_rank(sinner), do: Enum.find_index(@sinners, &(&1 == sinner)) || length(@sinners)
 
   def delete(id) when is_integer(id) do
     {n, _} = Repo.delete_all(from p in "sinner_profiles", where: p.id == ^id)

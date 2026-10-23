@@ -12,9 +12,9 @@ defmodule Mix.Tasks.ThemePacks.SearchHooks do
   @match_method "gray"
   @confidence 0.8
 
-  @black_pixel_png Base.decode64!(
-                      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC"
-                    )
+  @placeholder_png Base.decode64!(
+                     "iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAAAAACpleexAAABmElEQVQ4EY3BMWgTYQCG4fcrR2xCC0JDAgUdOlQyJlPs1lU3RRedpHEo6HDtqoOu7Q0KHWwXQRdFN1271UzJZqBDB4VCQgpCaVLDUcx/d2ku6f1yzyNSEimJlERKIiUxzcnMX/9zOvCZJCaVV28W5grts87v/QZxIq5UW84T6R7uthgTY457Z5aYv988nxFxyXlTYUrzmU9EjGS+5rni5P45IRHJfVgkwfGjPgERmtm+TaK6e4EhQqWdLIn66y0MEfJWsDhwMUSg8iqPRfdFkyER2HiA1SePIWE4W1Ws6ps+IIzc3hJWR2s9QBjF3QJWnVobEMat9/zHk5+AMIrvili1n7YBYeT2lrA6WusBwnC2qljVN31ABNyHWH3eZkgEyq/zWHRfNhgSIW8FiwMXQ4RKO1kS9ddbGCI041VJ9GPjAkNEsh8XSXD8uEdAjMx+WeCK7r0BIXHJeVtmSuO5T0SMOe7da8Scf/d8RkRcqbacJ9I93G0xJiZVVm8U5grts86v/SZxYpqTmV84OR34TBIpiZRESiKlf7UuZCkeFLmwAAAAAElFTkSuQmCC"
+                   )
 
   @impl Mix.Task
   def run(_args) do
@@ -66,7 +66,7 @@ defmodule Mix.Tasks.ThemePacks.SearchHooks do
     else
       case Hooks.save_hook(%{
              name: hook_name,
-             image: @black_pixel_png,
+             image: @placeholder_png,
              region_x: bx,
              region_y: by,
              region_w: @region_size,
