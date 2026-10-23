@@ -35,10 +35,10 @@ defmodule StarlightBot.Navigation.CatalogTest do
     end
 
     test "a refinement's own transition to the same target wins over the inherited one" do
-      assert {:ok, [%Transition{from: :battle_chain, to: :battle_playing, steps: [{:custom, _fun}]}]} =
+      assert {:ok, [%Transition{from: :battle_chain, to: :battle_playing, steps: [{:custom, _fun} | _]}]} =
                Catalog.plan_path(:battle_chain, :battle_playing)
 
-      assert {:ok, [%Transition{from: :battle_focused, to: :battle_playing, steps: [{:custom, _fun}]}]} =
+      assert {:ok, [%Transition{from: :battle_focused, to: :battle_playing, steps: [{:custom, _fun} | _]}]} =
                Catalog.plan_path(:battle_focused, :battle_playing)
 
       assert {:ok, [%Transition{from: :battle_turn, to: :battle_playing, steps: [{:key, :p} | _]}]} =
@@ -62,11 +62,11 @@ defmodule StarlightBot.Navigation.CatalogTest do
                Catalog.plan_path(:dungeon_graph, :dungeon_given_up)
     end
 
-    test "the defeat screen is its own battle screen with retry and stage select actions" do
+    test "the defeat screen is its own battle screen that leaves through retry or stage select" do
       assert %{refines: nil, identity_hook: :battle_defeat_retry} = Catalog.find_screen(:battle_defeat)
       assert StarlightBot.Automation.Engine.in_battle?(:battle_defeat)
-      assert Catalog.find_action(:battle_defeat, :retry)
-      assert Catalog.find_action(:battle_defeat, :to_stage_select)
+      assert {:ok, [%Transition{from: :battle_defeat, to: :battle_retried}]} = Catalog.plan_path(:battle_defeat, :battle_retried)
+      assert {:ok, [%Transition{from: :battle_defeat, to: :battle_given_up}]} = Catalog.plan_path(:battle_defeat, :battle_given_up)
     end
   end
 

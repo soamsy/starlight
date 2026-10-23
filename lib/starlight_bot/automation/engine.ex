@@ -217,11 +217,11 @@ defmodule StarlightBot.Automation.Engine do
     case RunMemory.claim_battle_retry(ctx) do
       {:retry, retry, max_retries} ->
         Ctx.log(ctx, :info, "battle lost, retrying (#{retry}/#{max_retries})")
-        run_action(:battle_defeat, :retry, ctx)
+        goto(:battle_defeat, :battle_retried, ctx)
 
       :give_up ->
         Ctx.log(ctx, :error, "battle lost, giving up (#{inspect(RunMemory.give_up(ctx))}) and returning to stage select")
-        run_action(:battle_defeat, :to_stage_select, ctx)
+        goto(:battle_defeat, :battle_given_up, ctx)
     end
   end
 

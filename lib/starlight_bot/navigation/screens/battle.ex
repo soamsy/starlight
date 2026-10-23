@@ -25,8 +25,8 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   screen :battle_retried, identity: nil, catch_all: true
 
   screen :battle_defeat, identity: :battle_defeat_retry do
-    action :retry, do: defeat_choice(:battle_defeat_retry)
-    action :to_stage_select, do: defeat_choice(:battle_defeat_to_stage_select)
+    transition to: :battle_retried, do: defeat_choice(:battle_defeat_retry)
+    transition to: :battle_given_up, do: defeat_choice(:battle_defeat_to_stage_select)
   end
 
   screen :battle_turn, identity: :battle_turn, refines: :battle do
@@ -43,13 +43,13 @@ defmodule StarlightBot.Navigation.Screens.Battle do
 
   screen :battle_chain, identity: :battle_chain, refines: :battle_turn do
     transition to: :battle_playing do
-      [custom(&PlaybookRunner.play_chain_turn/2)]
+      [custom(&PlaybookRunner.play_chain_turn/2), await_playing()]
     end
   end
 
   screen :battle_focused, identity: :battle_focused, refines: :battle_turn do
     transition to: :battle_playing do
-      [custom(&PlaybookRunner.play_focused_turn/2)]
+      [custom(&PlaybookRunner.play_focused_turn/2), await_playing()]
     end
   end
 
@@ -79,7 +79,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
               hold_mouse_during([
                 wait_until(
                   any_of([:battle_turn, :loading_stage_1, :loading_stage_2, :battle_over_black_confirm, :battle_defeat_retry, :battle_pause_button, :battle_playing_graph, :event]),
-                  timeout: 25_000
+                  timeout: 60_000
                 )
               ]),
             ]}
@@ -87,6 +87,10 @@ defmodule StarlightBot.Navigation.Screens.Battle do
       ], tries: 15),
       branch(turn_boundary_clauses())
     ]
+  end
+
+  defp await_playing do
+    wait_until(any_of([:battle_pause_button, :battle_playing_graph]), timeout: 8_000, every: 200)
   end
 
   defp hold_mouse_during(steps) do
