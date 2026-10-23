@@ -10,6 +10,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   @hefty_scroll_clicks @scroll_clicks * 2
   @scroll_settle_ms 400
   @click_settle_ms 100
+  @list_ready_timeout_ms 2_000
   @scroll_down_available :team_selector_scroll_down_available
   @scroll_up_available %{
     team_selector: :team_selector_short_scroll_up_available,
@@ -235,6 +236,8 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp find_team(hook, selector, ctx) do
+    Engine.check_within(any_of([hook, @scroll_down_available, scroll_available_hook(selector, :up)]), @list_ready_timeout_ms)
+
     Engine.check(hook) or
       (Engine.check(@scroll_down_available) and scroll_and_check(hook, selector, :down, @hefty_scroll_clicks, ctx)) or
       sweep(hook, selector, :up, ctx) or
