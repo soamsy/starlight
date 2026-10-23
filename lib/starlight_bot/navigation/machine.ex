@@ -11,12 +11,16 @@ defmodule StarlightBot.Navigation.Machine do
   @verify_timeout_ms 1_800
   @refinement_timeout_ms 1_000
   @hold_poll_ms 30
+  @locate_poll_ms 200
+  @fallback_settle_ms 2_000
   @target_area_fraction 0.25
   @unguarded_steps [
     :log,
     :fail,
     :attempt,
     :ensure,
+    :goto,
+    :locate_screen,
     :__mark__,
     :__verify__,
     :__retry_after__,
@@ -25,6 +29,7 @@ defmodule StarlightBot.Navigation.Machine do
     :__done__,
     :__rescue__,
     :__ensure__,
+    :__deliver__,
     :__unguarded__
   ]
 
@@ -188,6 +193,28 @@ defmodule StarlightBot.Navigation.Machine do
   defp exec_internal({:ensure, steps, cleanup}, data),
     do: push(steps ++ [{:__ensure__, cleanup}], data.frame, data)
 
+  defp exec_internal({:goto, from, to, then}, data) do
+    steps =
+      if from == to do
+        [{:log, :ok, "already at #{from}"}, {:__done__, {:ok, from}}]
+      else
+        case Catalog.plan_path(from, to) do
+          {:ok, transitions} -> Runner.plan_program(transitions) ++ [{:__mark__, nil}]
+          {:error, :no_path} -> [{:fail, {:no_path, from, to}}]
+        end
+      end
+
+    push(with_delivery(steps, then), data.frame, data)
+  end
+
+  defp exec_internal({:locate_screen, timeout_ms, then}, data) do
+    data = %{data | stack: with_delivery([], then) ++ data.stack}
+    start_poll({:locate, mono()}, timeout_ms, data)
+  end
+
+  defp exec_internal({:__deliver__, {mod, fun, args}}, data),
+    do: push([{:call, {mod, fun, args ++ [data.result]}}], data.frame, %{data | result: nil})
+
   defp exec_internal({:__rescue__, _fallback}, data), do: continue(data, data.frame)
 
   defp exec_internal({:__ensure__, cleanup}, data), do: push(unguarded(cleanup), data.frame, data)
@@ -196,6 +223,11 @@ defmodule StarlightBot.Navigation.Machine do
     if elem(step, 0) in @unguarded_steps,
       do: exec_internal(step, data),
       else: exec(step, data)
+  end
+
+  defp exec_internal({:__mark__, nil}, data) do
+    RunMemory.put(data.ctx, :step, nil)
+    continue(data, data.frame)
   end
 
   defp exec_internal({:__mark__, text}, data) do
@@ -262,6 +294,16 @@ defmodule StarlightBot.Navigation.Machine do
     end
   end
 
+  defp tick(%{poll: {{:settle, current}, deadline}} = data) do
+    current =
+      case Runner.check_screens(Catalog.all_screens()) do
+        {:ok, _} = next -> next
+        :unknown -> current
+      end
+
+    settle(current, deadline, data)
+  end
+
   defp tick(%{poll: {kind, deadline}} = data) do
     if not grab_first?(kind) and mono() >= deadline do
       expire(kind, nil, data)
@@ -273,15 +315,31 @@ defmodule StarlightBot.Navigation.Machine do
         {:miss, frame} ->
           if grab_first?(kind) and mono() >= deadline,
             do: expire(kind, frame, data),
-            else: {:next_state, :polling, data, [{:state_timeout, @poll_interval_ms, :tick}]}
+            else: {:next_state, :polling, data, [{:state_timeout, poll_interval(kind), :tick}]}
       end
     end
   end
 
-  defp grab_first?(kind), do: elem(kind, 0) in [:branch, :refine, :leave]
+  defp grab_first?(kind), do: elem(kind, 0) in [:branch, :refine, :leave, :locate]
+
+  defp poll_interval({:locate, _started_at}), do: @locate_poll_ms
+  defp poll_interval(_kind), do: @poll_interval_ms
+
+  defp settle({:ok, name} = current, deadline, data) do
+    if Runner.fallback_screen?(name) and Runner.settles?(name) and mono() < deadline,
+      do: {:next_state, :polling, %{data | poll: {{:settle, current}, deadline}}, [{:state_timeout, @poll_interval_ms, :tick}]},
+      else: continue(%{data | result: current}, data.frame)
+  end
 
   defp probe({:refine, candidates, _arrived}) do
     case Runner.check_screens(candidates) do
+      {:ok, screen} -> {:matched, nil, screen}
+      :unknown -> {:miss, nil}
+    end
+  end
+
+  defp probe({:locate, _started_at}) do
+    case Runner.check_screens(Catalog.all_screens()) do
       {:ok, screen} -> {:matched, nil, screen}
       :unknown -> {:miss, nil}
     end
@@ -343,6 +401,9 @@ defmodule StarlightBot.Navigation.Machine do
     continue(data, data.frame)
   end
 
+  defp matched({:locate, _started_at}, _frame, screen, data),
+    do: settle({:ok, screen}, mono() + @fallback_settle_ms, data)
+
   defp matched({:leave, screen_name, started_at}, _frame, next_screen, data) do
     Ctx.log(data.ctx, :info, "left #{screen_name} for #{next_screen} after #{mono() - started_at}ms")
     continue(data, nil)
@@ -388,6 +449,8 @@ defmodule StarlightBot.Navigation.Machine do
     fail_with({:error, {:verification_failed, screen_name}}, data)
   end
 
+  defp expire({:locate, _started_at}, _frame, data), do: continue(%{data | result: :unknown}, data.frame)
+
   defp expire({:leave, screen_name, started_at}, _frame, data) do
     Ctx.log(data.ctx, :info, "still on #{screen_name} after #{mono() - started_at}ms")
     continue(data, nil)
@@ -416,12 +479,17 @@ defmodule StarlightBot.Navigation.Machine do
   defp fail_with({:error, reason} = err, data) do
     case Enum.drop_while(data.stack, &(not handler?(&1))) do
       [] -> finish(err, data)
+      [{:__rescue__, {mod, fun, args}} | rest] -> push([{:call, {mod, fun, args ++ [err]}}], nil, %{data | stack: rest})
       [{:__rescue__, fallback} | rest] -> push(fallback, nil, %{data | stack: rest})
       [{:__ensure__, cleanup} | rest] -> push(unguarded(cleanup) ++ [{:fail, reason}], nil, %{data | stack: rest})
+      [{:__deliver__, {mod, fun, args}} | rest] -> push([{:call, {mod, fun, args ++ [err]}}], nil, %{data | stack: rest})
     end
   end
 
-  defp handler?(step), do: elem(step, 0) in [:__rescue__, :__ensure__]
+  defp handler?(step), do: elem(step, 0) in [:__rescue__, :__ensure__, :__deliver__]
+
+  defp with_delivery(steps, nil), do: steps
+  defp with_delivery(steps, then), do: steps ++ [{:__deliver__, then}]
 
   defp unguarded(steps), do: Enum.map(steps, &{:__unguarded__, &1})
 

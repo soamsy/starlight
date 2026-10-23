@@ -8,7 +8,7 @@ defmodule StarlightBot.Navigation.MachineTest do
 
   @moduletag :capture_log
 
-  @hooks [:fw_popup, :fw_button, :fw_done, :fw_hidden]
+  @hooks [:fw_popup, :fw_button, :fw_done, :fw_hidden, :encounter_reward]
 
   def record(test, tag, frame, _ctx) do
     send(test, {:ran, tag, frame})
@@ -26,7 +26,14 @@ defmodule StarlightBot.Navigation.MachineTest do
     {:ok, nil}
   end
 
+  def got(test, result, _frame, _ctx) do
+    send(test, {:got, result})
+    {:ok, nil}
+  end
+
   defp record(tag), do: call(__MODULE__, :record, [self(), tag])
+
+  defp deliver_here, do: {__MODULE__, :got, [self()]}
 
   defp run(steps, ctx \\ Ctx.new()), do: Runner.run_steps(steps, ctx)
 
@@ -131,6 +138,36 @@ defmodule StarlightBot.Navigation.MachineTest do
     end
   end
 
+  describe "navigation steps" do
+    test "goto to the screen it starts on succeeds without moving" do
+      assert run([goto(:home, :home)]) == {:ok, :home}
+      assert {:ok, nil} = run([goto(:home, :home, then: deliver_here())])
+      assert_received {:got, {:ok, :home}}
+      assert FakeWorld.inputs() == []
+    end
+
+    test "goto hands a missing path to its continuation as an error" do
+      assert {:ok, _} = run([goto(:home, :no_such_screen, then: deliver_here())])
+      assert_received {:got, {:error, {:no_path, :home, :no_such_screen}}}
+    end
+
+    test "goto without a continuation fails the program on errors" do
+      assert run([goto(:home, :no_such_screen), record(:never)]) == {:error, {:no_path, :home, :no_such_screen}}
+      refute_received {:ran, :never, _}
+    end
+
+    @tag visible: [:encounter_reward]
+    test "locate_screen delivers the screen on display" do
+      assert {:ok, _} = run([locate_screen(timeout: 1_000, then: deliver_here())])
+      assert_received {:got, {:ok, :encounter_reward}}
+    end
+
+    test "locate_screen delivers :unknown when nothing is recognized in time" do
+      assert {:ok, _} = run([locate_screen(timeout: 300, then: deliver_here())])
+      assert_received {:got, :unknown}
+    end
+  end
+
   describe "confirm_enter" do
     @tag visible: [:fw_popup]
     test "presses enter once when the popup goes away" do
@@ -152,6 +189,11 @@ defmodule StarlightBot.Navigation.MachineTest do
       assert run([attempt([fail(:first)], else: [record(:fallback)])]) == {:ok, :fallback}
       assert run([attempt([record(:fine)], else: [record(:unused)]), record(:after)]) == {:ok, :after}
       refute_received {:ran, :unused, _}
+    end
+
+    test "attempt can hand the error to a continuation instead" do
+      assert {:ok, nil} = run([attempt([fail(:first)], else: deliver_here())])
+      assert_received {:got, {:error, :first}}
     end
 
     test "ensure runs its cleanup on success and failure, and keeps the original error" do

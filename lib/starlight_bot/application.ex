@@ -12,14 +12,13 @@ defmodule StarlightBot.Application do
         StarlightBot.Repo,
         {Phoenix.PubSub, name: StarlightBot.PubSub},
         {StarlightBot.LogStore, []},
-        StarlightBotWeb.Endpoint,
         {Task.Supervisor, name: StarlightBot.TaskSupervisor},
         {DynamicSupervisor, name: StarlightBot.MachineSupervisor, strategy: :one_for_one},
         {StarlightBot.Vision.HookRegistry, []},
         {StarlightBot.Vision.EgoGiftCapture, []},
         {StarlightBot.Vision.EgoGiftDetector, []},
         {StarlightBot.Automation.TrayWatch, []},
-      ] ++ hardware_children()
+      ] ++ hardware_children() ++ [StarlightBotWeb.Endpoint]
 
     opts = [strategy: :one_for_one, name: StarlightBot.Supervisor]
     result = Supervisor.start_link(children, opts)

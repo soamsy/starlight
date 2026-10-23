@@ -21,36 +21,32 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
   @hp_hooks [mounting_trials_max_hp_text: 2.5, mounting_trials_hp_plus_2_5: 2.5, mounting_trials_hp_plus_5: 5, mounting_trials_hp_plus_7_5: 7.5]
 
   screen :mounting_trials, identity: :mounting_trials do
-    transition to: :mounting_trials_over, do: [call(__MODULE__, :select_and_confirm_gifts)]
+    transition to: :mounting_trials_over, do: select_and_confirm(@max_select_attempts)
   end
 
   screen :mounting_trials_over, identity: nil, catch_all: true
 
   def selection_hooks, do: @selection_hooks
 
-  def select_and_confirm_gifts(_frame, ctx), do: select_and_confirm(ctx, @max_select_attempts)
+  defp select_and_confirm(0), do: [fail(:mounting_trials_selection_stuck)]
+  defp select_and_confirm(attempts), do: [await_any(@selection_hooks), call(__MODULE__, :pick_or_confirm, [attempts])]
 
-  defp select_and_confirm(_ctx, 0), do: {:error, :mounting_trials_selection_stuck}
+  def pick_or_confirm(attempts, _frame, ctx) do
+    case selection_state() do
+      {total, total} ->
+        {:steps, [click(confirm_hook(total)), RewardHelpers.dismiss_ego_gift_get_step(leaving: :mounting_trials)]}
 
-  defp select_and_confirm(ctx, attempts) do
-    with {:ok, _} <- Engine.act([await_any(@selection_hooks)], ctx) do
-      case selection_state() do
-        {total, total} ->
-          with {:ok, _} <- Engine.act([click(confirm_hook(total))], ctx), do: RewardHelpers.dismiss_ego_gift_get(ctx, leaving: :mounting_trials)
+      {selected, total} ->
+        mode = mode(ctx)
+        Ctx.log(ctx, :info, "mounting trials: #{selected}/#{total} selected, picking #{total - selected} (#{GiftPlans.mounting_trials_mode_label(mode)})")
+        opts = [selected_hook: @selected_hook] ++ if(mode == "avoid_hp", do: [hp_hooks: @hp_hooks], else: [])
 
-        {selected, total} ->
-          mode = mode(ctx)
-          Ctx.log(ctx, :info, "mounting trials: #{selected}/#{total} selected, picking #{total - selected} (#{GiftPlans.mounting_trials_mode_label(mode)})")
-          opts = [selected_hook: @selected_hook] ++ if(mode == "avoid_hp", do: [hp_hooks: @hp_hooks], else: [])
+        with {:ok, _} <- GiftPicker.pick(scan_hook(total), total - selected, @tier_hooks, :mounting_trials, ctx, @pick_delay_ms, opts) do
+          {:steps, [sleep(@settle_ms) | select_and_confirm(attempts - 1)]}
+        end
 
-          with {:ok, _} <- GiftPicker.pick(scan_hook(total), total - selected, @tier_hooks, :mounting_trials, ctx, @pick_delay_ms, opts) do
-            Process.sleep(@settle_ms)
-            select_and_confirm(ctx, attempts - 1)
-          end
-
-        nil ->
-          select_and_confirm(ctx, attempts - 1)
-      end
+      nil ->
+        {:steps, select_and_confirm(attempts - 1)}
     end
   end
 

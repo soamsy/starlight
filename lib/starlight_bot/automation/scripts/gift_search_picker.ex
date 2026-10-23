@@ -17,7 +17,11 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
 
   def reset(ctx), do: RunMemory.put(ctx, @clicked_key, [])
 
-  def run(names, ctx) do
+  def run(names, ctx), do: Engine.act(steps(names), ctx)
+
+  def steps(names), do: [call(__MODULE__, :start_search, [names])]
+
+  def start_search(names, _frame, ctx) do
     gifts_by_name = Map.new(EgoGifts.list_gifts(), &{&1.name, &1})
     tabs = GiftPlans.gift_search_tabs(names, gifts_by_name)
     Ctx.log(ctx, :info, "gift search: looking for " <> Enum.map_join(tabs, "; ", &tab_label/1))
@@ -27,62 +31,45 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
       reset(ctx)
     end
 
-    picked = Enum.reduce(tabs, clicked(ctx), fn {tab, gifts}, acc -> search_tab(tab, MapSet.new(gifts, & &1.id), acc, ctx) end)
-
-    cond do
-      MapSet.size(picked) == 0 ->
-        Ctx.log(ctx, :info, "gift search: none of the planned gifts were found, refusing")
-        Engine.goto(:gift_search, :theme_pack, ctx)
-
-      match?({:error, _}, Engine.act([await(not_hook(@none_selected_hook), timeout: @selected_timeout_ms)], ctx)) ->
-        Ctx.log(ctx, :error, "gift search: clicked #{MapSet.size(picked)} gift(s) but the screen still shows 0/3 selected, refusing")
-        Engine.goto(:gift_search, :theme_pack, ctx)
-
-      true ->
-        n = MapSet.size(picked)
-        Ctx.log(ctx, :ok, "gift search: selected #{n} gift(s), confirming")
-        with {:ok, _} <- Engine.act([click(:gift_search_select, settle_ms: 50)] ++ confirm_enter(:gift_search_select_confirm), ctx) do
-          dismiss_ego_gift_get(ctx)
-        end
-    end
+    {:steps, [call(__MODULE__, :search_tabs, [tabs, clicked(ctx)])]}
   end
 
-  defp dismiss_ego_gift_get(ctx) do
-    case Engine.act([await(:ego_gift_get), RewardHelpers.record_ego_gift_items_step(), RewardHelpers.dismiss_ego_gift_get_step(leaving: :gift_search)], ctx) do
-      {:ok, _} = ok ->
-        Ctx.log(ctx, :ok, "gift search: dismissed ego gift get")
-        if Engine.check(:ego_gift_get) do
-          dismiss_ego_gift_get(ctx)
-        else
-          Engine.act([await(not_hook(:gift_search), timeout: @leave_timeout_ms)], ctx)
-          ok
-        end
-
-      {:error, reason} ->
-        Ctx.log(ctx, :info, "gift search: no ego gift get (#{inspect(reason)}), moving on")
-        {:ok, nil}
-    end
-  end
-
-  defp tab_label({tab, gifts}), do: "#{tab}: " <> Enum.map_join(gifts, ", ", & &1.name)
-
-  defp clicked(ctx), do: ctx |> RunMemory.get(@clicked_key, []) |> MapSet.new()
-
-  defp search_tab(tab, wanted, picked, ctx) do
-    if MapSet.subset?(wanted, picked) do
-      picked
+  def search_tabs([], picked, _frame, ctx) do
+    if MapSet.size(picked) == 0 do
+      Ctx.log(ctx, :info, "gift search: none of the planned gifts were found, refusing")
+      {:steps, [goto(:gift_search, :theme_pack)]}
     else
-      Engine.act([click(:"gift_search_#{tab}"), sleep(@tab_settle_ms)], ctx)
-      scan_pass(tab, wanted, picked, MapSet.new(), ctx, 0)
+      refuse = [
+        log(:error, "gift search: clicked #{MapSet.size(picked)} gift(s) but the screen still shows 0/3 selected, refusing"),
+        goto(:gift_search, :theme_pack)
+      ]
+
+      confirm = [
+        log(:ok, "gift search: selected #{MapSet.size(picked)} gift(s), confirming"),
+        click(:gift_search_select, settle_ms: 50)
+      ]
+
+      {:steps, [branch([{not_hook(@none_selected_hook), confirm ++ confirm_enter(:gift_search_select_confirm) ++ [dismiss_ego_gift_get()]}, default: refuse], wait: @selected_timeout_ms)]}
     end
   end
 
-  defp scan_pass(tab, _wanted, picked, _seen, ctx, pass) when pass >= @max_scroll_passes do
-    Ctx.log(ctx, :error, "gift search: #{tab} tab hit #{@max_scroll_passes} scroll passes")
-    picked
+  def search_tabs([{tab, gifts} | rest], picked, _frame, _ctx) do
+    wanted = MapSet.new(gifts, & &1.id)
+
+    if MapSet.subset?(wanted, picked) do
+      {:steps, [call(__MODULE__, :search_tabs, [rest, picked])]}
+    else
+      scan = call(__MODULE__, :scan_pass, [tab, wanted, picked, MapSet.new(), 0, rest])
+      {:steps, [attempt([click(:"gift_search_#{tab}"), sleep(@tab_settle_ms)], else: []), scan]}
+    end
   end
 
-  defp scan_pass(tab, wanted, picked, seen, ctx, pass) do
+  def scan_pass(tab, _wanted, picked, _seen, pass, rest, _frame, ctx) when pass >= @max_scroll_passes do
+    Ctx.log(ctx, :error, "gift search: #{tab} tab hit #{@max_scroll_passes} scroll passes")
+    {:steps, [call(__MODULE__, :search_tabs, [rest, picked])]}
+  end
+
+  def scan_pass(tab, wanted, picked, seen, pass, rest, _frame, ctx) do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, region} <- scan_region(ctx),
          {:ok, items} <- EgoGiftDetector.detect(frame.mat, region, capture_tag: :gift_search) do
@@ -92,22 +79,49 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
 
       cond do
         MapSet.subset?(wanted, picked) ->
-          picked
+          {:steps, [call(__MODULE__, :search_tabs, [rest, picked])]}
 
         pass > 0 and MapSet.subset?(visible, seen) ->
           Ctx.log(ctx, :info, "gift search: reached the end of the #{tab} tab")
-          picked
+          {:steps, [call(__MODULE__, :search_tabs, [rest, picked])]}
 
         true ->
-          Engine.act([move_to(@scan_hook), scroll_down(@scroll_clicks), sleep(@scroll_settle_ms)], ctx)
-          scan_pass(tab, wanted, picked, MapSet.union(seen, visible), ctx, pass + 1)
+          next = call(__MODULE__, :scan_pass, [tab, wanted, picked, MapSet.union(seen, visible), pass + 1, rest])
+          {:steps, [attempt([move_to(@scan_hook), scroll_down(@scroll_clicks), sleep(@scroll_settle_ms)], else: []), next]}
       end
     else
       {:error, reason} ->
         Ctx.log(ctx, :error, "gift search: #{tab} scan failed: #{inspect(reason)}")
-        picked
+        {:steps, [call(__MODULE__, :search_tabs, [rest, picked])]}
     end
   end
+
+  defp dismiss_ego_gift_get do
+    attempt(
+      [
+        await(:ego_gift_get),
+        RewardHelpers.record_ego_gift_items_step(),
+        RewardHelpers.dismiss_ego_gift_get_step(leaving: :gift_search),
+        log(:ok, "gift search: dismissed ego gift get"),
+        branch([
+          {:ego_gift_get, [call(__MODULE__, :dismiss_again)]},
+          default: [attempt([await(not_hook(:gift_search), timeout: @leave_timeout_ms)], else: [])]
+        ])
+      ],
+      else: {__MODULE__, :no_ego_gift_get, []}
+    )
+  end
+
+  def dismiss_again(_frame, _ctx), do: {:steps, [dismiss_ego_gift_get()]}
+
+  def no_ego_gift_get({:error, reason}, _frame, ctx) do
+    Ctx.log(ctx, :info, "gift search: no ego gift get (#{inspect(reason)}), moving on")
+    {:ok, nil}
+  end
+
+  defp tab_label({tab, gifts}), do: "#{tab}: " <> Enum.map_join(gifts, ", ", & &1.name)
+
+  defp clicked(ctx), do: ctx |> RunMemory.get(@clicked_key, []) |> MapSet.new()
 
   defp click_if_wanted(item, wanted, picked, ctx) do
     if MapSet.member?(wanted, item.gift_id) and not MapSet.member?(picked, item.gift_id) do

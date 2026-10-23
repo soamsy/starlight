@@ -144,13 +144,29 @@ defmodule StarlightBot.Navigation.DSL do
     {:hold, hook, hold_ms, Keyword.get(opts, :within, 5_000), Keyword.get(opts, :else, [])}
   end
 
-  def attempt(steps, opts) when is_list(steps), do: {:attempt, steps, Keyword.fetch!(opts, :else)}
+  def attempt(steps, opts) when is_list(steps) do
+    case Keyword.fetch!(opts, :else) do
+      fallback when is_list(fallback) -> {:attempt, steps, fallback}
+      mfa -> {:attempt, steps, continuation(mfa)}
+    end
+  end
 
   def ensure(steps, cleanup) when is_list(steps) and is_list(cleanup), do: {:ensure, steps, cleanup}
 
   def mouse_down(button \\ :left), do: {:mouse_button, button, true}
 
   def mouse_up(button \\ :left), do: {:mouse_button, button, false}
+
+  def goto(from, to, opts \\ []) when is_atom(from) and is_atom(to),
+    do: {:goto, from, to, continuation(Keyword.validate!(opts, [:then])[:then])}
+
+  def locate_screen(opts \\ []) do
+    opts = Keyword.validate!(opts, [:then, timeout: 31_500])
+    {:locate_screen, opts[:timeout], continuation(opts[:then])}
+  end
+
+  defp continuation(nil), do: nil
+  defp continuation({mod, fun, args} = mfa) when is_atom(mod) and is_atom(fun) and is_list(args), do: mfa
 
   def leave_screen(screen_name, opts \\ []) when is_atom(screen_name),
     do: {:leave_screen, screen_name, Keyword.get(opts, :timeout, 5_000)}

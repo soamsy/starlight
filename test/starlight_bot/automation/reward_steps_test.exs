@@ -2,7 +2,9 @@ defmodule StarlightBot.Automation.RewardStepsTest do
   use ExUnit.Case, async: false
 
   alias StarlightBot.Automation.{Engine, RewardHelpers}
+  alias StarlightBot.Automation.Scripts
   alias StarlightBot.FakeWorld
+  alias StarlightBot.Navigation.Runner
 
   @moduletag :capture_log
 
@@ -48,6 +50,23 @@ defmodule StarlightBot.Automation.RewardStepsTest do
       assert {:ok, _} = Engine.act([RewardHelpers.dismiss_ego_gift_get_step()])
       assert FakeWorld.inputs() == [{:click, :ego_gift_get_confirm}]
     end
+  end
+
+  test "the encounter reward script program waits for the screen, then plays it out" do
+    FakeWorld.start!(hooks: @hooks)
+    FakeWorld.react({:key, :space}, hide: [:ego_gift_get])
+
+    FakeWorld.react({:click, :encounter_reward_confirm},
+      hide: [:encounter_reward, :encounter_reward_gain_cost, :encounter_reward_confirm],
+      show: [:ego_gift_get]
+    )
+
+    run = Task.async(fn -> Runner.run_steps(Scripts.EncounterReward.program(), StarlightBot.Ctx.new()) end)
+    Process.sleep(300)
+    FakeWorld.show([:encounter_reward, :encounter_reward_gain_cost, :encounter_reward_confirm])
+
+    assert Task.await(run, 10_000) == {:ok, :encounter_reward_over}
+    assert [{:click, :encounter_reward_gain_cost}, {:click, :encounter_reward_confirm} | _] = FakeWorld.inputs()
   end
 
   test "the encounter reward transition picks a gift, confirms and dismisses the gift popup" do

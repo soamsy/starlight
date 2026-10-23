@@ -128,7 +128,7 @@ defmodule StarlightBot.Navigation.Runner do
     end
   end
 
-  defp settles?(name) do
+  def settles?(name) do
     case Catalog.find_screen(name) do
       %Screen{settle: settle} -> settle
       nil -> true

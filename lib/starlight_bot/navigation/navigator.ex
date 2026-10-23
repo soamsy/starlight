@@ -200,7 +200,10 @@ defmodule StarlightBot.Navigation.Navigator do
       %{module: module, label: label} ->
         state = cancel_running(state)
         state = add_log(state, :info, "Running script: #{label}")
-        pid = start_script(:run_script, {module, :run, []}, nav_ctx())
+        pid =
+          if program?(module),
+            do: start_machine(module.program(), :run_script),
+            else: start_script(:run_script, {module, :run, []}, nav_ctx())
 
         state = %{state | phase: :running, goal: nil, task_pid: pid}
         broadcast(state)
@@ -605,6 +608,8 @@ defmodule StarlightBot.Navigation.Navigator do
     Process.monitor(pid)
     pid
   end
+
+  defp program?(module), do: Code.ensure_loaded?(module) and function_exported?(module, :program, 0)
 
   defp start_script(kind, mfa, ctx, run_memory_seeds \\ nil),
     do: Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, ScriptTask, :run, [self(), kind, mfa, ctx, run_memory_seeds]).pid
