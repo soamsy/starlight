@@ -1,99 +1,54 @@
 defmodule StarlightBot.Automation.Scripts.ClaimRewards do
   import StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.Engine
-  alias StarlightBot.Ctx
+  alias StarlightBot.Navigation.{Catalog, Runner}
 
   @arrival_timeout 600_000
   @settle_check_ms 800
 
-  def run(config, ctx \\ Ctx.new())
-
-  def run(%{action: action} = config, ctx) when action in [:give_up, :to_window, :claim, :to_list] do
+  def steps(%{action: action} = config) when action in [:give_up, :to_window, :claim, :to_list] do
     weekly_bonus? = Map.get(config, :weekly_bonus?, true)
 
-    with {:ok, _} <- await_entry(ctx),
-         :ok <- ensure_on_reward_screen(ctx) do
-      apply_action(resolve_action(action, ctx), weekly_bonus?, ctx)
-    end
+    open_rewards = [log(:info, "opening rewards popup"), goto(:exploration_complete, :exploration_reward)]
+
+    [
+      log(:info, "waiting for exploration_complete or exploration_reward"),
+      await_any([:exploration_complete, :exploration_reward], timeout: @arrival_timeout),
+      branch([{:exploration_reward, []}, default: open_rewards], wait: @settle_check_ms)
+    ] ++ action_steps(action, weekly_bonus?)
   end
 
-  def run(config, ctx) do
-    Ctx.log(ctx, :error, "invalid config #{inspect(config)}")
-    {:error, :invalid_config}
+  def steps(config), do: [log(:error, "invalid config #{inspect(config)}"), fail(:invalid_config)]
+
+  defp action_steps(:claim, weekly_bonus?) do
+    give_up = [log(:info, "no rewards worth claiming — giving up instead") | action_steps(:give_up, weekly_bonus?)]
+    [branch([{:exploration_reward_no_bp, give_up}, default: claim_steps(weekly_bonus?)], wait: @settle_check_ms)]
   end
 
-  defp await_entry(ctx) do
-    Ctx.log(ctx, :info, "waiting for exploration_complete or exploration_reward")
-    Engine.act([await_any([:exploration_complete, :exploration_reward], timeout: @arrival_timeout)], ctx)
+  defp action_steps(:give_up, _weekly_bonus?) do
+    [log(:info, "giving up rewards"), goto(:exploration_reward, :give_up_rewards), result({:ok, :give_up})]
   end
 
-  defp ensure_on_reward_screen(ctx) do
-    if Engine.check_within(:exploration_reward, @settle_check_ms) do
-      :ok
-    else
-      Ctx.log(ctx, :info, "opening rewards popup")
-
-      case Engine.goto(:exploration_complete, :exploration_reward, ctx) do
-        {:ok, _} -> :ok
-        {:error, _} = err -> err
-      end
-    end
+  defp action_steps(:to_window, _weekly_bonus?) do
+    to_window = [log(:info, "heading to window, abandoning rewards"), goto(:exploration_reward, :exploration_reward_to_window_done), result({:ok, :to_window})]
+    not_found = [log(:error, "exploration_reward_to_window not found — likely the wrong popup"), fail(:to_window_not_found)]
+    [branch([{:exploration_reward_to_window, to_window}, default: not_found], wait: @settle_check_ms)]
   end
 
-  defp resolve_action(:claim, ctx) do
-    if Engine.check_within(:exploration_reward_no_bp, @settle_check_ms) do
-      Ctx.log(ctx, :info, "no rewards worth claiming — giving up instead")
-      :give_up
-    else
-      :claim
-    end
+  defp action_steps(:to_list, weekly_bonus?) do
+    to_list = [log(:info, "heading to list"), goto(:exploration_reward, :exploration_reward_list), result({:ok, :to_list})]
+    give_up = [log(:info, "exploration_reward_to_list not found — giving up instead") | action_steps(:give_up, weekly_bonus?)]
+    [branch([{:exploration_reward_to_list, to_list}, default: give_up], wait: @settle_check_ms)]
   end
 
-  defp resolve_action(action, _ctx), do: action
-
-  defp apply_action(:claim, weekly_bonus?, ctx) do
-    with :ok <- maybe_disable_weekly_bonus(weekly_bonus?, ctx) do
-      Ctx.log(ctx, :info, "claiming rewards")
-      Engine.goto(:exploration_reward, :exploration_reward_claimed, ctx) |> tag(:claim)
-    end
+  defp claim_steps(weekly_bonus?) do
+    disable_weekly_bonus(weekly_bonus?) ++
+      [log(:info, "claiming rewards"), goto(:exploration_reward, :exploration_reward_claimed), result({:ok, :claim})]
   end
 
-  defp apply_action(:give_up, _weekly_bonus?, ctx) do
-    Ctx.log(ctx, :info, "giving up rewards")
-    Engine.goto(:exploration_reward, :give_up_rewards, ctx) |> tag(:give_up)
+  defp disable_weekly_bonus(true), do: []
+
+  defp disable_weekly_bonus(false) do
+    action = Catalog.find_action(:exploration_reward, :disable_weekly_bonuses)
+    [log(:info, "excluding weekly bonuses from this claim") | Runner.action_program(:exploration_reward, action)]
   end
-
-  defp apply_action(:to_window, _weekly_bonus?, ctx) do
-    if Engine.check_within(:exploration_reward_to_window, @settle_check_ms) do
-      Ctx.log(ctx, :info, "heading to window, abandoning rewards")
-      Engine.goto(:exploration_reward, :exploration_reward_to_window_done, ctx) |> tag(:to_window)
-    else
-      Ctx.log(ctx, :error, "exploration_reward_to_window not found — likely the wrong popup")
-      {:error, :to_window_not_found}
-    end
-  end
-
-  defp apply_action(:to_list, weekly_bonus?, ctx) do
-    if Engine.check_within(:exploration_reward_to_list, @settle_check_ms) do
-      Ctx.log(ctx, :info, "heading to list")
-      Engine.goto(:exploration_reward, :exploration_reward_list, ctx) |> tag(:to_list)
-    else
-      Ctx.log(ctx, :info, "exploration_reward_to_list not found — giving up instead")
-      apply_action(:give_up, weekly_bonus?, ctx)
-    end
-  end
-
-  defp maybe_disable_weekly_bonus(true, _ctx), do: :ok
-
-  defp maybe_disable_weekly_bonus(false, ctx) do
-    Ctx.log(ctx, :info, "excluding weekly bonuses from this claim")
-
-    case Engine.run_action(:exploration_reward, :disable_weekly_bonuses, ctx) do
-      {:ok, _} -> :ok
-      {:error, _} = err -> err
-    end
-  end
-
-  defp tag({:ok, _}, action), do: {:ok, action}
-  defp tag({:error, _} = err, _action), do: err
 end

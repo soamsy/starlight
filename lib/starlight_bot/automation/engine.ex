@@ -26,57 +26,6 @@ defmodule StarlightBot.Automation.Engine do
     end
   end
 
-  @escape_hook :safe_corner
-  @escape_click_sleep_ms 300
-  @max_escape_hops 3
-
-  def localize_with_recovery(ctx \\ Ctx.new(), keep? \\ fn _screen -> false end) do
-    case localize() do
-      {:ok, screen} -> escape_then_localize(screen, ctx, keep?, @max_escape_hops)
-      :unknown -> fallback_recovery(ctx)
-    end
-  end
-
-  defp escape_then_localize(screen, _ctx, _keep?, 0), do: {:ok, screen}
-
-  defp escape_then_localize(screen, ctx, keep?, hops_left) do
-    case if(keep?.(screen), do: nil, else: Catalog.escape_transition(screen)) do
-      nil ->
-        {:ok, screen}
-
-      transition ->
-        Ctx.log(ctx, :info, "#{screen} has an escape route to #{transition.to} — leaving before resuming")
-        Runner.run_plan([transition], ctx)
-
-        case localize() do
-          {:ok, next_screen} -> escape_then_localize(next_screen, ctx, keep?, hops_left - 1)
-          :unknown -> fallback_recovery(ctx)
-        end
-    end
-  end
-
-  defp fallback_recovery(ctx) do
-    Ctx.log(ctx, :error, "still unrecognized — trying #{@escape_hook}/esc/#{@escape_hook} to find a pickoff point")
-
-    [
-      [
-        {:click, @escape_hook}, {:sleep, @escape_click_sleep_ms},
-        {:key, :esc}, {:sleep, @escape_click_sleep_ms},
-        {:click, @escape_hook}, {:sleep, @escape_click_sleep_ms}
-      ],
-      # [{:key, :esc}, {:sleep, @escape_click_sleep_ms}],
-      # [{:click, @escape_hook}, {:sleep, @escape_click_sleep_ms}]
-    ]
-    |> Enum.reduce_while(:unknown, fn steps, _acc ->
-      Runner.run_steps(steps, ctx)
-
-      case localize() do
-        {:ok, _} = ok -> {:halt, ok}
-        :unknown -> {:cont, :unknown}
-      end
-    end)
-  end
-
   def goto(same, same, ctx \\ Ctx.new())
 
   def goto(same, same, ctx) do

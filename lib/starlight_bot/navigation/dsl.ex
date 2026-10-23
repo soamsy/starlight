@@ -136,6 +136,8 @@ defmodule StarlightBot.Navigation.DSL do
 
   def call(mod, fun, args \\ []) when is_atom(mod) and is_atom(fun) and is_list(args), do: {:call, {mod, fun, args}}
 
+  def invoke(mod, fun, args \\ []) when is_atom(mod) and is_atom(fun) and is_list(args), do: {:invoke, {mod, fun, args}}
+
   def log(kind, text) when kind in [:ok, :info, :error] and is_binary(text), do: {:log, kind, text}
 
   def fail(reason), do: {:fail, reason}

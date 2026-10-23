@@ -204,6 +204,14 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp exec({:checkpoint}, data), do: continue(data, data.frame)
 
+  defp exec({:invoke, {mod, fun, args}}, data) do
+    case run_imperative(mod, fun, args, data.ctx) do
+      {:error, _} = err -> fail_with(err, data)
+      {:ok, _} = ok -> continue(%{data | result: ok}, data.frame)
+      other -> continue(%{data | result: {:ok, other}}, data.frame)
+    end
+  end
+
   defp exec({:sleep, ms}, data) do
     Ctx.log(data.ctx, :info, "sleep #{ms}ms")
     report(:sleeping, {"sleep", mono() + ms}, data)
@@ -245,7 +253,7 @@ defmodule StarlightBot.Navigation.Machine do
     push(with_delivery(steps, then), data.frame, data)
   end
 
-  defp exec_internal({:capture, steps, then}, data), do: push(with_delivery(steps, then), data.frame, data)
+  defp exec_internal({:capture, steps, then}, data), do: push(with_delivery(steps, then), data.frame, %{data | result: nil})
 
   defp exec_internal({:locate_screen, timeout_ms, then}, data),
     do: push(with_delivery([{:__locate__, timeout_ms}], then), data.frame, data)
@@ -253,7 +261,7 @@ defmodule StarlightBot.Navigation.Machine do
   defp exec_internal({:__locate__, timeout_ms}, data), do: start_poll({:locate, mono()}, timeout_ms, data)
 
   defp exec_internal({:__deliver__, {mod, fun, args}}, data),
-    do: push([{:call, {mod, fun, args ++ [data.result]}}], data.frame, %{data | result: nil})
+    do: push([{:call, {mod, fun, args ++ [data.result || {:ok, data.frame}]}}], data.frame, %{data | result: nil})
 
   defp exec_internal({:__rescue__, _fallback}, data), do: continue(data, data.frame)
 
@@ -569,6 +577,7 @@ defmodule StarlightBot.Navigation.Machine do
   defp describe_poll(kind), do: to_string(elem(kind, 0))
 
   defp describe({:call, {mod, fun, _args}}), do: "#{inspect(mod)}.#{fun}"
+  defp describe({:invoke, {mod, fun, _args}}), do: "#{inspect(mod)}.#{fun}"
   defp describe(step) when tuple_size(step) > 2, do: "#{elem(step, 0)} #{inspect(elem(step, 1), limit: 5, printable_limit: 80)}"
   defp describe(step), do: inspect(step, limit: 5, printable_limit: 80)
 
@@ -654,6 +663,10 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp execute_step({:call, {mod, fun, args}}, last_frame, ctx) do
     apply(mod, fun, args ++ [last_frame, ctx])
+  rescue
+    exception ->
+      Ctx.log(ctx, :error, "#{inspect(mod)}.#{fun} crashed: #{Exception.format(:error, exception, __STACKTRACE__)}")
+      {:error, {:exception, Exception.message(exception)}}
   end
 
   defp execute_step({:mouse_button, button, true}, _last_frame, _ctx) do
@@ -664,6 +677,14 @@ defmodule StarlightBot.Navigation.Machine do
   defp execute_step({:mouse_button, button, false}, _last_frame, _ctx) do
     Mouse.mouse_up(button)
     {:ok, nil}
+  end
+
+  defp run_imperative(mod, fun, args, ctx) do
+    apply(mod, fun, args ++ [ctx])
+  rescue
+    exception ->
+      Ctx.log(ctx, :error, "#{inspect(mod)}.#{fun} crashed: #{Exception.format(:error, exception, __STACKTRACE__)}")
+      {:error, {:exception, Exception.message(exception)}}
   end
 
   defp retry_verb([]), do: "wait_until"

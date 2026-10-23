@@ -4,54 +4,35 @@ defmodule StarlightBot.Automation.Scripts.ChargeEnkephalin do
   alias StarlightBot.Ctx
   alias StarlightBot.Navigation.Catalog
 
-  def run(ctx \\ Ctx.new()) do
-    with {:ok, start} <- localize(ctx),
-         :ok <- ensure_reachable(start, ctx),
-         {:ok, home} <- Engine.goto(start, :home, ctx) do
-      can_make_modules? = Engine.check(:home_enkephalin_spendable)
-      Ctx.log(ctx, :info, "home_enkephalin_spendable: #{can_make_modules?}")
+  def program, do: [log(:info, "Localizing…"), locate_screen(then: {__MODULE__, :located, []})]
 
-      with {:ok, lunacy_tab} <- Engine.goto(home, :charge_enkephalin_lunacy_tab, ctx) do
-        can_make_modules? = maybe_spend_lunacy(can_make_modules?, ctx)
+  def located({:ok, start}, _frame, ctx) do
+    Ctx.log(ctx, :ok, "on screen: #{start}")
 
-        if can_make_modules? do
-          with {:ok, modules_tab} <- Engine.goto(lunacy_tab, :charge_enkephalin_modules_tab, ctx) do
-            make_modules(ctx)
-            Engine.goto(modules_tab, :home, ctx)
-          end
-        else
-          Engine.goto(lunacy_tab, :home, ctx)
-        end
-      end
-    end
-  end
-
-  defp localize(ctx) do
-    Ctx.log(ctx, :info, "Localizing…")
-
-    case Engine.localize() do
-      {:ok, screen} ->
-        Ctx.log(ctx, :ok, "on screen: #{screen}")
-        {:ok, screen}
-
-      :unknown ->
-        Ctx.log(ctx, :error, "screen not recognized")
-        {:error, :unknown_screen}
-    end
-  end
-
-  defp ensure_reachable(from, ctx) do
-    case Catalog.plan_path(from, :charge_enkephalin) do
+    case Catalog.plan_path(start, :charge_enkephalin) do
       {:ok, _transitions} ->
-        :ok
+        {:steps, [goto(start, :home, then: {__MODULE__, :at_home, []})]}
 
       {:error, :no_path} ->
-        Ctx.log(ctx, :error, "charge enkephalin not reachable from #{from}")
+        Ctx.log(ctx, :error, "charge enkephalin not reachable from #{start}")
         {:error, :not_reachable}
     end
   end
 
-  defp maybe_spend_lunacy(can_make_modules?, ctx) do
+  def located(:unknown, _frame, ctx) do
+    Ctx.log(ctx, :error, "screen not recognized")
+    {:error, :unknown_screen}
+  end
+
+  def at_home({:ok, home}, _frame, ctx) do
+    can_make_modules? = Engine.check(:home_enkephalin_spendable)
+    Ctx.log(ctx, :info, "home_enkephalin_spendable: #{can_make_modules?}")
+    {:steps, [goto(home, :charge_enkephalin_lunacy_tab, then: {__MODULE__, :at_lunacy_tab, [can_make_modules?]})]}
+  end
+
+  def at_home({:error, _} = err, _frame, _ctx), do: err
+
+  def at_lunacy_tab(can_make_modules?, {:ok, lunacy_tab}, _frame, ctx) do
     ready? =
       Engine.check_all([:charge_enkephalin_tab_lunacy_0_10, :charge_enkephalin_tab_lunacy_cost_26])
       |> Map.values()
@@ -59,20 +40,35 @@ defmodule StarlightBot.Automation.Scripts.ChargeEnkephalin do
 
     if ready? do
       Ctx.log(ctx, :info, "spending lunacy on enkephalin")
-
-      case Engine.act(spend_lunacy_steps(), ctx) do
-        {:ok, _} ->
-          Ctx.log(ctx, :ok, "lunacy spent — can make modules now")
-          true
-
-        {:error, reason} ->
-          Ctx.log(ctx, :error, "spend lunacy failed: #{inspect(reason)}")
-          can_make_modules?
-      end
+      spent = [log(:ok, "lunacy spent — can make modules now"), call(__MODULE__, :finish, [true, lunacy_tab])]
+      {:steps, [attempt(spend_lunacy_steps() ++ spent, else: {__MODULE__, :spend_failed, [can_make_modules?, lunacy_tab]})]}
     else
       Ctx.log(ctx, :info, "lunacy charge not available at 0/10 @ 26 — skipping")
-      can_make_modules?
+      finish(can_make_modules?, lunacy_tab, nil, ctx)
     end
+  end
+
+  def at_lunacy_tab(_can_make_modules?, {:error, _} = err, _frame, _ctx), do: err
+
+  def spend_failed(can_make_modules?, lunacy_tab, {:error, reason}, frame, ctx) do
+    Ctx.log(ctx, :error, "spend lunacy failed: #{inspect(reason)}")
+    finish(can_make_modules?, lunacy_tab, frame, ctx)
+  end
+
+  def finish(true, lunacy_tab, _frame, _ctx), do: {:steps, [goto(lunacy_tab, :charge_enkephalin_modules_tab, then: {__MODULE__, :at_modules_tab, []})]}
+  def finish(false, lunacy_tab, _frame, _ctx), do: {:steps, [goto(lunacy_tab, :home)]}
+
+  def at_modules_tab({:ok, modules_tab}, _frame, ctx) do
+    Ctx.log(ctx, :info, "making as many modules as possible")
+    make = make_modules_steps() ++ [log(:ok, "modules made")]
+    {:steps, [attempt(make, else: {__MODULE__, :make_failed, []}), goto(modules_tab, :home)]}
+  end
+
+  def at_modules_tab({:error, _} = err, _frame, _ctx), do: err
+
+  def make_failed({:error, reason}, _frame, ctx) do
+    Ctx.log(ctx, :error, "make modules failed: #{inspect(reason)}")
+    {:ok, nil}
   end
 
   defp spend_lunacy_steps do
@@ -86,15 +82,6 @@ defmodule StarlightBot.Automation.Scripts.ChargeEnkephalin do
         tries: 2),
       sleep(1000),
     ]
-  end
-
-  defp make_modules(ctx) do
-    Ctx.log(ctx, :info, "making as many modules as possible")
-
-    case Engine.act(make_modules_steps(), ctx) do
-      {:ok, _} -> Ctx.log(ctx, :ok, "modules made")
-      {:error, reason} -> Ctx.log(ctx, :error, "make modules failed: #{inspect(reason)}")
-    end
   end
 
   defp make_modules_steps do

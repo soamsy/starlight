@@ -3,48 +3,52 @@ defmodule StarlightBot.Navigation.NavigatorMachineTest do
 
   @moduletag :capture_log
 
-  alias StarlightBot.Automation.RunMemory
-  alias StarlightBot.{Ctx, FakeWorld}
-  alias StarlightBot.Navigation.{Navigator, ScriptTask}
+  alias StarlightBot.FakeWorld
+  alias StarlightBot.Navigation.Navigator
 
-  def slow_script(test, ctx) do
-    send(test, :script_started)
-    Process.sleep(300)
-    Ctx.log(ctx, :info, "script log")
-    {:ok, RunMemory.get(ctx, :team, nil)}
+  @reward_hooks [:exploration_reward, :exploration_reward_give_up, :exploration_reward_give_up_confirm]
+
+  defp await_idle_log(text, timeout \\ 10_000) do
+    receive do
+      {:nav_state, %{phase: :idle, log: [%{text: ^text} | _]}} -> :ok
+      {:nav_state, _} -> await_idle_log(text, timeout)
+    after
+      timeout -> flunk("navigator never logged #{inspect(text)}")
+    end
+  end
+
+  setup do
+    start_supervised!({Navigator, []})
+    Navigator.subscribe()
+    :ok
   end
 
   test "localize runs as a supervised machine and reports back to the navigator" do
     FakeWorld.start!()
-    start_supervised!({Navigator, []})
-    Navigator.subscribe()
-
     Navigator.localize()
 
     assert_receive {:nav_state, %{phase: :localizing}}
     assert_receive {:nav_state, %{phase: :idle, current_screen: :unknown}}, 2_000
   end
 
-  test "a script task seeds run memory, logs through ctx data and replies with its kind" do
-    ctx = Ctx.new(log_to: {self(), :nav_log})
-    ScriptTask.run(self(), :run_script, {__MODULE__, :slow_script, [self()]}, ctx, put_team: %{id: 7})
+  test "a script keeps running while the navigator's code is reloaded twice, and the new code takes its result" do
+    FakeWorld.start!(hooks: @reward_hooks)
+    FakeWorld.react({:click, :exploration_reward_give_up}, show: [:exploration_reward_give_up_confirm])
+    FakeWorld.react({:key, :enter}, hide: [:exploration_reward_give_up_confirm, :exploration_reward])
 
-    assert_received {:nav_log, :info, "script log"}
-    assert_received {:nav_result, :run_script, {:ok, %{id: 7}}}
-  end
-
-  test "a script keeps running when the navigator's code is reloaded twice" do
-    args = [self(), :run_script, {__MODULE__, :slow_script, [self()]}, Ctx.new(), nil]
-    {pid, ref} = spawn_monitor(ScriptTask, :run, args)
-
-    assert_receive :script_started
+    Navigator.claim_rewards(%{action: :give_up})
+    assert_receive {:nav_state, %{phase: :running}}
+    Process.sleep(200)
 
     for _ <- 1..2 do
       :code.purge(Navigator)
       {:module, Navigator} = :code.load_file(Navigator)
     end
 
-    assert_receive {:nav_result, :run_script, {:ok, nil}}, 1_000
-    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
+    FakeWorld.show(:exploration_reward)
+    await_idle_log("Rewards: give_up")
+
+    assert [{:click, :exploration_reward_give_up}, {:key, :enter}] =
+             Enum.filter(FakeWorld.inputs(), &match?({kind, _} when kind in [:key, :click], &1))
   end
 end

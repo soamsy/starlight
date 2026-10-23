@@ -22,49 +22,82 @@ defmodule StarlightBot.Automation.EnkephalinCharger do
 
   def max_convert_count, do: @max_convert_count
 
-  def charge(from, 0, ctx) do
-    with {:ok, home} <- Engine.goto(from, :home, ctx) do
-      if Engine.check(:home_enkephalin_spendable) do
-        make_modules_from(home, ctx)
-      else
-        Ctx.log(ctx, :info, "no lunacy conversions and home_enkephalin_spendable is off, skipping enkephalin")
-        {:ok, home}
-      end
+  def steps(from, 0), do: [goto(from, :home, then: {__MODULE__, :at_home, []})]
+
+  def steps(from, count) when is_integer(count) and count in 1..@max_convert_count do
+    [
+      log(:info, "charging enkephalin (up to #{count} lunacy spend(s))"),
+      goto(from, :charge_enkephalin_lunacy_tab, then: {__MODULE__, :at_lunacy_tab, [count]})
+    ]
+  end
+
+  def at_home({:ok, home}, _frame, ctx) do
+    if Engine.check(:home_enkephalin_spendable) do
+      {:steps, make_modules_from(home)}
+    else
+      Ctx.log(ctx, :info, "no lunacy conversions and home_enkephalin_spendable is off, skipping enkephalin")
+      {:steps, [result({:ok, home})]}
     end
   end
 
-  def charge(from, count, ctx) when is_integer(count) and count in 1..@max_convert_count,
-    do: charge_from(from, count, ctx)
+  def at_home({:error, _} = err, _frame, _ctx), do: err
 
-  defp charge_from(from, count, ctx) do
-    Ctx.log(ctx, :info, "charging enkephalin (up to #{count} lunacy spend(s))")
+  def at_lunacy_tab(count, {:ok, lunacy_tab}, _frame, _ctx),
+    do: {:steps, [call(__MODULE__, :spend_lunacy, [count]) | make_modules_from(lunacy_tab)]}
 
-    with {:ok, lunacy_tab} <- Engine.goto(from, :charge_enkephalin_lunacy_tab, ctx) do
-      spend_lunacy(count, ctx)
-      make_modules_from(lunacy_tab, ctx)
-    end
-  end
+  def at_lunacy_tab(_count, {:error, _} = err, _frame, _ctx), do: err
 
-  defp make_modules_from(from, ctx) do
-    with {:ok, modules_tab} <- Engine.goto(from, :charge_enkephalin_modules_tab, ctx) do
-      make_modules(ctx)
-      Engine.goto(modules_tab, :home, ctx)
-    end
-  end
-
-  defp spend_lunacy(target, ctx) do
+  def spend_lunacy(target, _frame, ctx) do
     case detect_spent_count(ctx) do
       {:ok, spent} when spent >= target ->
         Ctx.log(ctx, :info, "already spent #{spent}/#{target} today — nothing to do")
+        {:ok, nil}
 
       {:ok, spent} ->
         Ctx.log(ctx, :info, "spent #{spent} so far, spending up to #{target}")
-        run_spend_steps(spent, target, ctx)
+        spend(spent, target, nil, ctx)
 
       :unknown ->
         Ctx.log(ctx, :info, "could not determine today's lunacy spend count — skipping")
+        {:ok, nil}
     end
   end
+
+  def spend(spent, target, _frame, _ctx) when spent >= target, do: {:ok, nil}
+
+  def spend(spent, target, _frame, _ctx) do
+    cost_hook = Enum.at(@spend_cost_hooks, spent)
+
+    steps = [
+      click(:charge_enkephalin_popup_confirm),
+      move_to(:charge_enkephalin_popup_safe_area),
+      await(not_hook(cost_hook), timeout: 3_000),
+      log(:ok, "spent lunacy (#{spent + 1}/#{target})"),
+      call(__MODULE__, :spend, [spent + 1, target])
+    ]
+
+    {:steps, [attempt(steps, else: {__MODULE__, :spend_failed, [spent]})]}
+  end
+
+  def spend_failed(spent, {:error, reason}, _frame, ctx) do
+    Ctx.log(ctx, :error, "spend lunacy failed at step #{spent + 1}: #{inspect(reason)} — moving on")
+    {:ok, nil}
+  end
+
+  def at_modules_tab({:ok, modules_tab}, _frame, ctx) do
+    Ctx.log(ctx, :info, "making as many enkephalin modules as possible")
+    make = make_modules_steps() ++ [log(:ok, "modules made")]
+    {:steps, [attempt(make, else: {__MODULE__, :make_failed, []}), goto(modules_tab, :home)]}
+  end
+
+  def at_modules_tab({:error, _} = err, _frame, _ctx), do: err
+
+  def make_failed({:error, reason}, _frame, ctx) do
+    Ctx.log(ctx, :error, "make modules failed: #{inspect(reason)}")
+    {:ok, nil}
+  end
+
+  defp make_modules_from(from), do: [goto(from, :charge_enkephalin_modules_tab, then: {__MODULE__, :at_modules_tab, []})]
 
   defp detect_spent_count(ctx) do
     matched_hooks =
@@ -84,38 +117,6 @@ defmodule StarlightBot.Automation.EnkephalinCharger do
         )
 
         :unknown
-    end
-  end
-
-  defp run_spend_steps(spent, target, _ctx) when spent >= target, do: :ok
-
-  defp run_spend_steps(spent, target, ctx) do
-    cost_hook = Enum.at(@spend_cost_hooks, spent)
-
-    case Engine.act(spend_steps(cost_hook), ctx) do
-      {:ok, _} ->
-        Ctx.log(ctx, :ok, "spent lunacy (#{spent + 1}/#{target})")
-        run_spend_steps(spent + 1, target, ctx)
-
-      {:error, reason} ->
-        Ctx.log(ctx, :error, "spend lunacy failed at step #{spent + 1}: #{inspect(reason)} — moving on")
-    end
-  end
-
-  defp spend_steps(cost_hook) do
-    [
-      click(:charge_enkephalin_popup_confirm),
-      move_to(:charge_enkephalin_popup_safe_area),
-      await(not_hook(cost_hook), timeout: 3_000),
-    ]
-  end
-
-  defp make_modules(ctx) do
-    Ctx.log(ctx, :info, "making as many enkephalin modules as possible")
-
-    case Engine.act(make_modules_steps(), ctx) do
-      {:ok, _} -> Ctx.log(ctx, :ok, "modules made")
-      {:error, reason} -> Ctx.log(ctx, :error, "make modules failed: #{inspect(reason)}")
     end
   end
 
