@@ -2,6 +2,15 @@ defmodule StarlightBot.Navigation.Screens.MdDoor do
   use StarlightBot.Navigation.DSL
 
   @enter_arm_or_open_ms 1_500
+  @enter_unlock_gap_ms 100
+  @enter_results [
+    :mirror_dungeon_door_popup_white_enter,
+    :mirror_dungeon_door_progress,
+    :mirror_dungeon_door_forfeit,
+    :mirror_dungeon_door_session_expired_confirm,
+    :exploration_reward,
+    :team_selector_md
+  ]
 
   screen :md_door, identity: :mirror_dungeon_door do end
   screen :md_door_forfeit, identity: :mirror_dungeon_door_forfeit, refines: :md_door do
@@ -25,15 +34,17 @@ defmodule StarlightBot.Navigation.Screens.MdDoor do
     transition to: :md_door_enter do
       [
         move_to(:mirror_dungeon_door_enter),
+        branch([
+          mirror_dungeon_door_previous_run: [],
+          default: [
+            click(:mirror_dungeon_door_enter),
+            sleep(@enter_unlock_gap_ms),
+            click(:mirror_dungeon_door_enter),
+            branch([{any_of(@enter_results), []}], wait: @enter_arm_or_open_ms)
+          ]
+        ]),
         retry_until(
-          any_of([
-            :mirror_dungeon_door_popup_white_enter,
-            :mirror_dungeon_door_progress,
-            :mirror_dungeon_door_forfeit,
-            :mirror_dungeon_door_session_expired_confirm,
-            :exploration_reward,
-            :team_selector_md,
-          ]),
+          any_of(@enter_results),
           [click(:mirror_dungeon_door_enter)],
           every: @enter_arm_or_open_ms,
           tries: 6
