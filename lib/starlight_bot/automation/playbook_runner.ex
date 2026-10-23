@@ -128,6 +128,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   def run_actions([], turn, _frame, _ctx), do: {:steps, [DSL.call(__MODULE__, :finish_turn, [:pending, turn])]}
 
   def run_actions([action | rest], turn, _frame, ctx) do
+    if action["who"], do: Ctx.log(ctx, :info, "playbook: #{action["type"]} for #{who_text(action)} (#{skill_text(action["skill"])} skill)")
+
     case run_action(action, turn, ctx) do
       :pending ->
         {:steps, [run_actions(rest, turn)]}
@@ -722,6 +724,19 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
+  defp who_text(%{"who" => who} = action) do
+    names = profile_names()
+
+    case action["profile_ids"] || [] do
+      [] -> who
+      ids -> "#{who} #{Enum.map_join(ids, ", ", &Map.get(names, &1, inspect(&1)))}"
+    end
+  end
+
+  defp skill_text(%{"pick" => "first_with", "match" => match, "n" => n}), do: "first #{n} with #{match}"
+  defp skill_text(%{} = skill), do: base_pick_text(skill)
+  defp skill_text(_skill), do: "any"
+
   defp pick_text(enemy), do: base_pick_text(enemy) <> BattlePlans.height_label(enemy["height"])
 
   defp base_pick_text(%{"pick" => "percent", "n" => n}), do: "at #{n}%"
@@ -772,6 +787,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, tray} <- SkillTray.scan(frame) do
       TrayWatch.record(frame)
+      Ctx.log(ctx, :info, "playbook: skill tray read, sinner per slot [#{Enum.map_join(tray.sinner_of_slot || [], " ", &(&1 + 1))}]")
       {:ok, frame, tray}
     else
       other ->
@@ -858,8 +874,13 @@ defmodule StarlightBot.Automation.PlaybookRunner do
         :skip -> []
       end)
       |> case do
-        [] -> :skip
-        columns -> {:ok, columns}
+        [] ->
+          :skip
+
+        columns ->
+          names = groups |> Enum.map(&elem(&1, 1).name) |> Enum.uniq() |> Enum.join(", ")
+          Ctx.log(ctx, :info, "playbook: #{names} -> slot(s) #{Enum.map_join(columns, ", ", &(&1 + 1))}")
+          {:ok, columns}
       end
     end
   end
@@ -921,12 +942,14 @@ defmodule StarlightBot.Automation.PlaybookRunner do
            {:ok, hook} <- locator_hook(profile, ctx) do
         case Matcher.find_all(frame, hook) do
           [] ->
-            Ctx.log(ctx, :info, "playbook: #{profile.name} not found in the skill tray, #{missing_note} #{profile.name}")
+            Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) not found in the skill tray, #{missing_note} #{profile.name}")
             {:cont, {:ok, acc}}
 
           rects ->
             {x, _y, w, _h} = Enum.min_by(rects, &elem(&1, 0))
-            {:cont, {:ok, [SkillTray.owned_columns(tray, SkillTray.column_at(tray, x + w / 2)) | acc]}}
+            column = SkillTray.column_at(tray, x + w / 2)
+            Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) found at slot #{column + 1}")
+            {:cont, {:ok, [SkillTray.owned_columns(tray, column) | acc]}}
         end
       else
         :skip -> {:halt, :skip}
@@ -984,7 +1007,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp locate(frame, tray, hook, profile, ctx) do
     case Matcher.find_all(frame, hook) do
       [] ->
-        Ctx.log(ctx, :info, "playbook: #{profile.name} not found in the skill tray, skipping")
+        Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) not found in the skill tray, skipping")
         :skip
 
       rects ->
@@ -992,7 +1015,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
         column = SkillTray.column_at(tray, x + w / 2)
 
         if length(rects) > 1,
-          do: Ctx.log(ctx, :info, "playbook: #{profile.name} matched #{length(rects)} times, using the leftmost (slot #{column + 1})")
+          do: Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) matched #{length(rects)} times, using the leftmost (slot #{column + 1})"),
+          else: Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) found at slot #{column + 1}")
 
         {:ok, column}
     end
