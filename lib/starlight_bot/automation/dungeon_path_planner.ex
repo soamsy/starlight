@@ -11,6 +11,11 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   @ready_timeout_ms 3_000
   @ready_poll_ms 50
   @shop_confirm_wait_ms 1_500
+  @arrival_space_ms 80
+  @arrival_timeout_ms 5_000
+  @node_arrival_hooks [
+    :event, :shop, :shop_super, :ego_gift_get, :team_selector, :team_selector_tall, :team_selector_gone, :loading_stage_1, :loading_stage_2
+  ]
 
   @node_cost %{event: 10, battle: 15, hard_battle: 18, risky_battle: 25, shop: 10, boss: 50}
 
@@ -72,22 +77,31 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
         every: 1_000,
         timeout: 10_000)
       ], ctx)
+    kind in [:event, :shop] ->
+      Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead (#{venue}), spamming #{direction} + enter until dungeon_graph is gone, then space until it shows")
+
+      Engine.act([
+        leave_graph(direction, leading_clauses),
+        attempt([retry_until(any_of(@node_arrival_hooks), [key(:space)], every: @arrival_space_ms, timeout: @arrival_timeout_ms)], else: [])
+      ], ctx)
     true ->
       Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead (#{venue}), spamming #{direction} + enter until dungeon_graph is gone")
 
-      Engine.act([
-        retry_until(not_hook(:dungeon_graph),
-        [
-          branch(leading_clauses ++ [
-            gift_popup_clause(),
-            {:dungeon_graph_dante, [key(direction), key(:enter), sleep(200), key(direction), key(:enter)]},
-            {:default, [key(:enter)]}
-          ])
-        ],
-        every: 700,
-        timeout: 5_000)
-      ], ctx)
+      Engine.act([leave_graph(direction, leading_clauses)], ctx)
     end
+  end
+
+  defp leave_graph(direction, leading_clauses) do
+    retry_until(not_hook(:dungeon_graph),
+    [
+      branch(leading_clauses ++ [
+        gift_popup_clause(),
+        {:dungeon_graph_dante, [key(direction), key(:enter), sleep(200), key(direction), key(:enter)]},
+        {:default, [key(:enter)]}
+      ])
+    ],
+    every: 700,
+    timeout: 5_000)
   end
 
   defp gift_popup_clause, do: {:ego_gift_get, [RewardHelpers.record_ego_gift_items_step(), key(:enter)]}

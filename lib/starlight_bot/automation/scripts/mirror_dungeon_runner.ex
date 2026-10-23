@@ -197,6 +197,13 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   def event_done(run, run_state, result, frame, ctx), do: resume(run, :after, run_state, result, frame, ctx)
 
+  def node_entered(run, run_state, {:ok, _} = ok, _frame, _ctx) do
+    arrived = for screen <- [:event, :shop_super, :shop], do: {screen, [dispatch_outcome(run, {:continue, run_state, screen})]}
+    {:steps, [branch(arrived ++ [default: [dispatch_outcome(run, continue_after(ok, run_state))]], wait: @fresh_check_ms)]}
+  end
+
+  def node_entered(run, run_state, result, frame, ctx), do: resume(run, :after, run_state, result, frame, ctx)
+
   def merge_graph_screen(_frame, ctx) do
     RunMemory.merge(ctx, %{screen: :dungeon_graph, task: nil})
     {:ok, nil}
@@ -600,7 +607,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   defp advance_dungeon_graph(run, run_state) do
     deadline = System.monotonic_time(:millisecond) + @clear_graph_timeout_ms
     graph = [call(__MODULE__, :clear_graph, [deadline]), call(__MODULE__, :detect_floor), goto(:dungeon_graph, :dungeon_graph_node)]
-    [capture(graph, then: resume_after(run, run_state))]
+    [capture(graph, then: {__MODULE__, :node_entered, [run, run_state]})]
   end
 
   defp leave_shop(steps, run, run_state, _frame, _ctx), do: {:steps, [capture(steps, then: {__MODULE__, :left_shop, [run, run_state]})]}
