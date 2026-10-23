@@ -133,7 +133,7 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
 
   def handle_event("preview_target", %{"enemy" => enemy}, socket) when enemy in ~w(first last) do
     me = self()
-    ctx = Ctx.new(on_log: fn {_kind, text} -> send(me, {:target_preview_log, text}) end)
+    ctx = Ctx.new(log_to: {me, :target_preview_log})
     Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn -> send(me, {:target_preview_result, PlaybookRunner.preview_target(enemy, ctx)}) end)
 
     {:noreply,
@@ -145,7 +145,7 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
 
   def handle_event("preview_target_everyone", _, socket) do
     me = self()
-    ctx = Ctx.new(on_log: fn {_kind, text} -> send(me, {:target_preview_log, text}) end)
+    ctx = Ctx.new(log_to: {me, :target_preview_log})
     Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn -> send(me, {:target_preview_result, PlaybookRunner.preview_target_everyone(ctx)}) end)
 
     {:noreply,
@@ -194,7 +194,7 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
     end
   end
 
-  def handle_info({:target_preview_log, text}, socket) do
+  def handle_info({:target_preview_log, _kind, text}, socket) do
     {:noreply, update(socket, :target_preview_log, &(&1 ++ [text]))}
   end
 

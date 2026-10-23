@@ -7,12 +7,12 @@ defmodule StarlightBot.Automation.RunMemoryInventoryLogTest do
   setup do
     {:ok, pid} = RunMemory.start_link()
     me = self()
-    %{ctx: Ctx.new(run_memory: pid, on_log: fn {_kind, text} -> send(me, {:log, text}) end)}
+    %{ctx: Ctx.new(run_memory: pid, log_to: {me, :log})}
   end
 
   defp logs do
     receive do
-      {:log, text} -> [text | logs()]
+      {:log, _kind, text} -> [text | logs()]
     after
       0 -> []
     end

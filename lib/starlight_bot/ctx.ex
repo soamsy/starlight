@@ -1,33 +1,36 @@
 defmodule StarlightBot.Ctx do
-  defstruct on_log: &__MODULE__.ignore/1,
-            on_pause: &__MODULE__.ignore/0,
-            pause_requested?: &__MODULE__.never/0,
-            on_run_memory_change: &__MODULE__.ignore/1,
+  defstruct log_to: nil,
+            paused_to: nil,
+            pause_flag: nil,
+            run_memory_to: nil,
             run_memory: nil
 
   @type t :: %__MODULE__{
-          on_log: ({:ok | :info | :error, String.t()} -> :ok),
-          on_pause: (-> :ok),
-          pause_requested?: (-> boolean()),
-          on_run_memory_change: (map() -> :ok),
+          log_to: {pid(), term()} | nil,
+          paused_to: {pid(), term()} | nil,
+          pause_flag: :atomics.atomics_ref() | nil,
+          run_memory_to: {pid(), term()} | nil,
           run_memory: pid() | nil
         }
 
   def new(fields \\ []), do: struct(__MODULE__, fields)
 
-  def log(%__MODULE__{on_log: on_log}, kind, text) do
+  def log(%__MODULE__{log_to: log_to}, kind, text) do
     StarlightBot.LogStore.append(kind, text)
-    on_log.({kind, text})
+    with {pid, tag} <- log_to, do: send(pid, {tag, kind, text})
+    :ok
   end
 
-  def pause(%__MODULE__{on_pause: on_pause}), do: on_pause.()
+  def pause(%__MODULE__{paused_to: paused_to}) do
+    with {pid, message} <- paused_to, do: send(pid, message)
+    :ok
+  end
 
-  def pause_requested?(%__MODULE__{pause_requested?: pause_requested?}), do: pause_requested?.()
+  def pause_requested?(%__MODULE__{pause_flag: nil}), do: false
+  def pause_requested?(%__MODULE__{pause_flag: pause_flag}), do: :atomics.get(pause_flag, 1) == 1
 
-  def run_memory_changed(%__MODULE__{on_run_memory_change: on_run_memory_change}, snapshot),
-    do: on_run_memory_change.(snapshot)
-
-  def ignore(_), do: :ok
-  def ignore, do: :ok
-  def never, do: false
+  def run_memory_changed(%__MODULE__{run_memory_to: run_memory_to}, snapshot) do
+    with {pid, tag} <- run_memory_to, do: send(pid, {tag, snapshot})
+    :ok
+  end
 end

@@ -3,22 +3,8 @@ defmodule StarlightBot.Navigation.MachineTest do
 
   import StarlightBot.Navigation.DSL
 
-  alias StarlightBot.Ctx
+  alias StarlightBot.{Ctx, FakeCapture}
   alias StarlightBot.Navigation.{Machine, Runner}
-
-  defmodule FakeCapture do
-    use GenServer
-
-    def start_link(focused?), do: GenServer.start_link(__MODULE__, focused?, name: StarlightBot.Vision.Capture)
-
-    @impl true
-    def init(focused?), do: {:ok, focused?}
-
-    @impl true
-    def handle_call(:focused?, _from, focused?), do: {:reply, focused?, focused?}
-    def handle_call(:grab_frame, _from, focused?), do: {:reply, {:error, :no_window}, focused?}
-    def handle_call(:window_rect, _from, focused?), do: {:reply, nil, focused?}
-  end
 
   defp start_capture(focused? \\ true), do: start_supervised!({FakeCapture, focused?})
 
@@ -61,7 +47,9 @@ defmodule StarlightBot.Navigation.MachineTest do
   end
 
   test "a pause request aborts before the next step" do
-    ctx = Ctx.new(pause_requested?: fn -> true end)
+    pause_flag = :atomics.new(1, [])
+    :atomics.put(pause_flag, 1, 1)
+    ctx = Ctx.new(pause_flag: pause_flag)
 
     assert Runner.run_steps([record(:a)], ctx) == {:error, :window_not_focused}
     refute_received {:ran, :a, _}

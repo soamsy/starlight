@@ -74,7 +74,7 @@ defmodule StarlightBotWeb.Live.EventInspectorLive do
     me = self()
 
     Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn ->
-      ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:event_log, kind, text}) end)
+      ctx = Ctx.new(log_to: {me, :event_log})
 
       case Capture.grab_frame() do
         {:ok, frame} ->

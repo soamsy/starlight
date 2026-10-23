@@ -160,7 +160,7 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
     me = self()
 
     Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn ->
-      ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:search_log, kind, text}) end)
+      ctx = Ctx.new(log_to: {me, :search_log})
       send(me, {:search_result, ThemePackSelector.search_replace(pack, ctx)})
     end)
   end

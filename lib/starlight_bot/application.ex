@@ -14,6 +14,7 @@ defmodule StarlightBot.Application do
         {StarlightBot.LogStore, []},
         StarlightBotWeb.Endpoint,
         {Task.Supervisor, name: StarlightBot.TaskSupervisor},
+        {DynamicSupervisor, name: StarlightBot.MachineSupervisor, strategy: :one_for_one},
         {StarlightBot.Vision.HookRegistry, []},
         {StarlightBot.Vision.EgoGiftCapture, []},
         {StarlightBot.Vision.EgoGiftDetector, []},

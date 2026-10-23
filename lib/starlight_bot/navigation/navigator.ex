@@ -1,9 +1,8 @@
 defmodule StarlightBot.Navigation.Navigator do
   use GenServer
-  alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Automation.Scripts.ShopRunner
   alias StarlightBot.{Ctx, LogStore, RunHistory, Teams}
-  alias StarlightBot.Navigation.{Catalog, RunClock, RunSplits, Runner, ScreenTimes}
+  alias StarlightBot.Navigation.{Catalog, Machine, RunClock, RunSplits, Runner, ScreenTimes, ScriptTask}
 
   @topic "navigation"
   @log_limit 1000
@@ -91,14 +90,7 @@ defmodule StarlightBot.Navigation.Navigator do
   def handle_cast(:localize, state) do
     state = cancel_running(state)
     state = add_log(state, :info, "Localizing…")
-    me = self()
-    screens = Catalog.all_screens()
-
-    pid =
-      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-        result = Runner.check_screens(screens)
-        send(me, {:nav_result, :localize, result})
-      end).pid
+    pid = start_machine(Runner.localize_program(Catalog.all_screens()), :localize)
 
     state = %{state | phase: :localizing, goal: nil, task_pid: pid}
     broadcast(state)
@@ -130,14 +122,7 @@ defmodule StarlightBot.Navigation.Navigator do
           {:ok, transitions} ->
             state = cancel_running(state)
             state = add_log(state, :info, "Planning: #{from} → #{goal} (#{length(transitions)} step(s))")
-            me = self()
-
-            pid =
-              Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-                ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end)
-                result = Runner.run_plan(transitions, ctx)
-                send(me, {:nav_result, :run_to, result})
-              end).pid
+            pid = start_machine(Runner.plan_program(transitions), :run_to)
 
             state = %{state | phase: :running, goal: goal, task_pid: pid}
             broadcast(state)
@@ -166,14 +151,7 @@ defmodule StarlightBot.Navigation.Navigator do
           action ->
             state = cancel_running(state)
             state = add_log(state, :info, "Running action: #{action_name}")
-            me = self()
-
-            pid =
-              Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-                ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end)
-                result = Runner.run_action(from, action, ctx)
-                send(me, {:nav_result, :run_action, result})
-              end).pid
+            pid = start_machine(Runner.action_program(from, action), :run_action)
 
             state = %{state | phase: :running, goal: nil, task_pid: pid}
             broadcast(state)
@@ -202,14 +180,7 @@ defmodule StarlightBot.Navigation.Navigator do
           transition ->
             state = cancel_running(state)
             state = add_log(state, :info, "Running transition: #{transition_name}")
-            me = self()
-
-            pid =
-              Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-                ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end)
-                result = Runner.run_plan([transition], ctx)
-                send(me, {:nav_result, :run_to, result})
-              end).pid
+            pid = start_machine(Runner.plan_program([transition]), :run_to)
 
             state = %{state | phase: :running, goal: transition.to, task_pid: pid}
             broadcast(state)
@@ -229,14 +200,7 @@ defmodule StarlightBot.Navigation.Navigator do
       %{module: module, label: label} ->
         state = cancel_running(state)
         state = add_log(state, :info, "Running script: #{label}")
-        me = self()
-
-        pid =
-          Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-            ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end)
-            result = module.run(ctx)
-            send(me, {:nav_result, :run_script, result})
-          end).pid
+        pid = start_script(:run_script, {module, :run, []}, nav_ctx())
 
         state = %{state | phase: :running, goal: nil, task_pid: pid}
         broadcast(state)
@@ -266,33 +230,24 @@ defmodule StarlightBot.Navigation.Navigator do
           "collect_xp=#{collect_xp?} collect_enkephalin=#{collect_enkephalin?} enkephalin_convert_count=#{enkephalin_convert_count}"
       )
 
-    me = self()
     pause_flag = :atomics.new(1, [])
 
     pid =
-      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-        ctx =
-          Ctx.new(
-            on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end,
-            on_pause: fn -> send(me, :nav_paused) end,
-            pause_requested?: fn -> :atomics.get(pause_flag, 1) == 1 end
-          )
-
-        result =
-          StarlightBot.Automation.Scripts.LuxcavationRunner.run(
-            team,
-            exp_consecutive,
-            exp_repeats,
-            thread_consecutive,
-            thread_repeats,
-            collect_xp?,
-            collect_enkephalin?,
-            enkephalin_convert_count,
-            ctx
-          )
-
-        send(me, {:nav_result, :run_script, result})
-      end).pid
+      start_script(
+        :run_script,
+        {StarlightBot.Automation.Scripts.LuxcavationRunner, :run,
+         [
+           team,
+           exp_consecutive,
+           exp_repeats,
+           thread_consecutive,
+           thread_repeats,
+           collect_xp?,
+           collect_enkephalin?,
+           enkephalin_convert_count
+         ]},
+        nav_ctx(paused_to: {self(), :nav_paused}, pause_flag: pause_flag)
+      )
 
     state = %{state | phase: :running, goal: nil, task_pid: pid, run_kind: :luxcavation, pause_flag: pause_flag}
     broadcast(state)
@@ -304,22 +259,14 @@ defmodule StarlightBot.Navigation.Navigator do
     state = cancel_running(state)
     state = %{state | run_memory: %{}}
     state = add_log(state, :info, "Running mirror dungeon: teams=#{inspect(picks)} runs=#{run_count} config=#{inspect(config)}")
-    me = self()
     pause_flag = :atomics.new(1, [])
 
     pid =
-      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-        ctx =
-          Ctx.new(
-            on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end,
-            on_pause: fn -> send(me, :nav_paused) end,
-            pause_requested?: fn -> :atomics.get(pause_flag, 1) == 1 end,
-            on_run_memory_change: fn snapshot -> send(me, {:nav_run_memory, snapshot}) end
-          )
-
-        result = StarlightBot.Automation.Scripts.MirrorDungeonRunner.run(picks, run_count, config, ctx)
-        send(me, {:nav_result, :run_script, result})
-      end).pid
+      start_script(
+        :run_script,
+        {StarlightBot.Automation.Scripts.MirrorDungeonRunner, :run, [picks, run_count, config]},
+        nav_ctx(paused_to: {self(), :nav_paused}, pause_flag: pause_flag, run_memory_to: {self(), :nav_run_memory})
+      )
 
     state = %{state | phase: :running, goal: nil, task_pid: pid, run_kind: :mirror_dungeon, pause_flag: pause_flag, run_clock: RunClock.start(now_ms()), run_splits: [], screen_times: ScreenTimes.track(%ScreenTimes{}, %{run: 1}, 0, DateTime.utc_now())}
     broadcast(state)
@@ -342,17 +289,13 @@ defmodule StarlightBot.Navigation.Navigator do
   def handle_cast({:select_team_on_screen, team_id, hook}, state) do
     state = cancel_running(state)
     state = add_log(state, :info, "Selecting team #{team_id} on screen with #{hook}")
-    me = self()
-
     pid =
-      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-        {:ok, run_memory} = RunMemory.start_link()
-        ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end, run_memory: run_memory)
-        RunMemory.put_team(ctx, %{id: team_id, hook: hook})
-        result = StarlightBot.Automation.Scripts.SelectTeamOnScreen.run(team_id, "md_battle", 1, ctx)
-        RunMemory.stop(ctx)
-        send(me, {:nav_result, :select_team_on_screen, result})
-      end).pid
+      start_script(
+        :select_team_on_screen,
+        {StarlightBot.Automation.Scripts.SelectTeamOnScreen, :run, [team_id, "md_battle", 1]},
+        nav_ctx(),
+        put_team: %{id: team_id, hook: hook}
+      )
 
     state = %{state | phase: :running, goal: nil, task_pid: pid}
     broadcast(state)
@@ -364,13 +307,7 @@ defmodule StarlightBot.Navigation.Navigator do
     state = cancel_running(state)
     state = %{state | run_memory: %{}}
     state = add_log(state, :info, "Shop dry run: team=#{team.id} hook=#{team.hook} floor=#{floor}")
-    me = self()
-
-    pid =
-      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-        result = run_shop_script(me, team, floor, &ShopRunner.dry_run/1)
-        send(me, {:nav_result, :shop_dry_run, result})
-      end).pid
+    pid = start_shop_script(:shop_dry_run, :dry_run, team, floor)
 
     state = %{state | phase: :running, goal: nil, task_pid: pid}
     broadcast(state)
@@ -382,13 +319,7 @@ defmodule StarlightBot.Navigation.Navigator do
     state = cancel_running(state)
     state = %{state | run_memory: %{}}
     state = add_log(state, :info, "Shop runner (full run): team=#{team.id} hook=#{team.hook} floor=#{floor}")
-    me = self()
-
-    pid =
-      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-        result = run_shop_script(me, team, floor, &ShopRunner.run/1)
-        send(me, {:nav_result, :shop_runner, result})
-      end).pid
+    pid = start_shop_script(:shop_runner, :run, team, floor)
 
     state = %{state | phase: :running, goal: nil, task_pid: pid}
     broadcast(state)
@@ -399,14 +330,7 @@ defmodule StarlightBot.Navigation.Navigator do
   def handle_cast({:claim_rewards, config}, state) do
     state = cancel_running(state)
     state = add_log(state, :info, "Claiming rewards: #{inspect(config)}")
-    me = self()
-
-    pid =
-      Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn ->
-        ctx = Ctx.new(on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end)
-        result = StarlightBot.Automation.Scripts.ClaimRewards.run(config, ctx)
-        send(me, {:nav_result, :claim_rewards, result})
-      end).pid
+    pid = start_script(:claim_rewards, {StarlightBot.Automation.Scripts.ClaimRewards, :run, [config]}, nav_ctx())
 
     state = %{state | phase: :running, goal: nil, task_pid: pid}
     broadcast(state)
@@ -622,6 +546,9 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
+  def handle_info({{:nav_machine, kind}, result}, state), do: handle_info({:nav_result, kind, result}, state)
+
+  @impl true
   def handle_info({:nav_log, kind, text}, state) do
     state = remember_log(state, kind, text)
     broadcast(state)
@@ -670,21 +597,21 @@ defmodule StarlightBot.Navigation.Navigator do
     {:noreply, state}
   end
 
-  defp run_shop_script(me, team, floor, fun) do
-    {:ok, run_memory} = RunMemory.start_link()
+  defp nav_ctx(fields \\ []), do: Ctx.new([log_to: {self(), :nav_log}] ++ fields)
 
-    ctx =
-      Ctx.new(
-        on_log: fn {kind, text} -> send(me, {:nav_log, kind, text}) end,
-        on_run_memory_change: fn snapshot -> send(me, {:nav_run_memory, snapshot}) end,
-        run_memory: run_memory
-      )
+  defp start_machine(program, kind) do
+    opts = [reply_to: {self(), {:nav_machine, kind}}]
+    {:ok, pid} = DynamicSupervisor.start_child(StarlightBot.MachineSupervisor, {Machine, {program, nav_ctx(), opts}})
+    Process.monitor(pid)
+    pid
+  end
 
-    RunMemory.put_team(ctx, team)
-    RunMemory.put_floor(ctx, floor)
-    result = fun.(ctx)
-    RunMemory.stop(ctx)
-    result
+  defp start_script(kind, mfa, ctx, run_memory_seeds \\ nil),
+    do: Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, ScriptTask, :run, [self(), kind, mfa, ctx, run_memory_seeds]).pid
+
+  defp start_shop_script(kind, fun, team, floor) do
+    ctx = nav_ctx(run_memory_to: {self(), :nav_run_memory})
+    start_script(kind, {ShopRunner, fun, []}, ctx, put_team: team, put_floor: floor)
   end
 
   defp localize_after_script(state) do
@@ -709,7 +636,9 @@ defmodule StarlightBot.Navigation.Navigator do
   defp cancel_running(%{task_pid: nil} = state), do: update_clock(%{state | phase: :idle, run_kind: nil, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
 
   defp cancel_running(%{task_pid: pid} = state) do
-    Task.Supervisor.terminate_child(StarlightBot.TaskSupervisor, pid)
+    with {:error, :not_found} <- Task.Supervisor.terminate_child(StarlightBot.TaskSupervisor, pid),
+         do: DynamicSupervisor.terminate_child(StarlightBot.MachineSupervisor, pid)
+
     state = persist_last_run(state, "interrupted")
     update_clock(%{state | task_pid: nil, phase: :idle, run_kind: nil, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
   end

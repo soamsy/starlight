@@ -9,30 +9,36 @@ defmodule StarlightBot.Navigation.Runner do
   def run_plan([], _ctx), do: {:ok, nil}
 
   def run_plan(transitions, ctx) do
-    program =
-      Enum.flat_map(transitions, fn t -> [{:__mark__, "→ #{t.to}"} | t.steps] ++ [{:__verify__, t.to}] end) ++
-        [{:__refine__, List.last(transitions).to}]
-
-    result = run_machine(program, ctx)
+    result = run_machine(plan_program(transitions), ctx)
     RunMemory.put(ctx, :step, nil)
     result
   end
 
   def run_action(screen_name, %Action{} = action, ctx) do
-    program = [{:__mark__, "action #{action.name}"} | action.steps] ++ [{:__verify__, screen_name}, {:__done__, {:ok, screen_name}}]
-    result = run_machine(program, ctx)
+    result = run_machine(action_program(screen_name, action), ctx)
     RunMemory.put(ctx, :step, nil)
     result
   end
 
   def run_steps(steps, ctx), do: run_machine(steps, ctx)
 
+  def plan_program(transitions) do
+    Enum.flat_map(transitions, fn t -> [{:__mark__, "→ #{t.to}"} | t.steps] ++ [{:__verify__, t.to}] end) ++
+      [{:__refine__, List.last(transitions).to}]
+  end
+
+  def action_program(screen_name, %Action{} = action),
+    do: [{:__mark__, "action #{action.name}"} | action.steps] ++ [{:__verify__, screen_name}, {:__done__, {:ok, screen_name}}]
+
+  def localize_program(screens), do: [{:__localize__, screens}]
+
   defp run_machine(program, ctx) do
-    {:ok, pid} = Machine.start_link(self(), program, ctx)
+    tag = make_ref()
+    {:ok, pid} = Machine.start_link(program, ctx, reply_to: {self(), tag})
     ref = Process.monitor(pid)
 
     receive do
-      {Machine, ^pid, result} ->
+      {^tag, result} ->
         Process.demonitor(ref, [:flush])
         result
 

@@ -11,18 +11,21 @@ defmodule StarlightBot.Navigation.Machine do
   @verify_timeout_ms 1_800
   @refinement_timeout_ms 1_000
   @target_area_fraction 0.25
-  @internal_steps [:__mark__, :__verify__, :__retry_after__, :__refine__, :__done__]
+  @internal_steps [:__mark__, :__verify__, :__retry_after__, :__refine__, :__localize__, :__done__]
 
-  def start_link(caller, program, ctx, opts \\ []),
-    do: :gen_statem.start_link(__MODULE__, {caller, program, ctx, opts}, [])
+  def child_spec({program, ctx, opts}),
+    do: %{id: __MODULE__, start: {__MODULE__, :start_link, [program, ctx, opts]}, restart: :temporary}
+
+  def start_link(program, ctx, opts),
+    do: :gen_statem.start_link(__MODULE__, {program, ctx, opts}, [])
 
   @impl true
   def callback_mode, do: :handle_event_function
 
   @impl true
-  def init({caller, program, ctx, opts}) do
+  def init({program, ctx, opts}) do
     data = %{
-      caller: caller,
+      reply_to: Keyword.fetch!(opts, :reply_to),
       ctx: ctx,
       stack: program,
       upcoming: Keyword.get(opts, :upcoming, []),
@@ -190,6 +193,9 @@ defmodule StarlightBot.Navigation.Machine do
     start_poll({:refine, candidates, arrived}, @refinement_timeout_ms, data)
   end
 
+  defp exec_internal({:__localize__, screens}, data),
+    do: continue(%{data | result: Runner.check_screens(screens)}, data.frame)
+
   defp exec_internal({:__done__, result}, data), do: continue(%{data | result: result}, data.frame)
 
   defp start_poll(kind, timeout_ms, data), do: tick(%{data | poll: {kind, mono() + timeout_ms}})
@@ -328,8 +334,8 @@ defmodule StarlightBot.Navigation.Machine do
   defp continue(data, frame),
     do: {:next_state, :running, %{data | frame: frame, poll: nil}, [{:next_event, :internal, :step}]}
 
-  defp finish(result, data) do
-    send(data.caller, {__MODULE__, self(), result})
+  defp finish(result, %{reply_to: {pid, tag}} = data) do
+    send(pid, {tag, result})
     {:stop, :normal, data}
   end
 
