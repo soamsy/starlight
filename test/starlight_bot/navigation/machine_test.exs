@@ -236,6 +236,22 @@ defmodule StarlightBot.Navigation.MachineTest do
     end
   end
 
+  test "a call whose own code is reloaded twice mid-call fails that step instead of killing the run" do
+    [{slow, binary}] = Code.compile_string("defmodule StarlightBot.SlowCallFixture do\n def run(_frame, _ctx), do: (Process.sleep(600); {:ok, nil})\nend")
+    steps = [attempt([call(slow, :run)], else: deliver_here()), record(:after)]
+    run = Task.async(fn -> run(steps) end)
+    Process.sleep(150)
+
+    for _ <- 1..2 do
+      :code.purge(slow)
+      {:module, ^slow} = :code.load_binary(slow, ~c"slow_call_fixture", binary)
+    end
+
+    assert Task.await(run) == {:ok, :after}
+    assert_received {:got, {:error, {:crashed, :killed}}}
+    assert_received {:ran, :after, _}
+  end
+
   test "a run survives the machine's code being reloaded twice mid-program" do
     steps = [sleep(400), record(:after_reload)]
     run = Task.async(fn -> run(steps) end)

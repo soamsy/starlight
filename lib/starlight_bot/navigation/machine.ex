@@ -4,7 +4,7 @@ defmodule StarlightBot.Navigation.Machine do
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Ctx
   alias StarlightBot.Input.{Keyboard, Mouse, Premove}
-  alias StarlightBot.Navigation.{Catalog, MachineStatus, Runner, Screen}
+  alias StarlightBot.Navigation.{Catalog, MachineStatus, Offload, Runner, Screen}
   alias StarlightBot.Vision.{Capture, Frame, HookRegistry, Matcher}
 
   @poll_interval_ms 100
@@ -47,6 +47,8 @@ defmodule StarlightBot.Navigation.Machine do
 
   @impl true
   def init({program, ctx, opts}) do
+    Process.flag(:trap_exit, true)
+
     data = %{
       reply_to: Keyword.fetch!(opts, :reply_to),
       ctx: ctx,
@@ -96,6 +98,16 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   def handle_event(:state_timeout, :wake, :sleeping, data), do: continue(data, nil)
+
+  def handle_event(:info, {:offloaded, pid, outcome}, {:offloaded, pid, kind, mfa}, data), do: offloaded(kind, mfa, outcome, data)
+
+  def handle_event(:info, {:EXIT, pid, reason}, {:offloaded, pid, _kind, {mod, fun, _args}}, data) when reason != :normal do
+    Ctx.log(data.ctx, :error, "#{inspect(mod)}.#{fun} stopped mid-step (#{inspect(reason)}), releasing the mouse")
+    Mouse.release_all()
+    fail_with({:error, {:crashed, reason}}, data)
+  end
+
+  def handle_event(:info, {:EXIT, _pid, _reason}, _state, _data), do: :keep_state_and_data
 
   defp guarded(step, data) do
     cond do
@@ -204,13 +216,9 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp exec({:checkpoint}, data), do: continue(data, data.frame)
 
-  defp exec({:invoke, {mod, fun, args}}, data) do
-    case run_imperative(mod, fun, args, data.ctx) do
-      {:error, _} = err -> fail_with(err, data)
-      {:ok, _} = ok -> continue(%{data | result: ok}, data.frame)
-      other -> continue(%{data | result: {:ok, other}}, data.frame)
-    end
-  end
+  defp exec({:invoke, {_mod, _fun, args} = mfa}, data), do: offload(:invoke, mfa, args ++ [data.ctx], data)
+
+  defp exec({:call, {_mod, _fun, args} = mfa}, data), do: offload(:call, mfa, args ++ [data.frame, data.ctx], data)
 
   defp exec({:sleep, ms}, data) do
     Ctx.log(data.ctx, :info, "sleep #{ms}ms")
@@ -220,6 +228,33 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp exec(step, data) do
     case execute_step(step, data.frame, data.ctx) do
+      {:ok, frame} -> continue(data, frame)
+      {:steps, steps} -> push(steps, data.frame, data)
+      {:error, _} = err -> fail_with(err, data)
+    end
+  end
+
+  defp offload(kind, {mod, fun, _args} = mfa, full_args, data) do
+    {:ok, pid} = Offload.start_link(self(), mod, fun, full_args)
+    report(:offloaded, nil, data)
+    {:next_state, {:offloaded, pid, kind, mfa}, data}
+  end
+
+  defp offloaded(kind, {mod, fun, _args}, {:raised, message, formatted}, data) do
+    Ctx.log(data.ctx, :error, "#{inspect(mod)}.#{fun} crashed: #{formatted}")
+    offloaded(kind, nil, {:returned, {:error, {:exception, message}}}, data)
+  end
+
+  defp offloaded(:invoke, _mfa, {:returned, value}, data) do
+    case value do
+      {:error, _} = err -> fail_with(err, data)
+      {:ok, _} = ok -> continue(%{data | result: ok}, data.frame)
+      other -> continue(%{data | result: {:ok, other}}, data.frame)
+    end
+  end
+
+  defp offloaded(:call, _mfa, {:returned, value}, data) do
+    case value do
       {:ok, frame} -> continue(data, frame)
       {:steps, steps} -> push(steps, data.frame, data)
       {:error, _} = err -> fail_with(err, data)
@@ -661,14 +696,6 @@ defmodule StarlightBot.Navigation.Machine do
     {:ok, nil}
   end
 
-  defp execute_step({:call, {mod, fun, args}}, last_frame, ctx) do
-    apply(mod, fun, args ++ [last_frame, ctx])
-  rescue
-    exception ->
-      Ctx.log(ctx, :error, "#{inspect(mod)}.#{fun} crashed: #{Exception.format(:error, exception, __STACKTRACE__)}")
-      {:error, {:exception, Exception.message(exception)}}
-  end
-
   defp execute_step({:mouse_button, button, true}, _last_frame, _ctx) do
     Mouse.mouse_down(button)
     {:ok, nil}
@@ -677,14 +704,6 @@ defmodule StarlightBot.Navigation.Machine do
   defp execute_step({:mouse_button, button, false}, _last_frame, _ctx) do
     Mouse.mouse_up(button)
     {:ok, nil}
-  end
-
-  defp run_imperative(mod, fun, args, ctx) do
-    apply(mod, fun, args ++ [ctx])
-  rescue
-    exception ->
-      Ctx.log(ctx, :error, "#{inspect(mod)}.#{fun} crashed: #{Exception.format(:error, exception, __STACKTRACE__)}")
-      {:error, {:exception, Exception.message(exception)}}
   end
 
   defp retry_verb([]), do: "wait_until"

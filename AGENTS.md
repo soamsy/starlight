@@ -131,7 +131,7 @@ cargo clippy --manifest-path native/starlight_native/Cargo.toml   # Rust lints
 - **No `uinput`.** Input injection uses libei/EIS via `reis 0.7`. KWin sets `LIBEI_SOCKET` automatically for child processes in a KDE session.
 - **Rust warnings are not acceptable.** Unused imports, dead code, and shadowed bindings must be fixed, not suppressed.
 - **Ecto migration syntax:** `add :col, references(:table, ...)` — `references()` is the type, not an option. Passing `add :col, :integer, references(...)` is wrong and will crash `mix db.setup`.
-- **Don't remove the focus-loss check in `Navigation.Runner.run_steps/3`** (`Capture.focused?/0` before every step). It's the alt-tab safety net — without it, a script keeps injecting clicks/keys into whatever window the user switched to.
+- **Don't remove the focus-loss check in `Navigation.Machine.guarded/2`** (`Capture.focused?/0` before every step). It's the alt-tab safety net — without it, a script keeps injecting clicks/keys into whatever window the user switched to.
 - **Don't spin up headless Chromium/CDP to click through Phoenix LiveView pages as a verification step.** It's unnecessary — confirm changes by compiling (`mix compile --warnings-as-errors`), running any relevant `mix test`, and/or exercising the logic directly via `mix run -e '...'` against the actual modules. If a change genuinely needs visual/browser confirmation, ask the user to check it themselves rather than automating a browser session.
 
 ---
