@@ -1,9 +1,10 @@
 defmodule StarlightBot.Automation.Scripts.ShopRunner do
-  import StarlightBot.Navigation.DSL, only: [any_of: 1]
+  import StarlightBot.Navigation.DSL, only: [any_of: 1, call: 3, result: 1]
   alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Automation.Shop.{Actions, Ops}
   alias StarlightBot.{Ctx, EgoGifts, GiftPlans}
   alias StarlightBot.Navigation.Screens.Shop
+  alias StarlightBot.Vision.Capture
 
   @actions %{
     "budget" => Actions.Budget,
@@ -32,11 +33,13 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
   @fusion_kinds ["fusion"]
   @assumed_starting_cost 200
 
-  def run(ctx), do: execute(:run, ctx)
+  def run(ctx), do: Engine.act(program(:run), ctx)
 
-  def dry_run(ctx), do: execute(:dry_run, ctx)
+  def dry_run(ctx), do: Engine.act(program(:dry_run), ctx)
 
-  defp execute(mode, ctx) do
+  def program(mode), do: [call(__MODULE__, :start, [mode])]
+
+  def start(mode, _frame, ctx) do
     if Engine.check(any_of(Shop.popup_screens())) do
       Ctx.log(ctx, :info, "shop runner: a shop popup is open, backing out to the shop first")
       Ops.recover_to_shop(ctx)
@@ -59,19 +62,23 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
          {:ok, _} <- Ops.check_inventory(ctx, keep_open?) do
       state = %{initial_state(plan, workflow, mode, ctx) | sell_popup_open: keep_open?}
       Ctx.log(ctx, :info, "shop runner: floor #{state.floor}, #{state.shop_type} shop, workflow #{workflow["name"]}")
-
-      final = steps |> run_steps(state, mode, ctx) |> close_sell_popup(ctx) |> close_heal_menu(ctx)
-      if mode == :run, do: Ops.close_fuse_popup(ctx)
-      RunMemory.put(ctx, :task, nil)
-
-      {:ok, trace(final)}
+      {:steps, [walk([{:steps, steps}], state, mode)]}
     else
       {:skip, reason} ->
         Ctx.log(ctx, :error, "shop runner: #{reason} — doing nothing")
-        {:ok, :no_workflow}
+        {:steps, [result({:ok, :no_workflow})]}
 
       {:error, _} = err ->
         err
+    end
+  end
+
+  def walk(work, state, mode, _frame, ctx), do: walk_items(work, state, mode, ctx)
+
+  def action(step, work, state, mode, _frame, ctx) do
+    case run_action_step(step, state, mode, ctx) do
+      :interrupted -> {:error, :window_not_focused}
+      state -> {:steps, [walk(work, state, mode)]}
     end
   end
 
@@ -160,78 +167,72 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
 
   defp close_heal_menu(state, _ctx), do: state
 
-  defp run_steps(steps, state, mode, ctx) do
-    Enum.reduce_while(steps, state, fn step, state ->
-      state = run_repeated(step, state, mode, ctx)
-      if state.bailed or state.left, do: {:halt, state}, else: {:cont, state}
-    end)
+  defp walk(work, state, mode), do: call(__MODULE__, :walk, [work, state, mode])
+
+  defp walk_items([], state, mode, ctx) do
+    final = state |> close_sell_popup(ctx) |> close_heal_menu(ctx)
+    if mode == :run, do: Ops.close_fuse_popup(ctx)
+    RunMemory.put(ctx, :task, nil)
+    {:steps, [result({:ok, trace(final)})]}
   end
 
-  defp run_repeated(%{"kind" => "if"} = step, state, mode, ctx), do: run_step(step, state, mode, ctx)
+  defp walk_items([{:steps, []} | work], state, mode, ctx), do: walk_items(work, state, mode, ctx)
 
-  defp run_repeated(step, state, mode, ctx) do
+  defp walk_items([{:steps, [step | rest]} | work], state, mode, ctx) do
+    if state.bailed or state.left,
+      do: walk_items(work, state, mode, ctx),
+      else: walk_items([{:repeated, step}, {:steps, rest} | work], state, mode, ctx)
+  end
+
+  defp walk_items([{:repeated, %{"kind" => "if"} = step} | work], state, mode, ctx), do: walk_items([{:step, step} | work], state, mode, ctx)
+
+  defp walk_items([{:repeated, step} | work], state, mode, ctx) do
     case step["repeat"] do
       extra when is_integer(extra) and extra > 0 ->
         first_run_key = "#{state.label_prefix}(1/#{extra + 1}) #{step["id"]}"
 
         if Map.has_key?(state.done, first_run_key) or condition_met?(step, state, ctx),
-          do: repeat_step(Map.delete(step, "condition"), step["condition"], state, mode, ctx, 1, extra + 1),
-          else: run_step(step, state, mode, ctx)
+          do: walk_items([{:repeat, Map.delete(step, "condition"), step["condition"], 1, extra + 1} | work], state, mode, ctx),
+          else: walk_items([{:step, step} | work], state, mode, ctx)
 
       _ ->
-        run_step(step, state, mode, ctx)
+        walk_items([{:step, step} | work], state, mode, ctx)
     end
   end
 
-  defp workflow_name(%{call_stack: [id | _]} = state) do
-    case GiftPlans.find_workflow(state.plan, id) do
-      nil -> "the workflow"
-      workflow -> workflow["name"]
-    end
-  end
-
-  defp condition_met?(step, state, ctx), do: GiftPlans.eval_condition(step["condition"], condition_env(state, ctx))
-
-  defp condition_env(state, ctx) do
-    inventory = RunMemory.ego_gifts(ctx)
-    %{wallet: wallet(state, ctx), owned: owned_names(inventory), inventory: inventory, plan: state.plan, gifts: state.gifts_by_name, refreshes: state.refreshes}
-  end
-
-  defp repeat_step(step, condition, state, mode, ctx, run, total) when is_integer(run) and is_integer(total) do
+  defp walk_items([{:repeat, step, condition, run, total} | work], state, mode, ctx) do
     prefix = state.label_prefix
-    state = run_step(step, %{state | label_prefix: "#{prefix}(#{run}/#{total}) "}, mode, ctx)
-    state = %{state | label_prefix: prefix}
+    repeat = [{:prefix, "#{prefix}(#{run}/#{total}) "}, {:step, step}, {:prefix, prefix}, {:after_repeat, step, condition, run, total}]
+    walk_items(repeat ++ work, state, mode, ctx)
+  end
 
+  defp walk_items([{:after_repeat, step, condition, run, total} | work], state, mode, ctx) do
     cond do
-      run >= total -> state
-      state.bailed or state.left -> state
-      List.last(state.steps).outcome == :failed -> state
-      milestone_reached?(step, state, ctx) -> state
-      true -> continue_after_between(step, condition, state, mode, ctx, run, total)
+      run >= total -> walk_items(work, state, mode, ctx)
+      state.bailed or state.left -> walk_items(work, state, mode, ctx)
+      List.last(state.steps).outcome == :failed -> walk_items(work, state, mode, ctx)
+      milestone_reached?(step, state, ctx) -> walk_items(work, state, mode, ctx)
+      true -> walk_items(between_work(step, condition, state, run, total) ++ work, state, mode, ctx)
     end
   end
 
-  defp continue_after_between(%{"between" => id} = step, condition, state, mode, ctx, run, total) when is_binary(id) do
-    prefix = state.label_prefix
-    between = %{"id" => "#{step["id"]}:between", "kind" => "workflow", "workflow" => id, "condition" => condition}
-    nested = %{state | label_prefix: "#{prefix}(between #{run}/#{total - 1}) "}
-    before = length(state.steps)
-    state = %{run_step(between, nested, mode, ctx) | label_prefix: prefix}
+  defp walk_items([{:after_between, step, condition, run, total, before, between_key} | work], state, mode, ctx) do
     failed? = state.steps |> Enum.drop(before) |> Enum.any?(&(&1.outcome == :failed))
 
-    if state.left or failed? or Map.get(state.done, step_key(between, nested)) in [:skipped, :failed],
-      do: state,
-      else: repeat_step(step, condition, state, mode, ctx, run + 1, total)
+    if state.left or failed? or Map.get(state.done, between_key) in [:skipped, :failed],
+      do: walk_items(work, state, mode, ctx),
+      else: walk_items([{:repeat, step, condition, run + 1, total} | work], state, mode, ctx)
   end
 
-  defp continue_after_between(step, condition, state, mode, ctx, run, total), do: repeat_step(step, condition, state, mode, ctx, run + 1, total)
+  defp walk_items([{:prefix, prefix} | work], state, mode, ctx), do: walk_items(work, %{state | label_prefix: prefix}, mode, ctx)
 
-  defp milestone_reached?(%{"kind" => "milestone", "milestone" => id}, state, ctx) when is_binary(id),
-    do: GiftPlans.milestone_reached?(state.plan, id, condition_env(state, ctx))
+  defp walk_items([{:enter, call_stack, prefix} | work], state, mode, ctx),
+    do: walk_items(work, %{state | call_stack: call_stack, label_prefix: prefix}, mode, ctx)
 
-  defp milestone_reached?(_step, _state, _ctx), do: false
+  defp walk_items([{:leave, call_stack, prefix} | work], state, mode, ctx),
+    do: walk_items(work, %{state | call_stack: call_stack, label_prefix: prefix, bailed: false}, mode, ctx)
 
-  defp run_step(%{"kind" => "if"} = step, state, mode, ctx) do
+  defp walk_items([{:step, %{"kind" => "if"} = step} | work], state, mode, ctx) do
     label = state.label_prefix <> GiftPlans.step_label(state.plan, step)
     key = step_key(step, state)
     branch_key = key <> " branch"
@@ -252,53 +253,85 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
         do: state,
         else: record(state, step, label, :done, "#{reason} (#{condition}), running #{branch}: #{length(steps)} step(s)", ctx)
 
-    finished = run_steps(steps, %{state | label_prefix: "#{label} › #{branch} › "}, mode, ctx)
-    %{finished | label_prefix: state.label_prefix}
+    walk_items([{:prefix, "#{label} › #{branch} › "}, {:steps, steps}, {:prefix, state.label_prefix} | work], state, mode, ctx)
   end
 
-  defp run_step(%{"kind" => "workflow"} = step, state, mode, ctx) do
+  defp walk_items([{:step, %{"kind" => "workflow"} = step} | work], state, mode, ctx) do
     label = state.label_prefix <> GiftPlans.step_label(state.plan, step)
     previous = Map.get(state.done, step_key(step, state))
 
     cond do
       previous not in [nil, :done] ->
-        state
+        walk_items(work, state, mode, ctx)
 
       previous == nil and not condition_met?(step, state, ctx) ->
-        record(state, step, label, :skipped, "condition not met: #{GiftPlans.condition_label(step["condition"], state.plan)}", ctx)
+        state = record(state, step, label, :skipped, "condition not met: #{GiftPlans.condition_label(step["condition"], state.plan)}", ctx)
+        walk_items(work, state, mode, ctx)
 
       true ->
         case GiftPlans.definition_for(state.plan, step) do
           {:error, _} ->
-            record(state, step, label, :failed, "no workflow selected, or it was deleted", ctx)
+            walk_items(work, record(state, step, label, :failed, "no workflow selected, or it was deleted", ctx), mode, ctx)
 
           {:ok, sub} ->
             if sub["id"] in state.call_stack do
-              record(state, step, label, :failed, "#{sub["name"]} is already running, skipping to avoid a loop", ctx)
+              state = record(state, step, label, :failed, "#{sub["name"]} is already running, skipping to avoid a loop", ctx)
+              walk_items(work, state, mode, ctx)
             else
               sub_steps = Enum.filter(sub["steps"], &(&1["enabled"] != false))
               state = if previous, do: state, else: record(state, step, label, :done, "running #{length(sub_steps)} step(s)", ctx)
-              nested = %{state | call_stack: [sub["id"] | state.call_stack], label_prefix: label <> " › "}
-              finished = run_steps(sub_steps, nested, mode, ctx)
-              %{finished | call_stack: state.call_stack, label_prefix: state.label_prefix, bailed: false}
+              nested = [{:enter, [sub["id"] | state.call_stack], label <> " › "}, {:steps, sub_steps}, {:leave, state.call_stack, state.label_prefix}]
+              walk_items(nested ++ work, state, mode, ctx)
             end
         end
     end
   end
 
-  defp run_step(%{"kind" => kind} = step, state, mode, ctx) when kind in ["bail", "leave"] do
-    case Map.get(state.done, step_key(step, state)) do
-      nil -> run_exit_step(step, state, mode, ctx)
-      :done -> exit_flag(kind, state)
-      _ -> state
+  defp walk_items([{:step, %{"kind" => kind} = step} | work], state, mode, ctx) when kind in ["bail", "leave"] do
+    state =
+      case Map.get(state.done, step_key(step, state)) do
+        nil -> run_exit_step(step, state, mode, ctx)
+        :done -> exit_flag(kind, state)
+        _ -> state
+      end
+
+    walk_items(work, state, mode, ctx)
+  end
+
+  defp walk_items([{:step, step} | work], state, mode, ctx) do
+    if Map.has_key?(state.done, step_key(step, state)),
+      do: walk_items(work, state, mode, ctx),
+      else: {:steps, [call(__MODULE__, :action, [step, work, state, mode])]}
+  end
+
+  defp between_work(%{"between" => id} = step, condition, state, run, total) when is_binary(id) do
+    prefix = state.label_prefix
+    between = %{"id" => "#{step["id"]}:between", "kind" => "workflow", "workflow" => id, "condition" => condition}
+    nested_prefix = "#{prefix}(between #{run}/#{total - 1}) "
+    between_key = nested_prefix <> to_string(between["id"])
+    [{:prefix, nested_prefix}, {:step, between}, {:prefix, prefix}, {:after_between, step, condition, run, total, length(state.steps), between_key}]
+  end
+
+  defp between_work(step, condition, _state, run, total), do: [{:repeat, step, condition, run + 1, total}]
+
+  defp workflow_name(%{call_stack: [id | _]} = state) do
+    case GiftPlans.find_workflow(state.plan, id) do
+      nil -> "the workflow"
+      workflow -> workflow["name"]
     end
   end
 
-  defp run_step(step, state, mode, ctx) do
-    if Map.has_key?(state.done, step_key(step, state)),
-      do: state,
-      else: run_action_step(step, state, mode, ctx)
+  defp condition_met?(step, state, ctx), do: GiftPlans.eval_condition(step["condition"], condition_env(state, ctx))
+
+  defp condition_env(state, ctx) do
+    inventory = RunMemory.ego_gifts(ctx)
+    %{wallet: wallet(state, ctx), owned: owned_names(inventory), inventory: inventory, plan: state.plan, gifts: state.gifts_by_name, refreshes: state.refreshes}
   end
+
+  defp milestone_reached?(%{"kind" => "milestone", "milestone" => id}, state, ctx) when is_binary(id),
+    do: GiftPlans.milestone_reached?(state.plan, id, condition_env(state, ctx))
+
+  defp milestone_reached?(_step, _state, _ctx), do: false
 
   defp exit_flag("bail", state), do: %{state | bailed: true}
   defp exit_flag("leave", state), do: %{state | left: true}
@@ -346,10 +379,17 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
           dispatch(step, state, ctx)
       end
 
-    state = record(state, step, label, outcome, detail, ctx)
-    after_step(outcome, step, ctx)
-    if outcome == :failed, do: %{state | sell_popup_open: false, heal_menu_open: false}, else: state
+    if mode == :run and outcome not in [:done, :skipped] and interrupted?(ctx) do
+      Ctx.log(ctx, :info, "shop runner: #{label} — interrupted by a pause or focus loss, it will run again on resume")
+      :interrupted
+    else
+      state = record(state, step, label, outcome, detail, ctx)
+      after_step(outcome, step, ctx)
+      if outcome == :failed, do: %{state | sell_popup_open: false, heal_menu_open: false}, else: state
+    end
   end
+
+  defp interrupted?(ctx), do: Ctx.pause_requested?(ctx) or not Capture.focused?()
 
   defp record(state, step, label, outcome, detail, ctx) do
     Ctx.log(ctx, log_kind(outcome), "shop runner: #{label} — #{outcome}: #{detail}")

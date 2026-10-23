@@ -77,7 +77,7 @@ defmodule StarlightBot.Navigation.Machine do
   defp guarded(step, data) do
     cond do
       Ctx.pause_requested?(data.ctx) ->
-        Ctx.log(data.ctx, :info, "pause requested, stopping before #{inspect(step)}")
+        Ctx.log(data.ctx, :info, "pause requested, stopping before #{describe(step)}")
         fail_with({:error, :window_not_focused}, data)
 
       Capture.focused?() ->
@@ -85,7 +85,7 @@ defmodule StarlightBot.Navigation.Machine do
         exec(step, data)
 
       true ->
-        Ctx.log(data.ctx, :error, "game window lost focus (alt-tabbed?) — aborting before #{inspect(step)}")
+        Ctx.log(data.ctx, :error, "game window lost focus (alt-tabbed?) — aborting before #{describe(step)}")
         fail_with({:error, :window_not_focused}, data)
     end
   end
@@ -502,6 +502,10 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   defp ahead(data), do: data.stack ++ data.upcoming
+
+  defp describe({:call, {mod, fun, _args}}), do: "#{inspect(mod)}.#{fun}"
+  defp describe(step) when tuple_size(step) > 2, do: "#{elem(step, 0)} #{inspect(elem(step, 1), limit: 5, printable_limit: 80)}"
+  defp describe(step), do: inspect(step, limit: 5, printable_limit: 80)
 
   defp execute_step({:click, hook_atom}, last_frame, ctx), do: execute_step({:click, hook_atom, []}, last_frame, ctx)
 
