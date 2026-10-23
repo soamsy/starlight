@@ -16,7 +16,7 @@ defmodule StarlightBot.Ctx do
   def new(fields \\ []), do: struct(__MODULE__, fields)
 
   def log(%__MODULE__{log_to: log_to}, kind, text) do
-    StarlightBot.LogStore.append(kind, text)
+    StarlightBot.LogStore.append(kind, text, StarlightBot.Navigation.MachineStatus.lineage(self()))
     with {pid, tag} <- log_to, do: send(pid, {tag, kind, text})
     :ok
   end

@@ -4,12 +4,14 @@ defmodule StarlightBot.LogStore do
   @table :starlight_log
   @topic "log"
   @memory_limit 200_000
+  @retention_days 7
+  @prune_every_ms 6 * 60 * 60 * 1000
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   def subscribe, do: Phoenix.PubSub.subscribe(StarlightBot.PubSub, @topic)
 
-  def append(kind, text), do: GenServer.cast(__MODULE__, {:append, now(), kind, text})
+  def append(kind, text, lineage \\ []), do: GenServer.cast(__MODULE__, {:append, now(), kind, text, lineage})
 
   def now do
     ms = System.os_time(:millisecond)
@@ -57,14 +59,16 @@ defmodule StarlightBot.LogStore do
   @impl true
   def init(_opts) do
     :ets.new(@table, [:ordered_set, :named_table, :protected, read_concurrency: true])
-    {path, device} = open_file(Application.get_env(:starlight_bot, :bot_log_dir, "log"))
-    {:ok, %{seq: 0, path: path, device: device}}
+    dir = Application.get_env(:starlight_bot, :bot_log_dir, "log")
+    {path, device} = open_file(dir)
+    send(self(), :prune)
+    {:ok, %{seq: 0, path: path, device: device, dir: dir}}
   end
 
   @impl true
-  def handle_cast({:append, at, kind, text}, state) do
+  def handle_cast({:append, at, kind, text, lineage}, state) do
     seq = state.seq + 1
-    entry = %{seq: seq, at: at, kind: kind, text: to_string(text)}
+    entry = %{seq: seq, at: at, kind: kind, text: to_string(text), lineage: lineage}
     :ets.insert(@table, {seq, entry})
     if seq > @memory_limit, do: :ets.delete(@table, seq - @memory_limit)
     if state.device, do: IO.write(state.device, format(entry) <> "\n")
@@ -74,6 +78,32 @@ defmodule StarlightBot.LogStore do
 
   @impl true
   def handle_call(:file_path, _from, state), do: {:reply, state.path, state}
+
+  @impl true
+  def handle_info(:prune, state) do
+    prune(state.dir, state.path)
+    Process.send_after(self(), :prune, @prune_every_ms)
+    {:noreply, state}
+  end
+
+  def prune(nil, _current_path), do: :ok
+
+  def prune(dir, current_path) do
+    cutoff = System.os_time(:second) - @retention_days * 24 * 60 * 60
+
+    [Path.join(dir, "starlight_*.log"), Path.join([dir, "timeouts", "*.png"])]
+    |> Enum.flat_map(&Path.wildcard/1)
+    |> Enum.reject(&(Path.expand(&1) == current_path))
+    |> Enum.filter(&older_than?(&1, cutoff))
+    |> Enum.each(&File.rm/1)
+  end
+
+  defp older_than?(path, cutoff) do
+    case File.stat(path, time: :posix) do
+      {:ok, %{mtime: mtime}} -> mtime < cutoff
+      {:error, _} -> false
+    end
+  end
 
   defp open_file(nil), do: {nil, nil}
 

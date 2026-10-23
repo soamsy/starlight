@@ -1,11 +1,27 @@
 <div class="flex flex-col h-full gap-2 overflow-hidden">
-  <div class="flex items-center gap-3 shrink-0">
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 shrink-0">
     <h2 class="text-lg font-semibold">Log</h2>
-    <span class="badge badge-ghost font-mono">{@shown} lines shown</span>
+    <span class="badge badge-ghost font-mono">{@shown} lines</span>
+
+    <label class="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+      <input type="checkbox" class="toggle toggle-xs" checked={@show_steps} phx-click="toggle_steps" /> steps
+    </label>
+    <label class="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+      <input type="checkbox" class="toggle toggle-xs toggle-error" checked={@errors_only} phx-click="toggle_errors" /> errors only
+    </label>
+
+    <%= if @machine_filter do %>
+      <span class="badge badge-primary badge-outline gap-1 font-mono max-w-xs">
+        <span class="truncate">only {@machine_filter_label}</span>
+        <button class="hover:text-error" phx-click="clear_machine_filter" title="Show every machine">✕</button>
+      </span>
+    <% end %>
+
     <%= if older_available?(@oldest_seq) do %>
       <button class="btn btn-xs" phx-click="load_older">Load older</button>
     <% end %>
-    <span class="ml-auto text-xs text-base-content/50 font-mono select-all">
+
+    <span class="ml-auto text-xs text-base-content/50 font-mono select-all truncate">
       <%= if @file_path do %>
         {@file_path}
       <% else %>
@@ -19,13 +35,20 @@
       <span class="text-base-content/50">machines ({length(@machines)}):</span> {machine_summary(@machines)}
     </summary>
     <div class="flex flex-col gap-0.5 pt-1.5 font-mono">
-      <div :for={row <- @machines} class="flex items-center gap-2" style={"padding-left: #{row.depth * 1.25}rem"}>
+      <button
+        :for={row <- @machines}
+        class={"flex items-center gap-2 text-left rounded px-1 hover:bg-base-300 #{if row.pid == @machine_filter, do: "bg-base-300"}"}
+        style={"padding-left: #{0.25 + row.depth * 1.25}rem"}
+        phx-click="filter_machine"
+        phx-value-pid={pid_text(row.pid)}
+        title="Show only this machine's lines"
+      >
         <span class={"badge badge-xs #{machine_state_class(row.state)}"}>{row.state}</span>
         <span :if={row.label} class="text-base-content/50">{row.label}</span>
         <span class="truncate">{row.current}</span>
         <span :if={row.waiting} class="text-base-content/60 truncate">{row.waiting}</span>
         <span class="ml-auto text-base-content/40 shrink-0">{row.remaining} queued</span>
-      </div>
+      </button>
     </div>
   </details>
 
@@ -36,7 +59,11 @@
   <% end %>
 
   <div id="full-log" phx-update="stream"
-       class="flex-1 min-h-0 overflow-y-auto bg-base-200 rounded-xl p-3 font-mono text-xs flex flex-col-reverse gap-0.5">
-    <div :for={{dom_id, entry} <- @streams.entries} id={dom_id} class={"leading-snug whitespace-pre-wrap break-all #{log_kind_class(entry.kind)}"}><span class="text-base-content/40">{LogStore.format_time(entry.at)}</span> {entry.text}</div>
+       class="flex-1 min-h-0 overflow-y-auto bg-base-200 rounded-xl p-2 font-mono text-xs flex flex-col-reverse">
+    <div :for={{dom_id, entry} <- @streams.entries} id={dom_id}
+         class={"flex gap-2 leading-snug border-l-2 pl-2 py-px #{line_class(entry.kind)}"}>
+      <span class="text-base-content/40 shrink-0 tabular-nums" title={LogStore.format_time(entry.at)}>{short_time(entry.at)}</span>
+      <span class="whitespace-pre-wrap break-all">{entry.text}</span>
+    </div>
   </div>
 </div>

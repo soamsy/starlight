@@ -13,17 +13,17 @@ defmodule StarlightBotWeb.Live.LogLive do
       :timer.send_interval(@machine_refresh_ms, :refresh_machines)
     end
 
-    entries = LogStore.recent(@page_size)
-
     {:ok,
      socket
      |> assign(:machines, machine_rows())
      |> assign(:file_path, LogStore.file_path())
      |> assign(:memory_limit, LogStore.memory_limit())
-     |> assign(:shown, length(entries))
-     |> assign_oldest(entries)
+     |> assign(:show_steps, false)
+     |> assign(:errors_only, false)
+     |> assign(:machine_filter, nil)
+     |> assign(:machine_filter_label, nil)
      |> stream_configure(:entries, dom_id: &"log-#{&1.seq}")
-     |> stream(:entries, Enum.reverse(entries))}
+     |> reload()}
   end
 
   @impl true
@@ -31,25 +31,69 @@ defmodule StarlightBotWeb.Live.LogLive do
 
   def handle_event("load_older", _, socket) do
     older = LogStore.before(socket.assigns.oldest_seq, @page_size)
+    visible = Enum.filter(older, &visible?(&1, socket.assigns))
 
     {:noreply,
      socket
-     |> update(:shown, &(&1 + length(older)))
-     |> assign_oldest(older)
-     |> stream(:entries, Enum.reverse(older), at: -1)}
+     |> update(:shown, &(&1 + length(visible)))
+     |> assign(:oldest_seq, oldest_seq(older) || socket.assigns.oldest_seq)
+     |> stream(:entries, Enum.reverse(visible), at: -1)}
   end
+
+  def handle_event("toggle_steps", _, socket), do: {:noreply, socket |> update(:show_steps, &(not &1)) |> reload()}
+
+  def handle_event("toggle_errors", _, socket), do: {:noreply, socket |> update(:errors_only, &(not &1)) |> reload()}
+
+  def handle_event("filter_machine", %{"pid" => pid_text}, socket) do
+    case Enum.find(socket.assigns.machines, &(pid_text(&1.pid) == pid_text)) do
+      nil -> {:noreply, socket}
+      row -> {:noreply, socket |> assign(machine_filter: row.pid, machine_filter_label: row.label || row.current) |> reload()}
+    end
+  end
+
+  def handle_event("clear_machine_filter", _, socket),
+    do: {:noreply, socket |> assign(machine_filter: nil, machine_filter_label: nil) |> reload()}
 
   @impl true
   def handle_info(:refresh_machines, socket), do: {:noreply, assign(socket, :machines, machine_rows())}
 
   @impl true
   def handle_info({:log_entry, entry}, socket) do
-    {:noreply,
-     socket
-     |> update(:shown, &(&1 + 1))
-     |> update(:oldest_seq, &(&1 || entry.seq))
-     |> stream_insert(:entries, entry, at: 0)}
+    socket = update(socket, :oldest_seq, &(&1 || entry.seq))
+
+    if visible?(entry, socket.assigns),
+      do: {:noreply, socket |> update(:shown, &(&1 + 1)) |> stream_insert(:entries, entry, at: 0)},
+      else: {:noreply, socket}
   end
+
+  defp reload(socket) do
+    entries = LogStore.recent(@page_size)
+    visible = Enum.filter(entries, &visible?(&1, socket.assigns))
+
+    socket
+    |> assign(:shown, length(visible))
+    |> assign(:oldest_seq, oldest_seq(entries))
+    |> stream(:entries, Enum.reverse(visible), reset: true)
+  end
+
+  defp visible?(entry, assigns) do
+    (assigns.show_steps or entry.kind != :step) and
+      (not assigns.errors_only or entry.kind == :error) and
+      (assigns.machine_filter == nil or assigns.machine_filter in Map.get(entry, :lineage, []))
+  end
+
+  defp oldest_seq([]), do: nil
+  defp oldest_seq([oldest | _]), do: oldest.seq
+
+  def pid_text(pid), do: pid |> :erlang.pid_to_list() |> to_string()
+
+  def short_time(at), do: at |> NaiveDateTime.to_time() |> Time.truncate(:millisecond) |> Time.to_string()
+
+  def line_class(:error), do: "border-error bg-error/10 text-error"
+  def line_class(:ok), do: "border-success/60 text-base-content"
+  def line_class(:info), do: "border-base-content/20 text-base-content/80"
+  def line_class(:step), do: "border-transparent text-base-content/40 text-[11px]"
+  def line_class(_kind), do: "border-base-content/10 text-base-content/60"
 
   defp machine_rows do
     statuses = MachineStatus.all()
@@ -81,9 +125,6 @@ defmodule StarlightBotWeb.Live.LogLive do
   def machine_state_class(:polling), do: "badge-info"
   def machine_state_class(_state), do: "badge-ghost"
 
-  defp assign_oldest(socket, []), do: assign_new(socket, :oldest_seq, fn -> nil end)
-  defp assign_oldest(socket, [oldest | _]), do: assign(socket, :oldest_seq, oldest.seq)
-
   def older_available?(nil), do: false
 
   def older_available?(oldest_seq) do
@@ -95,8 +136,4 @@ defmodule StarlightBotWeb.Live.LogLive do
 
   def trimmed?(oldest_seq), do: oldest_seq != nil and not older_available?(oldest_seq) and oldest_seq > 1
 
-  def log_kind_class(:ok), do: "text-success"
-  def log_kind_class(:error), do: "text-error"
-  def log_kind_class(:info), do: "text-base-content/60"
-  def log_kind_class(_), do: "text-base-content/40"
 end

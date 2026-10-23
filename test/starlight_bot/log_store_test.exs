@@ -33,4 +33,40 @@ defmodule StarlightBot.LogStoreTest do
     LogStore.append(:ok, "broadcast check")
     assert_receive {:log_entry, %{kind: :ok, text: "broadcast check"}}
   end
+
+  test "prune deletes logs and timeout screenshots older than a week, but never the file being written" do
+    dir = Path.join(System.tmp_dir!(), "starlight_prune_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(Path.join(dir, "timeouts"))
+    old = {{2020, 1, 1}, {0, 0, 0}}
+
+    paths = %{
+      old_log: Path.join(dir, "starlight_old.log"),
+      new_log: Path.join(dir, "starlight_new.log"),
+      current: Path.join(dir, "starlight_current.log"),
+      old_png: Path.join([dir, "timeouts", "old.png"]),
+      new_png: Path.join([dir, "timeouts", "new.png"]),
+      other: Path.join(dir, "notes.txt")
+    }
+
+    Enum.each(paths, fn {_name, path} -> File.write!(path, "x") end)
+    for name <- [:old_log, :current, :old_png, :other], do: File.touch!(paths[name], old)
+
+    LogStore.prune(dir, Path.expand(paths.current))
+
+    refute File.exists?(paths.old_log)
+    refute File.exists?(paths.old_png)
+    assert File.exists?(paths.new_log)
+    assert File.exists?(paths.new_png)
+    assert File.exists?(paths.current)
+    assert File.exists?(paths.other)
+    File.rm_rf!(dir)
+  end
+
+  test "Ctx.log from a running machine records the machine chain that wrote it" do
+    marker = "lineage-#{System.unique_integer([:positive])}"
+    Ctx.log(Ctx.new(), :info, "#{marker} outside")
+    sync()
+
+    assert [%{lineage: []}] = LogStore.recent(1)
+  end
 end

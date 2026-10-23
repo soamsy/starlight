@@ -9,6 +9,14 @@ defmodule StarlightBot.Navigation.MachineStatus do
 
   def delete, do: :ets.delete(@table, self())
 
+  def lineage(pid) do
+    case :ets.whereis(@table) != :undefined and :ets.lookup(@table, pid) do
+      [{^pid, %{parent: parent}}] when is_pid(parent) -> [pid | lineage(parent)]
+      [{^pid, _status}] -> [pid]
+      _ -> []
+    end
+  end
+
   def all do
     for {pid, status} <- :ets.tab2list(@table), Process.alive?(pid), do: Map.put(status, :pid, pid)
   end

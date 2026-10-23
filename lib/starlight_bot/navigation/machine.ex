@@ -138,7 +138,7 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp exec({:branch, clauses, default_steps}, data) do
     ctx = data.ctx
-    Ctx.log(ctx, :info, "branch")
+    Ctx.log(ctx, :step, "branch")
 
     frame = data.frame || elem(Runner.grab_frame(), 1)
 
@@ -146,15 +146,15 @@ defmodule StarlightBot.Navigation.Machine do
       if frame do
         case Enum.find(clauses, fn {hook, _} -> Runner.hook_matches?(frame, hook) end) do
           {matched_hook, steps} ->
-            Ctx.log(ctx, :ok, "branch matched #{inspect(matched_hook)}")
+            Ctx.log(ctx, :step, "branch matched #{inspect(matched_hook)}")
             steps
 
           nil ->
-            Ctx.log(ctx, :info, "branch default")
+            Ctx.log(ctx, :step, "branch default")
             default_steps
         end
       else
-        Ctx.log(ctx, :info, "branch default (no frame)")
+        Ctx.log(ctx, :step, "branch default (no frame)")
         default_steps
       end
 
@@ -162,7 +162,7 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   defp exec({:branch, _clauses, _default_steps, wait_ms} = step, data) do
-    Ctx.log(data.ctx, :info, "branch (waiting up to #{wait_ms}ms)")
+    Ctx.log(data.ctx, :step, "branch (waiting up to #{wait_ms}ms)")
     start_poll(step, wait_ms, data)
   end
 
@@ -172,11 +172,11 @@ defmodule StarlightBot.Navigation.Machine do
   defp exec({:retry_until, hook, steps, timeout_ms, every_ms, tries, retry_if}, data) do
     verb = retry_verb(steps)
     bound_desc = if tries, do: "tries #{tries}", else: "timeout #{timeout_ms}ms"
-    Ctx.log(data.ctx, :info, "#{verb} #{inspect(hook)} (#{bound_desc}, every #{every_ms}ms)")
+    Ctx.log(data.ctx, :step, "#{verb} #{inspect(hook)} (#{bound_desc}, every #{every_ms}ms)")
 
     case hook_visible?(hook, data.frame) do
       {true, frame} ->
-        Ctx.log(data.ctx, :ok, "#{verb} #{inspect(hook)}: already visible")
+        Ctx.log(data.ctx, :step, "#{verb} #{inspect(hook)}: already visible")
         continue(data, frame)
 
       {false, _} ->
@@ -199,12 +199,12 @@ defmodule StarlightBot.Navigation.Machine do
   defp exec({:await, hook, timeout_ms, _opts}, data), do: exec({:await, hook, timeout_ms}, data)
 
   defp exec({:await, hook, timeout_ms}, data) do
-    Ctx.log(data.ctx, :info, "await #{inspect(hook)} (#{timeout_ms}ms)")
+    Ctx.log(data.ctx, :step, "await #{inspect(hook)} (#{timeout_ms}ms)")
     start_poll({:await, hook}, timeout_ms, data)
   end
 
   defp exec({:await_any, hooks, timeout_ms}, data) do
-    Ctx.log(data.ctx, :info, "await_any #{inspect(hooks)} (#{timeout_ms}ms)")
+    Ctx.log(data.ctx, :step, "await_any #{inspect(hooks)} (#{timeout_ms}ms)")
     start_poll({:await_any, hooks}, timeout_ms, data)
   end
 
@@ -221,7 +221,7 @@ defmodule StarlightBot.Navigation.Machine do
   defp exec({:call, {_mod, _fun, args} = mfa}, data), do: offload(:call, mfa, args ++ [data.frame, data.ctx], data)
 
   defp exec({:sleep, ms}, data) do
-    Ctx.log(data.ctx, :info, "sleep #{ms}ms")
+    Ctx.log(data.ctx, :step, "sleep #{ms}ms")
     report(:sleeping, {"sleep", mono() + ms}, data)
     {:next_state, :sleeping, data, [{:state_timeout, ms, :wake}]}
   end
@@ -322,11 +322,11 @@ defmodule StarlightBot.Navigation.Machine do
   defp exec_internal({:__verify__, screen_name}, data) do
     case Catalog.find_screen(screen_name) do
       nil ->
-        Ctx.log(data.ctx, :ok, "no identity hook for #{screen_name}, skipping verify")
+        Ctx.log(data.ctx, :step, "no identity hook for #{screen_name}, skipping verify")
         continue(data, data.frame)
 
       %Screen{identity_hook: nil} ->
-        Ctx.log(data.ctx, :ok, "#{screen_name} has no identity hook, skipping verify")
+        Ctx.log(data.ctx, :step, "#{screen_name} has no identity hook, skipping verify")
         continue(data, data.frame)
 
       screen ->
@@ -464,27 +464,27 @@ defmodule StarlightBot.Navigation.Machine do
   defp watched_hook({:verify, _screen_name, hook}), do: hook
 
   defp matched({:await, hook}, frame, _match, data) do
-    Ctx.log(data.ctx, :ok, "await #{inspect(hook)}: matched")
+    Ctx.log(data.ctx, :step, "await #{inspect(hook)}: matched")
     continue(data, frame)
   end
 
   defp matched({:await_any, _hooks}, frame, hook, data) do
-    Ctx.log(data.ctx, :ok, "await_any: matched #{inspect(hook)}")
+    Ctx.log(data.ctx, :step, "await_any: matched #{inspect(hook)}")
     continue(data, frame)
   end
 
   defp matched({:branch, _clauses, _default_steps, _wait_ms}, frame, {matched_hook, steps}, data) do
-    Ctx.log(data.ctx, :ok, "branch matched #{inspect(matched_hook)}")
+    Ctx.log(data.ctx, :step, "branch matched #{inspect(matched_hook)}")
     push(steps, frame, data)
   end
 
   defp matched({:retry_window, loop, attempt}, frame, _match, data) do
-    Ctx.log(data.ctx, :ok, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: matched after #{attempt} attempt(s), #{mono() - loop.started_at}ms")
+    Ctx.log(data.ctx, :step, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: matched after #{attempt} attempt(s), #{mono() - loop.started_at}ms")
     continue(data, frame)
   end
 
   defp matched({:verify, screen_name, _hook}, _frame, _match, data) do
-    Ctx.log(data.ctx, :ok, "verified #{screen_name}")
+    Ctx.log(data.ctx, :step, "verified #{screen_name}")
     continue(data, data.frame)
   end
 
@@ -492,7 +492,7 @@ defmodule StarlightBot.Navigation.Machine do
     do: settle({:ok, screen}, mono() + @fallback_settle_ms, data)
 
   defp matched({:leave, screen_name, started_at}, _frame, next_screen, data) do
-    Ctx.log(data.ctx, :info, "left #{screen_name} for #{next_screen} after #{mono() - started_at}ms")
+    Ctx.log(data.ctx, :step, "left #{screen_name} for #{next_screen} after #{mono() - started_at}ms")
     continue(data, nil)
   end
 
@@ -512,7 +512,7 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   defp expire({:branch, _clauses, default_steps, wait_ms}, frame, data) do
-    Ctx.log(data.ctx, :info, "branch default after #{wait_ms}ms")
+    Ctx.log(data.ctx, :step, "branch default after #{wait_ms}ms")
     push(default_steps, frame, data)
   end
 
@@ -525,7 +525,7 @@ defmodule StarlightBot.Navigation.Machine do
         retry_gave_up(loop, attempt, data)
 
       true ->
-        Ctx.log(data.ctx, :info, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: #{inspect(loop.retry_if)} gone, waiting instead of retrying")
+        Ctx.log(data.ctx, :step, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: #{inspect(loop.retry_if)} gone, waiting instead of retrying")
         start_poll({:retry_window, loop, attempt + 1}, loop.every_ms, data)
     end
   end
@@ -539,7 +539,7 @@ defmodule StarlightBot.Navigation.Machine do
   defp expire({:locate, _started_at}, _frame, data), do: continue(%{data | result: :unknown}, data.frame)
 
   defp expire({:leave, screen_name, started_at}, _frame, data) do
-    Ctx.log(data.ctx, :info, "still on #{screen_name} after #{mono() - started_at}ms")
+    Ctx.log(data.ctx, :step, "still on #{screen_name} after #{mono() - started_at}ms")
     continue(data, nil)
   end
 
@@ -619,11 +619,11 @@ defmodule StarlightBot.Navigation.Machine do
   defp execute_step({:click, hook_atom}, last_frame, ctx), do: execute_step({:click, hook_atom, []}, last_frame, ctx)
 
   defp execute_step({:click, hook_atom, opts}, last_frame, ctx) do
-    Ctx.log(ctx, :info, "click #{hook_atom}")
+    Ctx.log(ctx, :step, "click #{hook_atom}")
 
     case do_click(hook_atom, opts, last_frame, ctx) do
       :ok ->
-        Ctx.log(ctx, :ok, "clicked #{hook_atom}")
+        Ctx.log(ctx, :step, "clicked #{hook_atom}")
         {:ok, nil}
 
       {:error, reason} ->
@@ -633,11 +633,11 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   defp execute_step({:move_to, hook_atom}, last_frame, ctx) do
-    Ctx.log(ctx, :info, "move_to #{hook_atom}")
+    Ctx.log(ctx, :step, "move_to #{hook_atom}")
 
     case do_move_to(hook_atom, last_frame, ctx) do
       :ok ->
-        Ctx.log(ctx, :ok, "moved to #{hook_atom}")
+        Ctx.log(ctx, :step, "moved to #{hook_atom}")
         {:ok, nil}
 
       {:error, reason} ->
@@ -651,22 +651,22 @@ defmodule StarlightBot.Navigation.Machine do
          {:ok, region} <- resolve_target_region(hook_atom, last_frame),
          {:ok, {sx, sy}} <- Runner.to_screen_point(sample_target_point(region)),
          {:ok, box} <- to_screen_box(target_box(region)) do
-      Ctx.log(ctx, :info, "premove → #{hook_atom}")
+      Ctx.log(ctx, :step, "premove → #{hook_atom}")
       Mouse.premove(sx, sy, box)
     else
       false -> :ok
-      {:error, reason} -> Ctx.log(ctx, :info, "premove #{hook_atom} skipped: #{inspect(reason)}")
+      {:error, reason} -> Ctx.log(ctx, :step, "premove #{hook_atom} skipped: #{inspect(reason)}")
     end
 
     {:ok, last_frame}
   end
 
   defp execute_step({:drag, hook_atom, dx, dy, duration_ms}, last_frame, ctx) do
-    Ctx.log(ctx, :info, "drag #{hook_atom} by (#{dx}, #{dy})")
+    Ctx.log(ctx, :step, "drag #{hook_atom} by (#{dx}, #{dy})")
 
     case do_drag(hook_atom, dx, dy, duration_ms, last_frame, ctx) do
       :ok ->
-        Ctx.log(ctx, :ok, "dragged #{hook_atom} by (#{dx}, #{dy})")
+        Ctx.log(ctx, :step, "dragged #{hook_atom} by (#{dx}, #{dy})")
         {:ok, nil}
 
       {:error, reason} ->
@@ -676,23 +676,23 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   defp execute_step({:scroll, dx, dy}, _last_frame, ctx) do
-    Ctx.log(ctx, :info, "scroll dx=#{dx} dy=#{dy}")
+    Ctx.log(ctx, :step, "scroll dx=#{dx} dy=#{dy}")
     Mouse.scroll(dx, dy)
-    Ctx.log(ctx, :ok, "scrolled")
+    Ctx.log(ctx, :step, "scrolled")
     {:ok, nil}
   end
 
   defp execute_step({:key, key_atom}, _last_frame, ctx) do
-    Ctx.log(ctx, :info, "key #{key_atom}")
+    Ctx.log(ctx, :step, "key #{key_atom}")
     Keyboard.press(key_atom)
-    Ctx.log(ctx, :ok, "pressed #{key_atom}")
+    Ctx.log(ctx, :step, "pressed #{key_atom}")
     {:ok, nil}
   end
 
   defp execute_step({:type, text}, _last_frame, ctx) do
-    Ctx.log(ctx, :info, "type #{inspect(text)}")
+    Ctx.log(ctx, :step, "type #{inspect(text)}")
     Keyboard.type(text)
-    Ctx.log(ctx, :ok, "typed #{inspect(text)}")
+    Ctx.log(ctx, :step, "typed #{inspect(text)}")
     {:ok, nil}
   end
 
@@ -810,7 +810,7 @@ defmodule StarlightBot.Navigation.Machine do
          {_, _, _, _} = region <- fixed_region(hook),
          {:ok, {sx, sy}} <- Runner.to_screen_point(sample_target_point(region)),
          {:ok, box} <- to_screen_box(target_box(region)) do
-      Ctx.log(ctx, :info, "premove → #{hook_atom} (while waiting on #{inspect(watched)})")
+      Ctx.log(ctx, :step, "premove → #{hook_atom} (while waiting on #{inspect(watched)})")
       Mouse.premove(sx, sy, box)
     end
 

@@ -534,6 +534,8 @@ defmodule StarlightBot.Navigation.Navigator do
   def handle_info({{:nav_machine, kind}, result}, state), do: handle_info({:nav_result, kind, result}, release_run(state))
 
   @impl true
+  def handle_info({:nav_log, :step, _text}, state), do: {:noreply, state}
+
   def handle_info({:nav_log, kind, text}, state) do
     state = remember_log(state, kind, text)
     broadcast(state)

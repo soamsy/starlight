@@ -108,7 +108,7 @@ defmodule StarlightBot.Input.Mouse do
 
     new_state =
       if within != nil and inside?(start_pos(state), within) do
-        LogStore.append(:info, "premove: cursor already on target, clicking in place")
+        LogStore.append(:step, "premove: cursor already on target, clicking in place")
         state
       else
         elem(execute_move(state, x, y, opts), 0)
@@ -164,7 +164,7 @@ defmodule StarlightBot.Input.Mouse do
   def handle_cast({:premove, x, y, within}, state) do
     cond do
       MapSet.size(state.held) > 0 ->
-        LogStore.append(:info, "premove skipped: mouse button held")
+        LogStore.append(:step, "premove skipped: mouse button held")
         {:noreply, state}
 
       state.premove != nil and inside?(state.premove.target, within) ->
@@ -219,13 +219,13 @@ defmodule StarlightBot.Input.Mouse do
 
   defp halt_premove(%{premove: pm} = state) do
     {lx, ly, _} = pm.last
-    LogStore.append(:info, "premove interrupted with #{length(pm.remaining)} waypoint(s) left")
+    LogStore.append(:step, "premove interrupted with #{length(pm.remaining)} waypoint(s) left")
     settle(state, {lx, ly}, [pm.prev, pm.last])
   end
 
   defp finish_premove(%{premove: pm} = state) do
     {lx, ly, lt} = pm.last
-    LogStore.append(:info, "premove still in flight, finishing it for the click")
+    LogStore.append(:step, "premove still in flight, finishing it for the click")
     play_trajectory({lx, ly}, pm.remaining, lt)
     settle(state, pm.target, [pm.prev, pm.last | pm.remaining])
   end

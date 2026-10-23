@@ -16,6 +16,11 @@ defmodule StarlightBotWeb.Live.LogLiveTest do
     }
   end
 
+  defp settle(socket) do
+    streams = Map.update!(socket.assigns.streams, :entries, &Phoenix.LiveView.LiveStream.prune/1)
+    %{socket | assigns: %{socket.assigns | streams: streams}}
+  end
+
   defp html(socket) do
     socket.assigns
     |> LogLive.render()
@@ -60,5 +65,58 @@ defmodule StarlightBotWeb.Live.LogLiveTest do
 
     {:noreply, socket} = LogLive.handle_info(:refresh_machines, socket)
     refute Enum.any?(socket.assigns.machines, &(&1.waiting && &1.waiting =~ "fw_done"))
+  end
+
+  def log_from_nested(marker, _frame, ctx) do
+    Runner.run_steps([log(:info, "#{marker} nested")], ctx)
+  end
+
+  test "step lines are hidden until steps are switched on, and errors only narrows to errors" do
+    marker = "log-kinds-#{System.unique_integer([:positive])}"
+    LogStore.append(:step, "#{marker} step")
+    LogStore.append(:info, "#{marker} info")
+    LogStore.append(:error, "#{marker} error")
+    :sys.get_state(LogStore)
+
+    {:ok, socket} = LogLive.mount(%{}, %{}, socket())
+    rendered = html(socket)
+    refute rendered =~ "#{marker} step"
+    assert rendered =~ "#{marker} info"
+
+    {:noreply, socket} = LogLive.handle_event("toggle_steps", %{}, settle(socket))
+    assert html(socket) =~ "#{marker} step"
+
+    {:noreply, socket} = LogLive.handle_event("toggle_errors", %{}, settle(socket))
+    rendered = html(socket)
+    assert rendered =~ "#{marker} error"
+    refute rendered =~ "#{marker} info"
+
+    {:noreply, socket} = LogLive.handle_info({:log_entry, %{seq: 999_999_998, at: LogStore.now(), kind: :info, text: "#{marker} live info"}}, settle(socket))
+    refute html(socket) =~ "#{marker} live info"
+  end
+
+  test "picking a machine in the panel shows only lines written by it and the machines under it" do
+    FakeWorld.start!(hooks: [:fw_done])
+    marker = "log-filter-#{System.unique_integer([:positive])}"
+    LogStore.append(:info, "#{marker} unrelated")
+
+    steps = [call(__MODULE__, :log_from_nested, [marker]), await(:fw_done, timeout: 5_000)]
+    run = Task.async(fn -> Runner.run_steps(steps, Ctx.new()) end)
+    Process.sleep(300)
+
+    {:ok, socket} = LogLive.mount(%{}, %{}, socket())
+    {:noreply, socket} = LogLive.handle_info(:refresh_machines, socket)
+    root = Enum.find(socket.assigns.machines, &(&1.depth == 0 and &1.waiting && &1.waiting =~ "fw_done"))
+
+    {:noreply, socket} = LogLive.handle_event("filter_machine", %{"pid" => LogLive.pid_text(root.pid)}, settle(socket))
+    rendered = html(socket)
+    assert rendered =~ "#{marker} nested"
+    refute rendered =~ "#{marker} unrelated"
+
+    {:noreply, socket} = LogLive.handle_event("clear_machine_filter", %{}, settle(socket))
+    assert html(socket) =~ "#{marker} unrelated"
+
+    FakeWorld.show(:fw_done)
+    assert {:ok, _} = Task.await(run)
   end
 end
