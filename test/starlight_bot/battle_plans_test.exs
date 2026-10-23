@@ -146,30 +146,17 @@ defmodule StarlightBot.BattlePlansTest do
     end
   end
 
-  describe "profile_ids_used/1" do
-    test "collects profiles from actions and pins" do
-      data = %{
-        "playbooks" => [
-          %{
-            "phases" => [
-              %{
-                "actions" => [
-                  %{"type" => "dodge", "who" => "except", "profile_ids" => [1, 6]},
-                  %{"type" => "chain_a_res", "pins" => [%{"profile_ids" => [2]}, %{"who" => "everyone", "profile_ids" => []}]},
-                  %{
-                    "type" => "if",
-                    "condition" => %{"op" => "and", "children" => [%{"op" => "tray_count", "profile_id" => 5}, %{"op" => "hook_on", "hook" => "x"}]},
-                    "then" => [%{"type" => "ego", "profile_ids" => [3]}],
-                    "else" => [%{"type" => "target", "profile_ids" => [4]}]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      }
+  describe "profiles/1" do
+    test "assigns and clears a sinner's profile, and lists the ids in use" do
+      data = BattlePlans.blank()
+      assert BattlePlans.profiles(data) == %{}
 
-      assert BattlePlans.profile_ids_used(data) == MapSet.new([1, 2, 3, 4, 5, 6])
+      data = data |> BattlePlans.put_profile("ryoshu", 2) |> BattlePlans.put_profile("faust", 1)
+      assert BattlePlans.profiles(data) == %{"ryoshu" => 2, "faust" => 1}
+      assert BattlePlans.profile_ids_used(data) == MapSet.new([1, 2])
+
+      data = BattlePlans.put_profile(data, "ryoshu", nil)
+      assert BattlePlans.profiles(data) == %{"faust" => 1}
     end
   end
 
@@ -274,15 +261,16 @@ defmodule StarlightBot.BattlePlansTest do
   describe "tray_count leaves" do
     test "condition_leaf fills defaults and labels the count" do
       leaf = BattlePlans.condition_leaf(%{"op" => "tray_count", "hook" => "battle_chain"})
-      assert leaf == %{"op" => "tray_count", "match" => "wrath", "cmp" => "gte", "value" => 1, "profile_id" => nil}
+      assert leaf == %{"op" => "tray_count", "match" => "wrath", "cmp" => "gte", "value" => 1, "sinner" => nil}
       assert BattlePlans.tray_leaf?(leaf)
       refute BattlePlans.sinner_leaf?(leaf)
       assert BattlePlans.condition_label(%{"op" => "and", "children" => [leaf]}) == "wrath slots >= 1"
 
-      leaf = BattlePlans.condition_leaf(%{"op" => "tray_count", "match" => "s3", "cmp" => "eq", "value" => "0", "profile_id" => "7"})
-      assert leaf == %{"op" => "tray_count", "match" => "s3", "cmp" => "eq", "value" => 0, "profile_id" => 7}
-      assert BattlePlans.condition_label(leaf, %{7 => "Saikai"}) == "Saikai s3 slots = 0"
-      assert BattlePlans.condition_label(leaf) == "profile 7 s3 slots = 0"
+      leaf = BattlePlans.condition_leaf(%{"op" => "tray_count", "match" => "s3", "cmp" => "eq", "value" => "0", "sinner" => "ryoshu"})
+      assert leaf == %{"op" => "tray_count", "match" => "s3", "cmp" => "eq", "value" => 0, "sinner" => "ryoshu"}
+      assert BattlePlans.condition_label(leaf) == "Ryoshu s3 slots = 0"
+      assert BattlePlans.condition_label(%{leaf | "sinner" => "hong_lu"}) == "Hong Lu s3 slots = 0"
+      assert BattlePlans.condition_leaf(%{"op" => "tray_count", "sinner" => "nobody"})["sinner"] == nil
     end
 
     test "counts slots where either row matches, scoped to columns" do
@@ -312,18 +300,19 @@ defmodule StarlightBot.BattlePlansTest do
   describe "sinner_position leaves" do
     test "condition_leaf fills defaults and labels the position" do
       leaf = BattlePlans.condition_leaf(%{"op" => "sinner_position"})
-      assert leaf == %{"op" => "sinner_position", "profile_id" => nil, "cmp" => "is", "pos" => "first", "value" => 1}
+      assert leaf == %{"op" => "sinner_position", "sinner" => nil, "cmp" => "is", "pos" => "first", "value" => 1}
       assert BattlePlans.position_leaf?(leaf)
       refute BattlePlans.tray_leaf?(leaf)
       refute BattlePlans.sinner_leaf?(leaf)
       assert BattlePlans.condition_label(leaf) == "(no sinner) is first"
 
-      leaf = BattlePlans.condition_leaf(%{"op" => "sinner_position", "profile_id" => "7", "cmp" => "is_not", "pos" => "exact", "value" => "3"})
-      assert leaf == %{"op" => "sinner_position", "profile_id" => 7, "cmp" => "is_not", "pos" => "exact", "value" => 3}
-      assert BattlePlans.condition_label(leaf, %{7 => "Saikai"}) == "Saikai is not at position 3"
-      assert BattlePlans.condition_label(%{leaf | "pos" => "last"}, %{7 => "Saikai"}) == "Saikai is not last"
-      assert BattlePlans.condition_label(%{leaf | "cmp" => "gt"}, %{7 => "Saikai"}) == "Saikai is after position 3"
-      assert BattlePlans.condition_label(%{leaf | "cmp" => "lt", "pos" => "last"}, %{7 => "Saikai"}) == "Saikai is before last"
+      leaf = BattlePlans.condition_leaf(%{"op" => "sinner_position", "sinner" => "faust", "cmp" => "is_not", "pos" => "exact", "value" => "3"})
+      assert leaf == %{"op" => "sinner_position", "sinner" => "faust", "cmp" => "is_not", "pos" => "exact", "value" => 3}
+      assert BattlePlans.condition_label(leaf) == "Faust is not at position 3"
+      assert BattlePlans.condition_label(leaf, %{"faust" => "Saikai"}) == "Saikai is not at position 3"
+      assert BattlePlans.condition_label(%{leaf | "pos" => "last"}, %{"faust" => "Saikai"}) == "Saikai is not last"
+      assert BattlePlans.condition_label(%{leaf | "cmp" => "gt"}, %{"faust" => "Saikai"}) == "Saikai is after position 3"
+      assert BattlePlans.condition_label(%{leaf | "cmp" => "lt", "pos" => "last"}, %{"faust" => "Saikai"}) == "Saikai is before last"
     end
 
     test "matches first, last and exact positions, negated with is not" do

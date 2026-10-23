@@ -61,14 +61,28 @@
               <div class="flex flex-wrap gap-4 items-start">
                 <div class="flex flex-col gap-2 pt-5">
                   <%= for row <- sinner_rows() do %>
-                    <div class="grid grid-cols-6 gap-1 max-w-xl">
+                    <div class="grid grid-cols-6 gap-1 max-w-2xl">
                       <%= for sinner <- row do %>
                         <% pos = Enum.find_index(lineup["sinners"], &(&1 == sinner)) %>
-                        <button type="button" phx-click="toggle_lineup_sinner" phx-value-sinner={sinner}
-                                class={"btn btn-xs relative " <> if(pos, do: "btn-primary", else: "btn-outline")}>
-                          <%= sinner_label(sinner) %>
-                          <span :if={pos} class={"absolute -top-2 -right-2 badge badge-xs " <> if(pos < StarlightBot.BattlePlans.front_line_size(), do: "badge-secondary", else: "badge-neutral")}><%= pos + 1 %></span>
-                        </button>
+                        <% profile = @profiles_by_id[StarlightBot.BattlePlans.profiles(@data)[sinner]] %>
+                        <div class="flex flex-col gap-0.5 min-w-0">
+                          <button type="button" phx-click="toggle_lineup_sinner" phx-value-sinner={sinner}
+                                  class={"btn btn-xs relative " <> if(pos, do: "btn-primary", else: "btn-outline")}>
+                            <%= sinner_label(sinner) %>
+                            <span :if={pos} class={"absolute -top-2 -right-2 badge badge-xs " <> if(pos < StarlightBot.BattlePlans.front_line_size(), do: "badge-secondary", else: "badge-neutral")}><%= pos + 1 %></span>
+                          </button>
+                          <form phx-change="set_sinner_profile" class="flex items-center gap-0.5 min-w-0">
+                            <input type="hidden" name="sinner" value={sinner} />
+                            <img :if={profile && profile.locator_hook && Map.has_key?(@locator_thumbs, profile.locator_hook)}
+                                 src={~p"/hooks/#{profile.locator_hook}/thumb.png?#{[v: @locator_thumbs[profile.locator_hook]]}"}
+                                 title={"#{profile.name} (#{profile.locator_hook})"} class="h-5 w-auto rounded shrink-0" />
+                            <select name="profile_id" title={if(profile, do: profile.name, else: "No profile: playbook checks for #{sinner_label(sinner)} are skipped")}
+                                    class={"select select-bordered select-xs min-w-0 flex-1 text-[10px] " <> if(profile, do: "", else: "text-base-content/40")}>
+                              <option value="" selected={is_nil(profile)}>(no profile)</option>
+                              <option :for={p <- Map.get(@profiles_by_sinner, sinner, [])} value={p.id} selected={profile && profile.id == p.id}><%= p.name %></option>
+                            </select>
+                          </form>
+                        </div>
                       <% end %>
                     </div>
                   <% end %>
@@ -288,7 +302,7 @@
                     </div>
 
                     <%= for {action, index} <- Enum.with_index(phase["actions"], 1) do %>
-                      <.action_row action={action} index={index} turn={turn} profiles={@profiles} kind={playbook["kind"]} phase_actions={phase["actions"]} />
+                      <.action_row action={action} index={index} turn={turn} sinner_options={@sinner_options} kind={playbook["kind"]} phase_actions={phase["actions"]} />
                     <% end %>
 
                     <form id={"add-#{playbook["id"]}-#{turn}-#{length(phase["actions"])}"} phx-change="add_action" class="flex items-center gap-2">

@@ -221,6 +221,16 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_event("set_sinner_profile", %{"sinner" => sinner} = params, socket) do
+    if sinner in SinnerProfiles.sinners() do
+      data = BattlePlans.put_profile(socket.assigns.data, sinner, parse_id(params["profile_id"]))
+      {:noreply, socket |> assign(:data, data) |> persist()}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_event("clear_lineup", _, socket) do
     {:noreply, update_lineup(socket, &Map.put(&1, "sinners", []))}
   end
@@ -371,9 +381,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
-  def handle_event("remove_sinner", %{"turn" => turn, "action" => action_id, "profile" => profile} = params, socket) do
-    profile_id = String.to_integer(profile)
-    drop = fn holder -> Map.update(holder, "profile_ids", [], &List.delete(&1, profile_id)) end
+  def handle_event("remove_sinner", %{"turn" => turn, "action" => action_id, "sinner" => sinner} = params, socket) do
+    drop = fn holder -> Map.update(holder, "sinners", [], &List.delete(&1, sinner)) end
 
     update =
       case parse_id(params["pin"]) do
@@ -533,7 +542,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   attr :action, :map, required: true
   attr :index, :integer, required: true
   attr :turn, :integer, required: true
-  attr :profiles, :list, required: true
+  attr :sinner_options, :list, required: true
   attr :kind, :string, required: true
   attr :phase_actions, :list, required: true
 
@@ -544,10 +553,10 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <div class="flex flex-col gap-1 flex-1 min-w-0">
         <div class="flex items-center gap-2">
           <span class="font-semibold cursor-help" title={action_tooltip("if")}><%= action_label("if") %></span>
-          <span class="text-[11px] text-secondary truncate"><%= BattlePlans.condition_label(@action["condition"], Map.new(@profiles, &{&1.id, &1.name})) %></span>
+          <span class="text-[11px] text-secondary truncate"><%= BattlePlans.condition_label(@action["condition"], Map.new(@sinner_options, &{&1.id, &1.name})) %></span>
         </div>
         <%= if @action["condition"] do %>
-          <.condition_node node={@action["condition"]} path="" values={%{"turn" => @turn, "action" => @action["id"]}} leaf={&hook_leaf(Map.put(&1, :profiles, @profiles))} />
+          <.condition_node node={@action["condition"]} path="" values={%{"turn" => @turn, "action" => @action["id"]}} leaf={&hook_leaf(Map.put(&1, :sinner_options, @sinner_options))} />
         <% else %>
           <button type="button" phx-click="cond_add" phx-value-turn={@turn} phx-value-action={@action["id"]} phx-value-path="" phx-value-node="leaf"
                   class="btn btn-2xs btn-ghost self-start">+ Add condition</button>
@@ -556,7 +565,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <div class="flex flex-col gap-1 pl-3 border-l-2 border-base-300">
             <span class="text-[11px] font-medium text-base-content/70"><%= branch_label(branch) %></span>
             <%= for {child, child_index} <- Enum.with_index(@action[branch], 1) do %>
-              <.action_row action={child} index={child_index} turn={@turn} profiles={@profiles} kind={@kind} phase_actions={@phase_actions} />
+              <.action_row action={child} index={child_index} turn={@turn} sinner_options={@sinner_options} kind={@kind} phase_actions={@phase_actions} />
             <% end %>
             <form id={"add-#{@action["id"]}-#{branch}-#{length(@action[branch])}"} phx-change="add_action" class="flex items-center gap-2">
               <input type="hidden" name="turn" value={@turn} />
@@ -592,7 +601,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <span class="font-semibold w-32 cursor-help" title={action_tooltip(@action["type"])}><%= action_label(@action["type"]) %></span>
 
           <%= if @action["type"] in ~w(dodge ego target) do %>
-            <.sinner_picker holder={@action} prefix="" profiles={@profiles} turn={@turn} action_id={@action["id"]} />
+            <.sinner_picker holder={@action} prefix="" sinner_options={@sinner_options} turn={@turn} action_id={@action["id"]} />
             <span class="text-base-content/60">skill</span>
             <select name="pick" class="select select-bordered select-xs">
               <%= for pick <- skill_picks(false) do %>
@@ -658,7 +667,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
             <div data-sort-id={pin_index} class="flex items-center gap-2 pl-4">
               <span data-sort-handle class="cursor-grab text-base-content/40 select-none">⠿</span>
               <span class="text-base-content/60">pin</span>
-              <.sinner_picker holder={pin} prefix={"pins[#{pin_index}]"} profiles={@profiles} turn={@turn} action_id={@action["id"]} pin={pin_index} />
+              <.sinner_picker holder={pin} prefix={"pins[#{pin_index}]"} sinner_options={@sinner_options} turn={@turn} action_id={@action["id"]} pin={pin_index} />
               <span class="text-base-content/60">skill</span>
               <select name={"pins[#{pin_index}][pick]"} class="select select-bordered select-xs">
                 <%= for pick <- skill_picks(true) do %>
@@ -707,15 +716,15 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   attr :holder, :map, required: true
   attr :prefix, :string, required: true
-  attr :profiles, :list, required: true
+  attr :sinner_options, :list, required: true
   attr :turn, :integer, required: true
   attr :action_id, :string, required: true
   attr :pin, :integer, default: nil
 
   def sinner_picker(assigns) do
-    names = Map.new(assigns.profiles, &{&1.id, &1.name})
-    chosen = assigns.holder["profile_ids"] || []
-    assigns = assign(assigns, names: names, chosen: chosen, addable: Enum.reject(assigns.profiles, &(&1.id in chosen)))
+    names = Map.new(assigns.sinner_options, &{&1.id, &1.name})
+    chosen = assigns.holder["sinners"] || []
+    assigns = assign(assigns, names: names, chosen: chosen, addable: Enum.reject(assigns.sinner_options, &(&1.id in chosen)))
 
     ~H"""
     <select name={field_name(@prefix, "who")} class="select select-bordered select-xs">
@@ -725,14 +734,14 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     </select>
     <%= if @holder["who"] != "everyone" do %>
       <%= for id <- @chosen do %>
-        <input type="hidden" name={field_name(@prefix, "profile_ids") <> "[]"} value={id} />
+        <input type="hidden" name={field_name(@prefix, "sinners") <> "[]"} value={id} />
         <span class="badge badge-sm gap-1">
-          <%= Map.get(@names, id, "profile #{id}") %>
-          <button type="button" phx-click="remove_sinner" phx-value-turn={@turn} phx-value-action={@action_id} phx-value-pin={@pin} phx-value-profile={id}
+          <%= Map.get(@names, id, id) %>
+          <button type="button" phx-click="remove_sinner" phx-value-turn={@turn} phx-value-action={@action_id} phx-value-pin={@pin} phx-value-sinner={id}
                   class="text-error">✕</button>
         </span>
       <% end %>
-      <select :if={@addable != []} name={field_name(@prefix, "add_profile")} class="select select-bordered select-xs">
+      <select :if={@addable != []} name={field_name(@prefix, "add_sinner")} class="select select-bordered select-xs">
         <option value="" selected>+ sinner</option>
         <option :for={p <- @addable} value={p.id}><%= p.name %></option>
       </select>
@@ -804,10 +813,10 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     <% BattlePlans.sinner_leaf?(@node) -> %>
       <input type="number" name="value" min="1" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
     <% BattlePlans.tray_leaf?(@node) -> %>
-      <select name="profile_id" class="select select-bordered select-xs" title="Only count this sinner's slots">
-        <option value="" selected={is_nil(@node["profile_id"])}>(anyone)</option>
-        <%= for p <- @profiles do %>
-          <option value={p.id} selected={@node["profile_id"] == p.id}><%= p.name %></option>
+      <select name="sinner" class="select select-bordered select-xs" title="Only count this sinner's slots">
+        <option value="" selected={is_nil(@node["sinner"])}>(anyone)</option>
+        <%= for p <- @sinner_options do %>
+          <option value={p.id} selected={@node["sinner"] == p.id}><%= p.name %></option>
         <% end %>
       </select>
       <select name="match" class="select select-bordered select-xs">
@@ -825,10 +834,10 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <input type="number" name="value" min="0" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
     <% BattlePlans.fight_leaf?(@node) -> %>
     <% BattlePlans.position_leaf?(@node) -> %>
-      <select name="profile_id" class="select select-bordered select-xs">
-        <option value="" selected={is_nil(@node["profile_id"])}>(pick sinner)</option>
-        <%= for p <- @profiles do %>
-          <option value={p.id} selected={@node["profile_id"] == p.id}><%= p.name %></option>
+      <select name="sinner" class="select select-bordered select-xs">
+        <option value="" selected={is_nil(@node["sinner"])}>(pick sinner)</option>
+        <%= for p <- @sinner_options do %>
+          <option value={p.id} selected={@node["sinner"] == p.id}><%= p.name %></option>
         <% end %>
       </select>
       <select name="cmp" class="select select-bordered select-xs">
@@ -899,7 +908,16 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     end
   end
 
-  defp assign_profiles(socket), do: assign(socket, :profiles, SinnerProfiles.list())
+  defp assign_profiles(socket) do
+    profiles = SinnerProfiles.list()
+
+    socket
+    |> assign(:profiles, profiles)
+    |> assign(:profiles_by_id, Map.new(profiles, &{&1.id, &1}))
+    |> assign(:profiles_by_sinner, Enum.group_by(profiles, & &1.sinner))
+    |> assign(:locator_thumbs, Hooks.hook_thumbnails("locator"))
+    |> assign(:sinner_options, Enum.map(SinnerProfiles.sinners(), &%{id: &1, name: sinner_label(&1)}))
+  end
 
   defp put_track(socket, track, entries) do
     socket |> assign(:data, put_in(socket.assigns.data, ["tracks", track], entries)) |> persist()
@@ -1019,16 +1037,16 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   defp put_sinners(holder, %{"who" => "everyone"}), do: Map.put(holder, "who", "everyone")
 
   defp put_sinners(holder, params) do
-    kept = if holder["who"] == "everyone", do: holder["profile_ids"] || [], else: Enum.map(params["profile_ids"] || [], &parse_id/1)
+    kept = if holder["who"] == "everyone", do: holder["sinners"] || [], else: params["sinners"] || []
 
-    ids =
-      (kept ++ [parse_id(params["add_profile"])])
-      |> Enum.reject(&is_nil/1)
+    sinners =
+      (kept ++ [params["add_sinner"]])
+      |> Enum.filter(&(&1 in SinnerProfiles.sinners()))
       |> Enum.uniq()
 
     holder
     |> Map.put("who", if(params["who"] in ["except", "after", "before"], do: params["who"], else: "only"))
-    |> Map.put("profile_ids", ids)
+    |> Map.put("sinners", sinners)
   end
 
   defp parse_skill("first_with", n, match) do

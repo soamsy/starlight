@@ -2,6 +2,7 @@ defmodule StarlightBot.BattlePlans do
   alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Conditions
   alias StarlightBot.GiftPlans
+  alias StarlightBot.SinnerProfiles
 
   @tracks ~w(normal_chain hard_chain normal_focused hard_focused lux_chain lux_focused)
   @venues ~w(md_battle md_boss lux)
@@ -338,28 +339,16 @@ defmodule StarlightBot.BattlePlans do
   def condition_leaf(%{"op" => op}) when op in @fight_ops, do: %{"op" => op}
 
   def condition_leaf(%{"op" => @tray_count_op} = params) do
-    profile_id =
-      case Integer.parse(params["profile_id"] || "") do
-        {id, _} -> id
-        :error -> nil
-      end
-
     %{
       "op" => @tray_count_op,
       "match" => if(params["match"] in @tiers ++ @sins, do: params["match"], else: "wrath"),
       "cmp" => if(params["cmp"] in @count_cmps, do: params["cmp"], else: "gte"),
       "value" => parse_count(params["value"]) || 1,
-      "profile_id" => profile_id
+      "sinner" => parse_sinner(params["sinner"])
     }
   end
 
   def condition_leaf(%{"op" => @position_op} = params) do
-    profile_id =
-      case Integer.parse(params["profile_id"] || "") do
-        {id, _} -> id
-        :error -> nil
-      end
-
     value =
       case Integer.parse(params["value"] || "") do
         {n, _} when n >= 1 -> n
@@ -368,7 +357,7 @@ defmodule StarlightBot.BattlePlans do
 
     %{
       "op" => @position_op,
-      "profile_id" => profile_id,
+      "sinner" => parse_sinner(params["sinner"]),
       "cmp" => if(params["cmp"] in @position_cmps, do: params["cmp"], else: "is"),
       "pos" => if(params["pos"] in @positions, do: params["pos"], else: "first"),
       "value" => value
@@ -378,6 +367,8 @@ defmodule StarlightBot.BattlePlans do
   def condition_leaf(params) do
     %{"op" => if(params["op"] == "hook_off", do: "hook_off", else: "hook_on"), "hook" => String.trim(params["hook"] || "")}
   end
+
+  defp parse_sinner(sinner), do: if(sinner in SinnerProfiles.sinners(), do: sinner)
 
   def sinner_count_matches?(%{"op" => "sinners_eq", "value" => n}, count), do: count == n
   def sinner_count_matches?(%{"op" => "sinners_gte", "value" => n}, count), do: count >= n
@@ -396,9 +387,9 @@ defmodule StarlightBot.BattlePlans do
 
   defp leaf_label(%{"op" => @tray_count_op} = leaf, names) do
     owner =
-      case leaf["profile_id"] do
+      case leaf["sinner"] do
         nil -> ""
-        id -> "#{Map.get(names, id, "profile #{id}")} "
+        sinner -> "#{Map.get(names, sinner, SinnerProfiles.label(sinner))} "
       end
 
     "#{owner}#{leaf["match"]} slots #{cmp_symbol(leaf["cmp"])} #{leaf["value"]}"
@@ -406,9 +397,9 @@ defmodule StarlightBot.BattlePlans do
 
   defp leaf_label(%{"op" => @position_op} = leaf, names) do
     who =
-      case leaf["profile_id"] do
+      case leaf["sinner"] do
         nil -> "(no sinner)"
-        id -> Map.get(names, id, "profile #{id}")
+        sinner -> Map.get(names, sinner, SinnerProfiles.label(sinner))
       end
 
     where =
@@ -442,6 +433,7 @@ defmodule StarlightBot.BattlePlans do
     %{
       "version" => 3,
       "max_retries" => @default_max_retries,
+      "profiles" => %{},
       "playbooks" => [chain, focused],
       "tracks" =>
         Map.new(@tracks, fn track ->
@@ -468,14 +460,14 @@ defmodule StarlightBot.BattlePlans do
   def new_action(type) when type in ~w(win_rate damage_rate commit clear retry), do: %{"id" => GiftPlans.new_id("ac"), "type" => type}
 
   def new_action("dodge"),
-    do: %{"id" => GiftPlans.new_id("ac"), "type" => "dodge", "who" => "only", "profile_ids" => [], "skill" => %{"pick" => "first"}}
+    do: %{"id" => GiftPlans.new_id("ac"), "type" => "dodge", "who" => "only", "sinners" => [], "skill" => %{"pick" => "first"}}
 
   def new_action("ego") do
     %{
       "id" => GiftPlans.new_id("ac"),
       "type" => "ego",
       "who" => "only",
-      "profile_ids" => [],
+      "sinners" => [],
       "skill" => %{"pick" => "first"},
       "grade" => "zayin",
       "corrode" => false
@@ -487,7 +479,7 @@ defmodule StarlightBot.BattlePlans do
       "id" => GiftPlans.new_id("ac"),
       "type" => "target",
       "who" => "only",
-      "profile_ids" => [],
+      "sinners" => [],
       "skill" => %{"pick" => "first"},
       "row" => "bottom",
       "enemy" => %{"pick" => "first"}
@@ -500,7 +492,7 @@ defmodule StarlightBot.BattlePlans do
 
   def new_action(type) when type in @chain_actions, do: %{"id" => GiftPlans.new_id("ac"), "type" => type, "pins" => []}
 
-  def new_pin, do: %{"who" => "only", "profile_ids" => [], "skill" => %{"pick" => "first"}, "row" => "bottom"}
+  def new_pin, do: %{"who" => "only", "sinners" => [], "skill" => %{"pick" => "first"}, "row" => "bottom"}
 
   def paint(entries, floor, id, key \\ "playbook") do
     entries
@@ -547,13 +539,12 @@ defmodule StarlightBot.BattlePlans do
     end)
   end
 
-  def profile_ids_used(data) do
-    for playbook <- data["playbooks"] || [],
-        phase <- playbook["phases"],
-        action <- flatten_actions(phase["actions"]),
-        id <- (action["profile_ids"] || []) ++ Enum.flat_map(action["pins"] || [], &(&1["profile_ids"] || [])) ++ Enum.map(Conditions.leaves(action["condition"]), & &1["profile_id"]),
-        is_integer(id),
-        into: MapSet.new(),
-        do: id
-  end
+  def profiles(data), do: (is_map(data) && data["profiles"]) || %{}
+
+  def put_profile(data, sinner, nil), do: Map.put(data, "profiles", Map.delete(profiles(data), sinner))
+
+  def put_profile(data, sinner, profile_id) when is_integer(profile_id),
+    do: Map.put(data, "profiles", Map.put(profiles(data), sinner, profile_id))
+
+  def profile_ids_used(data), do: data |> profiles() |> Map.values() |> MapSet.new()
 end

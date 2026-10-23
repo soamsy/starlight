@@ -223,7 +223,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     Ctx.log(
       ctx,
       :info,
-      "playbook: if #{BattlePlans.condition_label(block["condition"], profile_names())} -> #{branch} [#{Enum.map_join(actions, ", ", & &1["type"])}]"
+      "playbook: if #{BattlePlans.condition_label(block["condition"], sinner_names())} -> #{branch} [#{Enum.map_join(actions, ", ", & &1["type"])}]"
     )
 
     {:then, actions}
@@ -288,7 +288,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp run_action(%{"type" => "dodge"} = action, turn, ctx) do
     with {:ok, frame, tray} <- turn.scan,
-         {:ok, columns} <- action_columns(action, frame, tray, profiles(), ctx) do
+         {:ok, columns} <- action_columns(action, frame, tray, profiles(ctx), ctx) do
       {:steps, Enum.map(columns, &DSL.call(__MODULE__, :dodge_column, [tray, &1]))}
     else
       _ -> :pending
@@ -297,7 +297,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp run_action(%{"type" => "ego"} = action, turn, ctx) do
     with {:ok, frame, tray} <- turn.scan,
-         {:ok, columns} <- action_columns(action, frame, tray, profiles(), ctx) do
+         {:ok, columns} <- action_columns(action, frame, tray, profiles(ctx), ctx) do
       {:steps, Enum.map(columns, &DSL.call(__MODULE__, :ego_column, [action, tray, &1]))}
     else
       _ -> :pending
@@ -306,7 +306,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp run_action(%{"type" => "target"} = action, turn, ctx) do
     with {:ok, frame, tray} <- turn.scan,
-         {:ok, columns} <- action_columns(action, frame, tray, profiles(), ctx) do
+         {:ok, columns} <- action_columns(action, frame, tray, profiles(ctx), ctx) do
       {:steps, Enum.map(columns, &DSL.call(__MODULE__, :target_column, [action, frame, tray, &1]))}
     else
       _ -> :pending
@@ -529,33 +529,33 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp tray_count_leaf(leaf, %{classified: classified, scan: {:ok, frame, tray}}, ctx) do
     columns =
-      case leaf["profile_id"] do
+      case leaf["sinner"] do
         nil ->
           :all
 
-        profile_id ->
-          case action_columns(%{"who" => "only", "profile_ids" => [profile_id], "skill" => %{"pick" => "all"}}, frame, tray, profiles(), ctx) do
+        sinner ->
+          case action_columns(%{"who" => "only", "sinners" => [sinner], "skill" => %{"pick" => "all"}}, frame, tray, profiles(ctx), ctx) do
             {:ok, columns} -> columns
             :skip -> []
           end
       end
 
     count = BattlePlans.tray_count(leaf, classified, columns)
-    Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, profile_names())} (counted #{count})")
+    Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, sinner_names())} (counted #{count})")
     BattlePlans.tray_count_matches?(leaf, count)
   end
 
   defp position_leaf(leaf, %{scan: {:ok, frame, %SkillTray{sinner_of_slot: [_ | _] = sinner_of_slot} = tray}}, ctx) do
-    with {:ok, profile} <- fetch_profile(profiles(), leaf["profile_id"], ctx),
+    with {:ok, profile} <- fetch_profile(profiles(ctx), leaf["sinner"], ctx),
          {:ok, hook} <- locator_hook(profile, ctx),
          {:ok, column} <- locate(frame, tray, hook, profile, ctx) do
       index = Enum.at(sinner_of_slot, column)
       count = List.last(sinner_of_slot) + 1
-      Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, profile_names())} (#{profile.name} is sinner #{index + 1} of #{count})")
+      Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, sinner_names())} (#{profile.name} is sinner #{index + 1} of #{count})")
       BattlePlans.position_matches?(leaf, index, count)
     else
       :skip ->
-        Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, profile_names())} can't be checked, treating it as false")
+        Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, sinner_names())} can't be checked, treating it as false")
         false
     end
   end
@@ -726,11 +726,11 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp who_text(%{"who" => who} = action) do
-    names = profile_names()
+    names = sinner_names()
 
-    case action["profile_ids"] || [] do
+    case action["sinners"] || [] do
       [] -> who
-      ids -> "#{who} #{Enum.map_join(ids, ", ", &Map.get(names, &1, inspect(&1)))}"
+      sinners -> "#{who} #{Enum.map_join(sinners, ", ", &Map.get(names, &1, inspect(&1)))}"
     end
   end
 
@@ -819,12 +819,19 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp profiles, do: Map.new(SinnerProfiles.list(), &{&1.id, &1})
+  defp profiles(ctx) do
+    by_id = Map.new(SinnerProfiles.list(), &{&1.id, &1})
 
-  defp profile_names, do: Map.new(SinnerProfiles.list(), &{&1.id, &1.name})
+    for {sinner, profile_id} <- BattlePlans.profiles(RunMemory.battle_plan(ctx)),
+        profile = by_id[profile_id],
+        into: %{},
+        do: {sinner, %{profile | name: SinnerProfiles.label(sinner)}}
+  end
+
+  defp sinner_names, do: Map.new(SinnerProfiles.sinners(), &{&1, SinnerProfiles.label(&1)})
 
   defp forced_rows(pins, frame, tray, ctx) do
-    profiles = profiles()
+    profiles = profiles(ctx)
     classified = if Enum.any?(pins, &(&1["row"] == "priority")), do: SinColor.classify_tray(frame.mat, tray)
 
     Enum.reduce(pins, %{}, fn pin, acc ->
@@ -867,7 +874,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp pin_rows(_pin, columns, _classified, _ctx), do: Map.new(columns, &{&1, :bottom})
 
   defp action_columns(%{"skill" => skill} = action, frame, tray, profiles, ctx) do
-    with {:ok, groups} <- sinner_groups(action["who"], action["profile_ids"] || [], frame, tray, profiles, ctx) do
+    with {:ok, groups} <- sinner_groups(action["who"], action["sinners"] || [], frame, tray, profiles, ctx) do
       groups
       |> Enum.map(fn {columns, who} -> pick_skill(columns, skill, frame, tray, who, ctx) end)
       |> Enum.flat_map(fn
@@ -893,7 +900,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp sinner_groups("except", ids, frame, tray, profiles, ctx) do
     with {:ok, excluded} <- located_groups(ids, frame, tray, profiles, "so everyone counts as not", ctx) do
-      names = Enum.map_join(ids, ", ", &profiles[&1].name)
+      names = Enum.map_join(ids, ", ", &SinnerProfiles.label/1)
       who = %{name: if(ids == [], do: "everyone", else: "everyone but #{names}")}
       {:ok, tray |> tray_groups() |> Enum.reject(&(&1 in excluded)) |> Enum.map(&{&1, who})}
     end
@@ -907,7 +914,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
           :skip
 
         anchor_columns ->
-          names = Enum.map_join(ids, ", ", &profiles[&1].name)
+          names = Enum.map_join(ids, ", ", &SinnerProfiles.label/1)
           who = %{name: "everyone #{side} #{names}"}
           {:ok, tray |> tray_groups() |> Enum.filter(&on_side?(side, &1, anchor_columns)) |> Enum.map(&{&1, who})}
       end
@@ -983,13 +990,18 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp fetch_profile(profiles, profile_id, ctx) do
-    case Map.fetch(profiles, profile_id) do
+  defp fetch_profile(_profiles, nil, ctx) do
+    Ctx.log(ctx, :error, "playbook: no sinner picked, skipping")
+    :skip
+  end
+
+  defp fetch_profile(profiles, sinner, ctx) do
+    case Map.fetch(profiles, sinner) do
       {:ok, profile} ->
         {:ok, profile}
 
       :error ->
-        Ctx.log(ctx, :error, "playbook: sinner profile #{inspect(profile_id)} not found, skipping")
+        Ctx.log(ctx, :error, "playbook: #{SinnerProfiles.label(sinner)} has no sinner profile in this battle plan, skipping")
         :skip
     end
   end

@@ -78,20 +78,20 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     assert Enum.map(block["then"], & &1["type"]) == ["target", "ego"]
     assert Enum.at(block["then"], 1)["grade"] == "he"
 
-    socket = event(socket, "update_action", %{"turn" => "1", "action" => ego["id"], "who" => "except", "add_profile" => "7", "pick" => "all"})
-    socket = event(socket, "update_action", %{"turn" => "1", "action" => ego["id"], "who" => "except", "profile_ids" => ["7"], "add_profile" => "9", "pick" => "all"})
+    socket = event(socket, "update_action", %{"turn" => "1", "action" => ego["id"], "who" => "except", "add_sinner" => "faust", "pick" => "all"})
+    socket = event(socket, "update_action", %{"turn" => "1", "action" => ego["id"], "who" => "except", "sinners" => ["faust"], "add_sinner" => "ryoshu", "pick" => "all"})
     [_, _, block] = actions(socket, playbook_id)
-    assert Map.take(Enum.at(block["then"], 1), ["who", "profile_ids"]) == %{"who" => "except", "profile_ids" => [7, 9]}
+    assert Map.take(Enum.at(block["then"], 1), ["who", "sinners"]) == %{"who" => "except", "sinners" => ["faust", "ryoshu"]}
     assert render(socket) =~ "all but"
 
     socket = event(socket, "update_action", %{"turn" => "1", "action" => ego["id"], "who" => "everyone", "pick" => "all"})
     socket = event(socket, "update_action", %{"turn" => "1", "action" => ego["id"], "who" => "only", "pick" => "all"})
     [_, _, block] = actions(socket, playbook_id)
-    assert Map.take(Enum.at(block["then"], 1), ["who", "profile_ids"]) == %{"who" => "only", "profile_ids" => [7, 9]}
+    assert Map.take(Enum.at(block["then"], 1), ["who", "sinners"]) == %{"who" => "only", "sinners" => ["faust", "ryoshu"]}
 
-    socket = event(socket, "remove_sinner", %{"turn" => "1", "action" => ego["id"], "profile" => "7"})
+    socket = event(socket, "remove_sinner", %{"turn" => "1", "action" => ego["id"], "sinner" => "faust"})
     [_, _, block] = actions(socket, playbook_id)
-    assert Enum.at(block["then"], 1)["profile_ids"] == [9]
+    assert Enum.at(block["then"], 1)["sinners"] == ["ryoshu"]
     assert block["else"] == []
     assert render(socket) =~ "battle_combat_ready off AND battle_chain on AND sinners = 1"
   end
@@ -199,7 +199,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
       |> event("add_action", %{"turn" => "1", "type" => "chain_a_res", "parent" => inner["id"], "branch" => "else"})
       |> event("add_action", %{"turn" => "1", "type" => "chain_fast", "parent" => inner["id"], "branch" => "else"})
       |> event("add_action", %{"turn" => "1", "type" => "chain_fast", "parent" => outer["id"], "branch" => "then"})
-      |> event("cond_update", %{"turn" => "1", "action" => inner["id"], "path" => "0", "op" => "tray_count", "match" => "pride", "cmp" => "eq", "value" => "1", "profile_id" => ""})
+      |> event("cond_update", %{"turn" => "1", "action" => inner["id"], "path" => "0", "op" => "tray_count", "match" => "pride", "cmp" => "eq", "value" => "1", "sinner" => ""})
 
     [outer] = actions(socket, chain["id"])
     [inner] = outer["else"]
