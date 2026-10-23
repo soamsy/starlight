@@ -21,11 +21,6 @@ defmodule StarlightBot.Navigation.MachineTest do
 
   def more_steps(steps, _frame, _ctx), do: {:steps, steps}
 
-  def request_pause(pause_flag, _frame, _ctx) do
-    :atomics.put(pause_flag, 1, 1)
-    {:ok, nil}
-  end
-
   def got(test, result, _frame, _ctx) do
     send(test, {:got, result})
     {:ok, nil}
@@ -83,12 +78,50 @@ defmodule StarlightBot.Navigation.MachineTest do
       refute_received {:ran, :a, _}
     end
 
-    test "a pause request aborts before the next step" do
+    test "a pause holds before the next step and continues from it on resume" do
       pause_flag = :atomics.new(1, [])
       :atomics.put(pause_flag, 1, 1)
+      steps = [record(:a)]
+      run = Task.async(fn -> run(steps, Ctx.new(pause_flag: pause_flag, paused_to: {self(), :paused})) end)
 
-      assert run([record(:a)], Ctx.new(pause_flag: pause_flag)) == {:error, :window_not_focused}
+      Process.sleep(300)
       refute_received {:ran, :a, _}
+
+      :atomics.put(pause_flag, 1, 0)
+      assert Task.await(run) == {:ok, :a}
+      assert_received {:ran, :a, nil}
+    end
+
+    @tag focused?: false
+    test "losing focus with a pause flag pauses instead of failing" do
+      pause_flag = :atomics.new(1, [])
+      ctx = Ctx.new(pause_flag: pause_flag, paused_to: {self(), :paused})
+      steps = [record(:a)]
+      run = Task.async(fn -> run(steps, ctx) end)
+
+      Process.sleep(300)
+      assert :atomics.get(pause_flag, 1) == 1
+      refute_received {:ran, :a, _}
+
+      FakeWorld.focus(true)
+      :atomics.put(pause_flag, 1, 0)
+      assert Task.await(run) == {:ok, :a}
+    end
+
+    test "a pause during a wait abandons it and waits again after resume" do
+      pause_flag = :atomics.new(1, [])
+      steps = [await(:fw_done, timeout: 10_000), record(:after)]
+      run = Task.async(fn -> run(steps, Ctx.new(pause_flag: pause_flag)) end)
+
+      Process.sleep(150)
+      :atomics.put(pause_flag, 1, 1)
+      Process.sleep(300)
+      FakeWorld.show(:fw_done)
+      Process.sleep(300)
+      refute_received {:ran, :after, _}
+
+      :atomics.put(pause_flag, 1, 0)
+      assert Task.await(run) == {:ok, :after}
     end
   end
 
@@ -200,14 +233,6 @@ defmodule StarlightBot.Navigation.MachineTest do
       assert {:ok, _} = run([ensure([mouse_down()], [mouse_up()])])
       assert run([ensure([mouse_down(), await(:fw_hidden, timeout: 100)], [mouse_up()])]) == {:error, {:timeout, :fw_hidden}}
       assert FakeWorld.inputs() == [{:mouse, :down}, {:mouse, :up}, {:mouse, :down}, {:mouse, :up}]
-    end
-
-    test "ensure cleanup still runs when a pause stops the steps" do
-      pause_flag = :atomics.new(1, [])
-      steps = [ensure([mouse_down(), call(__MODULE__, :request_pause, [pause_flag]), key(:enter)], [mouse_up()])]
-
-      assert run(steps, Ctx.new(pause_flag: pause_flag)) == {:error, :window_not_focused}
-      assert FakeWorld.inputs() == [{:mouse, :down}, {:mouse, :up}]
     end
   end
 

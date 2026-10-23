@@ -80,17 +80,18 @@ defmodule StarlightBot.Automation.Scripts.ShopRunnerProgramTest do
     assert {:ok, %{reserve: 20, steps: [%{id: "b20"}]}} = run_walk(shop_state(plan(main, []), %{"b10" => :done}), ctx)
   end
 
-  test "a pause between steps stops the shop without recording the step it stopped before", %{ctx: ctx} do
+  test "a pause between steps holds without recording anything until resumed", %{ctx: ctx} do
     pause_flag = :atomics.new(1, [])
     :atomics.put(pause_flag, 1, 1)
     paused = %{ctx | pause_flag: pause_flag}
     state = shop_state(plan([budget("b10", 10)], []))
+    run = Task.async(fn -> run_walk(state, paused) end)
 
-    assert run_walk(state, paused) == {:error, :window_not_focused}
+    Process.sleep(300)
     assert RunMemory.shop_progress(ctx) == nil
 
     :atomics.put(pause_flag, 1, 0)
-    assert {:ok, %{reserve: 10}} = run_walk(state, paused)
+    assert {:ok, %{reserve: 10}} = Task.await(run)
     assert %{done: %{"b10" => :done}} = RunMemory.shop_progress(ctx)
   end
 end

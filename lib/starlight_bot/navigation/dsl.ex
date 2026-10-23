@@ -159,6 +159,8 @@ defmodule StarlightBot.Navigation.DSL do
 
   def result(value), do: {:__done__, value}
 
+  def checkpoint, do: {:checkpoint}
+
   def capture(steps, opts) when is_list(steps), do: {:capture, steps, continuation(Keyword.fetch!(opts, :then))}
 
   def goto(from, to, opts \\ []) when is_atom(from) and is_atom(to),

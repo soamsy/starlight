@@ -13,6 +13,7 @@ defmodule StarlightBot.Navigation.Machine do
   @hold_poll_ms 30
   @locate_poll_ms 200
   @fallback_settle_ms 2_000
+  @resume_poll_ms 200
   @target_area_fraction 0.25
   @unguarded_steps [
     :log,
@@ -27,6 +28,7 @@ defmodule StarlightBot.Navigation.Machine do
     :__retry_after__,
     :__refine__,
     :__localize__,
+    :__locate__,
     :__done__,
     :__rescue__,
     :__ensure__,
@@ -52,7 +54,8 @@ defmodule StarlightBot.Navigation.Machine do
       upcoming: Keyword.get(opts, :upcoming, []),
       frame: Keyword.get(opts, :frame),
       result: nil,
-      poll: nil
+      poll: nil,
+      current: nil
     }
 
     {:ok, :running, data, [{:next_event, :internal, :step}]}
@@ -63,31 +66,54 @@ defmodule StarlightBot.Navigation.Machine do
     do: finish(data.result || {:ok, data.frame}, data)
 
   def handle_event(:internal, :step, :running, %{stack: [step | rest]} = data) do
-    data = %{data | stack: rest}
+    data = %{data | stack: rest, current: step}
 
     if elem(step, 0) in @unguarded_steps,
       do: exec_internal(step, data),
       else: guarded(step, data)
   end
 
-  def handle_event(:state_timeout, :tick, :polling, data), do: tick(data)
+  def handle_event(:state_timeout, :tick, :polling, data) do
+    if Ctx.pause_requested?(data.ctx),
+      do: hold(data.current, data),
+      else: tick(data)
+  end
+
+  def handle_event(:state_timeout, :check, :paused, data) do
+    if Ctx.pause_requested?(data.ctx) do
+      {:keep_state_and_data, [{:state_timeout, @resume_poll_ms, :check}]}
+    else
+      Ctx.log(data.ctx, :ok, "resumed")
+      {:next_state, :running, data, [{:next_event, :internal, :step}]}
+    end
+  end
 
   def handle_event(:state_timeout, :wake, :sleeping, data), do: continue(data, nil)
 
   defp guarded(step, data) do
     cond do
       Ctx.pause_requested?(data.ctx) ->
-        Ctx.log(data.ctx, :info, "pause requested, stopping before #{describe(step)}")
-        fail_with({:error, :window_not_focused}, data)
+        hold(step, data)
 
       Capture.focused?() ->
         maybe_premove(step, ahead(data), data.ctx)
         exec(step, data)
 
+      data.ctx.pause_flag != nil ->
+        Ctx.log(data.ctx, :error, "game window lost focus (alt-tabbed?), pausing")
+        :atomics.put(data.ctx.pause_flag, 1, 1)
+        hold(step, data)
+
       true ->
         Ctx.log(data.ctx, :error, "game window lost focus (alt-tabbed?) — aborting before #{describe(step)}")
         fail_with({:error, :window_not_focused}, data)
     end
+  end
+
+  defp hold(step, data) do
+    Ctx.log(data.ctx, :info, "paused before #{describe(step)}, waiting for resume")
+    Ctx.pause(data.ctx)
+    {:next_state, :paused, %{data | stack: [step | data.stack], poll: nil}, [{:state_timeout, @resume_poll_ms, :check}]}
   end
 
   defp exec({:branch, clauses, default_steps}, data) do
@@ -168,6 +194,8 @@ defmodule StarlightBot.Navigation.Machine do
   defp exec({:leave_screen, screen_name, timeout_ms}, data),
     do: start_poll({:leave, screen_name, mono()}, timeout_ms, data)
 
+  defp exec({:checkpoint}, data), do: continue(data, data.frame)
+
   defp exec({:sleep, ms}, data) do
     Ctx.log(data.ctx, :info, "sleep #{ms}ms")
     {:next_state, :sleeping, data, [{:state_timeout, ms, :wake}]}
@@ -210,10 +238,10 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp exec_internal({:capture, steps, then}, data), do: push(with_delivery(steps, then), data.frame, data)
 
-  defp exec_internal({:locate_screen, timeout_ms, then}, data) do
-    data = %{data | stack: with_delivery([], then) ++ data.stack}
-    start_poll({:locate, mono()}, timeout_ms, data)
-  end
+  defp exec_internal({:locate_screen, timeout_ms, then}, data),
+    do: push(with_delivery([{:__locate__, timeout_ms}], then), data.frame, data)
+
+  defp exec_internal({:__locate__, timeout_ms}, data), do: start_poll({:locate, mono()}, timeout_ms, data)
 
   defp exec_internal({:__deliver__, {mod, fun, args}}, data),
     do: push([{:call, {mod, fun, args ++ [data.result]}}], data.frame, %{data | result: nil})

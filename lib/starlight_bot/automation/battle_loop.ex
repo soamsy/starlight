@@ -50,7 +50,7 @@ defmodule StarlightBot.Automation.BattleLoop do
     {:steps, [continue_battle(loops_left)]}
   end
 
-  def after_defeat(_loops_left, {:error, :window_not_focused} = err, _frame, _ctx), do: err
+  def after_defeat(loops_left, {:error, :window_not_focused}, _frame, _ctx), do: {:steps, [checkpoint(), continue_battle(loops_left)]}
 
   def after_defeat(loops_left, {:error, reason}, _frame, ctx) do
     failures = RunMemory.get(ctx, :defeat_failures, 0) + 1
@@ -67,7 +67,7 @@ defmodule StarlightBot.Automation.BattleLoop do
 
   def after_goto(loops_left, {:ok, screen}, _frame, ctx), do: leave_or_continue(screen, loops_left, ctx)
   def after_goto(loops_left, {:error, :battle_left}, _frame, _ctx), do: {:steps, [continue_battle(loops_left)]}
-  def after_goto(_loops_left, {:error, :window_not_focused} = err, _frame, _ctx), do: err
+  def after_goto(loops_left, {:error, :window_not_focused}, _frame, _ctx), do: {:steps, [checkpoint(), continue_battle(loops_left)]}
   def after_goto(loops_left, {:error, reason}, _frame, _ctx), do: {:steps, recover(reason, loops_left)}
 
   def after_locate(loops_left, {:ok, screen}, _frame, ctx), do: leave_or_continue(screen, loops_left, ctx)
