@@ -33,12 +33,12 @@ defmodule StarlightBot.Navigation.Screens.Event do
               [
                 retry_until(
                   not_hook(:event_advantage_none_selected),
-                  [custom(&EventAdvantage.select_best_sinner/2)],
+                  [call(EventAdvantage, :select_best_sinner)],
                   every: 300,
                   tries: 20
                 )
               ] ++ [await(:event_commence, timeout: 1000), reclick_until_gone(:event_commence, every: 80, timeout: 3000)]},
-            {:event_choices, [custom(&__MODULE__.choose/2)]},
+            {:event_choices, [call(__MODULE__, :choose)]},
             {any_of(@skips), [retry_until(any_of([not_hook(any_of(@skips)) | @actionable]), [key(:space)], every: 80, timeout: @skip_timeout_ms)]},
             {:default, [key(:space), branch([{any_of(@actionable), []}], wait: 80)]}
           ])

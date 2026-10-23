@@ -47,9 +47,9 @@ defmodule StarlightBot.Navigation.DSLTest do
       assert DSL.type("10") == {:type, "10"}
     end
 
-    test "custom/1 wraps a 2-arity function" do
-      fun = fn last_frame, _ctx -> {:ok, last_frame} end
-      assert DSL.custom(fun) == {:custom, fun}
+    test "call/2-3 names its continuation instead of capturing a closure" do
+      assert DSL.call(Mod, :fun) == {:call, {Mod, :fun, []}}
+      assert DSL.call(Mod, :fun, [1]) == {:call, {Mod, :fun, [1]}}
     end
 
     test "await/1-2 has a positive default timeout and accepts atom/any_of/not_hook specs" do
@@ -79,9 +79,11 @@ defmodule StarlightBot.Navigation.DSLTest do
     test "confirm_enter/1-2 awaits either hook, then presses enter until both stay gone" do
       spec = DSL.any_of([:a, :b])
 
-      assert [await, {:custom, enter_until_gone}] = DSL.confirm_enter(spec, timeout: 100)
+      assert [await, {:hold, ^spec, _steady_ms, _within, []}, {:key, :enter}, {:hold, {:not, ^spec}, _, _, still_there}] =
+               DSL.confirm_enter(spec, timeout: 100)
+
       assert await == DSL.await(spec, timeout: 100)
-      assert is_function(enter_until_gone, 2)
+      assert [{:log, :info, _}, {:key, :enter} | _] = still_there
     end
 
     test "await_any/1-2 has a positive default timeout" do

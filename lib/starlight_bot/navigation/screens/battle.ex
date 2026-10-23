@@ -1,8 +1,6 @@
 defmodule StarlightBot.Navigation.Screens.Battle do
   use StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.PlaybookRunner
-  alias StarlightBot.Input.Mouse
-  alias StarlightBot.Navigation.Runner
   alias StarlightBot.Navigation.Screens.Event
 
   screen :battle, identity: any_of([:battle_settings, :battle_turn]) do
@@ -43,13 +41,13 @@ defmodule StarlightBot.Navigation.Screens.Battle do
 
   screen :battle_chain, identity: :battle_chain, refines: :battle_turn do
     transition to: :battle_playing do
-      [custom(&PlaybookRunner.play_chain_turn/2), await_playing()]
+      [call(PlaybookRunner, :play_chain_turn), await_playing()]
     end
   end
 
   screen :battle_focused, identity: :battle_focused, refines: :battle_turn do
     transition to: :battle_playing do
-      [custom(&PlaybookRunner.play_focused_turn/2), await_playing()]
+      [call(PlaybookRunner, :play_focused_turn), await_playing()]
     end
   end
 
@@ -93,17 +91,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
     wait_until(any_of([:battle_pause_button, :battle_playing_graph]), timeout: 8_000, every: 200)
   end
 
-  defp hold_mouse_during(steps) do
-    custom(fn _last_frame, ctx ->
-      Mouse.mouse_down()
-
-      try do
-        Runner.run_steps(steps, ctx)
-      after
-        Mouse.mouse_up()
-      end
-    end)
-  end
+  defp hold_mouse_during(steps), do: ensure([mouse_down() | steps], [mouse_up()])
 
   defp turn_boundary_clauses do
     [
@@ -117,7 +105,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   end
 
   defp after_loading do
-    [custom(&PlaybookRunner.new_battle/2), branch([confirm_battle_clause(), {:default, []}])]
+    [call(PlaybookRunner, :new_battle), branch([confirm_battle_clause(), {:default, []}])]
   end
 
   defp defeat_choice(choice) do

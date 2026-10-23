@@ -7,7 +7,7 @@ defmodule StarlightBot.Navigation.Screens.CabinetReward do
   screen :cabinet_reward, identity: :cabinet_reward do
     transition to: :cabinet_reward_over do
       [
-        custom(&select_tier_gift/2),
+        call(__MODULE__, :select_tier_gift),
         click(:cabinet_reward_select),
         RewardHelpers.dismiss_ego_gift_get_step(leaving: :cabinet_reward)
       ]

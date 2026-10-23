@@ -10,8 +10,23 @@ defmodule StarlightBot.Navigation.Machine do
   @poll_interval_ms 100
   @verify_timeout_ms 1_800
   @refinement_timeout_ms 1_000
+  @hold_poll_ms 30
   @target_area_fraction 0.25
-  @internal_steps [:__mark__, :__verify__, :__retry_after__, :__refine__, :__localize__, :__done__]
+  @unguarded_steps [
+    :log,
+    :fail,
+    :attempt,
+    :ensure,
+    :__mark__,
+    :__verify__,
+    :__retry_after__,
+    :__refine__,
+    :__localize__,
+    :__done__,
+    :__rescue__,
+    :__ensure__,
+    :__unguarded__
+  ]
 
   def child_spec({program, ctx, opts}),
     do: %{id: __MODULE__, start: {__MODULE__, :start_link, [program, ctx, opts]}, restart: :temporary}
@@ -44,7 +59,7 @@ defmodule StarlightBot.Navigation.Machine do
   def handle_event(:internal, :step, :running, %{stack: [step | rest]} = data) do
     data = %{data | stack: rest}
 
-    if elem(step, 0) in @internal_steps,
+    if elem(step, 0) in @unguarded_steps,
       do: exec_internal(step, data),
       else: guarded(step, data)
   end
@@ -57,7 +72,7 @@ defmodule StarlightBot.Navigation.Machine do
     cond do
       Ctx.pause_requested?(data.ctx) ->
         Ctx.log(data.ctx, :info, "pause requested, stopping before #{inspect(step)}")
-        finish({:error, :window_not_focused}, data)
+        fail_with({:error, :window_not_focused}, data)
 
       Capture.focused?() ->
         maybe_premove(step, ahead(data), data.ctx)
@@ -65,7 +80,7 @@ defmodule StarlightBot.Navigation.Machine do
 
       true ->
         Ctx.log(data.ctx, :error, "game window lost focus (alt-tabbed?) — aborting before #{inspect(step)}")
-        finish({:error, :window_not_focused}, data)
+        fail_with({:error, :window_not_focused}, data)
     end
   end
 
@@ -141,6 +156,12 @@ defmodule StarlightBot.Navigation.Machine do
     start_poll({:await_any, hooks}, timeout_ms, data)
   end
 
+  defp exec({:hold, spec, hold_ms, within_ms, else_steps}, data),
+    do: start_poll({:hold, spec, hold_ms, else_steps, nil}, within_ms, data)
+
+  defp exec({:leave_screen, screen_name, timeout_ms}, data),
+    do: start_poll({:leave, screen_name, mono()}, timeout_ms, data)
+
   defp exec({:sleep, ms}, data) do
     Ctx.log(data.ctx, :info, "sleep #{ms}ms")
     {:next_state, :sleeping, data, [{:state_timeout, ms, :wake}]}
@@ -149,8 +170,32 @@ defmodule StarlightBot.Navigation.Machine do
   defp exec(step, data) do
     case execute_step(step, data.frame, data.ctx) do
       {:ok, frame} -> continue(data, frame)
-      {:error, _} = err -> finish(err, data)
+      {:steps, steps} -> push(steps, data.frame, data)
+      {:error, _} = err -> fail_with(err, data)
     end
+  end
+
+  defp exec_internal({:log, kind, text}, data) do
+    Ctx.log(data.ctx, kind, text)
+    continue(data, data.frame)
+  end
+
+  defp exec_internal({:fail, reason}, data), do: fail_with({:error, reason}, data)
+
+  defp exec_internal({:attempt, steps, fallback}, data),
+    do: push(steps ++ [{:__rescue__, fallback}], data.frame, data)
+
+  defp exec_internal({:ensure, steps, cleanup}, data),
+    do: push(steps ++ [{:__ensure__, cleanup}], data.frame, data)
+
+  defp exec_internal({:__rescue__, _fallback}, data), do: continue(data, data.frame)
+
+  defp exec_internal({:__ensure__, cleanup}, data), do: push(unguarded(cleanup), data.frame, data)
+
+  defp exec_internal({:__unguarded__, step}, data) do
+    if elem(step, 0) in @unguarded_steps,
+      do: exec_internal(step, data),
+      else: exec(step, data)
   end
 
   defp exec_internal({:__mark__, text}, data) do
@@ -200,6 +245,23 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp start_poll(kind, timeout_ms, data), do: tick(%{data | poll: {kind, mono() + timeout_ms}})
 
+  defp tick(%{poll: {{:hold, spec, hold_ms, else_steps, since}, deadline}} = data) do
+    now = mono()
+    since = if elem(hook_visible?(spec, nil), 0), do: since || now, else: nil
+
+    cond do
+      since && now - since >= hold_ms ->
+        continue(data, nil)
+
+      now >= deadline ->
+        push(else_steps, nil, data)
+
+      true ->
+        poll = {{:hold, spec, hold_ms, else_steps, since}, deadline}
+        {:next_state, :polling, %{data | poll: poll}, [{:state_timeout, @hold_poll_ms, :tick}]}
+    end
+  end
+
   defp tick(%{poll: {kind, deadline}} = data) do
     if not grab_first?(kind) and mono() >= deadline do
       expire(kind, nil, data)
@@ -216,12 +278,19 @@ defmodule StarlightBot.Navigation.Machine do
     end
   end
 
-  defp grab_first?(kind), do: elem(kind, 0) in [:branch, :refine]
+  defp grab_first?(kind), do: elem(kind, 0) in [:branch, :refine, :leave]
 
   defp probe({:refine, candidates, _arrived}) do
     case Runner.check_screens(candidates) do
       {:ok, screen} -> {:matched, nil, screen}
       :unknown -> {:miss, nil}
+    end
+  end
+
+  defp probe({:leave, screen_name, _started_at}) do
+    case Runner.check_screens(Catalog.all_screens()) do
+      {:ok, next_screen} when next_screen != screen_name -> {:matched, nil, next_screen}
+      _ -> {:miss, nil}
     end
   end
 
@@ -274,19 +343,24 @@ defmodule StarlightBot.Navigation.Machine do
     continue(data, data.frame)
   end
 
+  defp matched({:leave, screen_name, started_at}, _frame, next_screen, data) do
+    Ctx.log(data.ctx, :info, "left #{screen_name} for #{next_screen} after #{mono() - started_at}ms")
+    continue(data, nil)
+  end
+
   defp matched({:refine, _candidates, _arrived}, _frame, screen, data),
     do: continue(%{data | result: {:ok, screen}}, data.frame)
 
   defp expire({:await, hook}, _frame, data) do
     Ctx.log(data.ctx, :error, "await #{inspect(hook)}: timeout")
     save_timeout_frame(hook, data.ctx)
-    finish({:error, {:timeout, hook}}, data)
+    fail_with({:error, {:timeout, hook}}, data)
   end
 
   defp expire({:await_any, hooks}, _frame, data) do
     Ctx.log(data.ctx, :error, "await_any #{inspect(hooks)}: timeout")
     save_timeout_frame(hooks, data.ctx)
-    finish({:error, {:timeout, hooks}}, data)
+    fail_with({:error, {:timeout, hooks}}, data)
   end
 
   defp expire({:branch, _clauses, default_steps, wait_ms}, frame, data) do
@@ -311,7 +385,12 @@ defmodule StarlightBot.Navigation.Machine do
   defp expire({:verify, screen_name, hook}, _frame, data) do
     Ctx.log(data.ctx, :error, "verification failed: #{screen_name} identity hook not found")
     save_timeout_frame(hook, data.ctx)
-    finish({:error, {:verification_failed, screen_name}}, data)
+    fail_with({:error, {:verification_failed, screen_name}}, data)
+  end
+
+  defp expire({:leave, screen_name, started_at}, _frame, data) do
+    Ctx.log(data.ctx, :info, "still on #{screen_name} after #{mono() - started_at}ms")
+    continue(data, nil)
   end
 
   defp expire({:refine, _candidates, arrived}, _frame, data),
@@ -326,13 +405,25 @@ defmodule StarlightBot.Navigation.Machine do
   defp retry_gave_up(loop, attempt, data) do
     Ctx.log(data.ctx, :error, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: gave up after #{attempt} attempt(s), #{mono() - loop.started_at}ms")
     save_timeout_frame(loop.hook, data.ctx)
-    finish({:error, {:retry_exhausted, loop.hook}}, data)
+    fail_with({:error, {:retry_exhausted, loop.hook}}, data)
   end
 
   defp push(steps, frame, data), do: continue(%{data | stack: steps ++ data.stack}, frame)
 
   defp continue(data, frame),
     do: {:next_state, :running, %{data | frame: frame, poll: nil}, [{:next_event, :internal, :step}]}
+
+  defp fail_with({:error, reason} = err, data) do
+    case Enum.drop_while(data.stack, &(not handler?(&1))) do
+      [] -> finish(err, data)
+      [{:__rescue__, fallback} | rest] -> push(fallback, nil, %{data | stack: rest})
+      [{:__ensure__, cleanup} | rest] -> push(unguarded(cleanup) ++ [{:fail, reason}], nil, %{data | stack: rest})
+    end
+  end
+
+  defp handler?(step), do: elem(step, 0) in [:__rescue__, :__ensure__]
+
+  defp unguarded(steps), do: Enum.map(steps, &{:__unguarded__, &1})
 
   defp finish(result, %{reply_to: {pid, tag}} = data) do
     send(pid, {tag, result})
@@ -421,8 +512,18 @@ defmodule StarlightBot.Navigation.Machine do
     {:ok, nil}
   end
 
-  defp execute_step({:custom, fun}, last_frame, ctx) do
-    fun.(last_frame, ctx)
+  defp execute_step({:call, {mod, fun, args}}, last_frame, ctx) do
+    apply(mod, fun, args ++ [last_frame, ctx])
+  end
+
+  defp execute_step({:mouse_button, button, true}, _last_frame, _ctx) do
+    Mouse.mouse_down(button)
+    {:ok, nil}
+  end
+
+  defp execute_step({:mouse_button, button, false}, _last_frame, _ctx) do
+    Mouse.mouse_up(button)
+    {:ok, nil}
   end
 
   defp retry_verb([]), do: "wait_until"

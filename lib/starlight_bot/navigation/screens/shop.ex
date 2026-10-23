@@ -63,7 +63,7 @@ defmodule StarlightBot.Navigation.Screens.Shop do
       :shop_leave_confirm
     ]
 
-  defp back_to_shop, do: [custom(&recover_to_shop/2)]
+  defp back_to_shop, do: [call(__MODULE__, :recover_to_shop)]
 
-  defp recover_to_shop(_frame, ctx), do: Ops.recover_to_shop(ctx)
+  def recover_to_shop(_frame, ctx), do: Ops.recover_to_shop(ctx)
 end

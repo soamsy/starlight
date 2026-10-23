@@ -6,7 +6,7 @@ defmodule StarlightBot.Navigation.Screens.DungeonGraph do
     action :reset_view, do: [key(:d), sleep(200), key(:a), sleep(200)]
 
     transition to: :dungeon_graph_node do
-      [custom(&DungeonPathPlanner.navigate_to_next_node/2)]
+      [call(DungeonPathPlanner, :navigate_to_next_node)]
     end
 
     transition to: :dungeon_progress do

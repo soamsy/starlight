@@ -1,8 +1,10 @@
 defmodule StarlightBot.Navigation.NavigatorMachineTest do
   use ExUnit.Case, async: false
 
+  @moduletag :capture_log
+
   alias StarlightBot.Automation.RunMemory
-  alias StarlightBot.{Ctx, FakeCapture}
+  alias StarlightBot.{Ctx, FakeWorld}
   alias StarlightBot.Navigation.{Navigator, ScriptTask}
 
   def slow_script(test, ctx) do
@@ -13,7 +15,7 @@ defmodule StarlightBot.Navigation.NavigatorMachineTest do
   end
 
   test "localize runs as a supervised machine and reports back to the navigator" do
-    start_supervised!({FakeCapture, true})
+    FakeWorld.start!()
     start_supervised!({Navigator, []})
     Navigator.subscribe()
 

@@ -4,6 +4,18 @@ defmodule StarlightBot.Navigation.CatalogTest do
   alias StarlightBot.Navigation.Catalog
   alias StarlightBot.Navigation.Transition
 
+  test "every transition and action builds a step list that holds no closures" do
+    steps = Enum.flat_map(Catalog.all_transitions() ++ Catalog.all_actions(), & &1.steps)
+
+    assert steps != []
+    refute Enum.any?(steps, &contains_function?/1)
+  end
+
+  defp contains_function?(term) when is_function(term), do: true
+  defp contains_function?(term) when is_tuple(term), do: term |> Tuple.to_list() |> Enum.any?(&contains_function?/1)
+  defp contains_function?(term) when is_list(term), do: Enum.any?(term, &contains_function?/1)
+  defp contains_function?(_term), do: false
+
   describe "plan_path/2" do
     test "same screen requires no hops" do
       assert Catalog.plan_path(:home, :home) == {:ok, []}
@@ -35,10 +47,10 @@ defmodule StarlightBot.Navigation.CatalogTest do
     end
 
     test "a refinement's own transition to the same target wins over the inherited one" do
-      assert {:ok, [%Transition{from: :battle_chain, to: :battle_playing, steps: [{:custom, _fun} | _]}]} =
+      assert {:ok, [%Transition{from: :battle_chain, to: :battle_playing, steps: [{:call, {_, :play_chain_turn, []}} | _]}]} =
                Catalog.plan_path(:battle_chain, :battle_playing)
 
-      assert {:ok, [%Transition{from: :battle_focused, to: :battle_playing, steps: [{:custom, _fun} | _]}]} =
+      assert {:ok, [%Transition{from: :battle_focused, to: :battle_playing, steps: [{:call, {_, :play_focused_turn, []}} | _]}]} =
                Catalog.plan_path(:battle_focused, :battle_playing)
 
       assert {:ok, [%Transition{from: :battle_turn, to: :battle_playing, steps: [{:key, :p} | _]}]} =

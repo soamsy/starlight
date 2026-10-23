@@ -4,18 +4,22 @@ defmodule StarlightBot.Automation.RewardHelpers do
   alias StarlightBot.Ctx
   alias StarlightBot.EgoGifts
   alias StarlightBot.Input.Mouse
-  alias StarlightBot.Navigation.{Catalog, Runner}
+  alias StarlightBot.Navigation.Runner
   alias StarlightBot.Vision.{Capture, EgoGiftDetector, HookRegistry, Matcher}
 
   @default_appear_timeout 1_500
   @after_dismiss_wait_ms 500
-  @after_dismiss_poll_ms 50
   @same_slot_tolerance_px 30
   @min_ego_gift_item_area_px 550
 
-  def dismiss_ego_gift_get_step(opts \\ []), do: custom(fn _frame, ctx -> dismiss_ego_gift_get(ctx, opts) end)
+  def dismiss_ego_gift_get_step(opts \\ []) do
+    branch(
+      [{:ego_gift_get, dismiss_visible_steps(opts)}, default: [log(:info, "ego_gift_get did not appear — assuming already dismissed")]],
+      wait: Keyword.get(opts, :appear_timeout, @default_appear_timeout)
+    )
+  end
 
-  def record_ego_gift_items_step, do: custom(fn frame, ctx -> record_ego_gift_items(frame, ctx) end)
+  def record_ego_gift_items_step, do: call(__MODULE__, :record_ego_gift_items)
 
   def record_ego_gift_items(frame, ctx) do
     case frame || elem(Capture.grab_frame(), 1) do
@@ -131,69 +135,34 @@ defmodule StarlightBot.Automation.RewardHelpers do
     end
   end
 
-  def dismiss_ego_gift_get(ctx, opts \\ []) do
-    appear_timeout = Keyword.get(opts, :appear_timeout, @default_appear_timeout)
+  def dismiss_ego_gift_get(ctx, opts \\ []), do: Engine.act([dismiss_ego_gift_get_step(opts)], ctx)
 
-    case Engine.act([await(:ego_gift_get, timeout: appear_timeout)], ctx) do
-      {:ok, _} ->
-        leaving = Keyword.get(opts, :leaving)
+  defp dismiss_visible_steps(opts) do
+    leaving = Keyword.get(opts, :leaving)
 
-        if Keyword.get(opts, :click_confirm, false) or Engine.check(:encounter_reward),
-          do: click_ego_gift_get_confirm(leaving, ctx),
-          else: dismiss_visible_ego_gift_get(leaving, ctx)
-
-      {:error, {:timeout, :ego_gift_get}} ->
-        Ctx.log(ctx, :info, "ego_gift_get did not appear — assuming already dismissed")
-        {:ok, nil}
-
-      {:error, _} = err ->
-        err
+    if Keyword.get(opts, :click_confirm, false) do
+      click_ego_gift_get_confirm_steps(leaving)
+    else
+      [branch([{:encounter_reward, click_ego_gift_get_confirm_steps(leaving)}, default: [press_past_ego_gift_get(leaving)]])]
     end
   end
 
-  defp dismiss_visible_ego_gift_get(leaving, ctx) do
-    case Engine.act([retry_until(not_hook(:ego_gift_get), [key(:space), key(:enter)], every: 300, tries: 5)], ctx) do
-      {:ok, _} = ok ->
-        await_next_screen(leaving, ctx)
-        ok
-
-      {:error, _} ->
-        Ctx.log(ctx, :info, "ego_gift_get: space didn't dismiss it — clicking confirm instead")
-        click_ego_gift_get_confirm(leaving, ctx)
-    end
+  defp press_past_ego_gift_get(leaving) do
+    attempt(
+      [retry_until(not_hook(:ego_gift_get), [key(:space), key(:enter)], every: 300, tries: 5), await_next_screen(leaving)],
+      else: [log(:info, "ego_gift_get: space didn't dismiss it — clicking confirm instead") | click_ego_gift_get_confirm_steps(leaving)]
+    )
   end
 
-  defp click_ego_gift_get_confirm(leaving, ctx) do
-    with {:ok, _} = ok <-
-           Engine.act(
-             [retry_until(not_hook(:ego_gift_get), [branch([{:ego_gift_get_confirm, [click(:ego_gift_get_confirm)]}])], every: 400, tries: 5)],
-             ctx
-           ) do
-      await_next_screen(leaving, ctx)
-      ok
-    end
+  defp click_ego_gift_get_confirm_steps(leaving) do
+    [
+      retry_until(not_hook(:ego_gift_get), [branch([{:ego_gift_get_confirm, [click(:ego_gift_get_confirm)]}])], every: 400, tries: 5),
+      await_next_screen(leaving)
+    ]
   end
 
-  defp await_next_screen(nil, _ctx), do: Process.sleep(@after_dismiss_wait_ms)
-
-  defp await_next_screen(leaving, ctx) do
-    started_at = System.monotonic_time(:millisecond)
-    poll_next_screen(leaving, started_at + @after_dismiss_wait_ms)
-    Ctx.log(ctx, :info, "ego_gift_get: next screen after #{System.monotonic_time(:millisecond) - started_at}ms")
-  end
-
-  defp poll_next_screen(leaving, deadline) do
-    case Runner.check_screens(Catalog.all_screens()) do
-      {:ok, screen} when screen != leaving ->
-        :ok
-
-      _ ->
-        if System.monotonic_time(:millisecond) < deadline do
-          Process.sleep(@after_dismiss_poll_ms)
-          poll_next_screen(leaving, deadline)
-        end
-    end
-  end
+  defp await_next_screen(nil), do: sleep(@after_dismiss_wait_ms)
+  defp await_next_screen(leaving), do: leave_screen(leaving, timeout: @after_dismiss_wait_ms)
 
   defp find_best_tier_rect(frame, tier_hooks, exclude) do
     Enum.find_value(tier_hooks, :none, fn hook ->

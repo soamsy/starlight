@@ -21,7 +21,7 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
   @hp_hooks [mounting_trials_max_hp_text: 2.5, mounting_trials_hp_plus_2_5: 2.5, mounting_trials_hp_plus_5: 5, mounting_trials_hp_plus_7_5: 7.5]
 
   screen :mounting_trials, identity: :mounting_trials do
-    transition to: :mounting_trials_over, do: [custom(&select_and_confirm_gifts/2)]
+    transition to: :mounting_trials_over, do: [call(__MODULE__, :select_and_confirm_gifts)]
   end
 
   screen :mounting_trials_over, identity: nil, catch_all: true
