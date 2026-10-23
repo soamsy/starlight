@@ -85,7 +85,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @fuse_confirm_confirm_hook :shop_fuse_popup_confirm_confirm
   @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
-  @heal_confirm_timeout 1_500
+  @heal_confirm_timeout 1_200
   @heal_select_retry_ms 1_000
   @heal_result_timeout 5_000
   @replace_popup_hook :shop_replace_popup
@@ -228,13 +228,29 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   def sinner_full?(sinner, stat) do
-    hook = :"shop_heal_full_#{stat}_#{String.replace(sinner, "_", "")}"
+    hook = full_hook(sinner, stat)
 
     case HookRegistry.find(hook) do
       {:ok, _} -> Engine.check(hook)
       _ -> :no_hook
     end
   end
+
+  def sinner_full_reading(sinner) do
+    hooks = Enum.map([:sp, :hp], &full_hook(sinner, &1))
+
+    with true <- Enum.all?(hooks, &match?({:ok, _}, HookRegistry.find(&1))),
+         {:ok, frame} <- Capture.grab_frame() do
+      Enum.map(hooks, fn hook ->
+        {:ok, score, result} = Matcher.find_with_score(frame, hook)
+        {score, result != :not_found}
+      end)
+    else
+      _ -> :no_reading
+    end
+  end
+
+  defp full_hook(sinner, stat), do: :"shop_heal_full_#{stat}_#{String.replace(sinner, "_", "")}"
 
   def revive(sinner, ctx) do
     with :ok <- heal_option_enabled(:shop_heal_revive_disabled) do

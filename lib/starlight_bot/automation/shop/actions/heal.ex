@@ -5,8 +5,10 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
   alias StarlightBot.GiftPlans
 
   @menu_check_ms 1_000
-  @heal_settle_ms 500
-  @heal_settle_poll_ms 100
+  @heal_settle_poll_ms 50
+  @heal_settle_timeout_ms 3_000
+  @heal_settle_score_tolerance 0.01
+  @first_check_poll_ms 100
   @first_check_settle_ms 500
 
   def run(%{"kind" => kind, "sinner" => nil}, _definition, state, _ctx) when kind in ["heal", "revive"],
@@ -46,7 +48,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
          {:ok, state} <- open_menu(state, ctx),
          {:ok, healed} <- Ops.heal(target, ctx) do
       spend(ctx)
-      {:done, heal_message(target, healed), %{state | last_heal: {healed, now()}}}
+      {:done, heal_message(target, healed), %{state | last_heal: healed}}
     else
       true ->
         {:skipped, "#{target} already has full HP and SP", state}
@@ -62,8 +64,8 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
     end
   end
 
-  defp settled_full?(sinner, %{last_heal: {healed, healed_at}}) when healed == sinner or healed == :all,
-    do: poll_full(sinner, healed_at + @heal_settle_ms)
+  defp settled_full?(sinner, %{last_heal: healed}) when healed == sinner or healed == :all,
+    do: await_settled(sinner, Ops.sinner_full_reading(sinner), now() + @heal_settle_timeout_ms)
 
   defp settled_full?(sinner, _state), do: poll_full(sinner, now() + @first_check_settle_ms)
 
@@ -72,10 +74,30 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
       full?(sinner) -> true
       now() >= deadline -> false
       true ->
-        Process.sleep(@heal_settle_poll_ms)
+        Process.sleep(@first_check_poll_ms)
         poll_full(sinner, deadline)
     end
   end
+
+  defp await_settled(sinner, previous, deadline) do
+    Process.sleep(@heal_settle_poll_ms)
+    current = Ops.sinner_full_reading(sinner)
+
+    if steady?(previous, current) or now() >= deadline,
+      do: reading_full?(current),
+      else: await_settled(sinner, current, deadline)
+  end
+
+  defp steady?(previous, current) when is_list(previous) and is_list(current) do
+    previous
+    |> Enum.zip(current)
+    |> Enum.all?(fn {{a, matched}, {b, matched}} -> abs(a - b) <= @heal_settle_score_tolerance; _ -> false end)
+  end
+
+  defp steady?(previous, current), do: previous == current
+
+  defp reading_full?(reading) when is_list(reading), do: Enum.all?(reading, fn {_score, matched} -> matched end)
+  defp reading_full?(_reading), do: false
 
   defp full?(sinner), do: Ops.sinner_full?(sinner, :sp) == true and Ops.sinner_full?(sinner, :hp) == true
 
