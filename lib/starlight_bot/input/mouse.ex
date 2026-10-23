@@ -11,6 +11,7 @@ defmodule StarlightBot.Input.Mouse do
   @scroll_click_delay_sigma 15
   @drag_settle_ms 50
   @mouse_down_settle_ms 30
+  @release_settle_ms 50
   @click_settle_ms 0
 
   defstruct current_pos: {960, 540}, last_velocity: {0.0, 0.0}, held: MapSet.new(), premove: nil
@@ -141,6 +142,7 @@ defmodule StarlightBot.Input.Mouse do
     Native.button_event(@btn_left, true)
     :timer.sleep(Keyword.get(opts, :mouse_down_settle_ms, @mouse_down_settle_ms))
     {final_state, _} = execute_move(new_state, tx, ty, [duration_override: Keyword.get(opts, :duration_ms)])
+    :timer.sleep(Keyword.get(opts, :release_settle_ms, @release_settle_ms))
     Native.button_event(@btn_left, false)
     {:reply, :ok, final_state}
   end
@@ -239,7 +241,11 @@ defmodule StarlightBot.Input.Mouse do
   defp execute_move(state, tx, ty, opts) do
     {fx, fy} = from_pos = start_pos(state)
     {vx, vy} = state.last_velocity
-    profile = Keyword.get(opts, :duration_mult, MovementProfile.current())
+    profile =
+      case Keyword.get(opts, :duration_override) do
+        nil -> Keyword.get(opts, :duration_mult, MovementProfile.current())
+        duration_ms -> {:duration_ms, duration_ms}
+      end
 
     waypoints = Trajectory.build({fx * 1.0, fy * 1.0}, {tx * 1.0, ty * 1.0}, {vx, vy}, profile)
 

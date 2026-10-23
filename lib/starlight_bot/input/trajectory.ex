@@ -14,17 +14,21 @@ defmodule StarlightBot.Input.Trajectory do
   @type point :: {float, float}
   @type waypoint :: {float, float, float}
 
-  @spec build(point, point, point, :human | :fast | number) :: [waypoint]
+  @spec build(point, point, point, :human | :fast | number | {:duration_ms, number}) :: [waypoint]
+  def build(from, to, vel_in, {:duration_ms, duration_ms}) do
+    human_trajectory(from, to, vel_in, fn _dist -> duration_ms * 1.0 end)
+  end
+
   def build(from, to, vel_in, duration_mult) when is_number(duration_mult) do
-    human_trajectory(from, to, vel_in, duration_mult)
+    human_trajectory(from, to, vel_in, &(sample_duration(&1) * duration_mult))
   end
 
   def build(from, to, vel_in, profile) do
     duration_mult = if profile == :fast, do: 0.6, else: 1.0
-    human_trajectory(from, to, vel_in, duration_mult)
+    human_trajectory(from, to, vel_in, &(sample_duration(&1) * duration_mult))
   end
 
-  defp human_trajectory(from, to, vel_in, duration_mult) do
+  defp human_trajectory(from, to, vel_in, base_duration) do
     dist = distance(from, to)
 
     cond do
@@ -33,23 +37,21 @@ defmodule StarlightBot.Input.Trajectory do
         [{tx, ty, 0.0}]
 
       :rand.uniform() < correction_probability(dist) ->
-        build_two_phase(from, to, vel_in, dist, duration_mult)
+        build_two_phase(from, to, vel_in, dist, base_duration.(dist))
 
       true ->
-        build_single_phase(from, to, vel_in, dist, duration_mult)
+        build_single_phase(from, to, vel_in, base_duration.(dist))
     end
   end
 
-  defp build_single_phase(from, to, vel_in, dist, duration_mult) do
-    duration_ms = sample_duration(dist) * duration_mult
-
+  defp build_single_phase(from, to, vel_in, duration_ms) do
     draw_curve(from, to, vel_in, duration_ms, @jitter_sigma, 1.0, @primary_t_peak)
     |> force_exact_end(to)
   end
 
-  defp build_two_phase(from, to, vel_in, dist, duration_mult) do
+  defp build_two_phase(from, to, vel_in, dist, duration_ms) do
     landing = biased_landing(to, overshoot_sigma(dist))
-    primary_duration = sample_duration(dist) * duration_mult * 0.82
+    primary_duration = duration_ms * 0.82
 
     primary = draw_curve(from, landing, vel_in, primary_duration, @jitter_sigma, 1.0, @primary_t_peak)
 

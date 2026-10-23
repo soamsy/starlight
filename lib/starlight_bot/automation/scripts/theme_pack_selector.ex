@@ -708,7 +708,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
          {:ok, frame} <- Capture.grab_frame() do
       from = Frame.to_screen_coords(frame, {true_x + dx, @pull_y})
       to = Frame.to_screen_coords(frame, {true_x + dx, @pull_y + @drag_distance})
-      Mouse.drag(from, to)
+      Mouse.drag(from, to, release_settle_ms: 150)
 
       if await_moved_away(ctx), do: :ok, else: try_pulls(rest, span, hook, ctx)
     else
