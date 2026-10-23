@@ -85,36 +85,37 @@
         class="flex flex-col gap-3">
         <div class="flex flex-col gap-1">
           <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
-            <%= if length(@picks) > 1, do: "Team cycle (★ starts run 1, then next team after each run)", else: "Team" %>
+            <%= if length(@picks) > 1, do: "Team cycle (★ runs next, moves on after a completed run, stays on a failed one)", else: "Team" %>
           </span>
           <input type="hidden" name="start_index" value={@start_index} />
           <div id="team-cycle" phx-hook="SortableList" data-sort-event="reorder_cycle" class="flex flex-col gap-1">
           <%= for {pick, index} <- Enum.with_index(@picks) do %>
             <div data-sort-id={index}
                  class={"flex items-center gap-1 rounded " <> if(length(@picks) > 1 and index == @start_index, do: "bg-primary/10 ring-1 ring-primary", else: "")}>
-              <span :if={length(@picks) > 1} data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to reorder">⠿</span>
+              <span :if={length(@picks) > 1 and not cycle_locked?(@phase, @other_running?)} data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to reorder">⠿</span>
               <button :if={length(@picks) > 1} type="button" phx-click="set_cycle_start" phx-value-index={index}
-                      title="Start the cycle with this team"
+                      disabled={cycle_locked?(@phase, @other_running?)}
+                      title={if cycle_locked?(@phase, @other_running?), do: "Locked while a run is active", else: "Start the cycle with this team"}
                       class={"btn btn-ghost btn-xs px-1 " <> if(index == @start_index, do: "text-primary", else: "text-base-content/30")}>
                 <%= if index == @start_index, do: "★", else: "☆" %>
               </button>
               <span :if={length(@picks) > 1} class="text-xs text-base-content/50 w-5 text-right"><%= index + 1 %>.</span>
-              <select name="team_ids[]" class="select select-sm select-bordered flex-1 min-w-0" disabled={@teams == []}>
+              <select name="team_ids[]" class="select select-sm select-bordered flex-1 min-w-0" disabled={@teams == [] or cycle_locked?(@phase, @other_running?)}>
                 <%= for team <- @teams do %>
                   <option value={team.id} selected={team.id == pick.id}><%= team.name %></option>
                 <% end %>
               </select>
-              <select name="team_hooks[]" class="select select-sm select-bordered w-24 shrink-0" disabled={@teams == []}>
+              <select name="team_hooks[]" class="select select-sm select-bordered w-24 shrink-0" disabled={@teams == [] or cycle_locked?(@phase, @other_running?)}>
                 <%= for hook <- team_hooks(@teams, pick.id) do %>
                   <option value={hook} selected={hook == pick.hook}><%= Teams.hook_label(hook) %></option>
                 <% end %>
               </select>
-              <button :if={length(@picks) > 1} type="button" phx-click="remove_cycle_team" phx-value-index={index}
+              <button :if={length(@picks) > 1 and not cycle_locked?(@phase, @other_running?)} type="button" phx-click="remove_cycle_team" phx-value-index={index}
                       class="btn btn-ghost btn-xs text-error">✕</button>
             </div>
           <% end %>
           </div>
-          <button :if={@teams != []} type="button" phx-click="add_cycle_team" class="btn btn-ghost btn-xs self-start">+ team</button>
+          <button :if={@teams != [] and not cycle_locked?(@phase, @other_running?)} type="button" phx-click="add_cycle_team" class="btn btn-ghost btn-xs self-start">+ team</button>
         </div>
 
         <label class="flex flex-col gap-1">

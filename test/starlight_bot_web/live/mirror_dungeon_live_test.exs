@@ -13,7 +13,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
 
   defp socket(picks) do
     %Phoenix.LiveView.Socket{
-      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, start_index: 0, run_count: "1", weekly_bonus: true, collect_enkephalin: false, collect_xp: false, capture_ego_gifts: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil}
+      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, start_index: 0, run_count: "1", weekly_bonus: true, collect_enkephalin: false, collect_xp: false, capture_ego_gifts: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil, phase: :idle, other_running?: false}
     }
   end
 
@@ -113,6 +113,33 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     socket = socket |> event("remove_cycle_team", %{"index" => "2"}) |> event("remove_cycle_team", %{"index" => "1"})
     assert socket.assigns.picks == [@burn]
     assert socket.assigns.start_index == 0
+  end
+
+  test "the cycle can't be edited while a run is active" do
+    socket = socket([@burn, @saikai])
+    running = %{socket | assigns: %{socket.assigns | phase: :paused}}
+
+    running =
+      running
+      |> event("set_cycle_start", %{"index" => "1"})
+      |> event("reorder_cycle", %{"ids" => ["1", "0"]})
+      |> event("add_cycle_team", %{})
+      |> event("remove_cycle_team", %{"index" => "0"})
+      |> event("update_form", %{"team_ids" => ["10"], "start_index" => "1", "run_count" => "5"})
+
+    assert running.assigns.picks == [@burn, @saikai]
+    assert running.assigns.start_index == 0
+    assert running.assigns.run_count == "5"
+  end
+
+  test "a completed run moves the saved star to the next team, wrapping around" do
+    event(socket([@burn]), "update_form", %{"team_ids" => ["5", "10", "5"], "start_index" => "1", "run_count" => "3"})
+
+    RunnerForms.advance_mirror_dungeon_start()
+    assert %{"start_index" => "2", "run_count" => "3"} = RunnerForms.get("mirror_dungeon")
+
+    RunnerForms.advance_mirror_dungeon_start()
+    assert %{"start_index" => "0"} = RunnerForms.get("mirror_dungeon")
   end
 
   test "restoring a saved form keeps the starter when it's still in range" do

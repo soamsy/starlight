@@ -13,6 +13,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     if connected?(socket) do
       Navigator.subscribe()
       RunHistory.subscribe()
+      RunnerForms.subscribe()
       Process.send_after(self(), :clock_tick, @clock_tick_ms)
     end
 
@@ -65,12 +66,16 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   @impl true
   def handle_event("update_form", %{"run_count" => run_count} = params, socket) do
-    picks = RunnerForms.parse_team_picks(params["team_ids"], params["team_hooks"], socket.assigns.teams, socket.assigns.picks)
+    socket =
+      if cycle_locked?(socket.assigns.phase, socket.assigns.other_running?) do
+        socket
+      else
+        picks = RunnerForms.parse_team_picks(params["team_ids"], params["team_hooks"], socket.assigns.teams, socket.assigns.picks)
+        socket |> assign(:picks, picks) |> assign(:start_index, RunnerForms.parse_start_index(params["start_index"], picks))
+      end
 
     {:noreply,
      socket
-     |> assign(:picks, picks)
-     |> assign(:start_index, RunnerForms.parse_start_index(params["start_index"], picks))
      |> assign(:run_count, run_count)
      |> assign(:weekly_bonus, Map.get(params, "weekly_bonus") == "true")
      |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
@@ -78,6 +83,13 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:capture_ego_gifts, Map.get(params, "capture_ego_gifts") == "true")
      |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))
      |> save_form()}
+  end
+
+  @impl true
+  def handle_event(event, _params, socket)
+      when event in ~w(add_cycle_team remove_cycle_team set_cycle_start reorder_cycle) and
+             socket.assigns.phase != :idle and not socket.assigns.other_running? do
+    {:noreply, socket}
   end
 
   @impl true
@@ -211,6 +223,15 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   end
 
   @impl true
+  def handle_info({:runner_form, "mirror_dungeon"}, socket) do
+    params = RunnerForms.get("mirror_dungeon") || %{}
+    {:noreply, assign(socket, :start_index, RunnerForms.parse_start_index(params["start_index"], socket.assigns.picks))}
+  end
+
+  @impl true
+  def handle_info({:runner_form, _runner}, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_info(:run_history_changed, socket) do
     {:noreply, if(socket.assigns.show_screen_times, do: assign(socket, :history_runs, RunHistory.list_runs()), else: socket)}
   end
@@ -243,6 +264,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     seconds = total |> rem(60) |> Integer.to_string() |> String.pad_leading(2, "0")
     if hours > 0, do: "#{hours}:#{minutes}:#{seconds}", else: "#{minutes}:#{seconds}"
   end
+
+  def cycle_locked?(phase, other_running?), do: phase != :idle and not other_running?
 
   def run_progress(run_memory), do: Map.get(run_memory, :run_progress)
 

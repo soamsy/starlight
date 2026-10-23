@@ -5,7 +5,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   alias StarlightBot.Automation.SeasonPassCollector
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.Ctx
-  alias StarlightBot.{GiftPlans, Teams}
+  alias StarlightBot.{GiftPlans, RunnerForms, Teams}
   alias StarlightBot.Navigation.{Catalog, Runner, Screen}
   alias StarlightBot.Navigation.Screens.Shop
   alias StarlightBot.Vision.{Capture, EgoGiftCapture}
@@ -123,12 +123,13 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   def dispatched(run, :run_complete, _frame, ctx) do
     Ctx.log(ctx, :ok, "mirror dungeon run complete — #{run.count - 1} remaining")
+    RunnerForms.advance_mirror_dungeon_start()
     finish_run(run, true, ctx)
   end
 
   def dispatched(run, :gave_up, _frame, ctx) do
     progress = RunMemory.get(ctx, :run_progress, %{current: 0, total: 0})
-    Ctx.log(ctx, :error, "mirror dungeon runner: gave up (#{inspect(RunMemory.give_up(ctx))}), counting run #{progress.current} as failed, #{run.count - 1} remaining")
+    Ctx.log(ctx, :error, "mirror dungeon runner: gave up (#{inspect(RunMemory.give_up(ctx))}), counting run #{progress.current} as failed, #{run.count - 1} remaining, retrying #{run.cycle.team.name}")
     RunMemory.update(ctx, :failed_runs, [], &(&1 ++ [progress.current]))
     RunMemory.put_give_up(ctx, nil)
     RunMemory.reset_battle_retries(ctx)
@@ -412,10 +413,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
     cycle =
       if run.count > 1 do
-        cycle = next_team(run.cycle, ctx)
         progress = RunMemory.get(ctx, :run_progress, %{current: 0, total: 0})
         RunMemory.merge(ctx, %{floor: 1, run_progress: %{progress | current: progress.current + 1}})
-        cycle
+        if own_run?, do: next_team(run.cycle, ctx), else: run.cycle
       else
         run.cycle
       end

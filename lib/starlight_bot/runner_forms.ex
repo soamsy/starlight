@@ -74,6 +74,13 @@ defmodule StarlightBot.RunnerForms do
     end
   end
 
+  def advance_mirror_dungeon_start do
+    with %{"team_ids" => [_ | _] = ids} = params <- get("mirror_dungeon") do
+      start = parse_start_index(params["start_index"], ids)
+      put("mirror_dungeon", Map.put(params, "start_index", to_string(rem(start + 1, length(ids)))))
+    end
+  end
+
   def luxcavation_action(params) do
     with {team_id, ""} <- Integer.parse(to_string(params["team_id"])),
          {exp_consecutive, ""} <- Integer.parse(to_string(params["exp_consecutive"])),
