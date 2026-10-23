@@ -1315,17 +1315,18 @@ defmodule StarlightBot.Automation.Shop.Ops do
     checks[popup.bottom] or not (checks[popup.top] or checks[popup.track])
   end
 
-  def detect_and_update_cost(ctx), do: detect_and_update_cost(@cost_read_tries, ctx)
+  def detect_and_update_cost(ctx), do: detect_and_update_cost(@cost_read_tries, nil, ctx)
 
-  defp detect_and_update_cost(tries_left, ctx) do
+  defp detect_and_update_cost(tries_left, previous, ctx) do
     with {:ok, frame} <- Capture.grab_frame(),
-         {:ok, cost} <- NumberScanner.read(frame) do
-      Ctx.log(ctx, :info, "cost: read #{cost}")
-      RunMemory.put_cost(ctx, cost)
+         {:ok, ^previous} <- NumberScanner.read(frame) do
+      Ctx.log(ctx, :info, "cost: read #{previous}")
+      RunMemory.put_cost(ctx, previous)
     else
-      _ when tries_left > 1 ->
+      result when tries_left > 1 ->
         Process.sleep(@cost_read_every_ms)
-        detect_and_update_cost(tries_left - 1, ctx)
+        next = with {:ok, cost} <- result, do: cost, else: (_ -> nil)
+        detect_and_update_cost(tries_left - 1, next, ctx)
 
       other ->
         Ctx.log(ctx, :error, "cost: read failed after #{@cost_read_tries} tries (#{inspect(other)})")
