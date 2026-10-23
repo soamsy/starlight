@@ -11,7 +11,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @min_item_area_px 400
   @min_classifier_conf 0.9
   @cost_read_tries 8
-  @cost_read_every_ms 100
+  @cost_read_every_ms 50
   @uptie_extend_px 50
   @uptie_2_hook :shop_sell_popup_uptie_2
   @uptie_1_hook :shop_sell_popup_uptie_1

@@ -84,6 +84,28 @@ defmodule StarlightBot.Vision.Matcher do
     end
   end
 
+  def find_all_with_scores_batch(%Frame{} = frame, hook_names, opts \\ []) when is_list(hook_names) do
+    {missing, found} =
+      hook_names
+      |> Enum.map(fn name -> {name, HookRegistry.find(name)} end)
+      |> Enum.split_with(fn {_name, result} -> result == {:error, :not_found} end)
+
+    crops =
+      found
+      |> Enum.map(fn {_name, {:ok, hook}} -> search_region(hook) end)
+      |> Enum.uniq()
+      |> Map.new(fn region -> {region, crop_to_region(frame.mat, region)} end)
+
+    found
+    |> Enum.map(fn {name, {:ok, hook}} ->
+      confidence = Keyword.get(opts, :confidence, hook.confidence)
+      {image_mat, offset} = Map.fetch!(crops, search_region(hook))
+      matches = image_mat |> scored_matches(hook, confidence) |> Enum.map(fn {rect, score} -> {add_offset(rect, offset), score} end)
+      {name, {:ok, matches}}
+    end)
+    |> Kernel.++(Enum.map(missing, fn {name, _} -> {name, {:error, :hook_not_found}} end))
+  end
+
   def score_against_mat(mat, hook_name, opts \\ []) when is_atom(hook_name) do
     case HookRegistry.find(hook_name) do
       {:error, :not_found} ->

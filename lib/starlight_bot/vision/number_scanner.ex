@@ -6,12 +6,13 @@ defmodule StarlightBot.Vision.NumberScanner do
 
   @spec read(Frame.t(), [{String.t(), atom}]) :: {:ok, integer} | :not_found
   def read(%Frame{} = frame, glyph_hooks \\ @digit_hooks) do
-    glyph_hooks
-    |> Enum.flat_map(fn {char, hook_name} ->
-      case Matcher.find_all_with_scores(frame, hook_name) do
-        {:ok, matches} -> Enum.map(matches, fn {{x, _y, _w, _h}, score} -> {x, char, score} end)
-        {:error, _} -> []
-      end
+    chars = Map.new(glyph_hooks, fn {char, hook_name} -> {hook_name, char} end)
+
+    frame
+    |> Matcher.find_all_with_scores_batch(Enum.map(glyph_hooks, &elem(&1, 1)))
+    |> Enum.flat_map(fn
+      {hook_name, {:ok, matches}} -> Enum.map(matches, fn {{x, _y, _w, _h}, score} -> {x, chars[hook_name], score} end)
+      {_hook_name, {:error, _}} -> []
     end)
     |> from_hits()
   end
