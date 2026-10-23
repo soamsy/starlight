@@ -296,7 +296,14 @@ function overlayCanvasHook(eventName) {
           }
 
           if (o.text) {
-            ctx.font = "bold 14px monospace"
+            ctx.font = `bold ${o.font_px || 14}px monospace`
+            if (o.outline) {
+              ctx.setLineDash([])
+              ctx.lineWidth = 3
+              ctx.lineJoin = "round"
+              ctx.strokeStyle = "#000"
+              ctx.strokeText(o.text, o.text_x, o.text_y)
+            }
             ctx.fillText(o.text, o.text_x, o.text_y)
           }
         }

@@ -3,12 +3,33 @@ defmodule StarlightBot.Vision.SinColor do
 
   @color_bgr2hsv 40
 
+  # Each sin is {hue, hue_tol, s_lo, s_hi, v_lo, v_hi} in OpenCV HSV (H 0..179, S/V 0..255).
+  # A pixel counts as that sin only if it falls inside every range. The same window is used
+  # twice: once to pick the sin (the sin with the most matching pixels in the hue scan strip
+  # wins), and again to measure tier (matching pixels as a share of the top-right wedge).
+  #
+  # hue / hue_tol: center and +/- width of the hue band. Wider catches anti-aliased edges and
+  #   glow, but starts stealing pixels from a neighboring sin's hue (gloom 96 vs pride 110).
+  # s_lo: lowering it admits washed-out pixels (glow, blended edges, translucent fill), which
+  #   raises tier fill. Too low and greyish background or card art with a slight tint leaks in.
+  # s_hi: only cuts fully saturated pixels. Solid outlines often sit at 250..255, so anything
+  #   under 255 can drop the outline itself and leave specks. Lower it only to reject a
+  #   specific oversaturated artifact.
+  # v_lo: lowering it admits darker pixels: dim animation frames, shadowed parts of the
+  #   ornament, dark sins like pride whose outline peaks near V 130. Too low and dark
+  #   background or card art of a similar hue leaks in. This is usually the knob for "too sparse".
+  # v_hi: only cuts the brightest pixels. Lower it to reject white-hot highlights or glare
+  #   that happen to carry the hue; otherwise leave it high.
+  #
+  # Raising s_lo/v_lo or lowering s_hi/v_hi shrinks the mask, so tier_pct drops and cells slide
+  # toward skill1; widening does the opposite and can push skill2 into skill3. When the tray
+  # background is close in hue, hue_window_mask lifts s_lo/v_lo further for contrast.
   @colors [
     wrath: {0, 6, 70, 255, 105, 255},
     gloom: {96, 6, 100, 250, 100, 240},
     sloth: {23, 5, 145, 255, 100, 245},
     lust: {12, 5, 140, 255, 105, 245},
-    pride: {110, 6, 80, 245, 100, 223},
+    pride: {110, 6, 80, 255, 60, 223},
     gluttony: {41, 6, 100, 255, 100, 252},
     envy: {140, 6, 100, 252, 100, 245}
   ]
@@ -43,12 +64,12 @@ defmodule StarlightBot.Vision.SinColor do
   ]
 
   @corner_cut_pct [
-    lust: 0.20,
+    lust: 0.30,
     wrath: 0.05,
     gloom: 0.05,
     pride: 0.08,
     sloth: 0.01,
-    gluttony: 0.08,
+    gluttony: 0.10,
     envy: 0.05,
   ]
 

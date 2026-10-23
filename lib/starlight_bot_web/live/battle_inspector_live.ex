@@ -10,6 +10,15 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   @tmp_target_preview_jpeg "/tmp/_starlight_battle_inspector_target_preview.jpg"
   @tmp_cell_png "/tmp/_starlight_battle_inspector_cell.png"
   @palette ["#f87171", "#60a5fa", "#facc15", "#4ade80", "#c084fc", "#fb923c", "#22d3ee"]
+  @sin_text_colors %{
+    wrath: "#f87171",
+    lust: "#fb923c",
+    sloth: "#facc15",
+    gluttony: "#a3e635",
+    gloom: "#22d3ee",
+    pride: "#60a5fa",
+    envy: "#c084fc"
+  }
   @chain_top_color "#38bdf8"
   @chain_bottom_color "#fb7185"
 
@@ -486,15 +495,15 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
 
   defp tray_overlays(%SkillTray{} = tray, top_sins, bottom_sins) do
     hp_strip = hp_strip_overlay(tray)
-    top = row_overlays(tray.top_row, top_sins, "top row", "#38bdf8")
-    bottom = row_overlays(tray.bottom_row, bottom_sins, "bottom row", "#fb7185")
+    top = row_overlays(tray.top_row, top_sins, "top row", "#38bdf8", tray.top_row.y - 22)
+    bottom = row_overlays(tray.bottom_row, bottom_sins, "bottom row", "#fb7185", tray.bottom_row.hue_scan_y + tray.bottom_row.h + 12)
     bounds = [tray_start_line(tray), tray_end_line(tray)]
     bins = bin_overlays(tray)
     Enum.reject([hp_strip | top ++ bottom ++ bounds ++ bins], &is_nil/1)
   end
 
-  defp row_overlays(row, sins, label, color) do
-    [row_band(row, label, color), hue_scan_band(row, color) | row_column_overlays(row, sins, color)]
+  defp row_overlays(row, sins, label, color, cell_label_y) do
+    [row_band(row, label, color), hue_scan_band(row, color) | row_column_overlays(row, sins, color, cell_label_y)]
   end
 
   defp row_band(row, label, color) do
@@ -522,33 +531,34 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
       w: row.end_x - row.start_x,
       h: row.h,
       color: color,
-      dashed: true,
-      text: "hue scan",
-      text_x: row.start_x,
-      text_y: row.hue_scan_y + row.h + 12
+      dashed: true
     }
   end
 
-  defp row_column_overlays(row, sins, color) do
+  defp row_column_overlays(row, sins, color, cell_label_y) do
     row
     |> SkillTray.row_columns()
     |> Enum.zip(sins)
     |> Enum.with_index()
     |> Enum.flat_map(fn {{{x0, _x1}, sin_result}, i} ->
-      swatch = bgr_to_hex(sin_result.reference.bgr)
-
       [
         %{type: "line", x1: x0, y1: row.y, x2: x0, y2: row.y + row.h, color: color},
         %{
           type: "label",
-          text: "#{i} #{sin_result.sin} #{sin_result.tier} (#{Float.round(sin_result.confidence, 2)})",
+          text: "#{i} #{tier_label(sin_result.tier)} #{sin_result.sin}",
           text_x: x0 + 4,
-          text_y: row.y + row.h + 14,
-          color: swatch
+          text_y: cell_label_y,
+          color: Map.fetch!(@sin_text_colors, sin_result.sin),
+          outline: true,
+          font_px: 11
         }
       ]
     end)
   end
+
+  defp tier_label(:skill1), do: "S1"
+  defp tier_label(:skill2), do: "S2"
+  defp tier_label(:skill3), do: "S3"
 
   defp bgr_to_hex({b, g, r}) do
     "#" <> hex2(r) <> hex2(g) <> hex2(b)
@@ -630,9 +640,9 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
         %{type: "line", x1: x0, y1: 780, x2: x0, y2: 1000, color: color, dashed: true},
         %{
           type: "label",
-          text: "##{i} S#{sinner_id}#{marker}",
+          text: "id #{sinner_id}#{marker}",
           text_x: div(x0 + x1, 2) - 20,
-          text_y: 795,
+          text_y: tray.sinner_action_y,
           color: color
         }
       ]
