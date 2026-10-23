@@ -130,6 +130,7 @@ defmodule StarlightBotWeb.Live.LogLiveTest do
     assert socket.assigns.shown == 3
     assert rendered =~ "#{marker} 5"
     refute rendered =~ "#{marker} 2"
+    assert :binary.match(rendered, "#{marker} 3") < :binary.match(rendered, "#{marker} 5")
     refute rendered =~ ">Log</h2>"
     refute rendered =~ "Load older"
 

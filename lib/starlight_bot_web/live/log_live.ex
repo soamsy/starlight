@@ -19,6 +19,7 @@ defmodule StarlightBotWeb.Live.LogLive do
     {:ok,
      socket
      |> assign(:embedded?, embedded?)
+     |> assign(:lines_dom_id, "log-lines-#{socket.id}")
      |> assign(:max_lines, Map.get(session, "max_lines", @page_size))
      |> assign(:machines, machine_rows())
      |> assign(:file_path, LogStore.file_path())
@@ -42,7 +43,7 @@ defmodule StarlightBotWeb.Live.LogLive do
      socket
      |> update(:shown, &(&1 + length(visible)))
      |> assign(:oldest_seq, oldest_seq(older) || socket.assigns.oldest_seq)
-     |> stream(:entries, Enum.reverse(visible), at: -1)}
+     |> stream(:entries, Enum.reverse(visible), at: 0)}
   end
 
   def handle_event("toggle_steps", _, socket), do: {:noreply, socket |> update(:show_steps, &(not &1)) |> reload()}
@@ -68,8 +69,8 @@ defmodule StarlightBotWeb.Live.LogLive do
 
     cond do
       not visible?(entry, socket.assigns) -> {:noreply, socket}
-      socket.assigns.embedded? -> {:noreply, socket |> update(:shown, &min(&1 + 1, socket.assigns.max_lines)) |> stream_insert(:entries, entry, at: 0, limit: socket.assigns.max_lines)}
-      true -> {:noreply, socket |> update(:shown, &(&1 + 1)) |> stream_insert(:entries, entry, at: 0)}
+      socket.assigns.embedded? -> {:noreply, socket |> update(:shown, &min(&1 + 1, socket.assigns.max_lines)) |> stream_insert(:entries, entry, limit: -socket.assigns.max_lines)}
+      true -> {:noreply, socket |> update(:shown, &(&1 + 1)) |> stream_insert(:entries, entry)}
     end
   end
 
@@ -88,7 +89,7 @@ defmodule StarlightBotWeb.Live.LogLive do
     socket
     |> assign(:shown, length(visible))
     |> assign(:oldest_seq, oldest_seq(entries))
-    |> stream(:entries, Enum.reverse(visible), reset: true)
+    |> stream(:entries, visible, reset: true)
   end
 
   defp visible?(entry, assigns) do
