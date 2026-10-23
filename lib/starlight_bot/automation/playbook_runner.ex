@@ -47,6 +47,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @turn_started DSL.any_of([:battle_pause_button, DSL.not_hook(:battle_turn)])
   @ego_menu :battle_ego_resistances
   @ego_warning :battle_ego_warning
+  @overclocked DSL.any_of([@ego_warning, :battle_ego_overclock])
   @hover_label :enemy_target_hovering_label
 
   def play_chain_turn(_last_frame, ctx), do: start_turn("chain", ctx)
@@ -467,7 +468,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp overclock(cx, cy, ctx) do
     Mouse.move_to(cx, cy)
     Mouse.mouse_down()
-    warned? = await(@ego_warning, @overclock_timeout_ms)
+    warned? = await(@overclocked, @overclock_timeout_ms)
     Mouse.mouse_up()
     Process.sleep(@overclock_release_settle_ms)
 
