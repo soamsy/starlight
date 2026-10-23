@@ -30,7 +30,7 @@
     </span>
   </div>
 
-  <details class="shrink-0 bg-base-200 rounded-xl px-3 py-1.5 text-xs">
+  <details id={"#{@lines_dom_id}-machines"} phx-mounted={JS.ignore_attributes("open")} class="shrink-0 bg-base-200 rounded-xl px-3 py-1.5 text-xs">
     <summary class="cursor-pointer select-none font-mono truncate">
       <span class="text-base-content/50">machines ({length(@machines)}):</span> {machine_summary(@machines)}
     </summary>
