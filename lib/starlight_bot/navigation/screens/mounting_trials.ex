@@ -18,7 +18,8 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
   @selection_hooks Keyword.keys(@selection_states)
   @max_select_attempts 4
   @selected_hook :mounting_trials_selected_orange
-  @hp_hooks [mounting_trials_max_hp_text: 2.5, mounting_trials_hp_plus_2_5: 2.5, mounting_trials_hp_plus_5: 5, mounting_trials_hp_plus_7_5: 7.5]
+  @hp_hooks [mounting_trials_max_hp_text: 2.5, mounting_trials_hp_plus_2_5: 2.5, mounting_trials_hp_plus_5: 5, mounting_trials_hp_plus_7_5: 7.5, mounting_trials_hp_plus_10: 10]
+  @hp_gate_hook :mounting_trials_max_hp_text
 
   screen :mounting_trials, identity: :mounting_trials do
     transition to: :mounting_trials_over, do: select_and_confirm(@max_select_attempts)
@@ -39,7 +40,7 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
       {selected, total} ->
         mode = mode(ctx)
         Ctx.log(ctx, :info, "mounting trials: #{selected}/#{total} selected, picking #{total - selected} (#{GiftPlans.mounting_trials_mode_label(mode)})")
-        opts = [selected_hook: @selected_hook] ++ if(mode == "avoid_hp", do: [hp_hooks: @hp_hooks], else: [])
+        opts = [selected_hook: @selected_hook] ++ if(mode == "avoid_hp", do: [hp_hooks: @hp_hooks, hp_gate_hook: @hp_gate_hook], else: [])
 
         with {:ok, _} <- GiftPicker.pick(scan_hook(total), total - selected, @tier_hooks, :mounting_trials, ctx, @pick_delay_ms, opts) do
           {:steps, [sleep(@settle_ms) | select_and_confirm(attempts - 1)]}

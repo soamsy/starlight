@@ -43,4 +43,12 @@ defmodule StarlightBot.Vision.EnemyTargetsTest do
     assert [%EnemyTargets{icon: {900, 300}, point: {890, 550}}] = EnemyTargets.from_icons(whites, [{880, 400, 100, 200}])
     assert [%EnemyTargets{point: {860, 550}}] = EnemyTargets.from_icons(whites, [{820, 400, 100, 200}])
   end
+
+  test "staggered markers under a white icon target the same way as red ones" do
+    whites = [{880, 280, 40, 40}, {1280, 180, 40, 40}]
+    staggered = [{850, 400, 100, 200}]
+    red = [{1250, 300, 100, 200}]
+
+    assert [%EnemyTargets{point: {890, 550}}, %EnemyTargets{point: {1290, 450}}] = EnemyTargets.from_icons(whites, staggered ++ red)
+  end
 end

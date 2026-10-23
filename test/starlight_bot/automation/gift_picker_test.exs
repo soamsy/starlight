@@ -88,16 +88,25 @@ defmodule StarlightBot.Automation.GiftPickerTest do
 
   test "enemy HP badges attach to the gift above them by x, and unmatched gifts are 0%" do
     slots = GiftPicker.slots([det("g_t3a", "A", 400, 360, 0.9), det("g_t3b", "B", 800, 360, 0.9), det("g_t2", "C", 1200, 360, 0.9)])
-    with_hp = GiftPicker.assign_hp(slots, [{5, {410, 760, 40, 28}}, {7.5, {1190, 760, 40, 28}}, {2.5, {1700, 760, 40, 28}}])
+    gates = [{380, 745, 78, 31}, {780, 745, 78, 31}, {1180, 745, 78, 31}]
+    with_hp = GiftPicker.assign_hp(slots, [{5, {410, 760, 40, 28}}, {7.5, {1190, 760, 40, 28}}, {2.5, {1700, 760, 40, 28}}], gates)
 
     assert Enum.map(with_hp, &{&1.gift_name, &1.hp}) == [{"A", 5}, {"B", 0}, {"C", 7.5}]
   end
 
   test "the max HP text alone means at least 2.5%, and a percentage badge next to it raises it" do
     slots = GiftPicker.slots([det("g_t3a", "A", 400, 360, 0.9), det("g_t3b", "B", 800, 360, 0.9)])
-    with_hp = GiftPicker.assign_hp(slots, [{2.5, {380, 745, 78, 31}}, {2.5, {780, 745, 78, 31}}, {5, {830, 760, 40, 28}}])
+    gates = [{380, 745, 78, 31}, {780, 745, 78, 31}]
+    with_hp = GiftPicker.assign_hp(slots, [{2.5, {380, 745, 78, 31}}, {2.5, {780, 745, 78, 31}}, {5, {830, 760, 40, 28}}], gates)
 
     assert Enum.map(with_hp, &{&1.gift_name, &1.hp}) == [{"A", 2.5}, {"B", 5}]
+  end
+
+  test "percentage badges on a gift without the max HP text don't count as enemy HP" do
+    slots = GiftPicker.slots([det("g_t3a", "A", 400, 360, 0.9), det("g_t3b", "B", 800, 360, 0.9)])
+    with_hp = GiftPicker.assign_hp(slots, [{2.5, {380, 745, 78, 31}}, {10, {430, 760, 40, 28}}, {10, {830, 760, 40, 28}}], [{380, 745, 78, 31}])
+
+    assert Enum.map(with_hp, &{&1.gift_name, &1.hp}) == [{"A", 10}, {"B", 0}]
   end
 
   test "avoiding enemy HP goes 0%, then 2.5%, then 5%, then 7.5%, tier order within each" do

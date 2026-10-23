@@ -15,7 +15,7 @@ defmodule StarlightBot.Automation.GiftPicker do
     {frame, detections} = scan(scan_hook, ctx)
     named = detections |> anchored(frame, opts[:anchor_hook]) |> slots()
     badge_slots = badge_slots(named, tier_badges(frame, tier_hooks))
-    slots = assign_hp(named ++ badge_slots, hp_badges(frame, opts[:hp_hooks]))
+    slots = assign_hp(named ++ badge_slots, hp_badges(frame, opts[:hp_hooks]), hp_gates(frame, opts[:hp_gate_hook]))
     {selected, available} = split_selected(slots, frame, opts[:selected_hook])
     ranked = rank(available, wanted_names(gifts_by_id, ctx), RunMemory.ego_gifts(ctx), gifts_by_id)
     ranked = if opts[:hp_hooks], do: avoid_hp(ranked), else: ranked
@@ -37,15 +37,22 @@ defmodule StarlightBot.Automation.GiftPicker do
   defp pick_label(slot, nil), do: slot.gift_name
   defp pick_label(slot, _hp_hooks), do: "#{slot.gift_name} (+#{slot.hp}% enemy HP)"
 
-  def assign_hp(slots, hp_badges) do
-    Enum.reduce(hp_badges, Enum.map(slots, &Map.put(&1, :hp, 0)), fn {hp, rect}, slots ->
-      {bx, _} = center(rect)
-      nearest = Enum.min_by(slots, fn %{center: {cx, _}} -> abs(cx - bx) end, fn -> nil end)
+  def assign_hp(slots, hp_badges, gate_rects) do
+    gated = gate_rects |> Enum.map(&nearest_slot(slots, &1)) |> Enum.reject(&is_nil/1) |> MapSet.new(& &1.center)
 
-      if nearest && abs(elem(nearest.center, 0) - bx) <= @slot_w / 2,
+    Enum.reduce(hp_badges, Enum.map(slots, &Map.put(&1, :hp, 0)), fn {hp, rect}, slots ->
+      nearest = nearest_slot(slots, rect)
+
+      if nearest && MapSet.member?(gated, nearest.center),
         do: Enum.map(slots, &if(&1 == nearest, do: %{&1 | hp: max(&1.hp, hp)}, else: &1)),
         else: slots
     end)
+  end
+
+  defp nearest_slot(slots, rect) do
+    {bx, _} = center(rect)
+    nearest = Enum.min_by(slots, fn %{center: {cx, _}} -> abs(cx - bx) end, fn -> nil end)
+    if nearest && abs(elem(nearest.center, 0) - bx) <= @slot_w / 2, do: nearest
   end
 
   def avoid_hp(ranked), do: Enum.sort_by(ranked, & &1.hp)
@@ -53,6 +60,10 @@ defmodule StarlightBot.Automation.GiftPicker do
   defp hp_badges(nil, _hp_hooks), do: []
   defp hp_badges(_frame, nil), do: []
   defp hp_badges(frame, hp_hooks), do: for({hook, hp} <- hp_hooks, rect <- Matcher.find_all(frame, hook), do: {hp, rect})
+
+  defp hp_gates(nil, _gate_hook), do: []
+  defp hp_gates(_frame, nil), do: []
+  defp hp_gates(frame, gate_hook), do: Matcher.find_all(frame, gate_hook)
 
   defp anchored(detections, nil, _anchor_hook), do: detections
   defp anchored(detections, _frame, nil), do: detections
