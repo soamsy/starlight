@@ -3,7 +3,7 @@ defmodule StarlightBot.Navigation.DSL do
   @confirm_steady_ms 120
   @confirm_steady_timeout_ms 1_500
   @confirm_gone_hold_ms 250
-  @confirm_gone_window_ms 700
+  @confirm_gone_window_ms 1_200
 
   defmacro __using__(_) do
     quote do
