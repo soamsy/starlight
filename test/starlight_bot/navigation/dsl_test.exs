@@ -135,7 +135,7 @@ defmodule StarlightBot.Navigation.DSLTest do
     end
 
     test "reclick_until_gone/1-2 retries a click against the negated hook" do
-      assert DSL.reclick_until_gone(:a) == DSL.retry_until(DSL.not_hook(:a), [DSL.click(:a)])
+      assert DSL.reclick_until_gone(:a) == DSL.retry_until(DSL.not_hook(:a), [DSL.click(:a, missing: :ok)])
     end
 
     test "await_then_gone/1-2 awaits the hook, then awaits its negation" do

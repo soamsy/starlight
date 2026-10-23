@@ -228,7 +228,7 @@ defmodule StarlightBot.Navigation.DSL do
 
   def reclick_until_gone(hook, opts \\ [])
       when is_atom(hook) or is_tuple(hook) do
-    retry_until(not_hook(hook), [click(hook)], opts)
+    retry_until(not_hook(hook), [click(hook, missing: :ok)], opts)
   end
 
   @spec confirm(atom()) :: [

@@ -620,10 +620,15 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp execute_step({:click, hook_atom, opts}, last_frame, ctx) do
     Ctx.log(ctx, :step, "click #{hook_atom}")
+    {missing, opts} = Keyword.pop(opts, :missing, :fail)
 
     case do_click(hook_atom, opts, last_frame, ctx) do
       :ok ->
         Ctx.log(ctx, :step, "clicked #{hook_atom}")
+        {:ok, nil}
+
+      {:error, :no_target} when missing == :ok ->
+        Ctx.log(ctx, :step, "click #{hook_atom}: already gone")
         {:ok, nil}
 
       {:error, reason} ->
