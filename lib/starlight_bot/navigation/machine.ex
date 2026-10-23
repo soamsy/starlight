@@ -4,7 +4,7 @@ defmodule StarlightBot.Navigation.Machine do
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Ctx
   alias StarlightBot.Input.{Keyboard, Mouse, Premove}
-  alias StarlightBot.Navigation.{Catalog, Runner, Screen}
+  alias StarlightBot.Navigation.{Catalog, MachineStatus, Runner, Screen}
   alias StarlightBot.Vision.{Capture, Frame, HookRegistry, Matcher}
 
   @poll_interval_ms 100
@@ -55,11 +55,17 @@ defmodule StarlightBot.Navigation.Machine do
       frame: Keyword.get(opts, :frame),
       result: nil,
       poll: nil,
-      current: nil
+      current: nil,
+      parent: Keyword.get(opts, :parent),
+      label: Keyword.get(opts, :label),
+      started_at: mono()
     }
 
     {:ok, :running, data, [{:next_event, :internal, :step}]}
   end
+
+  @impl true
+  def terminate(_reason, _state, _data), do: MachineStatus.delete()
 
   @impl true
   def handle_event(:internal, :step, :running, %{stack: []} = data),
@@ -67,6 +73,7 @@ defmodule StarlightBot.Navigation.Machine do
 
   def handle_event(:internal, :step, :running, %{stack: [step | rest]} = data) do
     data = %{data | stack: rest, current: step}
+    report(:running, nil, data)
 
     if elem(step, 0) in @unguarded_steps,
       do: exec_internal(step, data),
@@ -111,6 +118,7 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   defp hold(step, data) do
+    report(:paused, nil, data)
     Ctx.log(data.ctx, :info, "paused before #{describe(step)}, waiting for resume")
     Ctx.pause(data.ctx)
     {:next_state, :paused, %{data | stack: [step | data.stack], poll: nil}, [{:state_timeout, @resume_poll_ms, :check}]}
@@ -198,6 +206,7 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp exec({:sleep, ms}, data) do
     Ctx.log(data.ctx, :info, "sleep #{ms}ms")
+    report(:sleeping, {"sleep", mono() + ms}, data)
     {:next_state, :sleeping, data, [{:state_timeout, ms, :wake}]}
   end
 
@@ -306,7 +315,11 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp exec_internal({:__done__, result}, data), do: continue(%{data | result: result}, data.frame)
 
-  defp start_poll(kind, timeout_ms, data), do: tick(%{data | poll: {kind, mono() + timeout_ms}})
+  defp start_poll(kind, timeout_ms, data) do
+    deadline = mono() + timeout_ms
+    report(:polling, {describe_poll(kind), deadline}, data)
+    tick(%{data | poll: {kind, deadline}})
+  end
 
   defp tick(%{poll: {{:hold, spec, hold_ms, else_steps, since}, deadline}} = data) do
     now = mono()
@@ -525,11 +538,35 @@ defmodule StarlightBot.Navigation.Machine do
   defp unguarded(steps), do: Enum.map(steps, &{:__unguarded__, &1})
 
   defp finish(result, %{reply_to: {pid, tag}} = data) do
+    MachineStatus.delete()
     send(pid, {tag, result})
     {:stop, :normal, data}
   end
 
   defp ahead(data), do: data.stack ++ data.upcoming
+
+  defp report(state, waiting, data) do
+    MachineStatus.put(%{
+      parent: data.parent,
+      label: data.label,
+      state: state,
+      current: data.current && describe(data.current),
+      waiting: waiting,
+      remaining: length(data.stack),
+      started_at: data.started_at
+    })
+  end
+
+  defp describe_poll({:await, hook}), do: "await #{inspect(hook, limit: 5)}"
+  defp describe_poll({:await_any, hooks}), do: "await any of #{inspect(hooks, limit: 5)}"
+  defp describe_poll({:branch, clauses, _default_steps, _wait_ms}), do: "branch on #{inspect(Enum.map(clauses, &elem(&1, 0)), limit: 5)}"
+  defp describe_poll({:hold, spec, hold_ms, _else_steps, _since}), do: "hold #{inspect(spec, limit: 5)} for #{hold_ms}ms"
+  defp describe_poll({:leave, screen_name, _started_at}), do: "leave #{screen_name}"
+  defp describe_poll({:locate, _started_at}), do: "locate the screen"
+  defp describe_poll({:verify, screen_name, _hook}), do: "verify #{screen_name}"
+  defp describe_poll({:refine, _candidates, arrived}), do: "refine #{arrived}"
+  defp describe_poll({:retry_window, loop, attempt}), do: "retry until #{inspect(loop.hook, limit: 5)} (attempt #{attempt})"
+  defp describe_poll(kind), do: to_string(elem(kind, 0))
 
   defp describe({:call, {mod, fun, _args}}), do: "#{inspect(mod)}.#{fun}"
   defp describe(step) when tuple_size(step) > 2, do: "#{elem(step, 0)} #{inspect(elem(step, 1), limit: 5, printable_limit: 80)}"

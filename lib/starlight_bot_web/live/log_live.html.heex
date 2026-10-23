@@ -14,6 +14,21 @@
     </span>
   </div>
 
+  <details class="shrink-0 bg-base-200 rounded-xl px-3 py-1.5 text-xs">
+    <summary class="cursor-pointer select-none font-mono truncate">
+      <span class="text-base-content/50">machines ({length(@machines)}):</span> {machine_summary(@machines)}
+    </summary>
+    <div class="flex flex-col gap-0.5 pt-1.5 font-mono">
+      <div :for={row <- @machines} class="flex items-center gap-2" style={"padding-left: #{row.depth * 1.25}rem"}>
+        <span class={"badge badge-xs #{machine_state_class(row.state)}"}>{row.state}</span>
+        <span :if={row.label} class="text-base-content/50">{row.label}</span>
+        <span class="truncate">{row.current}</span>
+        <span :if={row.waiting} class="text-base-content/60 truncate">{row.waiting}</span>
+        <span class="ml-auto text-base-content/40 shrink-0">{row.remaining} queued</span>
+      </div>
+    </div>
+  </details>
+
   <%= if trimmed?(@oldest_seq) do %>
     <div class="text-xs text-base-content/50 shrink-0">
       Only the last {@memory_limit} lines are kept in memory. Older lines are in the log file.

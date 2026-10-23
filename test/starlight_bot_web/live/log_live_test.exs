@@ -1,8 +1,13 @@
 defmodule StarlightBotWeb.Live.LogLiveTest do
   use ExUnit.Case, async: false
 
-  alias StarlightBot.LogStore
+  import StarlightBot.Navigation.DSL
+
+  alias StarlightBot.{Ctx, FakeWorld, LogStore}
+  alias StarlightBot.Navigation.Runner
   alias StarlightBotWeb.Live.LogLive
+
+  @moduletag :capture_log
 
   defp socket do
     %Phoenix.LiveView.Socket{
@@ -31,5 +36,29 @@ defmodule StarlightBotWeb.Live.LogLiveTest do
     entry = %{seq: 999_999_999, at: LogStore.now(), kind: :ok, text: "#{marker} live"}
     {:noreply, socket} = LogLive.handle_info({:log_entry, entry}, socket)
     assert html(socket) =~ "#{marker} live"
+  end
+
+  def nested_wait(_frame, ctx), do: Runner.run_steps([await(:fw_done, timeout: 5_000)], ctx)
+
+  test "the machines panel shows running machines nested under their parents, and forgets them when done" do
+    FakeWorld.start!(hooks: [:fw_done])
+    run = Task.async(fn -> Runner.run_steps([call(__MODULE__, :nested_wait)], Ctx.new()) end)
+    Process.sleep(300)
+
+    {:ok, socket} = LogLive.mount(%{}, %{}, socket())
+    {:noreply, socket} = LogLive.handle_info(:refresh_machines, socket)
+    rows = Enum.take(socket.assigns.machines, -2)
+
+    assert [%{depth: depth, current: outer}, %{depth: inner_depth, state: :polling, waiting: waiting}] = rows
+    assert outer =~ "nested_wait"
+    assert inner_depth == depth + 1
+    assert waiting =~ "await :fw_done"
+    assert html(socket) =~ "await :fw_done"
+
+    FakeWorld.show(:fw_done)
+    assert {:ok, _} = Task.await(run)
+
+    {:noreply, socket} = LogLive.handle_info(:refresh_machines, socket)
+    refute Enum.any?(socket.assigns.machines, &(&1.waiting && &1.waiting =~ "fw_done"))
   end
 end

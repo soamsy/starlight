@@ -603,7 +603,7 @@ defmodule StarlightBot.Navigation.Navigator do
   defp nav_ctx(fields \\ []), do: Ctx.new([log_to: {self(), :nav_log}] ++ fields)
 
   defp start_machine(program, kind) do
-    opts = [reply_to: {self(), {:nav_machine, kind}}]
+    opts = [reply_to: {self(), {:nav_machine, kind}}, label: to_string(kind)]
     {:ok, pid} = DynamicSupervisor.start_child(StarlightBot.MachineSupervisor, {Machine, {program, nav_ctx(), opts}})
     Process.monitor(pid)
     pid

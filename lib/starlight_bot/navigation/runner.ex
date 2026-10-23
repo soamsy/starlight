@@ -34,7 +34,7 @@ defmodule StarlightBot.Navigation.Runner do
 
   defp run_machine(program, ctx) do
     tag = make_ref()
-    {:ok, pid} = Machine.start_link(program, ctx, reply_to: {self(), tag})
+    {:ok, pid} = Machine.start_link(program, ctx, reply_to: {self(), tag}, parent: self())
     ref = Process.monitor(pid)
 
     receive do
