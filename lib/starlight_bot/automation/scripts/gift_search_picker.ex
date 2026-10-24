@@ -14,7 +14,8 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
   @leave_timeout_ms 3_000
   @scroll_clicks 4
   @scroll_settle_ms 400
-  @tab_settle_ms 600
+  @tab_load_timeout_ms 1_500
+  @tab_poll_ms 50
   @max_scroll_passes 20
   @min_item_area_px 300
 
@@ -57,8 +58,39 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
     if MapSet.subset?(wanted, picked) do
       {:steps, [call(__MODULE__, :search_tabs, [rest, picked, retries])]}
     else
-      scan = call(__MODULE__, :scan_pass, [tab, wanted, picked, MapSet.new(), 0, rest, retries])
-      {:steps, [attempt([click(:"gift_search_#{tab}"), sleep(@tab_settle_ms)], else: []), scan]}
+      load = call(__MODULE__, :load_tab, [tab, wanted, picked, rest, retries])
+      {:steps, [attempt([click(:"gift_search_#{tab}")], else: []), load]}
+    end
+  end
+
+  def load_tab(tab, wanted, picked, rest, retries, _frame, ctx) do
+    tab_ids = for gift <- EgoGifts.list_gifts(), GiftPlans.gift_search_tab(gift) == tab, into: MapSet.new(), do: gift.id
+
+    with {:ok, {x, y, w, h}} <- hook_region(@scan_hook, ctx),
+         {:ok, status} <- await_tab_items(tab_ids, {x, y, div(w, 2), div(h, 2)}, System.monotonic_time(:millisecond) + @tab_load_timeout_ms) do
+      if status == :timeout, do: Ctx.log(ctx, :info, "gift search: no #{tab} gift showed up within #{@tab_load_timeout_ms}ms, scanning anyway")
+      scan_pass(tab, wanted, picked, MapSet.new(), 0, rest, retries, nil, ctx)
+    else
+      {:error, reason} ->
+        Ctx.log(ctx, :error, "gift search: #{tab} scan failed: #{inspect(reason)}")
+        {:steps, [call(__MODULE__, :search_tabs, [rest, picked, retries])]}
+    end
+  end
+
+  defp await_tab_items(tab_ids, region, deadline) do
+    with {:ok, frame} <- Capture.grab_frame(),
+         {:ok, items} <- EgoGiftDetector.detect(frame.mat, region) do
+      cond do
+        Enum.any?(items, &MapSet.member?(tab_ids, &1.gift_id)) ->
+          {:ok, :loaded}
+
+        System.monotonic_time(:millisecond) >= deadline ->
+          {:ok, :timeout}
+
+        true ->
+          Process.sleep(@tab_poll_ms)
+          await_tab_items(tab_ids, region, deadline)
+      end
     end
   end
 
