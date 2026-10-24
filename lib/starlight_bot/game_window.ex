@@ -51,8 +51,18 @@ defmodule StarlightBot.GameWindow do
   end
 
   def fix_aspect(steam_app_id) do
-    with {:ok, before} <- rect() do
-      fix_aspect(steam_app_id, before, @resize_attempts)
+    lock = {:game_window_resize, self()}
+
+    if :global.set_lock(lock, [node()], 0) do
+      try do
+        with {:ok, before} <- rect() do
+          fix_aspect(steam_app_id, before, @resize_attempts)
+        end
+      after
+        :global.del_lock(lock, [node()])
+      end
+    else
+      {:error, :resize_in_progress}
     end
   end
 
