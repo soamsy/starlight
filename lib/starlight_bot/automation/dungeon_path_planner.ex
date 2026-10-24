@@ -112,13 +112,25 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
 
     case RunMemory.dungeon_map(ctx) do
       {^floor, remembered} ->
-        if hop_0_targets(remembered.edges) == hop_0_targets(graph.edges) do
+        remembered_targets = hop_0_targets(remembered.edges)
+        seen_targets = hop_0_targets(graph.edges)
+
+        if remembered_targets == seen_targets do
           merged = DungeonGraph.merge_remembered(graph, remembered)
           added = length(merged.edges) - length(graph.edges)
           if added > 0, do: Ctx.log(ctx, :info, "dungeon path planner: #{added} remembered edge(s) out of view, keeping them")
           merged
         else
-          Ctx.log(ctx, :info, "dungeon path planner: remembered map disagrees with this view, dropping it")
+          only_remembered = hop_0_edges_to(remembered.edges, MapSet.difference(remembered_targets, seen_targets))
+          only_seen = hop_0_edges_to(graph.edges, MapSet.difference(seen_targets, remembered_targets))
+
+          Ctx.log(
+            ctx,
+            :info,
+            "dungeon path planner: remembered map disagrees with this view (current #{graph.current_level}), dropping it; " <>
+              "remembered only: #{describe_edges(only_remembered)}; seen only: #{describe_edges(only_seen)}"
+          )
+
           graph
         end
 
@@ -128,6 +140,16 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   end
 
   defp hop_0_targets(edges), do: edges |> Enum.filter(&match?({0, _}, &1.from_node)) |> MapSet.new(& &1.to_node)
+
+  defp hop_0_edges_to(edges, targets), do: Enum.filter(edges, &(match?({0, _}, &1.from_node) and MapSet.member?(targets, &1.to_node)))
+
+  defp describe_edges([]), do: "none"
+
+  defp describe_edges(edges) do
+    Enum.map_join(edges, ", ", fn %{from_node: {_, from}, to_node: {_, to}} = edge ->
+      "#{from}->#{to} (#{edge.hook} #{:erlang.float_to_binary(edge.score * 1.0, decimals: 3)})"
+    end)
+  end
 
   defp best_move(graph, ctx) do
     case choose_target(graph) do

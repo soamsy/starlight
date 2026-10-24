@@ -151,6 +151,24 @@ defmodule StarlightBot.Automation.DungeonPathPlannerTest do
     assert {:ok, %{to_node: {1, :low}}} = DungeonPathPlanner.choose_target(merged)
   end
 
+  test "remembering a move drops the branches it left behind" do
+    start =
+      graph(
+        %{{1, :high} => :battle, {1, :low} => :event, {2, :high} => :battle, {2, :low} => :event},
+        [
+          {{0, :mid}, {1, :high}},
+          {{0, :mid}, {1, :low}},
+          {{1, :high}, {2, :high}},
+          {{1, :low}, {2, :low}}
+        ]
+      )
+
+    remembered = DungeonGraph.advance_view(start, :low)
+
+    assert Enum.map(remembered.edges, &{&1.from_node, &1.to_node}) == [{{0, :mid}, {1, :mid}}]
+    assert Map.keys(remembered.nodes) |> Enum.sort() == [{0, :mid}, {1, :mid}]
+  end
+
   test "a path ending short of the horizon is charged a battle per unseen hop" do
     g =
       graph(

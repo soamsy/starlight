@@ -224,15 +224,22 @@ defmodule StarlightBot.Vision.DungeonGraph do
   def advance_view(%__MODULE__{nodes: nodes, edges: edges}, target_level) do
     rise = level_index(:mid) - level_index(target_level)
 
+    shifted_edges =
+      for edge <- edges, {:ok, from} <- [shift_slot(edge.from_node, rise)], {:ok, to} <- [shift_slot(edge.to_node, rise)] do
+        %{edge | from_node: from, to_node: to}
+      end
+
+    visited = shifted_edges |> Map.new(&{{&1.from_node, &1.to_node}, &1}) |> reachable_nodes({0, :mid})
+
     %{
       nodes:
-        for {slot, node} <- nodes, {:ok, {hop, level} = shifted} <- [shift_slot(slot, rise)], into: %{} do
+        for {slot, node} <- nodes,
+            {:ok, {hop, level} = shifted} <- [shift_slot(slot, rise)],
+            MapSet.member?(visited, shifted),
+            into: %{} do
           {shifted, %{node | hop: hop, level: level}}
         end,
-      edges:
-        for edge <- edges, {:ok, from} <- [shift_slot(edge.from_node, rise)], {:ok, to} <- [shift_slot(edge.to_node, rise)] do
-          %{edge | from_node: from, to_node: to}
-        end
+      edges: Enum.filter(shifted_edges, &MapSet.member?(visited, &1.from_node))
     }
   end
 
