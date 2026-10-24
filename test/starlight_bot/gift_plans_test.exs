@@ -11,7 +11,7 @@ defmodule StarlightBot.GiftPlansTest do
       "affinity" => "burn",
       "grace_picks" => [],
       "library" => %{
-        "lists" => [%{"id" => "kp_1", "name" => "Core", "gifts" => ["Fiery Down"]}],
+        "lists" => [%{"id" => "kp_1", "name" => "Core", "gifts" => ["Fiery Down"], "protected" => true}],
         "upties" => [%{"id" => "up_1", "name" => "Glimpse +2", "gift" => "Glimpse of Flames", "target_level" => 2}],
         "fusions" => [
           %{"id" => "tf_1", "name" => "Glimpse", "type" => "tiered", "target" => "Glimpse of Flames", "routes" => []},
@@ -20,11 +20,10 @@ defmodule StarlightBot.GiftPlansTest do
         ]
       },
       "workflows" => [
-        %{"id" => "wf_1", "name" => "Opener", "keep" => "kp_1", "steps" => []},
+        %{"id" => "wf_1", "name" => "Opener", "steps" => []},
         %{
           "id" => "wf_2",
           "name" => "Standard",
-          "keep" => "kp_1",
           "steps" => [
             %{"id" => "st_1", "kind" => "fusion", "fusions" => ["tf_1", "tf_2"], "enabled" => true},
             %{"id" => "st_2", "kind" => "fusion", "fusions" => ["fx_1"], "enabled" => true},
@@ -51,7 +50,7 @@ defmodule StarlightBot.GiftPlansTest do
   end
 
   describe "protected_set/3" do
-    test "unions the workflow keep list with fusion targets and fixed-fusion ingredients" do
+    test "unions the keep list with fusion targets and fixed-fusion ingredients" do
       gifts = [gift("g1", "Wholeness", 4, "g2,g3"), gift("g2", "Ing A", 2), gift("g3", "Ing B", 2)]
       workflow = GiftPlans.find_workflow(plan(), "wf_2")
 
@@ -61,9 +60,9 @@ defmodule StarlightBot.GiftPlansTest do
 
     test "protects the gift an uptie step works on, skipping missing uptie definitions" do
       data = plan()
-      workflow = %{"id" => "wf_3", "keep" => nil, "steps" => [%{"id" => "st_9", "kind" => "uptie", "upties" => ["up_gone", "up_1"], "enabled" => true}]}
+      workflow = %{"id" => "wf_3", "steps" => [%{"id" => "st_9", "kind" => "uptie", "upties" => ["up_gone", "up_1"], "enabled" => true}]}
 
-      assert GiftPlans.protected_set(data, workflow, []) == MapSet.new(["Glimpse of Flames"])
+      assert GiftPlans.protected_set(unprotected(data), workflow, []) == MapSet.new(["Glimpse of Flames"])
     end
 
     test "ignores disabled steps" do
@@ -75,6 +74,55 @@ defmodule StarlightBot.GiftPlansTest do
     end
   end
 
+  defp unprotected(data), do: update_in(data, ["library", "lists"], &Enum.map(&1, fn list -> Map.delete(list, "protected") end))
+
+  describe "protected floors" do
+    test "every protected list counts, unprotected lists don't, and a gift is only protected on its protected floors" do
+      data =
+        plan()
+        |> update_in(["library", "lists"], &(&1 ++ [
+          %{"id" => "ls_2", "name" => "Late", "gifts" => ["Wound Clerid", "tier:3"], "protected" => true},
+          %{"id" => "ls_3", "name" => "Buys", "gifts" => ["Awe"]}
+        ]))
+        |> GiftPlans.put_protected_floors("Wound Clerid", 2, 3)
+        |> GiftPlans.put_protected_floors("tier:3", 4, nil)
+        |> GiftPlans.put_protected_floors("Glimpse of Flames", 1, 1)
+
+      workflow = GiftPlans.find_workflow(data, "wf_2")
+
+      assert GiftPlans.keep_gifts(data) == ["Fiery Down", "Wound Clerid", "tier:3"]
+      assert GiftPlans.protected_set(data, workflow, [], 1) == MapSet.new(["Fiery Down", "Glimpse of Flames", "Hellterfly's Dream", "Wholeness"])
+      assert GiftPlans.protected_set(data, workflow, [], 2) == MapSet.new(["Fiery Down", "Wound Clerid", "Hellterfly's Dream", "Wholeness"])
+      assert GiftPlans.protected_set(data, workflow, [], 4) == MapSet.new(["Fiery Down", "tier:3", "Hellterfly's Dream", "Wholeness"])
+      assert MapSet.member?(GiftPlans.protected_set(data, workflow, []), "Wound Clerid")
+      assert "No list is marked protected." in GiftPlans.issues(unprotected(data))
+    end
+
+    test "put_protected_floors drops the full range, clamps the end and labels the range" do
+      data = plan()
+
+      assert GiftPlans.put_protected_floors(data, "A", 1, nil)["protected_floors"] == %{}
+      assert GiftPlans.put_protected_floors(data, "A", 3, 15)["protected_floors"] == %{"A" => %{"from" => 3, "to" => nil}}
+      assert GiftPlans.put_protected_floors(data, "A", 4, 2)["protected_floors"] == %{"A" => %{"from" => 4, "to" => 4}}
+      assert GiftPlans.protected_floors_label(GiftPlans.put_protected_floors(data, "A", 1, 4), "A") == "F1 to F4"
+      assert GiftPlans.protected_floors_label(GiftPlans.put_protected_floors(data, "A", 5, nil), "A") == "F5+"
+      assert GiftPlans.protected_floors_label(data, "A") == "every floor"
+    end
+
+    test "ranges outlive unprotecting a list and are only pruned once the gift is gone from every list, fusion and uptie" do
+      data =
+        plan()
+        |> GiftPlans.put_protected_floors("Fiery Down", 2, 3)
+        |> GiftPlans.put_protected_floors("Glimpse of Flames", 1, 2)
+        |> GiftPlans.put_protected_floors("Gone", 1, 2)
+        |> unprotected()
+        |> GiftPlans.prune_protected_floors()
+
+      assert Map.keys(data["protected_floors"]) |> Enum.sort() == ["Fiery Down", "Glimpse of Flames"]
+      assert GiftPlans.protected_floors(data, "Fiery Down") == {2, 3}
+    end
+  end
+
   describe "nested workflows" do
     defp nested_plan do
       run = fn id, target -> %{"id" => id, "kind" => "workflow", "workflow" => target, "enabled" => true} end
@@ -83,10 +131,10 @@ defmodule StarlightBot.GiftPlansTest do
       %{
         plan()
         | "workflows" => [
-            %{"id" => "wf_a", "name" => "A", "keep" => "kp_1", "steps" => [run.("st_a", "wf_b")]},
-            %{"id" => "wf_b", "name" => "B", "keep" => nil, "steps" => [refresh, run.("st_b", "wf_c")]},
-            %{"id" => "wf_c", "name" => "C", "keep" => nil, "steps" => [%{"id" => "st_c", "kind" => "uptie", "upties" => ["up_1"], "enabled" => true}]},
-            %{"id" => "wf_d", "name" => "D", "keep" => nil, "steps" => []}
+            %{"id" => "wf_a", "name" => "A", "steps" => [run.("st_a", "wf_b")]},
+            %{"id" => "wf_b", "name" => "B", "steps" => [refresh, run.("st_b", "wf_c")]},
+            %{"id" => "wf_c", "name" => "C", "steps" => [%{"id" => "st_c", "kind" => "uptie", "upties" => ["up_1"], "enabled" => true}]},
+            %{"id" => "wf_d", "name" => "D", "steps" => []}
           ]
       }
     end
@@ -128,7 +176,7 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.called_workflows(d) == ["wf_c"]
       assert GiftPlans.creates_cycle?(data, "wf_c", "wf_d")
       assert data |> GiftPlans.expand_steps(d) |> Enum.map(& &1["id"]) == ["st_d", "st_c"]
-      assert GiftPlans.protected_set(data, d, []) == MapSet.new(["Glimpse of Flames"])
+      assert GiftPlans.protected_set(unprotected(data), d, []) == MapSet.new(["Glimpse of Flames"])
 
       gone = put_in(data, ["workflows", Access.at(3), "steps", Access.at(0), "between"], "wf_gone")
       assert Enum.any?(GiftPlans.issues(gone), &(&1 =~ "D: step 1 (Refresh) runs a deleted workflow between repeats."))
@@ -167,9 +215,9 @@ defmodule StarlightBot.GiftPlansTest do
           end) ++ [%{"id" => "fx_2", "name" => "Ing A", "type" => "fixed", "target" => "Ing A", "sub_fusions" => %{}}]
         end)
 
-      workflow = %{"id" => "wf_x", "keep" => nil, "steps" => [%{"id" => "s", "kind" => "fusion", "fusions" => ["fx_1"], "enabled" => true}]}
+      workflow = %{"id" => "wf_x", "steps" => [%{"id" => "s", "kind" => "fusion", "fusions" => ["fx_1"], "enabled" => true}]}
 
-      assert GiftPlans.protected_set(data, workflow, gifts) == MapSet.new(["Wholeness", "Ing A", "Ing B", "Deep A", "Deep B"])
+      assert GiftPlans.protected_set(unprotected(data), workflow, gifts) == MapSet.new(["Wholeness", "Ing A", "Ing B", "Deep A", "Deep B"])
     end
 
     test "issues flag a missing recipe and a sub-fusion aimed at the wrong gift" do
@@ -460,8 +508,8 @@ defmodule StarlightBot.GiftPlansTest do
                GiftPlans.set_entry_group(plan, "ms_shop", ref("fusions", "fu_1"), "new")
       assert reached?(plan, "ms_shop", env(["Top", "A", "K1"]))
 
-      workflow = %{"id" => "wf_m", "keep" => nil, "steps" => [%{"id" => "st_m", "kind" => "milestone", "milestone" => "ms_shop", "enabled" => true}]}
-      assert GiftPlans.protected_set(Map.merge(plan(), plan), workflow, []) == MapSet.new(["Top", "A", "K1"])
+      workflow = %{"id" => "wf_m", "steps" => [%{"id" => "st_m", "kind" => "milestone", "milestone" => "ms_shop", "enabled" => true}]}
+      assert GiftPlans.protected_set(unprotected(Map.merge(plan(), plan)), workflow, []) == MapSet.new(["Top", "A", "K1"])
     end
 
     test "a cycle between milestones evaluates false and is flagged" do
@@ -487,9 +535,9 @@ defmodule StarlightBot.GiftPlansTest do
 
     test "a Work on Milestone step protects everything the milestone works on" do
       plan = Map.merge(plan(), milestone_plan())
-      workflow = %{"id" => "wf_m", "keep" => nil, "steps" => [%{"id" => "st_m", "kind" => "milestone", "milestone" => "ms_shop", "enabled" => true}]}
+      workflow = %{"id" => "wf_m", "steps" => [%{"id" => "st_m", "kind" => "milestone", "milestone" => "ms_shop", "enabled" => true}]}
 
-      assert GiftPlans.protected_set(plan, workflow, []) == MapSet.new(["Top", "A", "K1"])
+      assert GiftPlans.protected_set(unprotected(plan), workflow, []) == MapSet.new(["Top", "A", "K1"])
       assert GiftPlans.step_label(plan, hd(workflow["steps"])) == "Work on Milestone · Shop Done"
       assert GiftPlans.definition_for(plan, %{"kind" => "milestone", "milestone" => "ms_gone"}) == {:error, :missing_definition}
     end
@@ -829,15 +877,15 @@ defmodule StarlightBot.GiftPlansTest do
     defp source_plan do
       %{
         "workflows" => [
-          %{"id" => "wf_loop", "name" => "Repeat", "keep" => "kp_core", "steps" => [
+          %{"id" => "wf_loop", "name" => "Repeat", "steps" => [
             %{"id" => "st_a", "kind" => "workflow", "workflow" => "wf_check"}
           ]},
-          %{"id" => "wf_check", "name" => "ShopCheck", "keep" => "kp_core", "steps" => [
+          %{"id" => "wf_check", "name" => "ShopCheck", "steps" => [
             %{"id" => "st_b", "kind" => "buy_list", "list" => "sl_src"},
             %{"id" => "st_c", "kind" => "fusion", "fusions" => ["fu_bsm", "tf_shared"]},
             %{"id" => "st_d", "kind" => "uptie", "upties" => ["up_src"]}
           ]},
-          %{"id" => "wf_other", "name" => "Unrelated", "keep" => nil, "steps" => []}
+          %{"id" => "wf_other", "name" => "Unrelated", "steps" => []}
         ],
         "library" => %{
           "lists" => [%{"id" => "kp_core", "name" => "Core", "gifts" => ["A"]}, %{"id" => "sl_src", "name" => "Buys", "gifts" => ["B"]}],
@@ -866,7 +914,7 @@ defmodule StarlightBot.GiftPlansTest do
 
       [buy, fusion, uptie] = check["steps"]
       assert GiftPlans.find_definition(data, "lists", buy["list"])["name"] == "Buys"
-      assert loop["keep"] == "kp_1"
+      refute Map.has_key?(loop, "keep")
       assert uptie["upties"] == ["up_1"]
 
       [bsm_id, glimpse_id] = fusion["fusions"]
@@ -877,7 +925,7 @@ defmodule StarlightBot.GiftPlansTest do
     end
 
     test "a workflow name that already exists gets the source plan's name added" do
-      base = Map.put(plan(), "workflows", [%{"id" => "wf_x", "name" => "ShopCheck", "keep" => nil, "steps" => []}])
+      base = Map.put(plan(), "workflows", [%{"id" => "wf_x", "name" => "ShopCheck", "steps" => []}])
       data = GiftPlans.import_workflows(base, source_plan(), ["wf_check"], "SinkPoise")
 
       assert Enum.map(data["workflows"], & &1["name"]) == ["ShopCheck", "ShopCheck (SinkPoise)"]

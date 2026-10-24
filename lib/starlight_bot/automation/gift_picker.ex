@@ -175,8 +175,9 @@ defmodule StarlightBot.Automation.GiftPicker do
   defp wanted_names(gifts_by_id, ctx) do
     with %{} = data <- RunMemory.gift_plan(ctx),
          plan = GiftPlans.normalize(data),
-         %{} = workflow <- GiftPlans.workflow_for_floor(plan, RunMemory.floor(ctx)) do
-      Enum.uniq(GiftPlans.keep_gifts(plan, workflow) ++ GiftPlans.derived_protected(plan, workflow, Map.values(gifts_by_id)))
+         floor = RunMemory.floor(ctx),
+         %{} = workflow <- GiftPlans.workflow_for_floor(plan, floor) do
+      plan |> GiftPlans.protected_set(workflow, Map.values(gifts_by_id), floor) |> MapSet.to_list()
     else
       _ -> []
     end

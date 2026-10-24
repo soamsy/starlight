@@ -8,7 +8,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   embed_templates "gift_plan_editor/*"
 
-  @tabs ~w(workflows shop grace gift_search mounting_trials)a
+  @tabs ~w(workflows shop loadout)a
   @gift_tiers 1..6
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)
   @gift_sorts ~w(default name tier affinity)
@@ -259,8 +259,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("add_workflow", _, socket) do
     data = socket.assigns.plan_data
-    keep_id = data["library"]["lists"] |> List.first() |> then(&(&1 && &1["id"]))
-    workflow = %{"id" => GiftPlans.new_id("wf"), "name" => "Workflow #{length(data["workflows"]) + 1}", "keep" => keep_id, "steps" => []}
+    workflow = %{"id" => GiftPlans.new_id("wf"), "name" => "Workflow #{length(data["workflows"]) + 1}", "steps" => []}
 
     {:noreply,
      socket
@@ -309,11 +308,20 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     {:noreply,
      update_plan(socket, fn data ->
        update_workflow(data, socket.assigns.selected_workflow_id, fn workflow ->
-         workflow
-         |> Map.put("name", String.trim(params["name"] || workflow["name"]))
-         |> Map.put("keep", blank_to_nil(params["keep"]))
+         Map.put(workflow, "name", String.trim(params["name"] || workflow["name"]))
        end)
      end)}
+  end
+
+  @impl true
+  def handle_event("toggle_list_protected", %{"id" => id}, socket) do
+    {:noreply, update_plan(socket, &update_definition(&1, "lists", id, fn list -> Map.put(list, "protected", list["protected"] != true) end))}
+  end
+
+  @impl true
+  def handle_event("set_protected_floors", %{"entry" => entry, "from" => from, "to" => to}, socket) do
+    to = if to == "", do: nil, else: String.to_integer(to)
+    {:noreply, update_plan(socket, &GiftPlans.put_protected_floors(&1, entry, String.to_integer(from), to))}
   end
 
   @impl true
@@ -926,11 +934,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def tab_label(:workflows), do: "Workflows"
   def tab_label(:shop), do: "Shop"
-  def tab_label(:grace), do: "Grace"
-  def tab_label(:gift_search), do: "Gift Search"
-  def tab_label(:mounting_trials), do: "Mounting Trials"
+  def tab_label(:loadout), do: "Loadout"
 
-  def accent_tab?(tab), do: tab in [:grace, :gift_search, :mounting_trials]
+  def accent_tab?(tab), do: tab in [:loadout]
 
   def searchable_gifts(gifts), do: Enum.filter(gifts, &GiftPlans.gift_searchable?/1)
 
@@ -999,7 +1005,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     steps = Enum.flat_map(data["workflows"], & &1["steps"])
 
     [
-      Enum.any?(data["workflows"], &(&1["keep"] == id)) && "keep",
+      Enum.any?(GiftPlans.protected_lists(data), &(&1["id"] == id)) && "protected",
       Enum.any?(steps, &(&1["kind"] == "buy_list" and &1["list"] == id)) && "buy",
       Enum.any?(steps, &(&1["kind"] == "sell" and &1["list"] == id)) && "sell"
     ]
@@ -1007,7 +1013,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   def uncaptured_protected(data, workflow, gifts, gifts_by_name) do
-    kept = GiftPlans.keep_gifts(data, workflow)
+    kept = GiftPlans.keep_gifts(data)
 
     data
     |> GiftPlans.derived_protected(workflow, gifts)
@@ -1016,8 +1022,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       Enum.any?(kept, &(&1 == name or (gift && GiftPlans.entry_matches?(&1, gift))))
     end)
   end
-
-  def workflows_using_keep(data, keep_id), do: data["workflows"] |> Enum.filter(&(&1["keep"] == keep_id)) |> Enum.map(& &1["name"])
 
   def step_broken?(data, step), do: match?({:error, _}, GiftPlans.definition_for(data, step))
 
@@ -1249,7 +1253,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     end
   end
 
-  defp update_plan(socket, fun), do: socket |> assign(:plan_data, fun.(socket.assigns.plan_data)) |> persist_plan()
+  defp update_plan(socket, fun), do: socket |> assign(:plan_data, GiftPlans.prune_protected_floors(fun.(socket.assigns.plan_data))) |> persist_plan()
 
   defp update_workflow(data, id, fun) do
     Map.update!(data, "workflows", fn workflows -> Enum.map(workflows, &if(&1["id"] == id, do: fun.(&1), else: &1)) end)
@@ -1677,6 +1681,29 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         Clipboard: <%= @clipboard.name %> (<%= lib_label(@clipboard.lib) %>, <%= length(@clipboard.gifts) %> gift(s))
       </span>
     </div>
+    """
+  end
+
+  attr :plan_data, :map, required: true
+  attr :entry, :string, required: true
+
+  def protected_floors_picker(assigns) do
+    assigns = assign(assigns, :range, GiftPlans.protected_floors(assigns.plan_data, assigns.entry))
+
+    ~H"""
+    <form phx-change="set_protected_floors" class="flex items-center gap-0.5"
+          title={"Protected #{GiftPlans.protected_floors_label(@plan_data, @entry)}. On other floors it can be sold or used as fusion material. Shared by every list, fusion and uptie with this gift."}>
+      <input type="hidden" name="entry" value={@entry} />
+      <span class={"text-[10px] whitespace-nowrap " <> if(@range == {1, nil}, do: "text-base-content/40", else: "text-secondary font-semibold")}>Protected floors</span>
+      <select name="from" class="select select-bordered h-5 min-h-0 text-[10px] pl-1 pr-5 w-12">
+        <option :for={floor <- 1..GiftPlans.max_floor()} value={floor} selected={elem(@range, 0) == floor}>F<%= floor %></option>
+      </select>
+      <span class="text-[10px] text-base-content/40">to</span>
+      <select name="to" class="select select-bordered h-5 min-h-0 text-[10px] pl-1 pr-5 w-14">
+        <option :for={floor <- elem(@range, 0)..(GiftPlans.max_floor() - 1)//1} value={floor} selected={elem(@range, 1) == floor}>F<%= floor %></option>
+        <option value="" selected={is_nil(elem(@range, 1))}>end</option>
+      </select>
+    </form>
     """
   end
 

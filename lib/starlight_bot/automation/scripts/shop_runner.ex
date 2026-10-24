@@ -113,7 +113,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       replaced: (progress && progress[:replaced]) || MapSet.new(),
       gifts_by_name: Map.new(gifts, &{&1.name, &1}),
       gifts_by_id: Map.new(gifts, &{&1.id, &1}),
-      protected: GiftPlans.protected_set(plan, workflow, gifts),
+      protected: GiftPlans.protected_set(plan, workflow, gifts, floor),
       sell_popup_open: false,
       heal_menu_open: false,
       last_heal: nil,

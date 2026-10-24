@@ -100,7 +100,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert hd(saved(socket)["library"]["upties"])["name"] == "Fiery Down"
     assert hd(saved(socket)["library"]["fusions"])["name"] == "Glimpse of Flames"
 
-    for tab <- ~w(workflows shop grace gift_search) do
+    for tab <- ~w(workflows shop loadout) do
       assert is_binary(socket |> event("set_tab", %{"tab" => tab}) |> render())
     end
 
@@ -129,6 +129,28 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
     socket = socket |> event("gifts_copy", %{"lib" => "lists", "def_id" => list_id}) |> event("gifts_paste", %{"lib" => "lists", "def_id" => keep["id"]})
     assert hd(saved(socket)["library"]["lists"])["gifts"] == ["Fiery Down", "tier:3"]
+  end
+
+  test "lists are marked protected and protected floors are shared per gift and kept until the gift leaves the plan", %{socket: socket} do
+    socket = socket |> event("lib_add", %{"lib" => "lists"}) |> event("set_tab", %{"tab" => "shop"})
+    list_id = socket.assigns.selected_def["lists"]
+
+    socket =
+      socket
+      |> event("toggle_list_protected", %{"id" => list_id})
+      |> event("lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down"})
+      |> event("set_protected_floors", %{"entry" => "Fiery Down", "from" => "2", "to" => "4"})
+
+    assert GiftPlans.find_definition(saved(socket), "lists", list_id)["protected"] == true
+    assert render(socket) =~ "Protected floors"
+    assert GiftPlans.protected_floors(saved(socket), "Fiery Down") == {2, 4}
+    assert "protected" in Live.list_roles(saved(socket), list_id)
+
+    socket = event(socket, "toggle_list_protected", %{"id" => list_id})
+    assert GiftPlans.protected_floors(saved(socket), "Fiery Down") == {2, 4}
+
+    socket = event(socket, "lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down"})
+    assert saved(socket)["protected_floors"] == %{}
   end
 
   test "lists take any-affinity entries with a tier filter, and they join milestones as optional", %{socket: socket} do
@@ -168,7 +190,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
   end
 
   test "gift search holds up to 3 gifts of tier 3 or under", %{socket: socket} do
-    socket = event(socket, "set_tab", %{"tab" => "gift_search"})
+    socket = event(socket, "set_tab", %{"tab" => "loadout"})
     html = render(socket)
     assert html =~ ~s(phx-value-gift="Fiery Down")
     refute html =~ ~s(phx-value-gift="Glimpse of Flames")

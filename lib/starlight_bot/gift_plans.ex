@@ -20,6 +20,7 @@ defmodule StarlightBot.GiftPlans do
   @gift_search_starlight_costs [70, 160, 270]
   @shop_tiers 1..4
   @gift_search_max_tier 3
+  @max_floor 15
   @mounting_trials_modes ~w(avoid_hp best_gift)
   @starting_gifts %{
     "bleed" => ["Wound Clerid", "Little and To-Be-Naughty Plushie", "Awe"],
@@ -62,6 +63,7 @@ defmodule StarlightBot.GiftPlans do
   def gift_search_starlight_cost(count), do: Enum.at(@gift_search_starlight_costs, min(count, @gift_search_max) - 1)
   def gift_search_slot_cost(slot), do: gift_search_starlight_cost(slot + 1) - gift_search_starlight_cost(slot)
   def shop_tiers, do: @shop_tiers
+  def max_floor, do: @max_floor
   def mounting_trials_modes, do: @mounting_trials_modes
 
   def mounting_trials_mode_label("avoid_hp"), do: "Avoid boosting enemy HP"
@@ -77,8 +79,8 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def blank(affinity \\ nil) do
-    keep = new_definition("lists", "Keep")
-    workflow = %{"id" => new_id("wf"), "name" => "Standard", "keep" => keep["id"], "steps" => []}
+    keep = Map.put(new_definition("lists", "Keep"), "protected", true)
+    workflow = %{"id" => new_id("wf"), "name" => "Standard", "steps" => []}
 
     %{
       "version" => 3,
@@ -86,6 +88,7 @@ defmodule StarlightBot.GiftPlans do
       "cabinet_gifts" => starting_gifts(affinity),
       "grace_picks" => Enum.map(@default_grace_indexes, &%{"index" => &1, "enhance" => 0}),
       "gift_search" => [],
+      "protected_floors" => %{},
       "library" => %{"lists" => [keep], "upties" => [], "fusions" => []},
       "workflows" => [workflow],
       "floor_schedule" => [%{"from_floor" => 1, "workflow" => workflow["id"]}],
@@ -103,6 +106,7 @@ defmodule StarlightBot.GiftPlans do
       "cabinet_gifts" => data["cabinet_gifts"] || [],
       "grace_picks" => data["grace_picks"] || [],
       "gift_search" => data["gift_search"] || [],
+      "protected_floors" => data["protected_floors"] || %{},
       "library" => Map.new(@library_keys, &{&1, library[&1] || []}),
       "workflows" => data["workflows"] || [],
       "floor_schedule" => data["floor_schedule"] || [],
@@ -673,22 +677,18 @@ defmodule StarlightBot.GiftPlans do
             "name" => name,
             "steps" => Enum.map(workflow["steps"], &remap_tree(&1, wf_map, ref_map))
         }
-        |> Map.put("keep", ref_map[{"lists", workflow["keep"]}])
       end)
 
     Map.update!(data, "workflows", &(&1 ++ imported))
   end
 
   defp workflow_refs(workflow) do
-    keep = if workflow["keep"], do: [{"lists", workflow["keep"]}], else: []
-
-    keep ++
-      Enum.flat_map(all_steps(workflow["steps"]), fn step ->
-        case library_ref(step["kind"]) do
-          {lib, field} -> for id <- List.wrap(step[field]), is_binary(id), do: {lib, id}
-          nil -> []
-        end
-      end)
+    Enum.flat_map(all_steps(workflow["steps"]), fn step ->
+      case library_ref(step["kind"]) do
+        {lib, field} -> for id <- List.wrap(step[field]), is_binary(id), do: {lib, id}
+        nil -> []
+      end
+    end)
   end
 
   defp import_definition({data, ref_map} = acc, source, lib, id) do
@@ -792,11 +792,48 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
-  def keep_gifts(data, workflow) do
-    case find_definition(data, "lists", workflow["keep"]) do
-      nil -> []
-      keep -> keep["gifts"]
+  def protected_lists(data), do: Enum.filter(data["library"]["lists"], &(&1["protected"] == true))
+
+  def keep_gifts(data), do: data |> protected_lists() |> Enum.flat_map(& &1["gifts"]) |> Enum.uniq()
+
+  def protected_floors(data, entry) do
+    case (data["protected_floors"] || %{})[entry] do
+      %{} = range -> {range["from"] || 1, range["to"]}
+      _ -> {1, nil}
     end
+  end
+
+  def protected_on?(data, entry, floor) do
+    {from, to} = protected_floors(data, entry)
+    floor >= from and (is_nil(to) or floor <= to)
+  end
+
+  def put_protected_floors(data, entry, from, to) do
+    to = if to && to < @max_floor, do: max(to, from)
+    floors = Map.delete(data["protected_floors"] || %{}, entry)
+    floors = if from == 1 and is_nil(to), do: floors, else: Map.put(floors, entry, %{"from" => from, "to" => to})
+    Map.put(data, "protected_floors", floors)
+  end
+
+  def protected_floors_label(data, entry) do
+    case protected_floors(data, entry) do
+      {1, nil} -> "every floor"
+      {from, nil} -> "F#{from}+"
+      {from, from} -> "F#{from} only"
+      {from, to} -> "F#{from} to F#{to}"
+    end
+  end
+
+  def prune_protected_floors(data) do
+    library = data["library"]
+
+    used =
+      MapSet.new(
+        Enum.flat_map(library["lists"], & &1["gifts"]) ++
+          Enum.map(library["fusions"], & &1["target"]) ++ Enum.map(library["upties"], & &1["gift"])
+      )
+
+    Map.update(data, "protected_floors", %{}, &Map.filter(&1, fn {entry, _range} -> MapSet.member?(used, entry) end))
   end
 
   def derived_protected(data, workflow, gifts) do
@@ -853,8 +890,10 @@ defmodule StarlightBot.GiftPlans do
 
   def fixed_fusion?(definition), do: definition["type"] == "fixed"
 
-  def protected_set(data, workflow, gifts) do
-    MapSet.new(keep_gifts(data, workflow) ++ derived_protected(data, workflow, gifts))
+  def protected_set(data, workflow, gifts, floor \\ nil) do
+    (keep_gifts(data) ++ derived_protected(data, workflow, gifts))
+    |> Enum.filter(&(is_nil(floor) or protected_on?(data, &1, floor)))
+    |> MapSet.new()
   end
 
   def protected?(protected, gift), do: MapSet.member?(protected, gift.name) or Enum.any?(protected, &(is_binary(&1) and pattern_entry?(&1) and entry_matches?(&1, gift)))
@@ -1105,6 +1144,7 @@ defmodule StarlightBot.GiftPlans do
 
   def issues(data, gifts_by_name \\ %{}) do
     schedule_issues(data) ++
+      keep_issues(data) ++
       gift_search_issues(data, gifts_by_name) ++
       Enum.flat_map(data["workflows"], &workflow_issues(data, &1)) ++
       Enum.flat_map(data["library"]["fusions"], &fusion_issues(data, &1, gifts_by_name)) ++
@@ -1196,30 +1236,24 @@ defmodule StarlightBot.GiftPlans do
     floor_one ++ dangling
   end
 
+  defp keep_issues(data), do: if(protected_lists(data) == [], do: ["No list is marked protected."], else: [])
+
   defp workflow_issues(data, workflow) do
-    keep =
-      if find_definition(data, "lists", workflow["keep"]),
-        do: [],
-        else: ["#{workflow["name"]}: no keep list selected."]
+    workflow["steps"]
+    |> numbered_steps("")
+    |> Enum.flat_map(fn {step, i} ->
+      prefix = "#{workflow["name"]}: step #{i} (#{kind_label(step["kind"])})"
 
-    broken =
-      workflow["steps"]
-      |> numbered_steps("")
-      |> Enum.flat_map(fn {step, i} ->
-        prefix = "#{workflow["name"]}: step #{i} (#{kind_label(step["kind"])})"
+      case {step["kind"], definition_for(data, step)} do
+        {"workflow", {:error, :missing_definition}} -> ["#{prefix} has no workflow selected, or it was deleted."]
+        {"workflow", {:ok, sub}} ->
+          if creates_cycle?(data, workflow["id"], sub["id"]), do: ["#{prefix} runs #{sub["name"]}, which leads back to #{workflow["name"]}."], else: []
 
-        case {step["kind"], definition_for(data, step)} do
-          {"workflow", {:error, :missing_definition}} -> ["#{prefix} has no workflow selected, or it was deleted."]
-          {"workflow", {:ok, sub}} ->
-            if creates_cycle?(data, workflow["id"], sub["id"]), do: ["#{prefix} runs #{sub["name"]}, which leads back to #{workflow["name"]}."], else: []
-
-          {_kind, {:error, :missing_definition}} -> ["#{prefix} references a deleted definition."]
-          {_kind, {:error, :no_definitions}} -> ["#{prefix} has no definitions selected."]
-          _ -> []
-        end ++ between_issues(data, workflow, step, prefix)
-      end)
-
-    keep ++ broken
+        {_kind, {:error, :missing_definition}} -> ["#{prefix} references a deleted definition."]
+        {_kind, {:error, :no_definitions}} -> ["#{prefix} has no definitions selected."]
+        _ -> []
+      end ++ between_issues(data, workflow, step, prefix)
+    end)
   end
 
   defp numbered_steps(steps, prefix) do
