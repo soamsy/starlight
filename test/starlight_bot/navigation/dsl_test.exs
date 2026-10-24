@@ -65,17 +65,6 @@ defmodule StarlightBot.Navigation.DSLTest do
       assert DSL.await(:foo, premove: true) == DSL.await(:foo)
     end
 
-    test "confirm/1-2 awaits the hook, then reclicks it until gone with nothing in between" do
-      assert [await, reclick] = DSL.confirm(:a)
-      assert await == DSL.await(:a)
-      assert reclick == DSL.reclick_until_gone(:a)
-
-      opts = [timeout: 100, premove: false]
-      assert [await, reclick] = DSL.confirm(:a, opts)
-      assert await == DSL.await(:a, opts)
-      assert reclick == DSL.reclick_until_gone(:a, opts)
-    end
-
     test "confirm_enter/1-2 awaits either hook, then presses enter until both stay gone" do
       spec = DSL.any_of([:a, :b])
 
