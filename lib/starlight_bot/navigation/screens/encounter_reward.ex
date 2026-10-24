@@ -8,6 +8,8 @@ defmodule StarlightBot.Navigation.Screens.EncounterReward do
   @ready_settle_ms 100
   @close_timeout_ms 8_000
   @gift_popup_grace_ms 300
+  @select_timeout_ms 2_000
+  @select_every_ms 400
   @priority_hooks [
     :encounter_reward_gain_cost,
     :encounter_reward_random_gift,
@@ -19,7 +21,7 @@ defmodule StarlightBot.Navigation.Screens.EncounterReward do
     transition to: :encounter_reward_over do
       [
         branch([{any_of(@priority_hooks), [sleep(@ready_settle_ms)]}], wait: @ready_wait_ms),
-        call(__MODULE__, :select_priority_gift),
+        retry_until(:encounter_reward_1_of_1, [call(__MODULE__, :select_priority_gift)], timeout: @select_timeout_ms, every: @select_every_ms),
         click(:encounter_reward_confirm),
         await_reward_closed()
       ]
