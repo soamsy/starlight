@@ -860,6 +860,7 @@ defmodule StarlightBot.Navigation.Machine do
   defp next_target([{:click, hook, _opts} | _]), do: {:ok, hook}
   defp next_target([{:move_to, hook} | _]), do: {:ok, hook}
   defp next_target([{:premove, hook} | _]), do: {:ok, hook}
+  defp next_target([{:hold, _, _, _, _} | rest]), do: next_target(rest)
   defp next_target([{:drag, hook, _dx, _dy, _ms} | _]), do: {:ok, hook}
   defp next_target([{:retry_until, _spec, [_ | _] = steps, _, _, _} | rest]), do: next_target(steps ++ rest)
   defp next_target([{:retry_until, _spec, [_ | _] = steps, _, _, _, _} | rest]), do: next_target(steps ++ rest)

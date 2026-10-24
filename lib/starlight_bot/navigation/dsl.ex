@@ -241,7 +241,8 @@ defmodule StarlightBot.Navigation.DSL do
           ...
         ]
   def confirm(hook, opts \\ []) when is_atom(hook) do
-    [await(hook, opts), reclick_until_gone(hook, opts)]
+    steady_ms = Keyword.get(opts, :steady, @confirm_steady_ms)
+    [await(hook, opts), hold(hook, steady_ms, within: @confirm_steady_timeout_ms), reclick_until_gone(hook, opts)]
   end
 
   def confirm_enter(hook, opts \\ []) when is_atom(hook) or is_tuple(hook) do
