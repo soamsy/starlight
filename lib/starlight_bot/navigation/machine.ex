@@ -415,7 +415,7 @@ defmodule StarlightBot.Navigation.Machine do
   defp settle({:ok, name} = current, deadline, data) do
     if Runner.fallback_screen?(name) and Runner.settles?(name) and mono() < deadline,
       do: {:next_state, :polling, %{data | poll: {{:settle, current}, deadline}}, [{:state_timeout, @poll_interval_ms, :tick}]},
-      else: continue(%{data | result: current}, data.frame)
+      else: continue(%{data | result: current}, nil)
   end
 
   defp probe({:refine, candidates, _arrived}) do
@@ -497,7 +497,7 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   defp matched({:refine, _candidates, _arrived}, _frame, screen, data),
-    do: continue(%{data | result: {:ok, screen}}, data.frame)
+    do: continue(%{data | result: {:ok, screen}}, nil)
 
   defp expire({:await, hook}, _frame, data) do
     Ctx.log(data.ctx, :error, "await #{inspect(hook)}: timeout")
@@ -536,7 +536,7 @@ defmodule StarlightBot.Navigation.Machine do
     fail_with({:error, {:verification_failed, screen_name}}, data)
   end
 
-  defp expire({:locate, _started_at}, _frame, data), do: continue(%{data | result: :unknown}, data.frame)
+  defp expire({:locate, _started_at}, _frame, data), do: continue(%{data | result: :unknown}, nil)
 
   defp expire({:leave, screen_name, started_at}, _frame, data) do
     Ctx.log(data.ctx, :step, "still on #{screen_name} after #{mono() - started_at}ms")
@@ -544,7 +544,7 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   defp expire({:refine, _candidates, arrived}, _frame, data),
-    do: continue(%{data | result: {:ok, arrived}}, data.frame)
+    do: continue(%{data | result: {:ok, arrived}}, nil)
 
   defp retry_loop(loop, attempt, data) do
     if retry_exhausted?(loop.bound, attempt),

@@ -199,6 +199,12 @@ defmodule StarlightBot.Navigation.MachineTest do
       assert {:ok, _} = run([locate_screen(timeout: 300, then: deliver_here())])
       assert_received {:got, :unknown}
     end
+
+    @tag visible: [:encounter_reward]
+    test "locate_screen drops the frame cached before it so later checks look at the screen again" do
+      assert {:ok, _} = run([record(:stale), locate_screen(timeout: 1_000), record(:after)])
+      assert_received {:ran, :after, nil}
+    end
   end
 
   describe "confirm_enter" do
