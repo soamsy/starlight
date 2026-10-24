@@ -12,7 +12,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   @ready_poll_ms 50
   @shop_confirm_wait_ms 1_500
   @arrival_space_ms 80
-  @arrival_timeout_ms 5_000
+  @arrival_timeout_ms 4_000
   @node_arrival_hooks [
     :event, :shop, :shop_super, :ego_gift_get, :team_selector, :team_selector_tall, :team_selector_gone, :loading_stage_1, :loading_stage_2
   ]
@@ -60,7 +60,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
       Engine.act([
         retry_until(any_of([:loading_stage_1, :loading_stage_2]), [
           branch(leading_clauses ++ [gift_popup_clause(), {:default, [key(direction), key(:enter)]}])
-        ], every: 200, timeout: 15_000)
+        ], every: 100, timeout: 10_000)
       ] ++ loading() ++ [await(:battle_settings, timeout: 5_000, premove: false)], ctx)
     kind in [:battle, :hard_battle, :risky_battle, :boss] ->
       Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead, moving to team select")
@@ -70,38 +70,30 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
         [
           branch(leading_clauses ++ [
             gift_popup_clause(),
-            {:dungeon_graph_dante, [key(direction), key(:enter), sleep(200), key(direction), key(:enter)]},
+            {:dungeon_graph_dante, [key(direction), key(:enter), sleep(200)]},
+            {:dungeon_graph_enter_dante, [key(:enter)]},
             {:default, [key(:enter)]}
           ])
         ],
-        every: 1_000,
-        timeout: 10_000)
+        every: 100,
+        timeout: 5_000)
       ], ctx)
-    kind in [:event, :shop] ->
+    true ->
       Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead (#{venue}), spamming #{direction} + enter until dungeon_graph is gone, then space + enter until it shows")
 
       Engine.act([
-        leave_graph(direction, leading_clauses),
+        retry_until(not_hook(:dungeon_graph),
+        [
+          branch(leading_clauses ++ [
+            gift_popup_clause(),
+            {:default, [key(direction), key(:enter)]}
+          ])
+        ],
+        every: 80,
+        timeout: 4_000),
         attempt([retry_until(any_of(@node_arrival_hooks), [key(:space), key(:enter)], every: @arrival_space_ms, timeout: @arrival_timeout_ms)], else: [])
       ], ctx)
-    true ->
-      Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead (#{venue}), spamming #{direction} + enter until dungeon_graph is gone")
-
-      Engine.act([leave_graph(direction, leading_clauses)], ctx)
     end
-  end
-
-  defp leave_graph(direction, leading_clauses) do
-    retry_until(not_hook(:dungeon_graph),
-    [
-      branch(leading_clauses ++ [
-        gift_popup_clause(),
-        {:dungeon_graph_dante, [key(direction), key(:enter), sleep(200), key(direction), key(:enter)]},
-        {:default, [key(:enter)]}
-      ])
-    ],
-    every: 700,
-    timeout: 5_000)
   end
 
   defp gift_popup_clause, do: {:ego_gift_get, [RewardHelpers.record_ego_gift_items_step(), key(:enter)]}
