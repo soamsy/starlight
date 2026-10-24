@@ -187,26 +187,9 @@
                     </span>
                   </label>
                   <select name="hook[match_method]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :match_method), do: "select-warning"}"}>
-                    <%= for method <- ~w(gray rgb binary_thresh color_detector value_detector saturation_detector grayscale_detector edge akaze sift) do %>
+                    <%= for method <- ~w(gray rgb binary_thresh color_detector value_detector saturation_detector grayscale_detector edge sift sift_saturation) do %>
                       <option value={method} selected={to_string(@form[:match_method].value) == method}>
                         <%= method %>
-                      </option>
-                    <% end %>
-                  </select>
-                </div>
-
-                <%!-- Feature Channel --%>
-                <div class="form-control">
-                  <label class="label py-0.5">
-                    <span class="label-text text-sm font-medium flex items-center gap-1">
-                      Feature Channel
-                      <span :if={field_dirty?(@form, @saved_params, :feature_channel)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                    </span>
-                  </label>
-                  <select name="hook[feature_channel]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :feature_channel), do: "select-warning"}"}>
-                    <%= for channel <- ~w(gray saturation) do %>
-                      <option value={channel} selected={to_string(@form[:feature_channel].value) == channel}>
-                        <%= channel %>
                       </option>
                     <% end %>
                   </select>

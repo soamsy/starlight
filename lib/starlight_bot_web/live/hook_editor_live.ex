@@ -452,7 +452,6 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
         params = %{
           "name" => hook.name,
           "match_method" => hook.match_method,
-          "feature_channel" => hook.feature_channel || "gray",
           "confidence" => to_string(hook.confidence),
           "notes" => hook.notes || "",
           "category" => hook.category,
@@ -517,7 +516,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     region = socket.assigns.region
     scan_region = socket.assigns.scan_region
 
-    params = %{"match_method" => "gray", "feature_channel" => "gray", "confidence" => "0.85", "min_cluster_size" => "50"}
+    params = %{"match_method" => "gray", "confidence" => "0.85", "min_cluster_size" => "50"}
     params = if region do
       Map.merge(params, %{
         "region_x" => to_string(region.x),
@@ -877,14 +876,13 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   defp blank_form do
-    build_form(%{"match_method" => "gray", "feature_channel" => "gray", "confidence" => "0.85", "min_cluster_size" => "50"})
+    build_form(%{"match_method" => "gray", "confidence" => "0.85", "min_cluster_size" => "50"})
   end
 
   defp build_form(params) do
     types = %{
       name: :string,
       match_method: :string,
-      feature_channel: :string,
       confidence: :float,
       notes: :string,
       category: :string,
@@ -912,8 +910,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       |> Ecto.Changeset.cast(params, Map.keys(types))
       |> Ecto.Changeset.validate_required([:name, :match_method, :confidence])
       |> Ecto.Changeset.validate_inclusion(:match_method,
-        ~w(gray rgb edge akaze sift binary_thresh color_detector value_detector saturation_detector grayscale_detector))
-      |> Ecto.Changeset.validate_inclusion(:feature_channel, ~w(gray saturation))
+        ~w(gray rgb edge sift sift_saturation binary_thresh color_detector value_detector saturation_detector grayscale_detector))
       |> Ecto.Changeset.validate_number(:confidence,
         greater_than_or_equal_to: 0.0,
         less_than_or_equal_to: 1.0)
@@ -984,7 +981,6 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
            color_v: parse_int(params["color_v"]),
            min_cluster_size: parse_int(params["min_cluster_size"]),
            match_method: params["match_method"] || "gray",
-           feature_channel: params["feature_channel"] || "gray",
            confidence: parse_float(params["confidence"], 0.85),
            notes: params["notes"],
            category: Hooks.resolve_category(params["category"], name)

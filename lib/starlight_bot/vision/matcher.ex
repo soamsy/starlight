@@ -15,6 +15,7 @@ defmodule StarlightBot.Vision.Matcher do
   @border_constant    0  # cv_BORDER_CONSTANT
 
   @cluster_detectors [:color_detector, :value_detector, :saturation_detector]
+  @feature_methods [:sift, :sift_saturation]
   @hsv_tolerance_max 30  # widest per-channel HSV slack, at confidence 0.0
   @hue_max 179           # OpenCV hue range is 0-179, not 0-359
 
@@ -31,7 +32,6 @@ defmodule StarlightBot.Vision.Matcher do
   @ransac_reproj_threshold 5.0
   @ransac_method 8
   @norm_l2 2
-  @norm_hamming 6
   @min_match_scale_ratio 0.6
   @max_match_scale_ratio 1.6
 
@@ -123,11 +123,10 @@ defmodule StarlightBot.Vision.Matcher do
         match = grayscale_match(mat, hook, confidence, :first)
         {:ok, score, match}
 
-      {:ok, %Hook{method: method} = hook} when method in [:sift, :akaze] ->
+      {:ok, %Hook{method: method} = hook} when method in @feature_methods ->
         min_confidence = Keyword.get(opts, :confidence, hook.confidence)
-        feature_mat = channel_mat(mat, hook.feature_channel)
-        scene_features = detect_scene_features(method, feature_mat)
-        {score, rect} = match_scene_features(scene_features, hook.keypoints, hook.descriptors, hook.gray_mat, method)
+        scene_features = detect_scene_features(method, mat)
+        {score, rect} = match_scene_features(scene_features, hook.keypoints, hook.descriptors, hook.gray_mat)
         match = if score >= min_confidence and rect != nil, do: {:ok, rect}, else: :not_found
         {:ok, score, match}
 
@@ -137,7 +136,7 @@ defmodule StarlightBot.Vision.Matcher do
 
         match =
           if score >= min_confidence do
-            case do_match(mat, hook.mat, hook.gray_mat, hook.mask_mat, hook.keypoints, hook.descriptors, hook.method, hook.feature_channel, min_confidence, :first) do
+            case do_match(mat, hook.mat, hook.gray_mat, hook.mask_mat, hook.keypoints, hook.descriptors, hook.method, min_confidence, :first) do
               [{x, y, w, h}] -> {:ok, {x, y, w, h}}
               [] -> :not_found
             end
@@ -206,11 +205,11 @@ defmodule StarlightBot.Vision.Matcher do
   end
 
   defp find_with_score_resolved(_frame, {:ok, %Hook{method: method} = hook}, cache, opts)
-       when method in [:sift, :akaze] do
+       when method in @feature_methods do
     min_confidence = Keyword.get(opts, :confidence, hook.confidence)
     region = search_region(hook)
-    scene_features = Map.fetch!(cache, {region, method, hook.feature_channel})
-    {score, rect} = match_scene_features(scene_features, hook.keypoints, hook.descriptors, hook.gray_mat, method)
+    scene_features = Map.fetch!(cache, {region, method})
+    {score, rect} = match_scene_features(scene_features, hook.keypoints, hook.descriptors, hook.gray_mat)
 
     result =
       if score >= min_confidence and rect != nil do
@@ -245,11 +244,10 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp single_scene_cache(_frame, {:error, :not_found}), do: %{}
 
-  defp single_scene_cache(frame, {:ok, %Hook{method: method} = hook}) when method in [:sift, :akaze] do
+  defp single_scene_cache(frame, {:ok, %Hook{method: method} = hook}) when method in @feature_methods do
     region = search_region(hook)
     {image_mat, _offset} = crop_to_region(frame.mat, region)
-    feature_mat = channel_mat(image_mat, hook.feature_channel)
-    %{{region, method, hook.feature_channel} => detect_scene_features(method, feature_mat)}
+    %{{region, method} => detect_scene_features(method, image_mat)}
   end
 
   defp single_scene_cache(_frame, {:ok, _hook}), do: %{}
@@ -257,15 +255,14 @@ defmodule StarlightBot.Vision.Matcher do
   defp build_scene_feature_cache(frame, resolved) do
     resolved
     |> Enum.flat_map(fn
-      {_name, {:ok, %Hook{method: m} = hook}} when m in [:sift, :akaze] -> [{search_region(hook), m, hook.feature_channel}]
+      {_name, {:ok, %Hook{method: m} = hook}} when m in @feature_methods -> [{search_region(hook), m}]
       _ -> []
     end)
     |> Enum.uniq()
     |> Task.async_stream(
-      fn {region, method, feature_channel} ->
+      fn {region, method} ->
         {image_mat, _offset} = crop_to_region(frame.mat, region)
-        feature_mat = channel_mat(image_mat, feature_channel)
-        {{region, method, feature_channel}, detect_scene_features(method, feature_mat)}
+        {{region, method}, detect_scene_features(method, image_mat)}
       end,
       max_concurrency: System.schedulers_online(),
       timeout: :infinity
@@ -293,7 +290,7 @@ defmodule StarlightBot.Vision.Matcher do
   end
 
   defp run_match(image_mat, %Hook{} = hook, confidence, mode) do
-    results = do_match(image_mat, hook.mat, hook.gray_mat, hook.mask_mat, hook.keypoints, hook.descriptors, hook.method, hook.feature_channel, confidence, mode)
+    results = do_match(image_mat, hook.mat, hook.gray_mat, hook.mask_mat, hook.keypoints, hook.descriptors, hook.method, confidence, mode)
 
     case mode do
       :first ->
@@ -313,7 +310,7 @@ defmodule StarlightBot.Vision.Matcher do
       if mode == :all, do: [], else: :not_found
   end
 
-  defp do_match(image_mat, tmpl_mat, tmpl_gray_mat, mask_mat, keypoints, descriptors, method, feature_channel, confidence, mode) do
+  defp do_match(image_mat, tmpl_mat, tmpl_gray_mat, mask_mat, keypoints, descriptors, method, confidence, mode) do
     case method do
       :gray ->
         gray = Evision.cvtColor(image_mat, @color_bgr2gray)
@@ -332,11 +329,8 @@ defmodule StarlightBot.Vision.Matcher do
         result = match_template(bin_img, bin_tmpl, @tm_ccorr_normed, mask_mat)
         extract_matches(result, tmpl_gray, confidence, mode)
 
-      :sift ->
-        feature_matches(image_mat, keypoints, descriptors, tmpl_gray_mat, :sift, feature_channel, confidence)
-
-      :akaze ->
-        feature_matches(image_mat, keypoints, descriptors, tmpl_gray_mat, :akaze, feature_channel, confidence)
+      method when method in @feature_methods ->
+        feature_matches(image_mat, keypoints, descriptors, tmpl_gray_mat, method, confidence)
 
       other ->
         Logger.warning("Matcher: method #{inspect(other)} is not yet implemented",
@@ -409,17 +403,17 @@ defmodule StarlightBot.Vision.Matcher do
   end
 
   defp scored_matches(_image_mat, %Hook{method: method, keypoints: keypoints}, _confidence)
-       when method in [:sift, :akaze] and keypoints in [nil, []], do: []
+       when method in @feature_methods and keypoints in [nil, []], do: []
 
-  defp scored_matches(image_mat, %Hook{method: method} = hook, confidence) when method in [:sift, :akaze] do
-    case feature_score_and_rect(image_mat, hook.keypoints, hook.descriptors, hook.gray_mat, method, hook.feature_channel) do
+  defp scored_matches(image_mat, %Hook{method: method} = hook, confidence) when method in @feature_methods do
+    case feature_score_and_rect(image_mat, hook.keypoints, hook.descriptors, hook.gray_mat, method) do
       {score, rect} when score >= confidence and rect != nil -> [{rect, score}]
       _ -> []
     end
   end
 
   defp scored_matches(image_mat, %Hook{} = hook, confidence) do
-    do_match(image_mat, hook.mat, hook.gray_mat, hook.mask_mat, hook.keypoints, hook.descriptors, hook.method, hook.feature_channel, confidence, :all_scored)
+    do_match(image_mat, hook.mat, hook.gray_mat, hook.mask_mat, hook.keypoints, hook.descriptors, hook.method, confidence, :all_scored)
   rescue
     e in ArgumentError ->
       Logger.warning("Matcher: #{hook.name} raised #{Exception.message(e)} during match — treating as not found",
@@ -428,41 +422,38 @@ defmodule StarlightBot.Vision.Matcher do
       []
   end
 
-  defp feature_matches(_image_mat, keypoints, _descriptors, _tmpl_gray_mat, _method, _feature_channel, _confidence)
+  defp feature_matches(_image_mat, keypoints, _descriptors, _tmpl_gray_mat, _method, _confidence)
        when keypoints in [nil, []], do: []
 
-  defp feature_matches(image_mat, keypoints, descriptors, tmpl_gray_mat, method, feature_channel, confidence) do
-    {score, rect} = feature_score_and_rect(image_mat, keypoints, descriptors, tmpl_gray_mat, method, feature_channel)
+  defp feature_matches(image_mat, keypoints, descriptors, tmpl_gray_mat, method, confidence) do
+    {score, rect} = feature_score_and_rect(image_mat, keypoints, descriptors, tmpl_gray_mat, method)
     if score >= confidence and rect != nil, do: [rect], else: []
   end
 
-  defp feature_score_and_rect(image_mat, keypoints, descriptors, tmpl_gray_mat, method, feature_channel) do
-    feature_mat = channel_mat(image_mat, feature_channel)
-    scene_features = detect_scene_features(method, feature_mat)
-    match_scene_features(scene_features, keypoints, descriptors, tmpl_gray_mat, method)
+  defp feature_score_and_rect(image_mat, keypoints, descriptors, tmpl_gray_mat, method) do
+    scene_features = detect_scene_features(method, image_mat)
+    match_scene_features(scene_features, keypoints, descriptors, tmpl_gray_mat)
   rescue
     _ -> {0.0, nil}
   end
 
-  defp channel_mat(bgr_mat, :saturation) do
+  defp channel_mat(bgr_mat, :sift_saturation) do
     hsv = Evision.cvtColor(bgr_mat, @color_bgr2hsv)
     [_h, s, _v] = Evision.split(hsv)
     s
   end
 
-  defp channel_mat(bgr_mat, _gray), do: Evision.cvtColor(bgr_mat, @color_bgr2gray)
+  defp channel_mat(bgr_mat, :sift), do: Evision.cvtColor(bgr_mat, @color_bgr2gray)
 
-  defp match_scene_features(_scene_features, keypoints, _descriptors, _tmpl_gray_mat, _method)
+  defp match_scene_features(_scene_features, keypoints, _descriptors, _tmpl_gray_mat)
        when keypoints in [nil, []], do: {0.0, nil}
 
-  defp match_scene_features({kp2, _des2}, _keypoints, _descriptors, _tmpl_gray_mat, _method)
+  defp match_scene_features({kp2, _des2}, _keypoints, _descriptors, _tmpl_gray_mat)
        when length(kp2) < 2, do: {0.0, nil}
 
-  defp match_scene_features({kp2, des2}, keypoints, descriptors, tmpl_gray_mat, method) do
-    bf = bf_matcher(method)
-
+  defp match_scene_features({kp2, des2}, keypoints, descriptors, tmpl_gray_mat) do
     good =
-      bf
+      bf_matcher()
       |> Evision.BFMatcher.knnMatch(descriptors, des2, 2)
       |> Enum.filter(fn
         [m, n] -> Evision.DMatch.get_distance(m) < @sift_ratio_test * Evision.DMatch.get_distance(n)
@@ -478,10 +469,8 @@ defmodule StarlightBot.Vision.Matcher do
     _ -> {0.0, nil}
   end
 
-  defp detect_scene_features(:sift, gray),
-    do: Evision.SIFT.detectAndCompute(sift_scene_detector(), clahe_apply(gray), Evision.Mat.empty())
-  defp detect_scene_features(:akaze, gray),
-    do: Evision.XFeatures2D.AKAZE.detectAndCompute(akaze_detector(), clahe_apply(gray), Evision.Mat.empty())
+  defp detect_scene_features(method, image_mat),
+    do: Evision.SIFT.detectAndCompute(sift_scene_detector(), clahe_apply(channel_mat(image_mat, method)), Evision.Mat.empty())
 
   # defp clahe_apply(gray), do: gray
   defp clahe_apply(gray) do
@@ -503,34 +492,17 @@ defmodule StarlightBot.Vision.Matcher do
     end
   end
 
-  defp akaze_detector do
-    case :persistent_term.get({__MODULE__, :akaze_detector}, nil) do
+  defp bf_matcher do
+    case :persistent_term.get({__MODULE__, :bf_matcher}, nil) do
       nil ->
-        detector = Evision.XFeatures2D.AKAZE.create()
-        :persistent_term.put({__MODULE__, :akaze_detector}, detector)
-        detector
-
-      detector ->
-        detector
-    end
-  end
-
-  defp bf_matcher(method) do
-    key = {__MODULE__, :bf_matcher, method}
-
-    case :persistent_term.get(key, nil) do
-      nil ->
-        matcher = Evision.BFMatcher.create(normType: feature_norm_type(method))
-        :persistent_term.put(key, matcher)
+        matcher = Evision.BFMatcher.create(normType: @norm_l2)
+        :persistent_term.put({__MODULE__, :bf_matcher}, matcher)
         matcher
 
       matcher ->
         matcher
     end
   end
-
-  defp feature_norm_type(:sift), do: @norm_l2
-  defp feature_norm_type(:akaze), do: @norm_hamming
 
   defp affine_score_and_rect(good, kp1, kp2, tmpl_gray_mat) do
     kp1_tuple = List.to_tuple(kp1)

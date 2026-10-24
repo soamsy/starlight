@@ -1,5 +1,5 @@
 defmodule StarlightBot.Vision.Hook do
-  @type match_method :: :rgb | :gray | :edge | :akaze | :sift | :binary_thresh | :color_detector | :value_detector | :saturation_detector | :grayscale_detector
+  @type match_method :: :rgb | :gray | :edge | :sift | :sift_saturation | :binary_thresh | :color_detector | :value_detector | :saturation_detector | :grayscale_detector
 
   @enforce_keys [:name, :mat, :gray_mat, :method, :confidence]
   defstruct [
@@ -32,7 +32,6 @@ defmodule StarlightBot.Vision.Hook do
     :source,         # :user | :master
     :keypoints,
     :descriptors,
-    :feature_channel,
   ]
 
   @color_bgr2gray 6  # cv_COLOR_BGR2GRAY
@@ -49,9 +48,7 @@ defmodule StarlightBot.Vision.Hook do
     mask? = truthy?(row.mask)
     mask_mat = if(mask?, do: build_mask(gray_mat), else: nil)
     method = decode_match_method(row.match_method)
-    feature_channel = decode_feature_channel(Map.get(row, :feature_channel))
-    feature_mat = channel_mat(mat, feature_channel)
-    {keypoints, descriptors} = compute_keypoints_descriptors(method, feature_mat, mask_mat)
+    {keypoints, descriptors} = compute_keypoints_descriptors(method, mat, mask_mat)
 
     %__MODULE__{
       name: String.to_atom(row.name),
@@ -70,7 +67,6 @@ defmodule StarlightBot.Vision.Hook do
       source: :user,
       keypoints: keypoints,
       descriptors: descriptors,
-      feature_channel: feature_channel,
     }
   end
 
@@ -84,26 +80,19 @@ defmodule StarlightBot.Vision.Hook do
     mask
   end
 
-  defp compute_keypoints_descriptors(:sift, feature_mat, mask_mat) do
-    Evision.SIFT.detectAndCompute(sift_detector(), clahe_apply(feature_mat), mask_mat || Evision.Mat.empty())
+  defp compute_keypoints_descriptors(method, mat, mask_mat) when method in [:sift, :sift_saturation] do
+    Evision.SIFT.detectAndCompute(sift_detector(), clahe_apply(channel_mat(mat, method)), mask_mat || Evision.Mat.empty())
   end
 
-  defp compute_keypoints_descriptors(:akaze, feature_mat, mask_mat) do
-    Evision.XFeatures2D.AKAZE.detectAndCompute(akaze_detector(), clahe_apply(feature_mat), mask_mat || Evision.Mat.empty())
-  end
+  defp compute_keypoints_descriptors(_method, _mat, _mask_mat), do: {nil, nil}
 
-  defp compute_keypoints_descriptors(_method, _feature_mat, _mask_mat), do: {nil, nil}
-
-  defp channel_mat(bgr_mat, :saturation) do
+  defp channel_mat(bgr_mat, :sift_saturation) do
     hsv = Evision.cvtColor(bgr_mat, @color_bgr2hsv)
     [_h, s, _v] = Evision.split(hsv)
     s
   end
 
-  defp channel_mat(bgr_mat, _gray), do: Evision.cvtColor(bgr_mat, @color_bgr2gray)
-
-  defp decode_feature_channel("saturation"), do: :saturation
-  defp decode_feature_channel(_), do: :gray
+  defp channel_mat(bgr_mat, :sift), do: Evision.cvtColor(bgr_mat, @color_bgr2gray)
 
   # defp clahe_apply(gray_mat), do: gray_mat
   defp clahe_apply(gray_mat) do
@@ -123,23 +112,11 @@ defmodule StarlightBot.Vision.Hook do
     end
   end
 
-  defp akaze_detector do
-    case :persistent_term.get({__MODULE__, :akaze_detector}, nil) do
-      nil ->
-        detector = Evision.XFeatures2D.AKAZE.create()
-        :persistent_term.put({__MODULE__, :akaze_detector}, detector)
-        detector
-
-      detector ->
-        detector
-    end
-  end
-
   defp decode_match_method("rgb"), do: :rgb
   defp decode_match_method("gray"), do: :gray
   defp decode_match_method("edge"), do: :edge
-  defp decode_match_method("akaze"), do: :akaze
   defp decode_match_method("sift"), do: :sift
+  defp decode_match_method("sift_saturation"), do: :sift_saturation
   defp decode_match_method("binary_thresh"), do: :binary_thresh
   defp decode_match_method("color_detector"), do: :color_detector
   defp decode_match_method("value_detector"), do: :value_detector
