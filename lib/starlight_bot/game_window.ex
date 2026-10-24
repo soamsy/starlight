@@ -6,6 +6,7 @@ defmodule StarlightBot.GameWindow do
   @target_h 1080
   @window_poll_ms 2_000
   @resize_settle_ms 1_500
+  @resize_attempts 3
   @plugin_name "starlight-resize"
 
   def rect do
@@ -50,13 +51,19 @@ defmodule StarlightBot.GameWindow do
   end
 
   def fix_aspect(steam_app_id) do
-    with {:ok, before} <- rect(),
-         {:ok, buses} <- run_resize_script(steam_app_id) do
+    with {:ok, before} <- rect() do
+      fix_aspect(steam_app_id, before, @resize_attempts)
+    end
+  end
+
+  defp fix_aspect(steam_app_id, before, attempts_left) do
+    with {:ok, buses} <- run_resize_script(steam_app_id) do
       Process.sleep(@resize_settle_ms)
       Capture.refresh_window_rect()
 
       case rect() do
         {:ok, {_, _, @target_w, @target_h} = after_rect} -> {:ok, %{before: before, after: after_rect, buses: buses}}
+        {:ok, _after_rect} when attempts_left > 1 -> fix_aspect(steam_app_id, before, attempts_left - 1)
         {:ok, after_rect} -> {:error, {:resize_ignored, %{before: before, after: after_rect, buses: buses}}}
         error -> error
       end
