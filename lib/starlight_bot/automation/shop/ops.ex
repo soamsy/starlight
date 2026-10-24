@@ -9,7 +9,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   alias StarlightBot.Vision.{Capture, EgoGiftDetector, Frame, HookRegistry, Matcher, NumberScanner}
 
   @min_item_area_px 400
-  @min_classifier_conf 0.9
+  @min_classifier_conf 0.95
   @cost_read_tries 8
   @cost_read_every_ms 50
   @uptie_extend_px 50

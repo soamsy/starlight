@@ -12,10 +12,10 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
   @models_dir Path.expand("../../../vendor/EgoGiftML/models/best", __DIR__)
 
   @default_det_imgsz 384
-  @default_det_conf 0.25
+  @default_det_conf 0.45
   @default_det_iou 0.45
   @default_cls_topk 3
-  @default_cls_conf 0.83
+  @default_cls_conf 0.9
   @capture_det_conf 0.1
 
   def start_link(_), do: GenServer.start_link(__MODULE__, [], name: __MODULE__)
