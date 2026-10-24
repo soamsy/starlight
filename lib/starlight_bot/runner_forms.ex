@@ -6,6 +6,7 @@ defmodule StarlightBot.RunnerForms do
   @topic "runner_forms"
   @runners ~w(mirror_dungeon luxcavation)
   @max_lux_consecutive 10
+  @rewards %{"none" => :none, "claim" => :claim, "weekly" => :claim_weekly}
 
   def subscribe, do: Phoenix.PubSub.subscribe(StarlightBot.PubSub, @topic)
 
@@ -59,9 +60,10 @@ defmodule StarlightBot.RunnerForms do
          {run_count, ""} <- Integer.parse(to_string(params["run_count"])),
          true <- run_count >= 0,
          {convert_count, ""} <- Integer.parse(to_string(params["enkephalin_convert_count"] || "0")),
-         true <- convert_count in 0..EnkephalinCharger.max_convert_count() do
+         true <- convert_count in 0..EnkephalinCharger.max_convert_count(),
+         {:ok, rewards} <- Map.fetch(@rewards, Map.get(params, "rewards", "none")) do
       config = %{
-        weekly_bonus?: Map.get(params, "weekly_bonus") == "true",
+        rewards: rewards,
         collect_enkephalin?: Map.get(params, "collect_enkephalin") == "true",
         collect_xp?: Map.get(params, "collect_xp") == "true",
         capture_ego_gifts?: Map.get(params, "capture_ego_gifts") == "true",

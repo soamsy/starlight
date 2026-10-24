@@ -123,10 +123,13 @@
           <input type="number" name="run_count" min="0" value={@run_count} class="input input-sm input-bordered" />
         </label>
 
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="weekly_bonus" value="true" checked={@weekly_bonus}
-                 class="checkbox checkbox-sm" />
-          <span class="text-sm">Claim weekly bonuses</span>
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Rewards</span>
+          <select name="rewards" class="select select-sm select-bordered">
+            <option value="none" selected={@rewards == "none"}>Don't claim rewards (dry run)</option>
+            <option value="claim" selected={@rewards == "claim"}>Claim rewards</option>
+            <option value="weekly" selected={@rewards == "weekly"}>Claim rewards with weekly bonuses</option>
+          </select>
         </label>
 
         <label class="flex items-center gap-2">

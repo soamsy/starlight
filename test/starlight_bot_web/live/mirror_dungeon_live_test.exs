@@ -13,7 +13,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
 
   defp socket(picks) do
     %Phoenix.LiveView.Socket{
-      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, start_index: 0, run_count: "1", weekly_bonus: true, collect_enkephalin: false, collect_xp: false, capture_ego_gifts: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil, phase: :idle, other_running?: false}
+      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, start_index: 0, run_count: "1", rewards: "weekly", collect_enkephalin: false, collect_xp: false, capture_ego_gifts: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil, phase: :idle, other_running?: false}
     }
   end
 
@@ -51,9 +51,10 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
   end
 
   test "restoring a saved form reads its team list and hooks" do
-    socket = Live.restore_form(socket([@burn]), %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "run_count" => "4", "weekly_bonus" => "true"})
+    socket = Live.restore_form(socket([@burn]), %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "run_count" => "4", "rewards" => "claim"})
     assert socket.assigns.picks == [@saikai_pierce, @burn]
     assert socket.assigns.run_count == "4"
+    assert socket.assigns.rewards == "claim"
     assert Live.restore_form(socket, nil) == socket
   end
 
@@ -61,14 +62,14 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     event(socket([@burn]), "update_form", %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "start_index" => "1", "run_count" => "3", "collect_xp" => "true"})
 
     saved = RunnerForms.get("mirror_dungeon")
-    assert %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "start_index" => "1", "run_count" => "3", "collect_xp" => "true", "weekly_bonus" => "false"} = saved
+    assert %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "start_index" => "1", "run_count" => "3", "collect_xp" => "true", "rewards" => "weekly"} = saved
     assert {:ok, {:run_mirror_dungeon, [@burn, @saikai_pierce], 3, %{collect_xp?: true}}} = RunnerForms.mirror_dungeon_action(saved, @teams)
   end
 
   test "running queues the whole cycle" do
     socket = event(socket([@burn]), "run", %{"team_ids" => ["10", "5"], "run_count" => "2"})
-    assert {:run_mirror_dungeon, [@saikai, @burn], 2, %{weekly_bonus?: false, collect_enkephalin?: false}} = socket.assigns.pending_action
-    assert Live.pending_action_label(socket.assigns.pending_action) == "mirror dungeon: 2 run(s) cycling 2 teams"
+    assert {:run_mirror_dungeon, [@saikai, @burn], 2, %{rewards: :none, collect_enkephalin?: false}} = socket.assigns.pending_action
+    assert Live.pending_action_label(socket.assigns.pending_action) == "mirror dungeon: 2 run(s) cycling 2 teams (dry run, refusing rewards)"
   end
 
   test "collecting enkephalin carries the lunacy conversion count into the run config" do

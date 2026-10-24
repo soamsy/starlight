@@ -35,8 +35,8 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   def program(picks, run_count, config), do: [call(__MODULE__, :start, [picks, run_count, config])]
 
-  def start([_ | _] = picks, run_count, %{weekly_bonus?: wb} = config, _frame, ctx)
-      when is_integer(run_count) and run_count >= 0 and is_boolean(wb) do
+  def start([_ | _] = picks, run_count, %{rewards: rewards} = config, _frame, ctx)
+      when is_integer(run_count) and run_count >= 0 and rewards in [:none, :claim, :claim_weekly] do
     if Map.get(config, :capture_ego_gifts?, false), do: EgoGiftCapture.enable()
 
     with {:ok, teams} <- prepare_teams(picks, ctx) do
@@ -45,7 +45,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   end
 
   def start(_picks, _run_count, _config, _frame, ctx) do
-    Ctx.log(ctx, :error, "teams must be a non-empty list, run_count a non-negative integer, and config must include weekly_bonus?")
+    Ctx.log(ctx, :error, "teams must be a non-empty list, run_count a non-negative integer, and config must include rewards (:none, :claim or :claim_weekly)")
     {:error, :invalid_arguments}
   end
 
@@ -565,7 +565,12 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   end
 
   defp exploration_steps(run, %{own_run?: true}, config) do
-    claim = ClaimRewards.steps(%{action: :claim, weekly_bonus?: config.weekly_bonus?})
+    claim =
+      case config.rewards do
+        :none -> [log(:info, "mirror dungeon runner: dry run, refusing rewards") | ClaimRewards.steps(%{action: :give_up})]
+        rewards -> ClaimRewards.steps(%{action: :claim, weekly_bonus?: rewards == :claim_weekly})
+      end
+
     [capture(claim, then: {__MODULE__, :claimed, [run]})]
   end
 

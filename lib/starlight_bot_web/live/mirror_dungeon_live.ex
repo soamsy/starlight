@@ -40,7 +40,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:picks, default_picks(teams))
      |> assign(:start_index, 0)
      |> assign(:run_count, "1")
-     |> assign(:weekly_bonus, true)
+     |> assign(:rewards, "weekly")
      |> assign(:collect_enkephalin, false)
      |> assign(:collect_xp, false)
      |> assign(:capture_ego_gifts, false)
@@ -77,7 +77,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     {:noreply,
      socket
      |> assign(:run_count, run_count)
-     |> assign(:weekly_bonus, Map.get(params, "weekly_bonus") == "true")
+     |> assign(:rewards, Map.get(params, "rewards", socket.assigns.rewards))
      |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
      |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
      |> assign(:capture_ego_gifts, Map.get(params, "capture_ego_gifts") == "true")
@@ -489,7 +489,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     |> assign(:picks, picks)
     |> assign(:start_index, RunnerForms.parse_start_index(params["start_index"], picks))
     |> assign(:run_count, Map.get(params, "run_count", socket.assigns.run_count))
-    |> assign(:weekly_bonus, Map.get(params, "weekly_bonus") == "true")
+    |> assign(:rewards, Map.get(params, "rewards", socket.assigns.rewards))
     |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
     |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
     |> assign(:capture_ego_gifts, Map.get(params, "capture_ego_gifts") == "true")
@@ -504,7 +504,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
       "team_hooks" => Enum.map(a.picks, & &1.hook),
       "start_index" => to_string(a.start_index),
       "run_count" => a.run_count,
-      "weekly_bonus" => to_string(a.weekly_bonus),
+      "rewards" => a.rewards,
       "collect_enkephalin" => to_string(a.collect_enkephalin),
       "collect_xp" => to_string(a.collect_xp),
       "capture_ego_gifts" => to_string(a.capture_ego_gifts),
@@ -528,7 +528,12 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   defp run_pending_action(:resume_mirror_dungeon), do: Navigator.resume_mirror_dungeon()
 
   def pending_action_label({:run_mirror_dungeon, picks, run_count, config}) do
-    suffix = if config.weekly_bonus?, do: " + weekly bonuses", else: ""
+    suffix =
+      case config.rewards do
+        :none -> " (dry run, refusing rewards)"
+        :claim -> ""
+        :claim_weekly -> " + weekly bonuses"
+      end
     cycle = if length(picks) > 1, do: " cycling #{length(picks)} teams", else: ""
 
     enkephalin =

@@ -67,7 +67,7 @@ defmodule StarlightBot.SchedulerTest do
     }
 
     @lux_form %{"team_id" => "7", "exp_consecutive" => "1", "exp_repeats" => "2", "thread_consecutive" => "3", "thread_repeats" => "1", "collect_xp" => "true", "collect_enkephalin" => "false", "enkephalin_convert_count" => "0"}
-    @md_form %{"team_ids" => ["5"], "start_index" => "0", "run_count" => "2", "weekly_bonus" => "true", "collect_xp" => "true"}
+    @md_form %{"team_ids" => ["5"], "start_index" => "0", "run_count" => "2", "rewards" => "weekly", "collect_xp" => "true"}
 
     test "save_settings stores the schedule and get_settings reads it back" do
       RunnerForms.put("luxcavation", @lux_form)
