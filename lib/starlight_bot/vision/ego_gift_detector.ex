@@ -3,11 +3,12 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
   require Logger
   alias StarlightBot.Vision.{EgoGiftCapture, Frame}
 
-  @color_bgr2rgb 4  # cv_COLOR_BGR2RGB
   @border_constant 0  # cv_BORDER_CONSTANT
 
   @letterbox_gray {114.0, 114.0, 114.0, 0.0}  # must match training's "nothing space" fill color
   @classifier_input_size 160
+  @imagenet_mean {0.485, 0.456, 0.406}
+  @imagenet_std {0.229, 0.224, 0.225}
 
   @models_dir Path.expand("../../../vendor/EgoGiftML/models/best", __DIR__)
 
@@ -101,12 +102,9 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
       capturing? = capture_tag != nil and EgoGiftCapture.enabled?()
       scan_conf = if capturing?, do: min(det_conf, @capture_det_conf), else: det_conf
 
-      classified =
-        state.detector_net
-        |> run_detector(crop, scan_conf, iou, imgsz)
-        |> Enum.map(fn box ->
-          %{box: box, preds: run_classifier(state.classifier_net, state.classes, crop_box(crop, box), topk)}
-        end)
+      boxes = run_detector(state.detector_net, crop, scan_conf, iou, imgsz)
+      preds = run_classifier(state.classifier_net, state.classes, Enum.map(boxes, &crop_box(crop, &1)), topk)
+      classified = Enum.zip_with(boxes, preds, &%{box: &1, preds: &2})
 
       if capturing?, do: EgoGiftCapture.record(capture_tag, crop, classified)
 
@@ -228,31 +226,39 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
 
   # --- classifier: resize to a fixed square, ImageNet-normalize, softmax + top-k ---
 
-  defp run_classifier(_net, _classes, nil, _topk), do: []
+  defp run_classifier(net, classes, crops, topk) do
+    case Enum.reject(crops, &is_nil/1) do
+      [] ->
+        Enum.map(crops, fn _ -> [] end)
 
-  defp run_classifier(net, classes, crop, topk) do
-    normalized =
-      crop
-      |> Evision.resize({@classifier_input_size, @classifier_input_size})
-      |> Evision.cvtColor(@color_bgr2rgb)
-      |> Evision.Mat.to_nx()
-      |> Nx.as_type(:f32)
-      |> Nx.divide(255.0)
-      |> Nx.subtract(imagenet_mean())
-      |> Nx.divide(imagenet_std())
+      present ->
+        blob = Evision.DNN.blobFromImagesWithParams(present, param: classifier_blob_params())
+        Evision.DNN.Net.setInput(net, blob)
 
-    blob = normalized |> Nx.transpose(axes: [2, 0, 1]) |> Nx.new_axis(0)
+        logits =
+          net
+          |> Evision.DNN.Net.forward()
+          |> forward_mat()
+          |> Evision.Mat.to_nx()
+          |> Nx.to_list()
 
-    Evision.DNN.Net.setInput(net, blob)
+        merge_preds(crops, Enum.map(logits, &softmax_topk(&1, classes, topk)))
+    end
+  end
 
-    logits =
-      net
-      |> Evision.DNN.Net.forward()
-      |> forward_mat()
-      |> Evision.Mat.to_nx()
-      |> Nx.to_flat_list()
+  defp merge_preds([], []), do: []
+  defp merge_preds([nil | crops], preds), do: [[] | merge_preds(crops, preds)]
+  defp merge_preds([_crop | crops], [pred | preds]), do: [pred | merge_preds(crops, preds)]
 
-    softmax_topk(logits, classes, topk)
+  defp classifier_blob_params do
+    {mr, mg, mb} = @imagenet_mean
+    {sr, sg, sb} = @imagenet_std
+
+    Evision.DNN.Image2BlobParams.image2BlobParams({1 / (255 * sr), 1 / (255 * sg), 1 / (255 * sb), 0.0},
+      size: {@classifier_input_size, @classifier_input_size},
+      mean: {255 * mr, 255 * mg, 255 * mb, 0.0},
+      swapRB: true
+    )
   end
 
   defp softmax_topk(logits, classes, topk) do
@@ -270,8 +276,6 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
     end)
   end
 
-  defp imagenet_mean, do: Nx.tensor([0.485, 0.456, 0.406], type: :f32)
-  defp imagenet_std, do: Nx.tensor([0.229, 0.224, 0.225], type: :f32)
 
   defp forward_mat([mat]), do: mat
   defp forward_mat(mat), do: mat
