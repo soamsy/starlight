@@ -33,9 +33,10 @@ The Rust NIF in `native/starlight_native/` compiles automatically via Rustler wh
 If the Rust code has errors, `mix compile` prints them in full. Fix them in `native/starlight_native/src/`. Key libraries:
 
 - **reis 0.7**: libei EIS protocol for wayland input injection (Linux only)
-- **xcb 1.7** (`shm`, `composite` features): direct X11 protocol for window discovery, geometry, focus, capture and pointer queries. One cached connection per display, so a single process can see both the host Xwayland and a nested one. Capture names the window's composite pixmap each frame and reads it with MIT-SHM into a memfd segment (`AttachFd`); the window itself can't be used because MIT-SHM rejects windows that extend past the screen edge, which KWin's title bar causes in the nested session
+- **xcb 1.7** (`shm`, `composite` features): direct X11 protocol for window discovery, geometry, focus, capture and pointer queries. One cached connection per display, so a single process can see both the host Xwayland and a nested one. Capture names the window's composite pixmap each frame and reads it with MIT-SHM into a memfd segment (`AttachFd`); the window itself can't be used because MIT-SHM rejects windows that extend past the screen edge, which KWin's title bar causes in the nested session. Frames are grabbed on demand for each check (~3ms at 1920×1080), so every frame postdates the check that asked for it; there is no background frame cache
 - **ashpd 0.13**: XDG portal access; kept for `remote_desktop` feature (internally imports from `screencast`, so both features must be listed even if screencast portal isn't used directly)
-- **image 0.25**: resizing and PNG/JPEG encoding (no system libs)
+- **fast_image_resize 6**: SIMD Lanczos3 resize of captures to 1920×1080 when the game window isn't exactly that size (~10ms vs ~120ms with `image`)
+- **image 0.25**: PNG/JPEG encoding (no system libs)
 - **rustler 0.38**: NIFs collected via `#[rustler::nif]` attribute; `rustler::init!` takes only the module name
 
 ---

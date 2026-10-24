@@ -15,22 +15,6 @@ defmodule StarlightBot.Vision.Capture do
 
   def subscribe, do: Phoenix.PubSub.subscribe(StarlightBot.PubSub, @topic)
 
-  def start_cache do
-    GenServer.call(__MODULE__, :start_cache, 60_000)
-  end
-
-  def stop_cache do
-    GenServer.cast(__MODULE__, :stop_cache)
-  end
-
-  def cache_grab_region({_rx, _ry, _rw, _rh} = region) do
-    GenServer.call(__MODULE__, {:cache_region, region}, 5_000)
-  end
-
-  def cache_age_ms do
-    Native.cache_age_ms()
-  end
-
   def grab_frame do
     GenServer.call(__MODULE__, :grab_frame, 5_000)
   end
@@ -87,23 +71,6 @@ defmodule StarlightBot.Vision.Capture do
 
     schedule_refresh(state.refresh_interval_ms)
     {:ok, state}
-  end
-
-  @impl true
-  def handle_call(:start_cache, _from, state) do
-    result = Native.cache_start(state.window_title)
-    {:reply, result, state}
-  end
-
-  @impl true
-  def handle_call({:cache_region, {rx, ry, rw, rh}}, _from, state) do
-    case Native.cache_grab_region(rx, ry, rw, rh) do
-      {:ok, binary, w, h} ->
-        mat = Evision.Mat.from_binary(binary, {:u, 8}, h, w, 3)
-        {:reply, {:ok, mat}, state}
-      {:error, _} = err ->
-        {:reply, err, state}
-    end
   end
 
   @impl true
@@ -193,12 +160,6 @@ defmodule StarlightBot.Vision.Capture do
       end
 
     {:reply, result, state}
-  end
-
-  @impl true
-  def handle_cast(:stop_cache, state) do
-    Native.cache_stop()
-    {:noreply, state}
   end
 
   @impl true

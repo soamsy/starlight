@@ -1,4 +1,7 @@
-use image::{ImageBuffer, Rgba, imageops};
+use fast_image_resize::images::{Image, ImageRef};
+use fast_image_resize::{PixelType, Resizer};
+
+use crate::error::NativeError;
 
 pub const NORM_W: u32 = 1920;
 pub const NORM_H: u32 = 1080;
@@ -19,33 +22,12 @@ pub fn scale_rect(
     (x, y, w, h)
 }
 
-pub fn resize_rgba(
-    img: &ImageBuffer<Rgba<u8>, Vec<u8>>,
-    w: u32, h: u32,
-) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
-    imageops::resize(img, w, h, imageops::FilterType::Lanczos3)
+fn resize_err(e: impl std::fmt::Display) -> NativeError {
+    NativeError::CaptureFailed(format!("resize: {e}"))
 }
 
-pub fn rgba_to_bgr(img: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> Vec<u8> {
-    img.pixels().flat_map(|px| [px[2], px[1], px[0]]).collect()
+pub fn resize_bgr_into(bgr: &[u8], w: u32, h: u32, out: &mut [u8], to_w: u32, to_h: u32) -> Result<(), NativeError> {
+    let src = ImageRef::new(w, h, bgr, PixelType::U8x3).map_err(resize_err)?;
+    let mut dst = Image::from_slice_u8(to_w, to_h, out, PixelType::U8x3).map_err(resize_err)?;
+    Resizer::new().resize(&src, &mut dst, None).map_err(resize_err)
 }
-
-pub fn bgr_to_rgba(bgr: &[u8], w: u32, h: u32) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
-    ImageBuffer::from_fn(w, h, |x, y| {
-        let i = (y as usize * w as usize + x as usize) * 3;
-        Rgba([bgr[i + 2], bgr[i + 1], bgr[i], 255])
-    })
-}
-
-pub fn resize_bgr(bgr: &[u8], w: u32, h: u32, to_w: u32, to_h: u32) -> Vec<u8> {
-    rgba_to_bgr(&resize_rgba(&bgr_to_rgba(bgr, w, h), to_w, to_h))
-}
-
-pub fn normalize_bgr(bgr: Vec<u8>, w: u32, h: u32) -> Vec<u8> {
-    if w == NORM_W && h == NORM_H {
-        bgr
-    } else {
-        resize_bgr(&bgr, w, h, NORM_W, NORM_H)
-    }
-}
-

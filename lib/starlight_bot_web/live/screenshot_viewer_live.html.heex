@@ -4,23 +4,9 @@
   <div class="flex items-center gap-3 shrink-0">
     <h2 class="text-lg font-semibold">Screenshot Stream</h2>
 
-    <%= cond do %>
-      <% @cache_status == :stopped -> %>
-        <button phx-click="start_cache" class="btn btn-success btn-sm">Start Cache</button>
-      <% @cache_status == :starting -> %>
-        <button disabled class="btn btn-success btn-sm">
-          <span class="loading loading-spinner loading-xs"></span> Starting…
-        </button>
-      <% @cache_status == :running -> %>
-        <button phx-click="stop_cache" class="btn btn-error btn-outline btn-sm">Stop Cache</button>
-    <% end %>
-
-    <%= if @cache_status == :running do %>
+    <%= if @recording do %>
       <%= if @status == :live do %>
         <span class="badge badge-success badge-sm">Live</span>
-        <%= if @cache_age_ms do %>
-          <span class="font-mono text-xs text-base-content/50"><%= @cache_age_ms %>ms ago</span>
-        <% end %>
       <% else %>
         <span class="badge badge-warning badge-sm">No frames yet</span>
       <% end %>
@@ -40,12 +26,10 @@
 
     <div class="ml-auto flex items-center gap-3">
       <span class="text-xs text-base-content/40"><%= length(@frames) %>/<%= @max_frames %></span>
-      <%= if @cache_status == :running do %>
-        <button phx-click="toggle_running"
-                class={"btn btn-sm #{if @running, do: "btn-warning btn-outline", else: "btn-ghost"}"}>
-          <%= if @running, do: "Pause", else: "Resume" %>
-        </button>
-      <% end %>
+      <button phx-click="toggle_recording"
+              class={"btn btn-sm #{if @recording, do: "btn-error btn-outline", else: "btn-success"}"}>
+        <%= if @recording, do: "Stop Recording", else: "Record" %>
+      </button>
     </div>
   </div>
 
@@ -64,11 +48,10 @@
             alt="Screenshot" />
         <% else %>
           <div class="text-center text-base-content/40 text-sm select-none">
-            <%= if @cache_status == :stopped do %>
-              <p>Click <strong>Start Cache</strong> to begin capturing.</p>
-              <p class="text-xs mt-1">The portal dialog will ask you to select a window or monitor.</p>
-            <% else %>
+            <%= if @recording do %>
               <p>Waiting for first frame…</p>
+            <% else %>
+              <p>Click <strong>Record</strong> to start saving frames.</p>
             <% end %>
           </div>
         <% end %>

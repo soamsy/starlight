@@ -1,4 +1,3 @@
-mod cache;
 mod capture;
 mod error;
 mod input;
@@ -135,51 +134,6 @@ fn get_cursor_pos<'a>(env: Env<'a>) -> Term<'a> {
             eprintln!("[starlight_native] get_cursor_pos error: {e}");
             (error(), e.to_atom(env)).encode(env)
         }
-    }
-}
-
-#[rustler::nif(schedule = "DirtyIo")]
-fn cache_start<'a>(env: Env<'a>, window_title: String) -> Term<'a> {
-    match cache::start(window_title) {
-        Ok(()) => ok().encode(env),
-        Err(e) => {
-            eprintln!("[starlight_native] cache_start error: {e}");
-            (error(), e.to_atom(env)).encode(env)
-        }
-    }
-}
-
-#[rustler::nif]
-fn cache_stop<'a>(env: Env<'a>) -> Term<'a> {
-    cache::stop();
-    ok().encode(env)
-}
-
-#[rustler::nif(schedule = "DirtyCpu")]
-fn cache_grab_frame<'a>(env: Env<'a>) -> Term<'a> {
-    match cache::grab_frame() {
-        Some((data, w, h)) => (ok(), data.make_binary(env, |d| &d.bgr), w, h).encode(env),
-        None => (error(), rustler::types::atom::Atom::from_str(env, "not_ready").unwrap()).encode(env),
-    }
-}
-
-#[rustler::nif(schedule = "DirtyCpu")]
-fn cache_grab_region<'a>(env: Env<'a>, rx: u32, ry: u32, rw: u32, rh: u32) -> Term<'a> {
-    match cache::grab_region(rx, ry, rw, rh) {
-        Some((bgr, w, h)) => {
-            let mut owned = OwnedBinary::new(bgr.len()).unwrap();
-            owned.as_mut_slice().copy_from_slice(&bgr);
-            (ok(), owned.release(env), w, h).encode(env)
-        }
-        None => (error(), rustler::types::atom::Atom::from_str(env, "not_ready").unwrap()).encode(env),
-    }
-}
-
-#[rustler::nif]
-fn cache_age_ms<'a>(env: Env<'a>) -> Term<'a> {
-    match cache::age_ms() {
-        Some(ms) => (ok(), ms).encode(env),
-        None => (error(), rustler::types::atom::Atom::from_str(env, "not_ready").unwrap()).encode(env),
     }
 }
 

@@ -8,27 +8,6 @@ defmodule StarlightBot.Native do
 
   use Rustler, otp_app: :starlight_bot, crate: "starlight_native"
 
-  # --- Cache ---
-
-  @doc """
-  Start the shared screenshot cache. Opens the XDG ScreenCast portal (may show a
-  window-selection dialog) and starts a background PipeWire capture thread.
-  Returns :ok or {:error, atom}. Call from a process with a long timeout (≥30 s).
-  """
-  def cache_start(_window_title), do: nif_err()
-
-  @doc "Stop the shared screenshot cache and shut down the PipeWire capture thread. Returns :ok."
-  def cache_stop(), do: nif_err()
-
-  @doc "Copy the latest cached full frame as BGR binary. Returns {:ok, binary, w, h} or {:error, :not_ready}."
-  def cache_grab_frame(), do: nif_err()
-
-  @doc "Extract a region from the cached frame (region in 1920×1080 space). Returns {:ok, binary, rw, rh} or {:error, :not_ready}."
-  def cache_grab_region(_rx, _ry, _rw, _rh), do: nif_err()
-
-  @doc "Return age of the cached frame in milliseconds. Returns {:ok, ms} or {:error, :not_ready}."
-  def cache_age_ms(), do: nif_err()
-
   # --- Capture ---
 
   @doc "Capture the game window by title. Returns {:ok, binary, width, height} or {:error, atom}."

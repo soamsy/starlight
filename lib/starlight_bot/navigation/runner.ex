@@ -1,6 +1,6 @@
 defmodule StarlightBot.Navigation.Runner do
   alias StarlightBot.Automation.RunMemory
-  alias StarlightBot.{Native, Vision.Capture, Vision.Frame, Vision.Matcher}
+  alias StarlightBot.{Vision.Capture, Vision.Matcher}
   alias StarlightBot.Navigation.{Action, Catalog, Machine, Screen}
 
   @poll_interval_ms 100
@@ -147,21 +147,7 @@ defmodule StarlightBot.Navigation.Runner do
     end
   end
 
-  def grab_frame do
-    case Native.cache_grab_frame() do
-      {:ok, binary, _w, _h} ->
-        case Capture.window_rect() do
-          nil ->
-            Capture.grab_frame()
-
-          window_rect ->
-            {:ok, Frame.from_capture(binary, window_rect)}
-        end
-
-      {:error, _} ->
-        Capture.grab_frame()
-    end
-  end
+  def grab_frame, do: Capture.grab_frame()
 
   defp mono, do: System.monotonic_time(:millisecond)
 end

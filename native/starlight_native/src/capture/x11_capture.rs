@@ -24,10 +24,15 @@ enum Captured<B> {
     Scaled(Vec<u8>, u32, u32),
 }
 
-fn copy_into<B: DerefMut<Target = [u8]>>(bgr: &[u8], alloc: &mut impl FnMut(usize) -> B) -> B {
-    let mut out = alloc(bgr.len());
-    out.copy_from_slice(bgr);
-    out
+fn resize_into<B: DerefMut<Target = [u8]>>(
+    bgr: &[u8],
+    (w, h): (u32, u32),
+    (to_w, to_h): (u32, u32),
+    alloc: &mut impl FnMut(usize) -> B,
+) -> Result<B, NativeError> {
+    let mut out = alloc(to_w as usize * to_h as usize * 3);
+    scale::resize_bgr_into(bgr, w, h, &mut out, to_w, to_h)?;
+    Ok(out)
 }
 
 fn convert_into<B: DerefMut<Target = [u8]>>(bgrx: &[u8], alloc: &mut impl FnMut(usize) -> B) -> B {
@@ -50,9 +55,7 @@ pub fn grab_frame<B: DerefMut<Target = [u8]>>(
 
     let out = match captured {
         Captured::Native(out) => out,
-        Captured::Scaled(bgr, w, h) => {
-            copy_into(&scale::resize_bgr(&bgr, w, h, scale::NORM_W, scale::NORM_H), &mut alloc)
-        }
+        Captured::Scaled(bgr, w, h) => resize_into(&bgr, (w, h), (scale::NORM_W, scale::NORM_H), &mut alloc)?,
     };
     Ok((out, scale::NORM_W, scale::NORM_H))
 }
@@ -79,7 +82,7 @@ pub fn grab_frame_region<B: DerefMut<Target = [u8]>>(
         x11::with_bgrx(&located, Some(area), |bgrx, w, h| (convert_into(bgrx, &mut alloc), w, h))
     } else {
         let (bgr, w, h) = x11::capture_bgr(&located, Some(area))?;
-        Ok((copy_into(&scale::resize_bgr(&bgr, w, h, rw, rh), &mut alloc), rw, rh))
+        Ok((resize_into(&bgr, (w, h), (rw, rh), &mut alloc)?, rw, rh))
     }
 }
 

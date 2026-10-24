@@ -1,6 +1,6 @@
 defmodule StarlightBotWeb.Live.TransitionsLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.{Hooks, Native, Input.Keyboard}
+  alias StarlightBot.{Hooks, Input.Keyboard}
   alias StarlightBot.Vision.{Capture, Frame, HookRegistry, Matcher}
   alias StarlightBot.Navigation.{Catalog, Navigator}
   alias StarlightBot.Automation.Scripts
@@ -15,12 +15,6 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    cache_status =
-      case Native.cache_age_ms() do
-        {:ok, _} -> :running
-        _ -> :stopped
-      end
-
     if connected?(socket) do
       Navigator.subscribe()
       schedule_tick()
@@ -36,13 +30,11 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
      |> assign(:goal, nav.goal)
      |> assign(:phase, nav.phase)
      |> assign(:frame_b64, nil)
-     |> assign(:frame_age_ms, nil)
      |> assign(:transitions, transitions_for(nav.current_screen))
      |> assign(:hop_actions, hop_actions_for(nav.current_screen))
      |> assign(:actions, actions_for(nav.current_screen))
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)
-     |> assign(:cache_status, cache_status)
      |> assign(:stream_running, true)
      |> assign(:all_hooks, Hooks.list_hooks())
      |> assign(:hook_filter, "")
@@ -80,19 +72,6 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
   @impl true
   def handle_event("cancel_pending", _, socket) do
     {:noreply, socket |> assign(:pending_action, nil) |> assign(:countdown, nil)}
-  end
-
-  @impl true
-  def handle_event("start_cache", _, socket) do
-    me = self()
-    Task.start(fn -> send(me, {:cache_start_result, Capture.start_cache()}) end)
-    {:noreply, assign(socket, :cache_status, :starting)}
-  end
-
-  @impl true
-  def handle_event("stop_cache", _, socket) do
-    Capture.stop_cache()
-    {:noreply, assign(socket, :cache_status, :stopped)}
   end
 
   @impl true
@@ -184,19 +163,6 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
   end
 
   @impl true
-  def handle_info({:cache_start_result, :ok}, socket) do
-    {:noreply, assign(socket, :cache_status, :running)}
-  end
-
-  @impl true
-  def handle_info({:cache_start_result, {:error, reason}}, socket) do
-    {:noreply,
-     socket
-     |> assign(:cache_status, :stopped)
-     |> put_flash(:error, "Stream failed: #{inspect(reason)}")}
-  end
-
-  @impl true
   def handle_info(:tick, %{assigns: %{stream_running: false}} = socket) do
     {:noreply, socket}
   end
@@ -214,8 +180,7 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
   def handle_info(:auto_localize_tick, socket) do
     schedule_localize_tick()
 
-    if socket.assigns.cache_status == :running and socket.assigns.stream_running and
-         socket.assigns.phase == :idle do
+    if socket.assigns.stream_running and socket.assigns.phase == :idle do
       Navigator.localize()
     end
 
@@ -295,33 +260,22 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
   end
 
   defp update_frame(socket) do
-    case Native.cache_grab_frame() do
-      {:ok, binary, w, h} ->
-        mat = Evision.Mat.from_binary(binary, {:u, 8}, h, w, 3)
+    case Capture.grab_frame() do
+      {:ok, %Frame{mat: mat}} ->
         thumb = Evision.resize(mat, {@thumb_w, @thumb_h})
         tmp = "/tmp/_starlight_tl_thumb.jpg"
         Evision.imwrite(tmp, thumb)
 
         case File.read(tmp) do
           {:ok, jpeg} ->
-            age =
-              case Native.cache_age_ms() do
-                {:ok, ms} -> ms
-                _ -> nil
-              end
-
-            socket
-            |> assign(:frame_b64, Base.encode64(jpeg))
-            |> assign(:frame_age_ms, age)
+            assign(socket, :frame_b64, Base.encode64(jpeg))
 
           _ ->
             socket
         end
 
       _ ->
-        socket
-        |> assign(:frame_b64, nil)
-        |> assign(:frame_age_ms, nil)
+        assign(socket, :frame_b64, nil)
     end
   rescue
     _ -> socket

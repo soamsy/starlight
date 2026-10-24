@@ -22,27 +22,11 @@
     <div class="ml-auto flex gap-2 items-center">
 
       <%!-- Stream controls --%>
-      <%= if @cache_status == :stopped do %>
-        <button phx-click="start_cache" class="btn btn-sm btn-outline">
-          Start Stream
-        </button>
-      <% end %>
-      <%= if @cache_status == :starting do %>
-        <button disabled class="btn btn-sm btn-outline">
-          <span class="loading loading-spinner loading-xs"></span>
-          Starting…
-        </button>
-      <% end %>
-      <%= if @cache_status == :running do %>
-        <button phx-click="toggle_stream"
-                class="btn btn-sm btn-ghost btn-square"
-                title={if @stream_running, do: "Pause preview", else: "Resume preview"}>
-          <%= if @stream_running, do: "⏸", else: "▶" %>
-        </button>
-        <button phx-click="stop_cache" class="btn btn-sm btn-ghost text-error/70">
-          Stop Stream
-        </button>
-      <% end %>
+      <button phx-click="toggle_stream"
+              class="btn btn-sm btn-ghost btn-square"
+              title={if @stream_running, do: "Pause preview", else: "Resume preview"}>
+        <%= if @stream_running, do: "⏸", else: "▶" %>
+      </button>
 
       <div class="w-px h-5 bg-base-content/15 mx-1"></div>
 
@@ -78,13 +62,9 @@
         <% else %>
           <div class="text-base-content/30 text-sm select-none text-center">
             <p>No frame</p>
-            <p class="text-xs mt-1">Start the cache to see what Starlight sees</p>
           </div>
         <% end %>
       </div>
-      <%= if @frame_age_ms do %>
-        <div class="text-xs text-base-content/30 font-mono -mt-1 ml-1"><%= @frame_age_ms %>ms ago</div>
-      <% end %>
 
       <%!-- Floating comparison panel: template vs what the last hook test saw --%>
       <%= if @focused_hook do %>

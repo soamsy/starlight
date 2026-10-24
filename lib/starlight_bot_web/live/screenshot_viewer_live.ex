@@ -1,6 +1,6 @@
 defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.{Hooks, Native, Vision.Capture, Vision.Frame, Vision.HookRegistry, Vision.Matcher}
+  alias StarlightBot.{Hooks, Vision.Capture, Vision.Frame, Vision.HookRegistry, Vision.Matcher}
 
   @max_frames 40
   @tick_ms 500
@@ -12,23 +12,14 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
   @impl true
   def mount(_params, _session, socket) do
     base = "/tmp/_starlight_sv_#{System.unique_integer([:positive])}"
-    if connected?(socket), do: schedule_tick()
-
-    cache_status =
-      case Native.cache_age_ms() do
-        {:ok, _} -> :running
-        _ -> :stopped
-      end
 
     {:ok,
      socket
      |> assign(:frames, [])
      |> assign(:selected_id, nil)
-     |> assign(:running, true)
+     |> assign(:recording, false)
      |> assign(:frame_counter, 0)
-     |> assign(:cache_age_ms, nil)
      |> assign(:status, :waiting)
-     |> assign(:cache_status, cache_status)
      |> assign(:current_frame, nil)
      |> assign(:current_full_b64, nil)
      |> assign(:base, base)
@@ -42,19 +33,6 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
      |> assign(:hook_results, %{})
      |> assign(:hook_filter, "")
      |> assign(:max_frames, @max_frames)}
-  end
-
-  @impl true
-  def handle_event("start_cache", _, socket) do
-    viewer = self()
-    Task.start(fn -> send(viewer, {:cache_start_result, Capture.start_cache()}) end)
-    {:noreply, assign(socket, :cache_status, :starting)}
-  end
-
-  @impl true
-  def handle_event("stop_cache", _, socket) do
-    Capture.stop_cache()
-    {:noreply, assign(socket, :cache_status, :stopped)}
   end
 
   @impl true
@@ -72,10 +50,10 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
   end
 
   @impl true
-  def handle_event("toggle_running", _, socket) do
-    running = !socket.assigns.running
-    if running, do: schedule_tick()
-    {:noreply, assign(socket, :running, running)}
+  def handle_event("toggle_recording", _, socket) do
+    recording = !socket.assigns.recording
+    if recording, do: schedule_tick()
+    {:noreply, assign(socket, :recording, recording)}
   end
 
   @impl true
@@ -129,20 +107,7 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
   end
 
   @impl true
-  def handle_info({:cache_start_result, :ok}, socket) do
-    {:noreply, assign(socket, :cache_status, :running)}
-  end
-
-  @impl true
-  def handle_info({:cache_start_result, {:error, reason}}, socket) do
-    {:noreply,
-     socket
-     |> assign(:cache_status, :stopped)
-     |> put_flash(:error, "Cache start failed: #{inspect(reason)}")}
-  end
-
-  @impl true
-  def handle_info(:tick, %{assigns: %{running: false}} = socket) do
+  def handle_info(:tick, %{assigns: %{recording: false}} = socket) do
     {:noreply, socket}
   end
 
@@ -162,14 +127,6 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
   end
 
   defp do_tick(socket) do
-    age =
-      case Native.cache_age_ms() do
-        {:ok, ms} -> ms
-        _ -> nil
-      end
-
-    socket = assign(socket, :cache_age_ms, age)
-
     counter = socket.assigns.frame_counter + 1
 
     case capture_frame(socket.assigns.tmp_thumb, socket.assigns.base, counter) do
@@ -197,9 +154,8 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
   # Write the full-res 1920×1080 JPEG to a per-frame file on disk.
   # The process dict holds only the path (~50 bytes); no bitmaps in memory.
   defp capture_frame(tmp_thumb, base, counter) do
-    case Native.cache_grab_frame() do
-      {:ok, binary, w, h} ->
-        mat = Evision.Mat.from_binary(binary, {:u, 8}, h, w, 3)
+    case Capture.grab_frame() do
+      {:ok, %Frame{mat: mat}} ->
         full_path = "#{base}_full_#{counter}.png"
 
         Evision.imwrite(full_path, mat)
