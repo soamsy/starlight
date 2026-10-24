@@ -327,18 +327,24 @@ fn new_segment(conn: &xcb::Connection, len: usize) -> Result<Segment, NativeErro
     Ok(segment)
 }
 
+pub type Area = (u32, u32, u32, u32);
+
+fn area_len(&(_, _, w, h): &Area) -> usize {
+    w as usize * h as usize * 4
+}
+
 fn shm_capture<'a>(
     conn: &xcb::Connection,
     shm: &'a mut ShmCapture,
     window: Window,
-    (x, y, w, h): (u32, u32, u32, u32),
-) -> Result<&'a [u8], NativeError> {
-    let len = w as usize * h as usize * 4;
-    if shm.segment.as_ref().is_none_or(|s| s.len < len) {
+    areas: &[Area],
+) -> Result<Vec<&'a [u8]>, NativeError> {
+    let total: usize = areas.iter().map(area_len).sum();
+    if shm.segment.as_ref().is_none_or(|s| s.len < total) {
         if let Some(old) = shm.segment.take() {
             conn.send_request(&xcb::shm::Detach { shmseg: old.seg });
         }
-        shm.segment = Some(new_segment(conn, len)?);
+        shm.segment = Some(new_segment(conn, total)?);
     }
     let (seg, ptr) = match shm.segment.as_ref() {
         Some(s) => (s.seg, s.ptr),
@@ -352,80 +358,130 @@ fn shm_capture<'a>(
         window,
         pixmap: shm.pixmap,
     });
-    let image = conn.send_request(&xcb::shm::GetImage {
-        drawable: Drawable::Pixmap(shm.pixmap),
-        x: x as i16,
-        y: y as i16,
-        width: w as u16,
-        height: h as u16,
-        plane_mask: u32::MAX,
-        format: x::ImageFormat::ZPixmap as u8,
-        shmseg: seg,
-        offset: 0,
-    });
+
+    let mut offset = 0;
+    let images: Vec<_> = areas
+        .iter()
+        .map(|area @ &(x, y, w, h)| {
+            let cookie = conn.send_request(&xcb::shm::GetImage {
+                drawable: Drawable::Pixmap(shm.pixmap),
+                x: x as i16,
+                y: y as i16,
+                width: w as u16,
+                height: h as u16,
+                plane_mask: u32::MAX,
+                format: x::ImageFormat::ZPixmap as u8,
+                shmseg: seg,
+                offset: offset as u32,
+            });
+            let at = offset;
+            offset += area_len(area);
+            (cookie, at, area_len(area))
+        })
+        .collect();
 
     shm.named = conn.check_request(name).is_ok();
-    let reply = conn.wait_for_reply(image).map_err(xerr)?;
-    check_layout(conn, reply.depth())?;
-    if reply.size() as usize != len {
-        return Err(xerr(format!("shm image is {} bytes, expected {len}", reply.size())));
-    }
 
-    Ok(unsafe { std::slice::from_raw_parts(ptr, len) })
+    images
+        .into_iter()
+        .map(|(cookie, at, len)| {
+            let reply = conn.wait_for_reply(cookie).map_err(xerr)?;
+            check_layout(conn, reply.depth())?;
+            if reply.size() as usize != len {
+                return Err(xerr(format!("shm image is {} bytes, expected {len}", reply.size())));
+            }
+            Ok(unsafe { std::slice::from_raw_parts(ptr.add(at), len) })
+        })
+        .collect()
 }
 
 fn socket_capture(
     conn: &xcb::Connection,
     window: Window,
-    (x, y, w, h): (u32, u32, u32, u32),
-) -> Result<x::GetImageReply, NativeError> {
-    let cookie = conn.send_request(&x::GetImage {
-        format: x::ImageFormat::ZPixmap,
-        drawable: Drawable::Window(window),
-        x: x as i16,
-        y: y as i16,
-        width: w as u16,
-        height: h as u16,
-        plane_mask: u32::MAX,
-    });
-    let reply = conn.wait_for_reply(cookie).map_err(xerr)?;
-    check_layout(conn, reply.depth())?;
-    Ok(reply)
+    areas: &[Area],
+) -> Result<Vec<x::GetImageReply>, NativeError> {
+    let cookies: Vec<_> = areas
+        .iter()
+        .map(|&(x, y, w, h)| {
+            conn.send_request(&x::GetImage {
+                format: x::ImageFormat::ZPixmap,
+                drawable: Drawable::Window(window),
+                x: x as i16,
+                y: y as i16,
+                width: w as u16,
+                height: h as u16,
+                plane_mask: u32::MAX,
+            })
+        })
+        .collect();
+
+    cookies
+        .into_iter()
+        .map(|cookie| {
+            let reply = conn.wait_for_reply(cookie).map_err(xerr)?;
+            check_layout(conn, reply.depth())?;
+            Ok(reply)
+        })
+        .collect()
+}
+
+fn clamp_area((x, y, w, h): Area, win_w: u32, win_h: u32) -> Result<Area, NativeError> {
+    let (x, y) = (x.min(win_w), y.min(win_h));
+    let area = (x, y, w.min(win_w - x), h.min(win_h - y));
+    if area.2 == 0 || area.3 == 0 {
+        return Err(xerr("empty capture region"));
+    }
+    Ok(area)
+}
+
+pub fn with_bgrx_all<T>(
+    located: &Located,
+    regions: &[Area],
+    mut f: impl FnMut(usize, &[u8], u32, u32) -> T,
+) -> Result<Vec<T>, NativeError> {
+    let (_, _, win_w, win_h) = rect(located)?;
+    let areas = regions
+        .iter()
+        .map(|&r| clamp_area(r, win_w, win_h))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let conn = &located.display.conn;
+    if let Some(mut shm) = located.display.shm.as_ref().and_then(|m| m.lock().ok()) {
+        if let Ok(images) = shm_capture(conn, &mut shm, located.window, &areas) {
+            return Ok(images
+                .into_iter()
+                .zip(&areas)
+                .enumerate()
+                .map(|(i, (bgrx, &(_, _, w, h)))| f(i, bgrx, w, h))
+                .collect());
+        }
+    }
+
+    Ok(socket_capture(conn, located.window, &areas)?
+        .iter()
+        .zip(&areas)
+        .enumerate()
+        .map(|(i, (reply, &(_, _, w, h)))| f(i, reply.data(), w, h))
+        .collect())
 }
 
 pub fn with_bgrx<T>(
     located: &Located,
-    region: Option<(u32, u32, u32, u32)>,
+    region: Option<Area>,
     f: impl FnOnce(&[u8], u32, u32) -> T,
 ) -> Result<T, NativeError> {
-    let (_, _, win_w, win_h) = rect(located)?;
     let area = match region {
-        Some((x, y, w, h)) => {
-            let (x, y) = (x.min(win_w), y.min(win_h));
-            (x, y, w.min(win_w - x), h.min(win_h - y))
+        Some(area) => area,
+        None => {
+            let (_, _, win_w, win_h) = rect(located)?;
+            (0, 0, win_w, win_h)
         }
-        None => (0, 0, win_w, win_h),
     };
-    if area.2 == 0 || area.3 == 0 {
-        return Err(xerr("empty capture region"));
-    }
-
-    let conn = &located.display.conn;
-    if let Some(mut shm) = located.display.shm.as_ref().and_then(|m| m.lock().ok()) {
-        if let Ok(bgrx) = shm_capture(conn, &mut shm, located.window, area) {
-            return Ok(f(bgrx, area.2, area.3));
-        }
-    }
-
-    let reply = socket_capture(conn, located.window, area)?;
-    Ok(f(reply.data(), area.2, area.3))
-}
-
-pub fn capture_bgr(
-    located: &Located,
-    region: Option<(u32, u32, u32, u32)>,
-) -> Result<(Vec<u8>, u32, u32), NativeError> {
-    with_bgrx(located, region, |bgrx, w, h| (bgrx_to_bgr(bgrx), w, h))
+    let mut f = Some(f);
+    with_bgrx_all(located, &[area], |_, bgrx, w, h| f.take().map(|f| f(bgrx, w, h)))?
+        .pop()
+        .flatten()
+        .ok_or_else(|| xerr("no image captured"))
 }
 
 pub fn query_pointer(display_name: &str) -> Result<(i32, i32), NativeError> {

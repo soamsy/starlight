@@ -33,6 +33,17 @@ fn grab_frame_region<'a>(env: Env<'a>, window_title: String, rx: u32, ry: u32, r
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]
+fn grab_regions<'a>(env: Env<'a>, window_title: String, rects: Vec<(u32, u32, u32, u32)>) -> Term<'a> {
+    match capture::grab_regions(&window_title, &rects, new_binary) {
+        Ok(images) => (ok(), images.into_iter().map(|b| b.release(env)).collect::<Vec<Binary>>()).encode(env),
+        Err(e) => {
+            eprintln!("[starlight_native] grab_regions error: {e}");
+            (error(), e.to_atom(env)).encode(env)
+        }
+    }
+}
+
+#[rustler::nif(schedule = "DirtyCpu")]
 fn grab_frame_raw<'a>(env: Env<'a>, window_title: String) -> Term<'a> {
     match capture::grab_frame_raw(&window_title, new_binary) {
         Ok((owned, w, h)) => (ok(), owned.release(env), w, h).encode(env),

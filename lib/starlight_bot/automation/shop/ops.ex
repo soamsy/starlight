@@ -4,7 +4,6 @@ defmodule StarlightBot.Automation.Shop.Ops do
   alias StarlightBot.Ctx
   alias StarlightBot.EgoGifts
   alias StarlightBot.GiftPlans
-  alias StarlightBot.Navigation.Runner
   alias StarlightBot.Teams
   alias StarlightBot.Vision.{Capture, EgoGiftDetector, Frame, HookRegistry, Matcher, NumberScanner}
 
@@ -763,15 +762,9 @@ defmodule StarlightBot.Automation.Shop.Ops do
     steps = [await_any([:shop_purchase_popup_confirm, :shop_purchase_pop_gift_info], timeout: @purchase_result_timeout)]
 
     case Engine.act(steps, ctx) do
-      {:ok, frame} ->
-        if Runner.hook_matches?(frame, :shop_purchase_pop_gift_info) do
-          {:ok, :insufficient_funds}
-        else
-          {:ok, :confirm}
-        end
-
-      {:error, _} = err ->
-        err
+      {:ok, :shop_purchase_pop_gift_info} -> {:ok, :insufficient_funds}
+      {:ok, :shop_purchase_popup_confirm} -> {:ok, :confirm}
+      {:error, _} = err -> err
     end
   end
 

@@ -142,7 +142,13 @@ defmodule StarlightBot.Navigation.MachineTest do
     test "await matches once the hook shows up" do
       FakeWorld.react({:key, :enter}, show: [:fw_done], after: 150)
 
-      assert {:ok, %StarlightBot.Vision.Frame{}} = run([key(:enter), await(:fw_done, timeout: 2_000)])
+      assert {:ok, nil} = run([key(:enter), await(:fw_done, timeout: 2_000)])
+    end
+
+    test "await_any returns the hook that matched" do
+      FakeWorld.react({:key, :enter}, show: [:fw_done], after: 150)
+
+      assert run([key(:enter), await_any([:fw_hidden, :fw_done], timeout: 2_000)]) == {:ok, :fw_done}
     end
 
     test "await times out with the hook it waited on" do

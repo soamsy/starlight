@@ -1,6 +1,6 @@
 defmodule StarlightBot.Navigation.Runner do
   alias StarlightBot.Automation.RunMemory
-  alias StarlightBot.{Vision.Capture, Vision.Matcher}
+  alias StarlightBot.{Vision.Capture, Vision.Frame, Vision.Matcher}
   alias StarlightBot.Navigation.{Action, Catalog, Machine, Screen}
 
   @poll_interval_ms 100
@@ -48,7 +48,7 @@ defmodule StarlightBot.Navigation.Runner do
   end
 
   def check_screens(screens) do
-    case grab_frame() do
+    case grab_for(Enum.map(screens, & &1.identity_hook)) do
       {:error, _} ->
         :unknown
 
@@ -148,6 +148,31 @@ defmodule StarlightBot.Navigation.Runner do
   end
 
   def grab_frame, do: Capture.grab_frame()
+
+  def grab_for(specs) do
+    case spec_rects(specs) do
+      [] -> grab_frame()
+      rects -> Capture.grab_regions(rects)
+    end
+  end
+
+  def frame_for(specs, %Frame{} = frame) do
+    if Frame.covers?(frame, spec_rects(specs)), do: {:ok, frame}, else: grab_for(specs)
+  end
+
+  def frame_for(specs, nil), do: grab_for(specs)
+
+  def spec_rects(specs) do
+    rects = specs |> List.wrap() |> Enum.flat_map(&spec_hooks/1) |> Enum.map(&Matcher.search_rect/1) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+    Enum.reject(rects, fn rect -> Enum.any?(rects, &(&1 != rect and contains?(&1, rect))) end)
+  end
+
+  defp spec_hooks({:not, spec}), do: spec_hooks(spec)
+  defp spec_hooks({combinator, specs}) when combinator in [:any, :all], do: Enum.flat_map(specs, &spec_hooks/1)
+  defp spec_hooks(hook) when is_atom(hook) and not is_nil(hook), do: [hook]
+  defp spec_hooks(_spec), do: []
+
+  defp contains?({ox, oy, ow, oh}, {x, y, w, h}), do: x >= ox and y >= oy and x + w <= ox + ow and y + h <= oy + oh
 
   defp mono, do: System.monotonic_time(:millisecond)
 end

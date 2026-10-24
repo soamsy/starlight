@@ -43,7 +43,7 @@ defmodule StarlightBot.Vision.Matcher do
 
       {:ok, hook} ->
         confidence = Keyword.get(opts, :confidence, hook.confidence)
-        {image_mat, offset} = crop_to_region(frame.mat, search_region(hook))
+        {image_mat, offset} = crop_to_region(frame, search_region(hook))
 
         case run_match(image_mat, hook, confidence, :first) do
           {:ok, rect} -> {:ok, add_offset(rect, offset)}
@@ -60,7 +60,7 @@ defmodule StarlightBot.Vision.Matcher do
 
       {:ok, hook} ->
         confidence = Keyword.get(opts, :confidence, hook.confidence)
-        {image_mat, offset} = crop_to_region(frame.mat, search_region(hook))
+        {image_mat, offset} = crop_to_region(frame, search_region(hook))
         run_match(image_mat, hook, confidence, :all)
         |> Enum.map(&add_offset(&1, offset))
     end
@@ -73,7 +73,7 @@ defmodule StarlightBot.Vision.Matcher do
 
       {:ok, hook} ->
         confidence = Keyword.get(opts, :confidence, hook.confidence)
-        {image_mat, offset} = crop_to_region(frame.mat, search_region(hook))
+        {image_mat, offset} = crop_to_region(frame, search_region(hook))
 
         matches =
           image_mat
@@ -94,7 +94,7 @@ defmodule StarlightBot.Vision.Matcher do
       found
       |> Enum.map(fn {_name, {:ok, hook}} -> search_region(hook) end)
       |> Enum.uniq()
-      |> Map.new(fn region -> {region, crop_to_region(frame.mat, region)} end)
+      |> Map.new(fn region -> {region, crop_to_region(frame, region)} end)
 
     found
     |> Enum.map(fn {name, {:ok, hook}} ->
@@ -148,6 +148,13 @@ defmodule StarlightBot.Vision.Matcher do
     end
   end
 
+  def search_rect(hook_name) when is_atom(hook_name) do
+    case HookRegistry.find(hook_name) do
+      {:ok, hook} -> search_region(hook)
+      {:error, :not_found} -> nil
+    end
+  end
+
   def check(%Frame{} = frame, hook_name, opts \\ []) when is_atom(hook_name) do
     find(frame, hook_name, opts) != :not_found
   end
@@ -178,7 +185,7 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp find_with_score_resolved(frame, {:ok, %Hook{method: method} = hook}, _cache, opts) when method in @cluster_detectors do
     confidence = Keyword.get(opts, :confidence, hook.confidence)
-    {image_mat, offset} = crop_to_region(frame.mat, search_region(hook))
+    {image_mat, offset} = crop_to_region(frame, search_region(hook))
     score = color_detector_raw_score(image_mat, hook, confidence)
 
     result =
@@ -192,7 +199,7 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp find_with_score_resolved(frame, {:ok, %Hook{method: :grayscale_detector} = hook}, _cache, opts) do
     confidence = Keyword.get(opts, :confidence, hook.confidence)
-    {image_mat, offset} = crop_to_region(frame.mat, search_region(hook))
+    {image_mat, offset} = crop_to_region(frame, search_region(hook))
     score = grayscale_score(image_mat)
 
     result =
@@ -223,7 +230,7 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp find_with_score_resolved(frame, {:ok, hook}, _cache, opts) do
     min_confidence = Keyword.get(opts, :confidence, hook.confidence)
-    {image_mat, offset} = crop_to_region(frame.mat, search_region(hook))
+    {image_mat, offset} = crop_to_region(frame, search_region(hook))
     score = raw_best_score(image_mat, hook)
 
     result =
@@ -246,7 +253,7 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp single_scene_cache(frame, {:ok, %Hook{method: method} = hook}) when method in @feature_methods do
     region = search_region(hook)
-    {image_mat, _offset} = crop_to_region(frame.mat, region)
+    {image_mat, _offset} = crop_to_region(frame, region)
     %{{region, method} => detect_scene_features(method, image_mat)}
   end
 
@@ -261,7 +268,7 @@ defmodule StarlightBot.Vision.Matcher do
     |> Enum.uniq()
     |> Task.async_stream(
       fn {region, method} ->
-        {image_mat, _offset} = crop_to_region(frame.mat, region)
+        {image_mat, _offset} = crop_to_region(frame, region)
         {{region, method}, detect_scene_features(method, image_mat)}
       end,
       max_concurrency: System.schedulers_online(),
@@ -275,9 +282,8 @@ defmodule StarlightBot.Vision.Matcher do
   defp search_region(%Hook{scan_region: scan}) when not is_nil(scan), do: scan
   defp search_region(%Hook{region: region}), do: region
 
-  defp crop_to_region(mat, nil), do: {mat, {0, 0}}
-  defp crop_to_region(mat, {rx, ry, rw, rh}),
-    do: {Frame.crop(mat, {rx, ry, rw, rh}), {rx, ry}}
+  defp crop_to_region(%Frame{mat: mat}, nil) when mat != nil, do: {mat, {0, 0}}
+  defp crop_to_region(frame, {rx, ry, _rw, _rh} = region), do: {Frame.region(frame, region), {rx, ry}}
 
   defp add_offset({x, y, w, h}, {ox, oy}), do: {x + ox, y + oy, w, h}
 

@@ -27,12 +27,39 @@ enum Captured<B> {
 fn resize_into<B: DerefMut<Target = [u8]>>(
     bgr: &[u8],
     (w, h): (u32, u32),
+    crop: Option<scale::CropBox>,
     (to_w, to_h): (u32, u32),
     alloc: &mut impl FnMut(usize) -> B,
 ) -> Result<B, NativeError> {
     let mut out = alloc(to_w as usize * to_h as usize * 3);
-    scale::resize_bgr_into(bgr, w, h, &mut out, to_w, to_h)?;
+    scale::resize_bgr_into(bgr, w, h, crop, &mut out, to_w, to_h)?;
     Ok(out)
+}
+
+struct RegionPlan {
+    area: x11::Area,
+    crop: Option<scale::CropBox>,
+}
+
+fn padded_span(f0: f64, f1: f64, ratio: f64, limit: u32) -> (u32, u32) {
+    let pad = (scale::LANCZOS3_SUPPORT * ratio.max(1.0)).ceil() + 1.0;
+    ((f0 - pad).floor().max(0.0) as u32, ((f1 + pad).ceil() as u32).min(limit))
+}
+
+fn plan_region((x, y, w, h): x11::Area, src_w: u32, src_h: u32) -> RegionPlan {
+    if src_w == scale::NORM_W && src_h == scale::NORM_H {
+        return RegionPlan { area: (x, y, w, h), crop: None };
+    }
+    let sx = src_w as f64 / scale::NORM_W as f64;
+    let sy = src_h as f64 / scale::NORM_H as f64;
+    let (fx0, fx1) = (x as f64 * sx, (x + w) as f64 * sx);
+    let (fy0, fy1) = (y as f64 * sy, (y + h) as f64 * sy);
+    let (ax0, ax1) = padded_span(fx0, fx1, sx, src_w);
+    let (ay0, ay1) = padded_span(fy0, fy1, sy, src_h);
+    RegionPlan {
+        area: (ax0, ay0, ax1 - ax0, ay1 - ay0),
+        crop: Some((fx0 - ax0 as f64, fy0 - ay0 as f64, fx1 - fx0, fy1 - fy0)),
+    }
 }
 
 fn convert_into<B: DerefMut<Target = [u8]>>(bgrx: &[u8], alloc: &mut impl FnMut(usize) -> B) -> B {
@@ -55,7 +82,7 @@ pub fn grab_frame<B: DerefMut<Target = [u8]>>(
 
     let out = match captured {
         Captured::Native(out) => out,
-        Captured::Scaled(bgr, w, h) => resize_into(&bgr, (w, h), (scale::NORM_W, scale::NORM_H), &mut alloc)?,
+        Captured::Scaled(bgr, w, h) => resize_into(&bgr, (w, h), None, (scale::NORM_W, scale::NORM_H), &mut alloc)?,
     };
     Ok((out, scale::NORM_W, scale::NORM_H))
 }
@@ -71,19 +98,38 @@ pub fn grab_frame_raw<B: DerefMut<Target = [u8]>>(
 
 pub fn grab_frame_region<B: DerefMut<Target = [u8]>>(
     window_title: &str,
-    (rx, ry, rw, rh): (u32, u32, u32, u32),
-    mut alloc: impl FnMut(usize) -> B,
+    (rx, ry, rw, rh): x11::Area,
+    alloc: impl FnMut(usize) -> B,
 ) -> Result<(B, u32, u32), NativeError> {
+    grab_regions(window_title, &[(rx, ry, rw, rh)], alloc)?
+        .pop()
+        .map(|out| (out, rw, rh))
+        .ok_or_else(|| NativeError::CaptureFailed("no image captured".to_string()))
+}
+
+pub fn grab_regions<B: DerefMut<Target = [u8]>>(
+    window_title: &str,
+    rects: &[x11::Area],
+    mut alloc: impl FnMut(usize) -> B,
+) -> Result<Vec<B>, NativeError> {
     let located = x11::locate(window_title)?;
     let (_, _, src_w, src_h) = x11::rect(&located)?;
-    let area = scale::scale_rect(rx, ry, rw, rh, src_w, src_h);
+    let plans: Vec<RegionPlan> = rects.iter().map(|&r| plan_region(r, src_w, src_h)).collect();
+    let areas: Vec<x11::Area> = plans.iter().map(|p| p.area).collect();
 
-    if src_w == scale::NORM_W && src_h == scale::NORM_H {
-        x11::with_bgrx(&located, Some(area), |bgrx, w, h| (convert_into(bgrx, &mut alloc), w, h))
-    } else {
-        let (bgr, w, h) = x11::capture_bgr(&located, Some(area))?;
-        Ok((resize_into(&bgr, (w, h), (rw, rh), &mut alloc)?, rw, rh))
-    }
+    let captured = x11::with_bgrx_all(&located, &areas, |i, bgrx, w, h| match plans[i].crop {
+        None => Captured::Native(convert_into(bgrx, &mut alloc)),
+        Some(_) => Captured::Scaled(x11::bgrx_to_bgr(bgrx), w, h),
+    })?;
+
+    captured
+        .into_iter()
+        .zip(plans.iter().zip(rects))
+        .map(|(c, (plan, &(_, _, rw, rh)))| match c {
+            Captured::Native(out) => Ok(out),
+            Captured::Scaled(bgr, w, h) => resize_into(&bgr, (w, h), plan.crop, (rw, rh), &mut alloc),
+        })
+        .collect()
 }
 
 pub fn save_png(bgr: &[u8], width: u32, height: u32, path: &str) -> Result<(), NativeError> {

@@ -19,6 +19,10 @@ defmodule StarlightBot.Vision.Capture do
     GenServer.call(__MODULE__, :grab_frame, 5_000)
   end
 
+  def grab_regions(rects) do
+    GenServer.call(__MODULE__, {:grab_regions, rects}, 5_000)
+  end
+
   def grab_frame_raw do
     GenServer.call(__MODULE__, :grab_frame_raw, 5_000)
   end
@@ -89,6 +93,31 @@ defmodule StarlightBot.Vision.Capture do
 
           {:error, reason} = err ->
             Logger.warning("grab_frame failed: #{inspect(reason)}", module: __MODULE__)
+            {:reply, err, state}
+        end
+    end
+  end
+
+  @impl true
+  def handle_call({:grab_regions, rects}, _from, state) do
+    state = ensure_window_rect(state)
+
+    case state.window_rect do
+      nil ->
+        {:reply, {:error, :no_window}, state}
+
+      window_rect ->
+        case Native.grab_regions(state.window_title, rects) do
+          {:ok, binaries} ->
+            patches =
+              Enum.zip_with(rects, binaries, fn {_x, _y, w, h} = rect, binary ->
+                {rect, binary |> Evision.Mat.from_binary({:u, 8}, h, w, 3) |> Evision.Mat.clone()}
+              end)
+
+            {:reply, {:ok, Frame.from_patches(patches, window_rect)}, state}
+
+          {:error, reason} = err ->
+            Logger.warning("grab_regions failed: #{inspect(reason)}", module: __MODULE__)
             {:reply, err, state}
         end
     end

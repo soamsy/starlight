@@ -16,6 +16,9 @@ defmodule StarlightBot.Native do
   @doc "Capture only a region of the game window (region coords in 1920×1080 space). Returns {:ok, binary, w, h} or {:error, atom}."
   def grab_frame_region(_window_title, _rx, _ry, _rw, _rh), do: nif_err()
 
+  @doc "Capture several regions of the game window in one batch (coords in 1920×1080 space). Returns {:ok, [binary]} in the order given, each rw×rh BGR, or {:error, atom}."
+  def grab_regions(_window_title, _rects), do: nif_err()
+
   @doc "Capture the game window at its native resolution, no resize to 1920×1080. Returns {:ok, binary, width, height} or {:error, atom}."
   def grab_frame_raw(_window_title), do: nif_err()
 

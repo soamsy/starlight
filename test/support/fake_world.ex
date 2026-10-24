@@ -70,6 +70,12 @@ defmodule StarlightBot.FakeWorld do
   def handle_call(:focused?, _from, state), do: {:reply, state.focused?, state}
   def handle_call(:window_rect, _from, state), do: {:reply, @window, state}
   def handle_call(:grab_frame, _from, state), do: {:reply, {:ok, frame(state)}, state}
+
+  def handle_call({:grab_regions, rects}, _from, state) do
+    full = frame(state)
+    {:reply, {:ok, Frame.from_patches(Enum.map(rects, &{&1, Frame.crop(full.mat, &1)}), @window)}, state}
+  end
+
   def handle_call(:inputs, _from, state), do: {:reply, Enum.reverse(state.inputs), state}
   def handle_call({:focus, focused?}, _from, state), do: {:reply, :ok, %{state | focused?: focused?}}
   def handle_call({:change, changes}, _from, state), do: {:reply, :ok, apply_changes(state, changes)}

@@ -73,7 +73,7 @@ defmodule StarlightBot.Navigation.Machine do
 
   @impl true
   def handle_event(:internal, :step, :running, %{stack: []} = data),
-    do: finish(data.result || {:ok, data.frame}, data)
+    do: finish(data.result || {:ok, outward(data.frame)}, data)
 
   def handle_event(:internal, :step, :running, %{stack: [_ | _]} = data),
     do: surviving_reload(fn -> run_step(data) end)
@@ -171,7 +171,7 @@ defmodule StarlightBot.Navigation.Machine do
     ctx = data.ctx
     Ctx.log(ctx, :step, "branch")
 
-    frame = data.frame || elem(Runner.grab_frame(), 1)
+    frame = frame_or_nil(Runner.frame_for(Enum.map(clauses, &elem(&1, 0)), data.frame))
 
     branch_steps =
       if frame do
@@ -249,7 +249,7 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp exec({:invoke, {_mod, _fun, args} = mfa}, data), do: offload(:invoke, mfa, args ++ [data.ctx], data)
 
-  defp exec({:call, {_mod, _fun, args} = mfa}, data), do: offload(:call, mfa, args ++ [data.frame, data.ctx], data)
+  defp exec({:call, {_mod, _fun, args} = mfa}, data), do: offload(:call, mfa, args ++ [outward(data.frame), data.ctx], data)
 
   defp exec({:sleep, ms}, data) do
     Ctx.log(data.ctx, :step, "sleep #{ms}ms")
@@ -327,7 +327,7 @@ defmodule StarlightBot.Navigation.Machine do
   defp exec_internal({:__locate__, timeout_ms}, data), do: start_poll({:locate, mono()}, timeout_ms, data)
 
   defp exec_internal({:__deliver__, {mod, fun, args}}, data),
-    do: push([{:call, {mod, fun, args ++ [data.result || {:ok, data.frame}]}}], data.frame, %{data | result: nil})
+    do: push([{:call, {mod, fun, args ++ [data.result || {:ok, outward(data.frame)}]}}], data.frame, %{data | result: nil})
 
   defp exec_internal({:__rescue__, _fallback}, data), do: continue(data, data.frame)
 
@@ -471,7 +471,7 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   defp probe(kind) do
-    case Runner.grab_frame() do
+    case Runner.grab_for(watched_specs(kind)) do
       {:ok, frame} ->
         case find_match(kind, frame) do
           nil -> {:miss, frame}
@@ -490,6 +490,10 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp find_match(kind, frame), do: Runner.hook_matches?(frame, watched_hook(kind)) || nil
 
+  defp watched_specs({:await_any, hooks}), do: hooks
+  defp watched_specs({:branch, clauses, _default_steps, _wait_ms}), do: Enum.map(clauses, &elem(&1, 0))
+  defp watched_specs(kind), do: [watched_hook(kind)]
+
   defp watched_hook({:await, hook}), do: hook
   defp watched_hook({:retry_window, loop, _attempt}), do: loop.hook
   defp watched_hook({:verify, _screen_name, hook}), do: hook
@@ -501,7 +505,7 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp matched({:await_any, _hooks}, frame, hook, data) do
     Ctx.log(data.ctx, :step, "await_any: matched #{inspect(hook)}")
-    continue(data, frame)
+    continue(%{data | result: {:ok, hook}}, frame)
   end
 
   defp matched({:branch, _clauses, _default_steps, _wait_ms}, frame, {matched_hook, steps}, data) do
@@ -767,18 +771,17 @@ defmodule StarlightBot.Navigation.Machine do
   defp retry_exhausted?({:deadline, deadline}, _attempt), do: mono() >= deadline
 
   defp hook_visible?(hook, last_frame) do
-    case last_frame || grab_frame_or_nil() do
+    case frame_or_nil(Runner.frame_for([hook], last_frame)) do
       nil -> {false, nil}
       frame -> {Runner.hook_matches?(frame, hook), frame}
     end
   end
 
-  defp grab_frame_or_nil do
-    case Runner.grab_frame() do
-      {:ok, frame} -> frame
-      {:error, _} -> nil
-    end
-  end
+  defp frame_or_nil({:ok, frame}), do: frame
+  defp frame_or_nil({:error, _}), do: nil
+
+  defp outward(%Frame{} = frame), do: if(Frame.full?(frame), do: frame)
+  defp outward(value), do: value
 
   defp do_click(hook_atom, opts, last_frame, _ctx) do
     with {:ok, region} <- resolve_target_region(hook_atom, last_frame),
@@ -894,7 +897,7 @@ defmodule StarlightBot.Navigation.Machine do
           {:ok, region}
 
         nil ->
-          frame_for_find = last_frame || elem(Runner.grab_frame(), 1)
+          frame_for_find = frame_or_nil(Runner.frame_for([hook_atom], last_frame))
 
           with %Frame{} <- frame_for_find,
                {:ok, region} <- Matcher.find(frame_for_find, hook_atom) do
