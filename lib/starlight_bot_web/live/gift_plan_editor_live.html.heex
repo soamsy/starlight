@@ -400,7 +400,16 @@
                                 <% end %>
                               </span>
                             </div>
-                            <.route_list def_id={d["id"]} routes={d["routes"] || []} tier={target.tier} />
+                            <div class="flex items-center gap-2">
+                              <span class="text-[11px] text-base-content/60">Routes for</span>
+                              <div class="join">
+                                <button :for={shop <- [:normal, :super]} type="button" phx-click="set_route_shop" phx-value-shop={shop}
+                                        class={"btn btn-xs join-item " <> if(@route_shop == shop, do: "btn-primary", else: "btn-outline")}>
+                                  <%= if shop == :normal, do: "Normal shop", else: "Super shop" %>
+                                </button>
+                              </div>
+                            </div>
+                            <.route_list def_id={d["id"]} routes={d["routes"] || []} tier={target.tier} shop={@route_shop} />
                           </div>
                         <% end %>
                         <div :if={is_nil(target) and not fixed} class="text-xs text-base-content/50">Pick a target in the browser below: a Tier 2 to 4 gift without a fixed recipe.</div>

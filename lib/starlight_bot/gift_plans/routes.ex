@@ -133,7 +133,15 @@ defmodule StarlightBot.GiftPlans.Routes do
   defp reorder_list(list, ids) do
     by_id = Map.new(list, &{&1["id"], &1})
     ordered = ids |> Enum.map(&Map.get(by_id, &1)) |> Enum.reject(&is_nil/1)
-    ordered ++ Enum.reject(list, &(&1 in ordered))
+    moved = MapSet.new(ordered, & &1["id"])
+
+    {kept, _rest} =
+      Enum.map_reduce(list, ordered, fn
+        route, [next | rest] -> if MapSet.member?(moved, route["id"]), do: {next, rest}, else: {route, [next | rest]}
+        route, [] -> {route, []}
+      end)
+
+    kept
   end
 
   defp new_id, do: "rt_" <> Base.encode32(:crypto.strong_rand_bytes(4), case: :lower, padding: false)

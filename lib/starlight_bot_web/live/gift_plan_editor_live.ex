@@ -95,6 +95,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:gifts_by_id, Map.new(gifts, &{&1.id, &1}))
       |> assign(:sinners, Teams.all_sinners())
       |> assign(:route_clipboard, nil)
+      |> assign(:route_shop, :normal)
       |> assign(:route_defaults, RouteDefaults.all())
       |> assign(:import_source, nil)
       |> assign(:gift_clipboard, nil)
@@ -205,6 +206,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("set_uptie_view", %{"level" => level}, socket) when level in @uptie_views do
     {:noreply, assign(socket, :uptie_view, level)}
+  end
+
+  @impl true
+  def handle_event("set_route_shop", %{"shop" => shop}, socket) when shop in ~w(normal super) do
+    {:noreply, assign(socket, :route_shop, String.to_existing_atom(shop))}
   end
 
   @impl true
@@ -1066,15 +1072,22 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def callable_workflows(data, host_id), do: Enum.reject(data["workflows"], &GiftPlans.creates_cycle?(data, host_id, &1["id"]))
 
-  def combo_roman(combo), do: Enum.map_join(combo, " ", &gift_tier_roman/1)
+  def combo_sum(combo), do: Enum.join(combo, "+")
 
   def combo_shops_label([:normal, :super]), do: nil
   def combo_shops_label([:normal]), do: "normal only"
   def combo_shops_label([:super]), do: "super only"
   def combo_shops_label([]), do: "can't make this tier"
 
-  def selector_combos(tier) do
-    tier |> Combos.valid_combos() |> Enum.sort_by(&{&1.shops == [:super], Enum.max(&1.combo) >= tier, &1.points})
+  def route_in_shop?(route, tier, shop) do
+    case Combos.shops(route["combo"], tier) do
+      [] -> true
+      shops -> shop in shops
+    end
+  end
+
+  def selector_combos(tier, shop) do
+    tier |> Combos.valid_combos() |> Enum.filter(&(shop in &1.shops)) |> Enum.sort_by(&{&1.shops == [:super], Enum.max(&1.combo) >= tier, &1.points})
   end
 
   def combo_meta(combo), do: "#{Combos.points(combo)} pts · #{Combos.keyword_odds(combo)}% keyword"
@@ -1545,19 +1558,22 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :def_id, :string, required: true
   attr :routes, :list, required: true
   attr :tier, :integer, required: true
+  attr :shop, :atom, required: true
   attr :parent, :string, default: ""
 
   def route_list(assigns) do
+    assigns = assign(assigns, :visible, Enum.filter(assigns.routes, &route_in_shop?(&1, assigns.tier, assigns.shop)))
+
     ~H"""
     <div class="flex flex-col gap-1">
       <div id={"routes-#{@def_id}-#{@parent}-#{@tier}"} phx-hook="SortableList" data-sort-event="rt_reorder"
            data-sort-scope={"#{@def_id}|#{@parent}|#{@tier}"} class="flex flex-col gap-1">
-        <div :for={{route, index} <- Enum.with_index(@routes, 1)} data-sort-id={route["id"]}
+        <div :for={{route, index} <- Enum.with_index(@visible, 1)} data-sort-id={route["id"]}
              class="border border-base-300 rounded-lg p-1.5 flex flex-col gap-1 bg-base-100">
           <div class="flex items-center gap-2">
             <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
             <span class="text-[10px] text-base-content/40 w-4 text-right"><%= index %></span>
-            <span class="text-xs font-semibold" style="font-family: ui-serif, Georgia, serif;"><%= combo_roman(route["combo"]) %></span>
+            <span class="text-xs font-semibold"><%= combo_sum(route["combo"]) %></span>
             <span class="text-[10px] text-base-content/50"><%= combo_meta(route["combo"]) %></span>
             <span :if={label = combo_shops_label(Combos.shops(route["combo"], @tier))} class="badge badge-outline badge-xs"><%= label %></span>
             <button type="button" phx-click="rt_duplicate" phx-value-def_id={@def_id} phx-value-route_id={route["id"]}
@@ -1587,18 +1603,21 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
               Sub-goal: make T<%= sub_tier %>s
               <span :if={Routes.subgoals_for(route, sub_tier) == []} class="text-base-content/40">(empty: won't fuse for T<%= sub_tier %>)</span>
             </span>
-            <.route_list def_id={@def_id} routes={Routes.subgoals_for(route, sub_tier)} tier={sub_tier} parent={route["id"]} />
+            <.route_list def_id={@def_id} routes={Routes.subgoals_for(route, sub_tier)} tier={sub_tier} shop={@shop} parent={route["id"]} />
           </div>
         </div>
       </div>
+      <span :if={length(@visible) < length(@routes)} class="text-[11px] text-base-content/40 italic">
+        <%= length(@routes) - length(@visible) %> more route(s) only work in the <%= if @shop == :normal, do: "super", else: "normal" %> shop.
+      </span>
       <form phx-change="rt_add">
         <input type="hidden" name="def_id" value={@def_id} />
         <input type="hidden" name="parent" value={@parent} />
         <input type="hidden" name="tier" value={@tier} />
         <select name="combo" class="select select-bordered select-xs">
           <option value="" selected>+ add T<%= @tier %> route…</option>
-          <option :for={%{combo: combo, shops: shops} <- selector_combos(@tier)} value={Combos.combo_key(combo)}>
-            <%= Combos.combo_key(combo) %> · <%= combo_meta(combo) %><%= if label = combo_shops_label(shops), do: " · #{label}" %>
+          <option :for={%{combo: combo, shops: shops} <- selector_combos(@tier, @shop)} value={Combos.combo_key(combo)}>
+            <%= combo_sum(combo) %> · <%= combo_meta(combo) %><%= if label = combo_shops_label(shops), do: " · #{label}" %>
           </option>
         </select>
       </form>

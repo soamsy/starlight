@@ -34,13 +34,23 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
   defp steps(socket), do: hd(saved(socket)["workflows"])["steps"]
 
-  test "route selector lists normal-usable combos first, then combos below the target tier, then fewer points" do
-    keys = fn tier -> Enum.map(Live.selector_combos(tier), &StarlightBot.GiftPlans.Combos.combo_key(&1.combo)) end
+  test "route selector only offers combos that work in the chosen shop, normal-usable first, then below the target tier, then fewer points" do
+    keys = fn tier, shop -> Enum.map(Live.selector_combos(tier, shop), &StarlightBot.GiftPlans.Combos.combo_key(&1.combo)) end
 
-    assert keys.(4) ==
+    assert keys.(4, :super) ==
              ~w(3-3-2 3-3-3 4-3 4-2-2 4-4 3-2-2 3-2-1-1 3-1-1-1-1 3-3-1 2-2-2-2 2-2-2-1-1 4-2-1 4-1-1-1)
 
-    assert keys.(3) == ~w(2-2-2 4-1 3-2-1 3-3 4-2 3-2-2 2-2-1 2-1-1-1 1-1-1-1-1 3-2 3-1-1)
+    assert keys.(4, :normal) == ~w(3-3-2 3-3-3 4-3 4-2-2 4-4)
+    assert keys.(3, :super) == ~w(2-2-2 4-1 3-2-1 3-3 4-2 2-2-1 2-1-1-1 1-1-1-1-1 3-2 3-1-1)
+    assert keys.(3, :normal) == ~w(2-2-2 4-1 3-2-1 3-3 4-2 3-2-2)
+  end
+
+  test "the route shop toggle hides routes that don't work in that shop and reordering keeps hidden routes in place" do
+    routes = [%{"id" => "a", "combo" => [3, 3, 2]}, %{"id" => "b", "combo" => [3, 2, 2]}, %{"id" => "c", "combo" => [4, 4]}]
+
+    assert Enum.filter(routes, &Live.route_in_shop?(&1, 4, :normal)) |> Enum.map(& &1["id"]) == ["a", "c"]
+    assert Enum.filter(routes, &Live.route_in_shop?(&1, 4, :super)) |> Enum.map(& &1["id"]) == ["a", "b", "c"]
+    assert StarlightBot.GiftPlans.Routes.reorder(routes, nil, 4, ["c", "a"]) |> Enum.map(& &1["id"]) == ["c", "b", "a"]
   end
 
   test "the shop pane opens on the top milestone, or the first non-empty library without milestones", %{socket: socket} do
@@ -91,10 +101,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert added["combo"] == [4, 4]
 
     socket = event(socket, "rt_reorder", %{"scope" => "#{fusion_id}||4", "ids" => [added["id"], first["id"]]})
-    assert Enum.map(hd(saved(socket)["library"]["fusions"])["routes"], & &1["id"]) == [added["id"], first["id"], copy["id"], edited["id"]]
+    assert Enum.map(hd(saved(socket)["library"]["fusions"])["routes"], & &1["id"]) == [added["id"], copy["id"], edited["id"], first["id"]]
 
     socket = event(socket, "rt_delete", %{"def_id" => fusion_id, "route_id" => hd(first["subgoals"]["3"])["id"]})
-    assert hd(saved(socket)["library"]["fusions"])["routes"] |> Enum.at(1) |> Map.get("subgoals") == %{"3" => []}
+    assert hd(saved(socket)["library"]["fusions"])["routes"] |> Enum.find(&(&1["id"] == first["id"])) |> Map.get("subgoals") == %{"3" => []}
     assert [%{"kind" => "uptie", "upties" => [^uptie_id], "max_gifts" => 1}, %{"kind" => "fusion", "fusions" => [^fusion_id]}] = steps(socket)
     assert hd(saved(socket)["library"]["upties"])["gift"] == "Fiery Down"
     assert hd(saved(socket)["library"]["upties"])["name"] == "Fiery Down"
