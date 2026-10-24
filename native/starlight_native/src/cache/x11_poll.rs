@@ -41,9 +41,10 @@ fn run_loop(title: &str, frame_store: &Arc<RwLock<Option<CachedFrame>>>, stop: &
         let sleep_ms = if let Ok(located) = x11::locate(title) {
             backoff_ms = BASE_INTERVAL_MS;
             if let Ok((bgr, w, h)) = x11::capture_bgr(&located, None) {
+                let data = ResourceArc::new(FrameData { bgr: scale::normalize_bgr(bgr, w, h) });
                 if let Ok(mut guard) = frame_store.write() {
                     *guard = Some(CachedFrame {
-                        data: ResourceArc::new(FrameData { bgr: scale::normalize_bgr(bgr, w, h) }),
+                        data,
                         width: scale::NORM_W,
                         height: scale::NORM_H,
                         captured_at: std::time::Instant::now(),
