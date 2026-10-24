@@ -1,6 +1,7 @@
 defmodule StarlightBotWeb.Live.PageHook do
   import Phoenix.Component, only: [assign: 3]
-  import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1]
+  import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1, put_flash: 3]
+  alias StarlightBot.{GameWindow, Scheduler}
   alias StarlightBot.Vision.Capture
 
   @pages %{
@@ -26,6 +27,8 @@ defmodule StarlightBotWeb.Live.PageHook do
       socket
       |> assign(:page, Map.get(@pages, socket.view))
       |> assign(:game_window_rect, nil)
+      |> assign(:game_window_busy, nil)
+      |> assign(:game_launch_label, nil)
 
     if connected?(socket) and GenServer.whereis(Capture) do
       Capture.subscribe()
@@ -33,7 +36,9 @@ defmodule StarlightBotWeb.Live.PageHook do
       socket =
         socket
         |> assign(:game_window_rect, Capture.window_rect())
+        |> assign(:game_launch_label, launch_label(Scheduler.get_settings()))
         |> attach_hook(:game_window_rect, :handle_info, &handle_window_rect/2)
+        |> attach_hook(:game_window_actions, :handle_event, &handle_window_event/3)
 
       {:cont, socket}
     else
@@ -44,5 +49,61 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp handle_window_rect({:window_rect, rect}, socket),
     do: {:halt, assign(socket, :game_window_rect, rect)}
 
+  defp handle_window_rect({:game_window_result, kind, msg}, socket),
+    do: {:halt, socket |> assign(:game_window_busy, nil) |> put_flash(kind, msg)}
+
   defp handle_window_rect(_msg, socket), do: {:cont, socket}
+
+  defp handle_window_event(event, _params, %{assigns: %{game_window_busy: busy}} = socket)
+       when busy != nil and event in ["game_window_resize", "game_window_launch"],
+       do: {:halt, socket}
+
+  defp handle_window_event("game_window_resize", _params, socket) do
+    settings = Scheduler.get_settings()
+
+    run_window_action(socket, "resizing to 1920x1080", fn ->
+      case GameWindow.fix_aspect(settings.steam_app_id) do
+        {:ok, %{before: {_, _, bw, bh}}} ->
+          {:info, "Resized Limbus from #{bw}x#{bh} to 1920x1080"}
+
+        {:error, :resize_in_progress} ->
+          {:error, "A resize is already running"}
+
+        {:error, {:resize_ignored, %{after: {_, _, aw, ah}}}} ->
+          {:error, "KWin ran the resize but the window stayed #{aw}x#{ah}"}
+
+        {:error, reason} ->
+          {:error, "Resize failed: #{inspect(reason)}"}
+      end
+    end)
+  end
+
+  defp handle_window_event("game_window_launch", _params, socket) do
+    settings = Scheduler.get_settings()
+
+    run_window_action(socket, "launching", fn ->
+      with :ok <- GameWindow.launch(settings),
+           {:ok, {_, _, w, h}} <- GameWindow.await_window(settings.launch_timeout_s * 1000) do
+        {:info, "Limbus window appeared (#{w}x#{h})"}
+      else
+        {:error, reason} -> {:error, "Launching Limbus failed: #{inspect(reason)}"}
+      end
+    end)
+  end
+
+  defp handle_window_event(_event, _params, socket), do: {:cont, socket}
+
+  defp run_window_action(socket, label, fun) do
+    lv = self()
+    Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn ->
+      {kind, msg} = fun.()
+      send(lv, {:game_window_result, kind, msg})
+    end)
+
+    {:halt, assign(socket, :game_window_busy, label)}
+  end
+
+  defp launch_label(%{launch_mode: "steam", steam_app_id: id}), do: "Steam app #{id}"
+  defp launch_label(%{launch_mode: "exe", exe_path: path}), do: path
+  defp launch_label(_settings), do: nil
 end

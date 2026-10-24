@@ -5,8 +5,16 @@ defmodule StarlightBotWeb.Layouts do
 
   @target_ratio 16 / 9
 
-  def bad_window_size?({_x, _y, w, h}) when h > 0, do: abs(w / h - @target_ratio) > 0.01
-  def bad_window_size?(_), do: false
+  def window_status({_x, _y, 1920, 1080}), do: :exact
+  def window_status({_x, _y, w, h}) when h > 0 do
+    if abs(w / h - @target_ratio) > 0.01, do: :bad_aspect, else: :scaled
+  end
+  def window_status(_), do: :missing
+
+  def window_status_title(:exact), do: "Limbus window is the right size"
+  def window_status_title(:scaled), do: "Limbus window is 16:9 but not 1920 × 1080"
+  def window_status_title(:bad_aspect), do: "Limbus window is the wrong size"
+  def window_status_title(:missing), do: "Limbus isn't open"
 
   def aspect_label(w, h) do
     g = Integer.gcd(w, h)
