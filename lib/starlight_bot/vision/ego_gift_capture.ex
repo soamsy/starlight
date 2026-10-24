@@ -13,13 +13,13 @@ defmodule StarlightBot.Vision.EgoGiftCapture do
 
   def enabled?, do: :persistent_term.get(@enabled_key, false)
 
-  def record(tag, crop, source_region, detections),
-    do: GenServer.cast(__MODULE__, {:record, tag, crop, source_region, detections})
+  def record(tag, crop, detections),
+    do: GenServer.cast(__MODULE__, {:record, tag, crop, detections})
 
   @impl true
   def init(_) do
     :persistent_term.put(@enabled_key, false)
-    {:ok, %{owner_ref: nil, seen: MapSet.new(), model_version: read_model_version()}}
+    {:ok, %{owner_ref: nil, seen: MapSet.new()}}
   end
 
   @impl true
@@ -35,12 +35,12 @@ defmodule StarlightBot.Vision.EgoGiftCapture do
   end
 
   @impl true
-  def handle_cast({:record, tag, crop, source_region, detections}, state) do
+  def handle_cast({:record, tag, crop, detections}, state) do
     signature = {tag, detections |> Enum.map(&signature_entry/1) |> Enum.sort()}
 
     if enabled?() and not MapSet.member?(state.seen, signature) do
       try do
-        write_capture(tag, crop, source_region, detections, state.model_version)
+        write_capture(tag, crop, detections)
       rescue
         e -> Logger.warning("EgoGiftCapture: failed to save #{tag} capture: #{Exception.message(e)}", module: __MODULE__)
       end
@@ -73,7 +73,7 @@ defmodule StarlightBot.Vision.EgoGiftCapture do
 
   defp bucket(v), do: round(v / @dedup_bucket_px)
 
-  defp write_capture(tag, crop, {sx, sy, sw, sh}, detections, model_version) do
+  defp write_capture(tag, crop, detections) do
     root = Application.fetch_env!(:starlight_bot, :ego_gift_ml_dir)
     resources = Path.join(root, "resources")
     now = NaiveDateTime.from_erl!(:calendar.local_time())
@@ -92,14 +92,7 @@ defmodule StarlightBot.Vision.EgoGiftCapture do
         {"region", rect(0, 0, w, h)},
         {"gifts", Enum.map(detections, &gift_entry/1)},
         {"ignore_for_training", true},
-        {"unreviewed", true},
-        {"capture",
-         Jason.OrderedObject.new([
-           {"tag", to_string(tag)},
-           {"captured_at", NaiveDateTime.to_iso8601(now)},
-           {"model_version", model_version},
-           {"source_region", rect(sx, sy, sw, sh)}
-         ])}
+        {"unreviewed", true}
       ])
 
     add_manual_train_entry(Path.join(resources, "manual_train.json"), key, entry)
@@ -146,17 +139,6 @@ defmodule StarlightBot.Vision.EgoGiftCapture do
     tmp_path = json_path <> ".starlight-tmp"
     File.write!(tmp_path, Jason.encode!(%Jason.OrderedObject{values: top}, pretty: true) <> "\n")
     File.rename!(tmp_path, json_path)
-  end
-
-  defp read_model_version do
-    path = Path.join([:code.priv_dir(:starlight_bot), "models", "ego_gifts", "metadata.json"])
-
-    with {:ok, body} <- File.read(path),
-         {:ok, %{"version" => version}} <- Jason.decode(body) do
-      version
-    else
-      _ -> nil
-    end
   end
 
   defp crop_hw(mat) do

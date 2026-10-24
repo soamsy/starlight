@@ -108,7 +108,7 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
           %{box: box, preds: run_classifier(state.classifier_net, state.classes, crop_box(crop, box), topk)}
         end)
 
-      if capturing?, do: EgoGiftCapture.record(capture_tag, crop, {x0, y0, x1 - x0, y1 - y0}, classified)
+      if capturing?, do: EgoGiftCapture.record(capture_tag, crop, classified)
 
       results =
         classified
