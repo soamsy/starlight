@@ -14,6 +14,8 @@ defmodule StarlightBot.Navigation.Machine do
   @locate_poll_ms 200
   @fallback_settle_ms 2_000
   @resume_poll_ms 200
+  @code_reload_wait_ms 5_000
+  @code_reload_poll_ms 50
   @target_area_fraction 0.25
   @unguarded_steps [
     :log,
@@ -73,20 +75,11 @@ defmodule StarlightBot.Navigation.Machine do
   def handle_event(:internal, :step, :running, %{stack: []} = data),
     do: finish(data.result || {:ok, data.frame}, data)
 
-  def handle_event(:internal, :step, :running, %{stack: [step | rest]} = data) do
-    data = %{data | stack: rest, current: step}
-    report(:running, nil, data)
+  def handle_event(:internal, :step, :running, %{stack: [_ | _]} = data),
+    do: surviving_reload(fn -> run_step(data) end)
 
-    if elem(step, 0) in @unguarded_steps,
-      do: exec_internal(step, data),
-      else: guarded(step, data)
-  end
-
-  def handle_event(:state_timeout, :tick, :polling, data) do
-    if Ctx.pause_requested?(data.ctx),
-      do: hold(data.current, data),
-      else: tick(data)
-  end
+  def handle_event(:state_timeout, :tick, :polling, data),
+    do: surviving_reload(fn -> poll(data) end)
 
   def handle_event(:state_timeout, :check, :paused, data) do
     if Ctx.pause_requested?(data.ctx) do
@@ -108,6 +101,44 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   def handle_event(:info, {:EXIT, _pid, _reason}, _state, _data), do: :keep_state_and_data
+
+  defp run_step(%{stack: [step | rest]} = data) do
+    data = %{data | stack: rest, current: step}
+    report(:running, nil, data)
+
+    if elem(step, 0) in @unguarded_steps,
+      do: exec_internal(step, data),
+      else: guarded(step, data)
+  end
+
+  defp poll(data) do
+    if Ctx.pause_requested?(data.ctx),
+      do: hold(data.current, data),
+      else: tick(data)
+  end
+
+  defp surviving_reload(fun) do
+    fun.()
+  rescue
+    e in UndefinedFunctionError ->
+      if reloaded?(e, mono() + @code_reload_wait_ms),
+        do: surviving_reload(fun),
+        else: reraise(e, __STACKTRACE__)
+  end
+
+  defp reloaded?(%UndefinedFunctionError{module: mod, function: fun, arity: arity} = e, deadline) do
+    cond do
+      Code.ensure_loaded?(mod) ->
+        function_exported?(mod, fun, arity)
+
+      mono() >= deadline ->
+        false
+
+      true ->
+        Process.sleep(@code_reload_poll_ms)
+        reloaded?(e, deadline)
+    end
+  end
 
   defp guarded(step, data) do
     cond do
