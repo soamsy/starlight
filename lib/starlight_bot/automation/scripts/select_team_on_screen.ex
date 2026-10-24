@@ -195,7 +195,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
       []
     else
       [click(:clear_selection)] ++
-      confirm_enter(any_of([:clear_selection_confirm, :clear_selection_confirm_2])) ++ [sleep(500)]
+      confirm_enter(any_of([:clear_selection_confirm, :clear_selection_confirm_2]), steady: 400) ++ [sleep(500)]
     end
   end
 
