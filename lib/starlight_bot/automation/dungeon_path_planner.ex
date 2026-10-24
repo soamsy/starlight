@@ -61,7 +61,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
         retry_until(any_of([:loading_stage_1, :loading_stage_2]), [
           branch(leading_clauses ++ [gift_popup_clause(), {:default, [key(direction), key(:enter)]}])
         ], every: 200, timeout: 15_000)
-      ] ++ loading(), ctx)
+      ] ++ loading() ++ [await(:battle_settings, timeout: 5_000, premove: false)], ctx)
     kind in [:battle, :hard_battle, :risky_battle, :boss] ->
       Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead, moving to team select")
 

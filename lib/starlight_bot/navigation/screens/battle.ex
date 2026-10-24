@@ -3,6 +3,8 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   alias StarlightBot.Automation.PlaybookRunner
   alias StarlightBot.Navigation.Screens.Event
 
+  @battle_kind_wait_ms 3_000
+
   screen :battle, identity: any_of([:battle_settings, :battle_turn]) do
     transition to: :battle_turn_or_over do
       wait_for_user_input_state()
@@ -30,10 +32,20 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   screen :battle_turn, identity: :battle_turn, refines: :battle do
     transition to: :battle_playing do
       [
-        key(:p), sleep(100), key(:enter),
-        retry_until_arrived(
-          [click(:battle_safe_click_spot), sleep(100), key(:p), sleep(100), key(:enter)],
-          tries: 3
+        branch(
+          [
+            {:battle_chain, [call(PlaybookRunner, :play_chain_turn), await_playing()]},
+            {:battle_focused, [call(PlaybookRunner, :play_focused_turn), await_playing()]},
+            {:default,
+              [
+                key(:p), sleep(100), key(:enter),
+                retry_until_arrived(
+                  [click(:battle_safe_click_spot), sleep(100), key(:p), sleep(100), key(:enter)],
+                  tries: 3
+                )
+              ]}
+          ],
+          wait: @battle_kind_wait_ms
         )
       ]
     end
