@@ -3,8 +3,8 @@ defmodule StarlightBot.Input.TrajectoryTest do
 
   alias StarlightBot.Input.Trajectory
 
-  test "human trajectory reaches target" do
-    waypoints = Trajectory.build({0.0, 0.0}, {500.0, 300.0}, {0.0, 0.0}, :human)
+  test "trajectory reaches target" do
+    waypoints = Trajectory.build({0.0, 0.0}, {500.0, 300.0}, {0.0, 0.0}, 1.0)
     assert waypoints != []
 
     {x, y, _t} = List.last(waypoints)

@@ -1,12 +1,10 @@
 defmodule StarlightBot.Input.Mouse do
   use GenServer
   require Logger
-  alias StarlightBot.{LogStore, Native, Input.MovementProfile, Input.Trajectory}
+  alias StarlightBot.{LogStore, Native, Input.MouseProfile, Input.Trajectory}
 
   @btn_left 0x110
   @btn_right 0x111
-  @click_hold_ms 90
-  @click_hold_sigma 13
   @scroll_click_delay_ms 60
   @scroll_click_delay_sigma 15
   @drag_settle_ms 50
@@ -157,8 +155,7 @@ defmodule StarlightBot.Input.Mouse do
 
   @impl true
   def handle_call({:scroll, dx, dy}, _from, state) do
-    mult = if MovementProfile.human?(), do: 1.0, else: 0.4
-    scroll_human(dx, dy, mult)
+    scroll_human(dx, dy, MouseProfile.scroll_delay_mult())
     {:reply, :ok, state}
   end
 
@@ -210,7 +207,7 @@ defmodule StarlightBot.Input.Mouse do
 
   defp start_premove(state, tx, ty) do
     {fx, fy} = start_pos(state)
-    waypoints = Trajectory.build({fx * 1.0, fy * 1.0}, {tx * 1.0, ty * 1.0}, state.last_velocity, MovementProfile.current())
+    waypoints = Trajectory.build({fx * 1.0, fy * 1.0}, {tx * 1.0, ty * 1.0}, state.last_velocity, MouseProfile.move_duration_mult())
     ref = make_ref()
     send(self(), {:premove_tick, ref})
 
@@ -243,7 +240,7 @@ defmodule StarlightBot.Input.Mouse do
     {vx, vy} = state.last_velocity
     profile =
       case Keyword.get(opts, :duration_override) do
-        nil -> Keyword.get(opts, :duration_mult, MovementProfile.current())
+        nil -> Keyword.get(opts, :duration_mult, MouseProfile.move_duration_mult())
         duration_ms -> {:duration_ms, duration_ms}
       end
 
@@ -299,19 +296,9 @@ defmodule StarlightBot.Input.Mouse do
 
   defp do_click(button) do
     btn_code = if button == :left, do: @btn_left, else: @btn_right
-    hold_ms = click_hold_ms()
     Native.button_event(btn_code, true)
-    :timer.sleep(hold_ms)
+    :timer.sleep(MouseProfile.click_hold_ms())
     Native.button_event(btn_code, false)
-  end
-
-  defp click_hold_ms do
-    if MovementProfile.human?() do
-      noise = round(:rand.normal() * @click_hold_sigma)
-      max(38, min(220, @click_hold_ms + noise))
-    else
-      30
-    end
   end
 
   defp scroll_human(dx, dy, duration_mult) do

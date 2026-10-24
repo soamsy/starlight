@@ -4,8 +4,6 @@ config :logger, level: :debug
 
 config :starlight_bot, :log_to_file, true
 
-config :starlight_bot, movement_profile: :fast
-
 config :starlight_bot, save_timeout_frames: true
 
 config :starlight_bot, StarlightBotWeb.Endpoint,

@@ -7,7 +7,6 @@ config :starlight_bot, StarlightBot.Repo,
 
 config :starlight_bot,
   ecto_repos: [StarlightBot.Repo],
-  movement_profile: :human,
   game_window_title: "LimbusCompany",
   game_window_class: "LimbusCompany",
   ego_gift_ml_dir: Path.expand("~/pkg/EgoGiftML"),

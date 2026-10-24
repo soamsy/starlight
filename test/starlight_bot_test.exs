@@ -19,17 +19,4 @@ defmodule StarlightBotTest do
       assert StarlightBot.Vision.Frame.to_screen_coords(frame, {480, 270}) == {340, 185}
     end
   end
-
-  describe "Input.MovementProfile" do
-    test "defaults to fast in dev" do
-      assert StarlightBot.Input.MovementProfile.current() in [:human, :fast]
-    end
-
-    test "can toggle between profiles" do
-      StarlightBot.Input.MovementProfile.set(:human)
-      assert StarlightBot.Input.MovementProfile.human?()
-      StarlightBot.Input.MovementProfile.set(:fast)
-      assert StarlightBot.Input.MovementProfile.fast?()
-    end
-  end
 end

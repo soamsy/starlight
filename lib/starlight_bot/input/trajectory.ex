@@ -14,17 +14,12 @@ defmodule StarlightBot.Input.Trajectory do
   @type point :: {float, float}
   @type waypoint :: {float, float, float}
 
-  @spec build(point, point, point, :human | :fast | number | {:duration_ms, number}) :: [waypoint]
+  @spec build(point, point, point, number | {:duration_ms, number}) :: [waypoint]
   def build(from, to, vel_in, {:duration_ms, duration_ms}) do
     human_trajectory(from, to, vel_in, fn _dist -> duration_ms * 1.0 end)
   end
 
   def build(from, to, vel_in, duration_mult) when is_number(duration_mult) do
-    human_trajectory(from, to, vel_in, &(sample_duration(&1) * duration_mult))
-  end
-
-  def build(from, to, vel_in, profile) do
-    duration_mult = if profile == :fast, do: 0.6, else: 1.0
     human_trajectory(from, to, vel_in, &(sample_duration(&1) * duration_mult))
   end
 
