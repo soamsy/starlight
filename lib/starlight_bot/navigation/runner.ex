@@ -81,7 +81,12 @@ defmodule StarlightBot.Navigation.Runner do
 
   defp localize_level(frame, candidates, children) do
     candidates
-    |> Enum.find(fn %Screen{identity_hook: hook} -> hook != nil and hook_matches?(frame, hook) end)
+    |> Task.async_stream(
+      fn %Screen{identity_hook: hook} = screen -> {screen, hook != nil and hook_matches?(frame, hook)} end,
+      max_concurrency: System.schedulers_online(),
+      timeout: :infinity
+    )
+    |> Enum.find_value(fn {:ok, {screen, matched?}} -> if matched?, do: screen end)
     |> case do
       nil ->
         nil
