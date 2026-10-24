@@ -53,7 +53,7 @@ defmodule StarlightBot.Navigation.CatalogTest do
       assert {:ok, [%Transition{from: :battle_focused, to: :battle_playing, steps: [{:call, {_, :play_focused_turn, []}} | _]}]} =
                Catalog.plan_path(:battle_focused, :battle_playing)
 
-      assert {:ok, [%Transition{from: :battle_turn, to: :battle_playing, steps: [{:key, :p} | _]}]} =
+      assert {:ok, [%Transition{from: :battle_turn, to: :battle_playing, steps: [{:branch, _, [{:key, :p} | _], _}]}]} =
                Catalog.plan_path(:battle_turn, :battle_playing)
     end
   end
