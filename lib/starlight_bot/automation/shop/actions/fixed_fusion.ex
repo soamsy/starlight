@@ -85,6 +85,7 @@ defmodule StarlightBot.Automation.Shop.Actions.FixedFusion do
       gift_name: target.name,
       affinity: target.affinity,
       fixed_id: target.id,
+      shop_type: state.shop_type,
       chance_comet?: Ops.chance_comet_ready?(state.plan, target.tier || 0, ctx)
     }
 

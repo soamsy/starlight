@@ -87,7 +87,9 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @fuse_scroll_bottom_hook :shop_fuse_popup_scroll_bottom
   @fuse_scroll_track_hook :shop_fuse_popup_scroll_track
   @fuse_scroll_hooks [@fuse_scroll_top_hook, @fuse_scroll_bottom_hook, @fuse_scroll_track_hook]
+  @fuse_item_0_empty_hook :shop_fuse_popup_item_0_empty
   @fuse_item_1_empty_hook :shop_fuse_popup_item_1_empty
+  @fuse_item_2_empty_hook :shop_fuse_popup_item_2_empty
   @fuse_confirm_confirm_hook :shop_fuse_popup_confirm_confirm
   @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
@@ -106,6 +108,11 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @shelf_settle_timeout_ms 1_000
   @fuse_dismiss_offset_px 15
   @fuse_item_click_settle_ms 100
+  @fuse_slots_filled_ms 1_000
+  @fuse_confirm_steady_ms 120
+  @fuse_confirm_steady_timeout_ms 1_500
+  @fuse_confirm_retry_ms 1_200
+  @fuse_confirm_tries 3
   @purchased_key :shop_purchased
   @shelf_key :shop_shelf
   @unaffordable_key :shop_unaffordable
@@ -797,7 +804,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     with {:ok, _} <- ensure_fuse_popup(ctx),
          :ok <- select_affinity(target, ctx),
          {:ok, consumed_ids} <- select_fuse_ingredients(target, click_plan, ctx),
-         :ok <- confirm_fuse(ctx),
+         :ok <- confirm_fuse(target.shop_type, length(consumed_ids), ctx),
          Enum.each(consumed_ids, &RunMemory.remove_ego_gift(ctx, &1)),
          {:ok, _} <-
            Engine.act(
@@ -909,7 +916,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
       click_item_rect(item, ctx)
       Engine.act([sleep(@fuse_item_click_settle_ms)], ctx)
 
-      if Engine.check(@fuse_item_1_empty_hook) do
+      if not Engine.check_within(not_hook(@fuse_item_1_empty_hook), @fuse_slots_filled_ms) do
         Ctx.log(ctx, :info, "shop fuse: clicked the #{name} shortcut but the slots stayed empty, picking ingredients by hand")
         false
       else
@@ -1069,16 +1076,33 @@ defmodule StarlightBot.Automation.Shop.Ops do
     end
   end
 
-  defp confirm_fuse(ctx) do
-    if Engine.check(@fuse_item_1_empty_hook) do
+  defp confirm_fuse(shop_type, count, ctx) do
+    if not Engine.check_within(not_hook(filled_slot_hook(shop_type, count)), @fuse_slots_filled_ms) do
       {:error, :no_ingredients_selected}
     else
-      case Engine.act([key(:enter), await(@fuse_confirm_confirm_hook), click(@fuse_confirm_confirm_hook)], ctx) do
+      steps = [
+        key(:enter),
+        await(@fuse_confirm_confirm_hook),
+        hold(@fuse_confirm_confirm_hook, @fuse_confirm_steady_ms, within: @fuse_confirm_steady_timeout_ms),
+        retry_until(not_hook(@fuse_confirm_confirm_hook), [key(:enter)],
+          every: @fuse_confirm_retry_ms,
+          tries: @fuse_confirm_tries,
+          retry_if: @fuse_confirm_confirm_hook
+        )
+      ]
+
+      case Engine.act(steps, ctx) do
         {:ok, _} -> :ok
         {:error, _} = err -> err
       end
     end
   end
+
+  defp filled_slot_hook(:normal, count) when count >= 3, do: @fuse_item_2_empty_hook
+  defp filled_slot_hook(:normal, 2), do: @fuse_item_1_empty_hook
+  defp filled_slot_hook(:super, count) when count >= 5, do: @fuse_item_2_empty_hook
+  defp filled_slot_hook(:super, count) when count >= 3, do: @fuse_item_1_empty_hook
+  defp filled_slot_hook(_shop_type, _count), do: @fuse_item_0_empty_hook
 
   def sell_gift(gift_id, ctx) do
     with :ok <- select_sell_gift(gift_id, ctx, 1),
