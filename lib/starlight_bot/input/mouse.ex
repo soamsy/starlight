@@ -11,6 +11,9 @@ defmodule StarlightBot.Input.Mouse do
   @mouse_down_settle_ms 30
   @release_settle_ms 50
   @click_settle_ms 0
+  @land_check_delay_ms 5
+  @land_tolerance_px 3
+  @land_attempts 3
 
   defstruct current_pos: {960, 540}, last_velocity: {0.0, 0.0}, held: MapSet.new(), premove: nil
 
@@ -113,6 +116,7 @@ defmodule StarlightBot.Input.Mouse do
         elem(execute_move(state, x, y, opts), 0)
       end
     :timer.sleep(Keyword.get(opts, :settle_ms, @click_settle_ms))
+    new_state = land(new_state, x, y, within, opts, @land_attempts)
 
     do_click(button)
     {:reply, :ok, new_state}
@@ -232,6 +236,31 @@ defmodule StarlightBot.Input.Mouse do
   defp settle(state, pos, played) do
     %{state | current_pos: pos, last_velocity: terminal_velocity(Enum.reject(played, &is_nil/1)), premove: nil}
   end
+
+  defp land(state, _x, _y, _within, _opts, 0), do: state
+
+  defp land(state, x, y, within, opts, attempts) do
+    if on_target?(start_pos(state), x, y, within) do
+      state
+    else
+      :timer.sleep(@land_check_delay_ms)
+      land_after_lag(state, x, y, within, opts, attempts)
+    end
+  end
+
+  defp land_after_lag(state, x, y, within, opts, attempts) do
+    pos = start_pos(state)
+
+    if on_target?(pos, x, y, within) do
+      state
+    else
+      LogStore.append(:step, "cursor at #{inspect(pos)} instead of (#{x}, #{y}), moving back before clicking")
+      land(elem(execute_move(state, x, y, opts), 0), x, y, within, opts, attempts - 1)
+    end
+  end
+
+  defp on_target?(pos, _x, _y, within) when within != nil, do: inside?(pos, within)
+  defp on_target?({px, py}, x, y, nil), do: abs(px - x) <= @land_tolerance_px and abs(py - y) <= @land_tolerance_px
 
   defp inside?({x, y}, {bx, by, bw, bh}), do: x >= bx and x <= bx + bw and y >= by and y <= by + bh
 
