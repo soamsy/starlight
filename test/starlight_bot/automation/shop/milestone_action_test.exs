@@ -62,7 +62,6 @@ defmodule StarlightBot.Automation.Shop.Actions.MilestoneTest do
     state = %{state | plan: put_in(state.plan, ["library", "lists", Access.at(0), "gifts"], ["Sub Gift", "Extra"])}
     state = %{state | plan: GiftPlans.add_entry(state.plan, "ms_main", GiftPlans.entry_ref("lists", "ls_1", "Extra"))}
     state = %{state | plan: GiftPlans.set_entry_group(state.plan, "ms_main", GiftPlans.entry_ref("lists", "ls_1", "Extra"), "optional")}
-    milestone = GiftPlans.find_milestone(state.plan, "ms_main")
 
     assert {:would_run, detail, _} = Milestone.preview(%{}, milestone, state, ctx)
     assert detail =~ "; optionals if possible: buy Extra"
