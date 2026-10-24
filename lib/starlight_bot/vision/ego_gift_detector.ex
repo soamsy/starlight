@@ -1,7 +1,7 @@
 defmodule StarlightBot.Vision.EgoGiftDetector do
   use GenServer
   require Logger
-  alias StarlightBot.Vision.EgoGiftCapture
+  alias StarlightBot.Vision.{EgoGiftCapture, Frame}
 
   @color_bgr2rgb 4  # cv_COLOR_BGR2RGB
   @border_constant 0  # cv_BORDER_CONSTANT
@@ -89,7 +89,7 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
     if x1 <= x0 or y1 <= y0 do
       {:error, :empty_region}
     else
-      crop = Evision.Mat.roi(frame_mat, {x0, y0, x1 - x0, y1 - y0})
+      crop = Frame.crop(frame_mat, {x0, y0, x1 - x0, y1 - y0})
 
       imgsz = Keyword.get(opts, :imgsz, @default_det_imgsz)
       det_conf = Keyword.get(opts, :conf, @default_det_conf) * 1.0
@@ -223,7 +223,7 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
     bw = min(mw - bx, round(w))
     bh = min(mh - by, round(h))
 
-    if bw > 0 and bh > 0, do: Evision.Mat.roi(mat, {bx, by, bw, bh})
+    if bw > 0 and bh > 0, do: Frame.crop(mat, {bx, by, bw, bh})
   end
 
   # --- classifier: resize to a fixed square, ImageNet-normalize, softmax + top-k ---

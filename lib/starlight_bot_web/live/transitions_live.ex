@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.TransitionsLive do
   use StarlightBotWeb, :live_view
   alias StarlightBot.{Hooks, Native, Input.Keyboard}
-  alias StarlightBot.Vision.{Capture, HookRegistry, Matcher}
+  alias StarlightBot.Vision.{Capture, Frame, HookRegistry, Matcher}
   alias StarlightBot.Navigation.{Catalog, Navigator}
   alias StarlightBot.Automation.Scripts
 
@@ -277,7 +277,7 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
         region_mat =
           case region do
             nil -> Evision.resize(mat, {192, 108})
-            {rx, ry, rw, rh} -> Evision.Mat.roi(mat, {rx, ry, rw, rh})
+            {rx, ry, rw, rh} -> Frame.crop(mat, {rx, ry, rw, rh})
           end
 
         Evision.imwrite(tmp, region_mat)

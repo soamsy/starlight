@@ -990,7 +990,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   defp crop_to_png(mat, %{x: x, y: y, w: w, h: h}) do
-    crop = Evision.Mat.roi(mat, {x, y, w, h})
+    crop = StarlightBot.Vision.Frame.crop(mat, {x, y, w, h})
     tmp = "/tmp/_starlight_hook_crop.png"
     Evision.imwrite(tmp, crop)
 

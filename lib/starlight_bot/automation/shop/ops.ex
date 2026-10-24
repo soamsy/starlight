@@ -6,7 +6,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   alias StarlightBot.GiftPlans
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.Teams
-  alias StarlightBot.Vision.{Capture, EgoGiftDetector, HookRegistry, Matcher, NumberScanner}
+  alias StarlightBot.Vision.{Capture, EgoGiftDetector, Frame, HookRegistry, Matcher, NumberScanner}
 
   @min_item_area_px 400
   @min_classifier_conf 0.9
@@ -1322,7 +1322,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp same_region?(a, b, region) do
-    {c0, c1, c2, _} = Evision.mean(Evision.absdiff(Evision.Mat.roi(a.mat, region), Evision.Mat.roi(b.mat, region)))
+    {c0, c1, c2, _} = Evision.mean(Evision.absdiff(Frame.crop(a.mat, region), Frame.crop(b.mat, region)))
     max(c0, max(c1, c2)) < @scroll_still_threshold
   end
 

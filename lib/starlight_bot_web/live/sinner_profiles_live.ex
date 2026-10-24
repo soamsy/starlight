@@ -2,7 +2,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
   use StarlightBotWeb, :live_view
 
   alias StarlightBot.{BattlePlans, Hooks, Plans, SinnerProfiles}
-  alias StarlightBot.Vision.{Capture, Matcher, SkillTray}
+  alias StarlightBot.Vision.{Capture, Frame, Matcher, SkillTray}
 
   @portrait_x_offset 6
   @portrait_w 35
@@ -169,7 +169,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
         |> Enum.dedup_by(&elem(&1, 0))
         |> Enum.map(fn {_sinner, column} ->
           region = {round(SkillTray.slot_x(tray, column) + @portrait_x_offset - w / 2), y, w, h}
-          png = Evision.imencode(".png", Evision.Mat.roi(frame.mat, region))
+          png = Evision.imencode(".png", Frame.crop(frame.mat, region))
           %{column: column, region: region, png: png, png_b64: Base.encode64(png)}
         end)
 

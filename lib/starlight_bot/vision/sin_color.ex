@@ -1,5 +1,5 @@
 defmodule StarlightBot.Vision.SinColor do
-  alias StarlightBot.Vision.{Matcher, SkillTray}
+  alias StarlightBot.Vision.{Frame, Matcher, SkillTray}
 
   @color_bgr2hsv 40
 
@@ -99,7 +99,7 @@ defmodule StarlightBot.Vision.SinColor do
   def classify_cell(mat, {x0, x1}, y, h, hue_scan_y \\ nil, hue_x \\ nil, bg_hue \\ nil, bg_saturation \\ nil, bg_value \\ nil) do
     hue_scan_y = hue_scan_y || y
     {hx0, hx1} = hue_x || {x0, x1}
-    hue_cell = Evision.Mat.roi(mat, {hx0, hue_scan_y, hx1 - hx0, h})
+    hue_cell = Frame.crop(mat, {hx0, hue_scan_y, hx1 - hx0, h})
     hsv = Evision.cvtColor(hue_cell, @color_bgr2hsv)
     bg_mask = background_exclusion_mask(hsv, bg_hue, bg_saturation, bg_value)
 
@@ -152,7 +152,7 @@ defmodule StarlightBot.Vision.SinColor do
   end
 
   defp tier_color_mask(mat, {x0, x1}, y, h, winner, detected_hue, bg_hue, bg_saturation, bg_value) do
-    tier_cell = Evision.Mat.roi(mat, {x0, y, x1 - x0, h})
+    tier_cell = Frame.crop(mat, {x0, y, x1 - x0, h})
     tier_hsv = Evision.cvtColor(tier_cell, @color_bgr2hsv)
     {canonical_hue, tol, s_lo, s_hi, v_lo, v_hi} = Keyword.fetch!(@colors, winner)
     bg_mask = background_exclusion_mask(tier_hsv, bg_hue, bg_saturation, bg_value)
@@ -231,7 +231,7 @@ defmodule StarlightBot.Vision.SinColor do
           value: 0..255
         }
   def background_color(mat, {x, y, w, h}) do
-    strip = Evision.Mat.roi(mat, {x, y, w, h})
+    strip = Frame.crop(mat, {x, y, w, h})
     {mean, _stddev} = Evision.meanStdDev(strip)
     {b, g, r} = to_bgr(mean)
 

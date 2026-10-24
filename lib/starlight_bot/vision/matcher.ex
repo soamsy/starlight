@@ -277,7 +277,7 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp crop_to_region(mat, nil), do: {mat, {0, 0}}
   defp crop_to_region(mat, {rx, ry, rw, rh}),
-    do: {Evision.Mat.roi(mat, {rx, ry, rw, rh}), {rx, ry}}
+    do: {Frame.crop(mat, {rx, ry, rw, rh}), {rx, ry}}
 
   defp add_offset({x, y, w, h}, {ox, oy}), do: {x + ox, y + oy, w, h}
 

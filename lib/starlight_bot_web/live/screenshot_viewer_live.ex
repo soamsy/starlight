@@ -318,7 +318,7 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
         region_mat =
           case hook.region do
             nil -> Evision.resize(mat, {192, 108})
-            {rx, ry, rw, rh} -> Evision.Mat.roi(mat, {rx, ry, rw, rh})
+            {rx, ry, rw, rh} -> Frame.crop(mat, {rx, ry, rw, rh})
           end
 
         Evision.imwrite(tmp, region_mat)

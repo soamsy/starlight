@@ -3,7 +3,7 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   alias StarlightBot.Automation.{BattleChain, PlaybookRunner, TrayWatch}
   alias StarlightBot.Ctx
   alias StarlightBot.Navigation.Navigator
-  alias StarlightBot.Vision.{Capture, EnemyTargets, HookRegistry, Matcher, SinColor, SkillTray}
+  alias StarlightBot.Vision.{Capture, EnemyTargets, Frame, HookRegistry, Matcher, SinColor, SkillTray}
 
   @tmp_jpeg "/tmp/_starlight_battle_inspector.jpg"
   @tmp_chain_preview_jpeg "/tmp/_starlight_battle_inspector_chain_preview.jpg"
@@ -361,7 +361,7 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
                 ),
               bg_region: bg_region,
               bg_color: bg_color,
-              bg_strip_b64: encode_png_b64(Evision.Mat.roi(frame.mat, bg_region)),
+              bg_strip_b64: encode_png_b64(Frame.crop(frame.mat, bg_region)),
               error: nil
             }
 
@@ -417,8 +417,8 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
     [results, tier_columns, hue_columns]
     |> Enum.zip()
     |> Enum.map(fn {result, {x0, x1}, {hx0, hx1}} ->
-      hue_cell = Evision.Mat.roi(mat, {hx0, row.hue_scan_y, hx1 - hx0, row.h})
-      tier_cell = Evision.Mat.roi(mat, {x0, row.y, x1 - x0, row.h})
+      hue_cell = Frame.crop(mat, {hx0, row.hue_scan_y, hx1 - hx0, row.h})
+      tier_cell = Frame.crop(mat, {x0, row.y, x1 - x0, row.h})
 
       %{
         sin: result.sin,

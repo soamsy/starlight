@@ -15,7 +15,7 @@ defmodule StarlightBot.Vision.Frame do
   def from_capture(binary, {_wx, _wy, w, _h} = window_rect)
       when is_binary(binary) do
     scale = w / @normalized_w
-    mat = Evision.Mat.from_binary(binary, {:u, 8}, @normalized_h, @normalized_w, 3)
+    mat = binary |> Evision.Mat.from_binary({:u, 8}, @normalized_h, @normalized_w, 3) |> Evision.Mat.clone()
     %__MODULE__{
       binary: binary,
       mat: mat,
@@ -24,6 +24,8 @@ defmodule StarlightBot.Vision.Frame do
       captured_at: System.monotonic_time(:millisecond),
     }
   end
+
+  def crop(mat, {x, y, w, h}), do: Evision.getRectSubPix(mat, {w, h}, {x + (w - 1) / 2, y + (h - 1) / 2})
 
   def to_screen_coords(%__MODULE__{window_rect: {wx, wy, _, _}, scale: s}, {x, y}) do
     {round(wx + x * s), round(wy + y * s)}

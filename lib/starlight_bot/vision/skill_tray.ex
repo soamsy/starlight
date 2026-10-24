@@ -260,7 +260,7 @@ defmodule StarlightBot.Vision.SkillTray do
   @spec first_action_bins(t(), term, map) :: MapSet.t(non_neg_integer)
   def first_action_bins(%__MODULE__{} = tray, mat, %{region: {_hx, hy, _hw, hh}} = hook) do
     width = tray.tray_end_x - tray.tray_start_x
-    strip = Evision.Mat.roi(mat, {tray.tray_start_x, hy, width, hh})
+    strip = Frame.crop(mat, {tray.tray_start_x, hy, width, hh})
     tolerance = Matcher.confidence_to_hsv_tolerance(hook.confidence)
     min_area = hook.min_cluster_size || 0
 
