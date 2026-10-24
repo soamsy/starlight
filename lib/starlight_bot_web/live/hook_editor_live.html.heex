@@ -187,7 +187,7 @@
                     </span>
                   </label>
                   <select name="hook[match_method]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :match_method), do: "select-warning"}"}>
-                    <%= for method <- ~w(gray rgb binary_thresh color_detector value_detector saturation_detector grayscale_detector edge sift sift_saturation) do %>
+                    <%= for method <- ~w(gray rgb binary_thresh color_detector value_detector saturation_detector grayscale_detector sift sift_saturation) do %>
                       <option value={method} selected={to_string(@form[:match_method].value) == method}>
                         <%= method %>
                       </option>

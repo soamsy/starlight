@@ -331,11 +331,6 @@ defmodule StarlightBot.Vision.Matcher do
 
       method when method in @feature_methods ->
         feature_matches(image_mat, keypoints, descriptors, tmpl_gray_mat, method, confidence)
-
-      other ->
-        Logger.warning("Matcher: method #{inspect(other)} is not yet implemented",
-          module: __MODULE__)
-        []
     end
   end
 

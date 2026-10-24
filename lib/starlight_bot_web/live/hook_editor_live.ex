@@ -910,7 +910,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       |> Ecto.Changeset.cast(params, Map.keys(types))
       |> Ecto.Changeset.validate_required([:name, :match_method, :confidence])
       |> Ecto.Changeset.validate_inclusion(:match_method,
-        ~w(gray rgb edge sift sift_saturation binary_thresh color_detector value_detector saturation_detector grayscale_detector))
+        ~w(gray rgb sift sift_saturation binary_thresh color_detector value_detector saturation_detector grayscale_detector))
       |> Ecto.Changeset.validate_number(:confidence,
         greater_than_or_equal_to: 0.0,
         less_than_or_equal_to: 1.0)
