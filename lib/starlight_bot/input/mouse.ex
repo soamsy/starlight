@@ -115,7 +115,7 @@ defmodule StarlightBot.Input.Mouse do
       else
         elem(execute_move(state, x, y, opts), 0)
       end
-    :timer.sleep(Keyword.get(opts, :settle_ms, @click_settle_ms))
+
     new_state = land(new_state, x, y, within, opts, @land_attempts)
 
     do_click(button)
@@ -241,6 +241,7 @@ defmodule StarlightBot.Input.Mouse do
 
   defp land(state, x, y, within, opts, attempts) do
     if on_target?(start_pos(state), x, y, within) do
+      :timer.sleep(Keyword.get(opts, :settle_ms, @click_settle_ms))
       state
     else
       :timer.sleep(@land_check_delay_ms)
