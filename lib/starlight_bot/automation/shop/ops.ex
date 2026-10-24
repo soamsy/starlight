@@ -32,6 +32,14 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @sell_select_tries 3
   @sell_scroll_clicks 4
   @sell_scroll_settle_ms 400
+  @sell_close_every_ms 250
+  @sell_confirm_steady_ms 120
+  @sell_confirm_steady_timeout_ms 1_500
+  @sell_confirm_retry_ms 1_200
+  @sell_confirm_tries 3
+  @sell_confirm_confirm_hook :shop_sell_popup_confirm_confirm
+  @sell_gift_passes_key :shop_sell_gift_passes
+  @sell_popup_pass_key :shop_sell_popup_pass
   @scroll_poll_ms 50
   @scroll_still_threshold 1.0
   @max_sell_scroll_passes 10
@@ -80,7 +88,6 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @fuse_scroll_track_hook :shop_fuse_popup_scroll_track
   @fuse_scroll_hooks [@fuse_scroll_top_hook, @fuse_scroll_bottom_hook, @fuse_scroll_track_hook]
   @fuse_item_1_empty_hook :shop_fuse_popup_item_1_empty
-  @fuse_confirm_hook :shop_fuse_popup_confirm
   @fuse_confirm_confirm_hook :shop_fuse_popup_confirm_confirm
   @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
@@ -98,7 +105,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @new_shelf_poll_ms 100
   @shelf_settle_timeout_ms 1_000
   @fuse_dismiss_offset_px 15
-  @fuse_item_click_settle_ms 200
+  @fuse_item_click_settle_ms 100
   @purchased_key :shop_purchased
   @shelf_key :shop_shelf
   @unaffordable_key :shop_unaffordable
@@ -360,7 +367,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
   def check_inventory(ctx, keep_open? \\ false) do
     case open_sell_popup(ctx) do
       {:ok, _} = ok ->
-        stack_counts = continue_scrolling_inventory(ctx, 0, scan_visible_inventory(ctx))
+        RunMemory.put(ctx, @sell_gift_passes_key, %{})
+        stack_counts = continue_scrolling_inventory(ctx, 0, scan_visible_inventory(ctx, 0))
         Enum.each(stack_counts, fn {gift_id, count} -> RunMemory.set_ego_gift_count(ctx, gift_id, count) end)
         log_inventory(ctx)
         if keep_open?, do: ok, else: close_sell_popup(ctx)
@@ -386,19 +394,23 @@ defmodule StarlightBot.Automation.Shop.Ops do
       checks[@sell_scroll_bottom_hook] ->
         stack_counts
 
-      true ->
-        scroll_and_settle(@sell_inventory_hook, scroll_down(@sell_scroll_clicks), ctx)
+      scroll_and_settle(@sell_inventory_hook, scroll_down(@sell_scroll_clicks), ctx) == :unmoved ->
+        stack_counts
 
-        frame_counts = scan_visible_inventory(ctx)
+      true ->
+        RunMemory.put(ctx, @sell_popup_pass_key, pass + 1)
+
+        frame_counts = scan_visible_inventory(ctx, pass + 1)
         continue_scrolling_inventory(ctx, pass + 1, Map.merge(stack_counts, frame_counts, fn _id, a, b -> max(a, b) end))
     end
   end
 
-  defp scan_visible_inventory(ctx) do
+  defp scan_visible_inventory(ctx, pass) do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, hook} <- find_hook(@sell_inventory_hook, ctx, "shop sell inventory scan") do
       gifts = detect_inventory_gifts(frame, hook.scan_region || hook.region, ctx)
       Enum.each(gifts, &record_inventory_item(&1, ctx))
+      record_gift_passes(gifts, pass, ctx)
       assign_uptie_level(frame, gifts, @uptie_2_hook, 2, ctx)
       assign_uptie_level(frame, gifts, @uptie_1_hook, 1, ctx)
 
@@ -410,6 +422,12 @@ defmodule StarlightBot.Automation.Shop.Ops do
         Ctx.log(ctx, :error, "shop sell inventory scan: #{inspect(reason)}")
         %{}
     end
+  end
+
+  defp record_gift_passes(gifts, pass, ctx) do
+    RunMemory.update(ctx, @sell_gift_passes_key, %{}, fn passes ->
+      Enum.reduce(gifts, passes, fn %{gift_id: id}, acc -> Map.update(acc, id, {pass, pass}, fn {first, _} -> {first, pass} end) end)
+    end)
   end
 
   defp find_hook(hook_name, ctx, log_prefix) do
@@ -481,10 +499,15 @@ defmodule StarlightBot.Automation.Shop.Ops do
     Ctx.log(ctx, :ok, "shop sell inventory: #{length(names)} item(s) owned: #{Enum.join(names, ", ")}")
   end
 
-  def open_sell_popup(ctx), do: Engine.act([click(@sell_open_hook), await(@sell_popup_hook)], ctx)
+  def open_sell_popup(ctx) do
+    with {:ok, _} = ok <- Engine.act([click(@sell_open_hook), await(@sell_popup_hook)], ctx) do
+      RunMemory.put(ctx, @sell_popup_pass_key, 0)
+      ok
+    end
+  end
 
   def close_sell_popup(ctx) do
-    Engine.act([retry_until(:shop, [key(:esc)], every: 400, tries: 5)], ctx)
+    Engine.act([retry_until(:shop, [key(:esc)], every: @sell_close_every_ms, tries: 5, retry_if: @sell_popup_hook)], ctx)
   end
 
   def refresh_shelf(ctx) do
@@ -777,9 +800,12 @@ defmodule StarlightBot.Automation.Shop.Ops do
          :ok <- confirm_fuse(ctx),
          Enum.each(consumed_ids, &RunMemory.remove_ego_gift(ctx, &1)),
          {:ok, _} <-
-           Engine.act([await(:ego_gift_get), RewardHelpers.record_ego_gift_items_step(), RewardHelpers.dismiss_ego_gift_get_step()], ctx),
-         {:ok, _} <- collect_chance_comet_gift(target, ctx) do
-      rescan_fuse_inventory(target, consumed_ids, ctx)
+           Engine.act(
+             [await(:ego_gift_get), RewardHelpers.record_ego_gift_items_step(), RewardHelpers.dismiss_ego_gift_get_step(leaving: :ego_gift_get)],
+             ctx
+           ),
+         {:ok, _} <- collect_chance_comet_gift(target, ctx),
+         {:ok, _} <- Engine.act([await_any([@fuse_popup_hook, @fuse_open_hook])], ctx) do
       :ok
     else
       {:error, reason} = err ->
@@ -799,7 +825,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     if Engine.check_within(:ego_gift_get, @extra_gift_get_timeout) do
       Ctx.log(ctx, :info, "shop fuse: Chance Comet extra ego gift, collecting it")
       RunMemory.put(ctx, @chance_comet_used_key, true)
-      Engine.act([RewardHelpers.record_ego_gift_items_step(), RewardHelpers.dismiss_ego_gift_get_step()], ctx)
+      Engine.act([RewardHelpers.record_ego_gift_items_step(), RewardHelpers.dismiss_ego_gift_get_step(leaving: :ego_gift_get)], ctx)
     else
       {:ok, nil}
     end
@@ -807,48 +833,12 @@ defmodule StarlightBot.Automation.Shop.Ops do
 
   defp collect_chance_comet_gift(_target, _ctx), do: {:ok, nil}
 
-  defp rescan_fuse_inventory(target, consumed_ids, ctx) do
-    with {:ok, _} <- Engine.act([await_any([@fuse_popup_hook, @fuse_open_hook])], ctx),
-         {:ok, _} <- ensure_fuse_popup(ctx),
-         :ok <- select_affinity(target, ctx) do
-      before = RunMemory.ego_gifts(ctx)
-      scroll_popup_to_top(@fuse_popup, ctx, 0)
-      scan_fuse_inventory_pass(MapSet.new(consumed_ids), ctx, 0)
-      added = for {id, %{name: name}} <- RunMemory.ego_gifts(ctx), not Map.has_key?(before, id), do: name
-      Ctx.log(ctx, :info, "shop fuse rescan: " <> if(added == [], do: "nothing new", else: "added " <> Enum.join(added, ", ")))
-    else
-      {:error, reason} ->
-        Ctx.log(ctx, :error, "shop fuse rescan: #{inspect(reason)}")
-        recover_to_shop(ctx)
-    end
-  end
-
   defp ensure_fuse_popup(ctx) do
     if fuse_popup_open?() do
       {:ok, :already_open}
     else
       RunMemory.put(ctx, @fuse_affinity_key, nil)
       Engine.act([retry_until(@fuse_popup_hook, [click(@fuse_open_hook)], every: @fuse_open_retry_ms, tries: @fuse_open_tries, retry_if: @fuse_open_hook)], ctx)
-    end
-  end
-
-  defp scan_fuse_inventory_pass(_consumed, ctx, pass) when pass >= @max_fuse_scroll_passes do
-    Ctx.log(ctx, :error, "shop fuse rescan: hit #{@max_fuse_scroll_passes} scroll passes without reaching the bottom")
-  end
-
-  defp scan_fuse_inventory_pass(consumed, ctx, pass) do
-    with {:ok, frame} <- Capture.grab_frame(),
-         {:ok, region} <- fuse_inventory_region(frame, ctx) do
-      {stale, fresh} = frame |> detect_inventory_gifts(region, ctx) |> Enum.split_with(&MapSet.member?(consumed, &1.gift_id))
-      Enum.each(fresh, &record_inventory_item(&1, ctx))
-
-      if stale != [],
-        do: Ctx.log(ctx, :info, "shop fuse rescan: ignoring just-fused " <> Enum.map_join(stale, ", ", & &1.gift_name))
-    end
-
-    unless popup_at_bottom?(@fuse_popup) do
-      scroll_and_settle(@fuse_inventory_hook, scroll_down(@sell_scroll_clicks), ctx)
-      scan_fuse_inventory_pass(consumed, ctx, pass + 1)
     end
   end
 
@@ -953,25 +943,31 @@ defmodule StarlightBot.Automation.Shop.Ops do
         fuse_selection_done?(state_after) ->
           {:ok, clicked_ids(state_after)}
 
-        (not fuse_scrollable?() or Engine.check(@fuse_scroll_bottom_hook)) and dismissed? ->
-          names = missing_ingredient_names(state_after, ctx)
-          RunMemory.add_unfusable_gifts(ctx, missing_ingredient_ids(state_after))
-          Ctx.log(ctx, :info, "shop fuse: #{Enum.join(names, ", ")} never showed up in the fuse window, leaving it out of tiered fusions for the rest of the run")
-          {:error, {:missing_ingredients, names}}
-
         not fuse_scrollable?() or Engine.check(@fuse_scroll_bottom_hook) ->
-          Ctx.log(ctx, :info, "shop fuse: ingredients missing, dismissing info popups and rescanning")
-
-          with {:ok, _} <- dismiss_fuse_info_popup(ctx) do
-            scroll_popup_to_top(@fuse_popup, ctx, 0)
-            select_fuse_pass(state_after, ctx, pass + 1, true)
-          end
+          fuse_bottom_reached(state_after, ctx, pass, dismissed?)
 
         true ->
-          scroll_and_settle(@fuse_inventory_hook, scroll_down(@sell_scroll_clicks), ctx)
-
-          select_fuse_pass(state_after, ctx, pass + 1, dismissed?)
+          case scroll_and_settle(@fuse_inventory_hook, scroll_down(@sell_scroll_clicks), ctx) do
+            :unmoved -> fuse_bottom_reached(state_after, ctx, pass, dismissed?)
+            _ -> select_fuse_pass(state_after, ctx, pass + 1, dismissed?)
+          end
       end
+    end
+  end
+
+  defp fuse_bottom_reached(state, ctx, _pass, true) do
+    names = missing_ingredient_names(state, ctx)
+    RunMemory.add_unfusable_gifts(ctx, missing_ingredient_ids(state))
+    Ctx.log(ctx, :info, "shop fuse: #{Enum.join(names, ", ")} never showed up in the fuse window, leaving it out of tiered fusions for the rest of the run")
+    {:error, {:missing_ingredients, names}}
+  end
+
+  defp fuse_bottom_reached(state, ctx, pass, false) do
+    Ctx.log(ctx, :info, "shop fuse: ingredients missing, dismissing info popups and rescanning")
+
+    with {:ok, _} <- dismiss_fuse_info_popup(ctx) do
+      scroll_popup_to_top(@fuse_popup, ctx, 0)
+      select_fuse_pass(state, ctx, pass + 1, true)
     end
   end
 
@@ -1007,6 +1003,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, region} <- fuse_inventory_region(frame, ctx) do
       gifts = detect_inventory_gifts(frame, region, ctx)
+      Enum.each(gifts, &record_inventory_item(&1, ctx))
       {:ok, click_matching_fuse_items(state, gifts, ctx)}
     end
   end
@@ -1076,7 +1073,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     if Engine.check(@fuse_item_1_empty_hook) do
       {:error, :no_ingredients_selected}
     else
-      case Engine.act([click(@fuse_confirm_hook), await(@fuse_confirm_confirm_hook), click(@fuse_confirm_confirm_hook)], ctx) do
+      case Engine.act([key(:enter), await(@fuse_confirm_confirm_hook), click(@fuse_confirm_confirm_hook)], ctx) do
         {:ok, _} -> :ok
         {:error, _} = err -> err
       end
@@ -1087,9 +1084,16 @@ defmodule StarlightBot.Automation.Shop.Ops do
     with :ok <- select_sell_gift(gift_id, ctx, 1),
          {:ok, _} <-
            Engine.act(
-             [click(:shop_sell_popup_confirm)] ++
-               confirm_enter(:shop_sell_popup_confirm_confirm) ++
-               [await(@sell_popup_hook)],
+             [
+               key(:enter),
+               await(@sell_confirm_confirm_hook),
+               hold(@sell_confirm_confirm_hook, @sell_confirm_steady_ms, within: @sell_confirm_steady_timeout_ms),
+               retry_until(all_of([@sell_popup_hook, not_hook(@sell_confirm_confirm_hook)]), [key(:enter)],
+                 every: @sell_confirm_retry_ms,
+                 tries: @sell_confirm_tries,
+                 retry_if: @sell_confirm_confirm_hook
+               )
+             ],
              ctx
            ) do
       RunMemory.remove_ego_gift(ctx, gift_id)
@@ -1231,14 +1235,46 @@ defmodule StarlightBot.Automation.Shop.Ops do
 
   defp find_and_click_gift(popup, gift_id, ctx) do
     case click_visible_gift(popup, gift_id, ctx) do
-      :not_visible ->
-        scroll_popup_to_top(popup, ctx, 0)
-        scan_down_and_click(popup, gift_id, ctx, 0)
-
-      result ->
-        result
+      :not_visible -> seek_gift(popup, gift_id, ctx)
+      result -> result
     end
   end
+
+  defp seek_gift(@sell_popup, gift_id, ctx) do
+    with {first, last} <- Map.get(RunMemory.get(ctx, @sell_gift_passes_key, %{}), gift_id),
+         at when is_integer(at) <- RunMemory.get(ctx, @sell_popup_pass_key, nil),
+         :not_visible <- step_toward_gift(gift_id, at, at |> max(first) |> min(last), ctx) do
+      sweep_for_gift(@sell_popup, gift_id, ctx)
+    else
+      nil -> sweep_for_gift(@sell_popup, gift_id, ctx)
+      result -> result
+    end
+  end
+
+  defp seek_gift(popup, gift_id, ctx), do: sweep_for_gift(popup, gift_id, ctx)
+
+  defp step_toward_gift(_gift_id, at, at, _ctx), do: :not_visible
+
+  defp step_toward_gift(gift_id, at, target, ctx) do
+    {scroll_step, next} = if target > at, do: {scroll_down(@sell_scroll_clicks), at + 1}, else: {scroll_up(@sell_scroll_clicks), at - 1}
+
+    with moved when moved != :unmoved <- scroll_and_settle(@sell_inventory_hook, scroll_step, ctx),
+         RunMemory.put(ctx, @sell_popup_pass_key, next),
+         :not_visible <- click_visible_gift(@sell_popup, gift_id, ctx) do
+      step_toward_gift(gift_id, next, target, ctx)
+    else
+      :unmoved -> :not_visible
+      result -> result
+    end
+  end
+
+  defp sweep_for_gift(popup, gift_id, ctx) do
+    scroll_popup_to_top(popup, ctx, 0)
+    scan_down_and_click(popup, gift_id, ctx, 0)
+  end
+
+  defp note_popup_pass(@sell_popup, pass, ctx), do: RunMemory.put(ctx, @sell_popup_pass_key, pass)
+  defp note_popup_pass(_popup, _pass, _ctx), do: :ok
 
   defp click_visible_gift(popup, gift_id, ctx) do
     with {:ok, frame} <- Capture.grab_frame(),
@@ -1260,11 +1296,12 @@ defmodule StarlightBot.Automation.Shop.Ops do
   defp scan_down_and_click(popup, gift_id, ctx, pass) do
     case click_visible_gift(popup, gift_id, ctx) do
       :not_visible ->
-        if popup_at_bottom?(popup) do
-          {:error, {:not_in_popup, gift_id}}
-        else
-          scroll_and_settle(popup.inventory, scroll_down(@sell_scroll_clicks), ctx)
+        with false <- popup_at_bottom?(popup),
+             moved when moved != :unmoved <- scroll_and_settle(popup.inventory, scroll_down(@sell_scroll_clicks), ctx) do
+          note_popup_pass(popup, pass + 1, ctx)
           scan_down_and_click(popup, gift_id, ctx, pass + 1)
+        else
+          _ -> {:error, {:not_in_popup, gift_id}}
         end
 
       result ->
@@ -1277,10 +1314,10 @@ defmodule StarlightBot.Automation.Shop.Ops do
   defp scroll_popup_to_top(popup, ctx, pass) do
     checks = Engine.check_all([popup.top, popup.bottom, popup.track])
 
-    if checks[popup.top] or not (checks[popup.bottom] or checks[popup.track]) do
-      :ok
+    if checks[popup.top] or not (checks[popup.bottom] or checks[popup.track]) or
+         scroll_and_settle(popup.inventory, scroll_up(@scroll_to_top_clicks), ctx) == :unmoved do
+      note_popup_pass(popup, 0, ctx)
     else
-      scroll_and_settle(popup.inventory, scroll_up(@scroll_to_top_clicks), ctx)
       scroll_popup_to_top(popup, ctx, pass + 1)
     end
   end
@@ -1289,22 +1326,23 @@ defmodule StarlightBot.Automation.Shop.Ops do
     with {:ok, _} <- Engine.act([move_to(inventory_hook)], ctx),
          {:ok, %{} = hook} <- HookRegistry.find(inventory_hook),
          {:ok, before} <- Capture.grab_frame(),
-         {:ok, _} = ok <- Engine.act([scroll_step], ctx) do
+         {:ok, _} <- Engine.act([scroll_step], ctx) do
       deadline = System.monotonic_time(:millisecond) + @sell_scroll_settle_ms
       await_scroll_settled(hook.scan_region || hook.region, before, nil, deadline)
-      ok
     end
   end
 
   defp await_scroll_settled(region, before, previous, deadline) do
-    if System.monotonic_time(:millisecond) < deadline do
+    if System.monotonic_time(:millisecond) >= deadline do
+      if previous == nil, do: :unmoved, else: :moved
+    else
       Process.sleep(@scroll_poll_ms)
 
       case Capture.grab_frame() do
         {:ok, frame} ->
           cond do
             previous == nil and same_region?(frame, before, region) -> await_scroll_settled(region, before, nil, deadline)
-            previous != nil and same_region?(frame, previous, region) -> :ok
+            previous != nil and same_region?(frame, previous, region) -> :moved
             true -> await_scroll_settled(region, before, frame, deadline)
           end
 
