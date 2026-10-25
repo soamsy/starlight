@@ -27,21 +27,21 @@ defmodule StarlightBot.Navigation.Screens.Event do
         not_hook(:event),
         [
           branch([
-            {:event_proceed, [reclick_until_gone(:event_proceed, every: 40), premove(:event_prechoice_region)]},
-            {:event_continue, [reclick_until_gone(:event_continue, every: 40)]},
-            {:event_commence, [reclick_until_gone(:event_commence, every: 40)]},
+            {:event_proceed, [reclick_until_gone(:event_proceed, every: 60), premove(:event_prechoice_region)]},
+            {:event_continue, [reclick_until_gone(:event_continue, every: 60)]},
+            {:event_commence, [reclick_until_gone(:event_commence, every: 60)]},
             {:event_advantage_none_selected,
               [
                 retry_until(
                   not_hook(:event_advantage_none_selected),
                   [call(EventAdvantage, :select_best_sinner)],
-                  every: 300,
+                  every: 200,
                   tries: 20
                 )
-              ] ++ [await(:event_commence, timeout: 1000), reclick_until_gone(:event_commence, every: 40, timeout: 3000)]},
+              ] ++ [await(:event_commence, timeout: 1000), reclick_until_gone(:event_commence, every: 60, timeout: 3000)]},
             {:event_choices, [call(__MODULE__, :choose)]},
-            {any_of(@skips), [retry_until(any_of([not_hook(any_of(@skips)) | @actionable]), [key(:space)], every: 40, timeout: @skip_timeout_ms)]},
-            {:default, [key(:space), branch([{any_of(@actionable), []}], wait: 40)]}
+            {any_of(@skips), [retry_until(any_of([not_hook(any_of(@skips)) | @actionable]), [key(:space)], every: 60, timeout: @skip_timeout_ms)]},
+            {:default, [key(:space), branch([{any_of(@actionable), []}], wait: 60)]}
           ])
         ],
         every: 50,
