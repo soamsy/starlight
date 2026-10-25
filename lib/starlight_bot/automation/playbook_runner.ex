@@ -588,7 +588,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     RunMemory.put(ctx, :target_panned?, true)
 
     try do
-      case Runner.run_steps([DSL.move_to(:battle_safe_click_spot) | settle], ctx) do
+      case Runner.run_steps([DSL.premove(:battle_safe_click_spot) | settle], ctx) do
         {:ok, _} -> aim(enemy, 1, nil, [], ctx)
         {:error, reason} -> {{:error, reason}, []}
       end
@@ -600,7 +600,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp aim(_enemy, attempt, nil, attempts, ctx) when attempt > @target_tries do
     Ctx.log(ctx, :error, "playbook: no enemy detected after #{@target_tries} tries, releasing at battle_safe_click_spot")
-    Runner.run_steps([DSL.move_to(:battle_safe_click_spot)], ctx)
+    Runner.run_steps([DSL.premove(:battle_safe_click_spot)], ctx)
     {:gave_up, Enum.reverse(attempts)}
   end
 

@@ -84,7 +84,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
           {:event, Event.play_out_steps()},
           {:default,
             [
-              move_to(:battle_safe_click_spot),
+              premove(:battle_safe_click_spot),
               wait_until(not_hook(any_of([:battle_pause_button, :battle_playing_graph])), timeout: 250_000),
               hold_mouse_during([
                 wait_until(
@@ -124,7 +124,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
     [
       click(choice)
     ] ++ confirm(:battle_defeat_confirm, every: 800, tries: 3) ++ [
-      move_to(:battle_safe_click_spot)
+      premove(:battle_safe_click_spot)
     ] ++ loading()
   end
 

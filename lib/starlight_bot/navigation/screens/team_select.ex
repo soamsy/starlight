@@ -5,6 +5,8 @@ defmodule StarlightBot.Navigation.Screens.TeamSelect do
     transition to: :exit_team_select, do: [key(:esc)]
     transition to: :battle do
       [
+        sleep(50),
+        premove(:battle_safe_click_spot),
         await(:to_battle, timeout: 1_000),
         retry_until(any_of([:loading_stage_1, :loading_stage_2]), [key(:enter)], every: 200, timeout: 15_000)
       ] ++ loading() ++ [await(:battle_settings, timeout: 5_000, premove: false)]

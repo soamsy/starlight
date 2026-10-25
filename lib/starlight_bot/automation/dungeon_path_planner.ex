@@ -60,7 +60,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
           premove(:clear_selection),
           branch(leading_clauses ++ [gift_popup_clause(), {:default, [key(direction), key(:enter)]}])
         ], every: 100, timeout: 8_000)
-      ] ++ loading() ++ [await(:battle_settings, timeout: 5_000, premove: false)], ctx)
+      ] ++ loading() ++ [premove(:battle_safe_click_spot), await(:battle_settings, timeout: 5_000, premove: false)], ctx)
     kind in [:battle, :hard_battle, :risky_battle, :boss] ->
       Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead, moving to team select")
 
@@ -85,6 +85,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
       Engine.act([
         retry_until(not_hook(:dungeon_graph),
         [
+          premove(:event_prechoice_region),
           branch(leading_clauses ++ [
             gift_popup_clause(),
             {:default, [key(direction), key(:enter)]}
