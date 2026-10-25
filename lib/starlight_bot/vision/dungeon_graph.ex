@@ -73,8 +73,15 @@ defmodule StarlightBot.Vision.DungeonGraph do
 
   defp node_hits_by_hook(frame) do
     (@coin_hooks ++ Map.keys(@warning_hook_level))
-    |> Task.async_stream(&{&1, Matcher.find_all(frame, &1)}, max_concurrency: System.schedulers_online(), timeout: :infinity)
+    |> Task.async_stream(&{&1, scored_hits(frame, &1)}, max_concurrency: System.schedulers_online(), timeout: :infinity)
     |> Map.new(fn {:ok, entry} -> entry end)
+  end
+
+  defp scored_hits(frame, hook_name) do
+    case Matcher.find_all_with_scores(frame, hook_name) do
+      {:ok, hits} -> hits
+      {:error, :hook_not_found} -> []
+    end
   end
 
   defp match_hook(result, hook_name, spec, variant) do
@@ -258,11 +265,11 @@ defmodule StarlightBot.Vision.DungeonGraph do
 
   def classify_hits(hits_by_hook) do
     hits_by_hook
-    |> Enum.flat_map(fn {hook_name, rects} -> Enum.map(rects, &coin_hit(hook_name, &1)) end)
+    |> Enum.flat_map(fn {hook_name, hits} -> Enum.map(hits, &coin_hit(hook_name, &1)) end)
     |> Enum.reject(&is_nil/1)
   end
 
-  defp coin_hit(hook_name, {x, y, w, h}) do
+  defp coin_hit(hook_name, {{x, y, w, h}, score}) do
     cx = x + div(w, 2)
 
     case Enum.find(@coin_x_regions, fn {_hop, {lo, hi}} -> cx >= lo and cx < hi end) do
@@ -277,6 +284,8 @@ defmodule StarlightBot.Vision.DungeonGraph do
           hop: hop,
           hook: hook_name,
           rect: {x, y, w, h},
+          score: score,
+          offset: cx - center,
           centered?: abs(cx - center) <= @coin_center_tolerance_px
         }
     end
@@ -292,16 +301,16 @@ defmodule StarlightBot.Vision.DungeonGraph do
 
   def classify_warning_hits(hits_by_hook) do
     hits_by_hook
-    |> Enum.flat_map(fn {hook_name, rects} -> Enum.map(rects, &warning_hit(hook_name, &1)) end)
+    |> Enum.flat_map(fn {hook_name, hits} -> Enum.map(hits, &warning_hit(hook_name, &1)) end)
     |> Enum.reject(&is_nil/1)
   end
 
-  defp warning_hit(hook_name, {x, y, w, h}) do
+  defp warning_hit(hook_name, {{x, y, w, h}, score}) do
     cx = x + div(w, 2)
 
     case @coin_x_regions |> Enum.sort() |> Enum.find(fn {_hop, {lo, hi}} -> cx <= div(lo + hi, 2) end) do
       nil -> nil
-      {hop, _} -> %{level: Map.fetch!(@warning_hook_level, hook_name), hop: hop, hook: hook_name, rect: {x, y, w, h}}
+      {hop, _} -> %{level: Map.fetch!(@warning_hook_level, hook_name), hop: hop, hook: hook_name, rect: {x, y, w, h}, score: score}
     end
   end
 

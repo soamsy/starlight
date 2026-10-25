@@ -161,7 +161,7 @@ defmodule StarlightBot.Vision.DungeonGraphTest do
     test "a coin centered in its hop column is centered?: true" do
       hits =
         DungeonGraph.classify_hits(%{
-          dungeon_graph_node_mid_coin_some: [{1070, 337, 40, 20}]
+          dungeon_graph_node_mid_coin_some: [{{1070, 337, 40, 20}, 0.9}]
         })
 
       assert [%{level: :mid, hop: 1, centered?: true}] = hits
@@ -170,7 +170,7 @@ defmodule StarlightBot.Vision.DungeonGraphTest do
     test "a coin offset past the tolerance in its hop column is centered?: false" do
       hits =
         DungeonGraph.classify_hits(%{
-          dungeon_graph_node_low_coin_all: [{1490, 654, 40, 20}]
+          dungeon_graph_node_low_coin_all: [{{1490, 654, 40, 20}, 0.9}]
         })
 
       assert [%{level: :low, hop: 2, centered?: false}] = hits
@@ -179,7 +179,7 @@ defmodule StarlightBot.Vision.DungeonGraphTest do
     test "a coin whose center falls outside every hop column is dropped" do
       hits =
         DungeonGraph.classify_hits(%{
-          dungeon_graph_node_high_coin_all: [{480, 16, 40, 20}]
+          dungeon_graph_node_high_coin_all: [{{480, 16, 40, 20}, 0.9}]
         })
 
       assert hits == []
@@ -211,16 +211,16 @@ defmodule StarlightBot.Vision.DungeonGraphTest do
     test "a warning maps to the node immediately to its right" do
       hits =
         DungeonGraph.classify_warning_hits(%{
-          dungeon_graph_node_mid_warning: [{1380, 398, 28, 71}],
-          dungeon_graph_node_high_warning: [{1000, 77, 28, 71}],
-          dungeon_graph_node_low_warning: [{1750, 718, 28, 71}]
+          dungeon_graph_node_mid_warning: [{{1380, 398, 28, 71}, 0.9}],
+          dungeon_graph_node_high_warning: [{{1000, 77, 28, 71}, 0.9}],
+          dungeon_graph_node_low_warning: [{{1750, 718, 28, 71}, 0.9}]
         })
 
       assert Enum.sort(Enum.map(hits, &{&1.hop, &1.level})) == [{1, :high}, {2, :mid}, {3, :low}]
     end
 
     test "a warning right of the last node column is dropped" do
-      assert DungeonGraph.classify_warning_hits(%{dungeon_graph_node_low_warning: [{1850, 718, 28, 71}]}) == []
+      assert DungeonGraph.classify_warning_hits(%{dungeon_graph_node_low_warning: [{{1850, 718, 28, 71}, 0.9}]}) == []
     end
   end
 

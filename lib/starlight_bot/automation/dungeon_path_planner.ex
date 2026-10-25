@@ -5,7 +5,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   alias StarlightBot.BattlePlans
   alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Ctx
-  alias StarlightBot.Vision.{Capture, DungeonGraph, Matcher}
+  alias StarlightBot.Vision.{Capture, DungeonGraph, HookRegistry, Matcher}
 
   @levels DungeonGraph.levels()
   @ready_timeout_ms 3_000
@@ -21,7 +21,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   def navigate_to_next_node(_last_frame, ctx) do
     graph_result = build_graph(ctx)
 
-    with {:ok, graph} <- graph_result, true <- DungeonGraph.boss_next?(graph) do
+    with {:ok, graph, _frame} <- graph_result, true <- DungeonGraph.boss_next?(graph) do
       Ctx.log(ctx, :info, "dungeon path planner: at most one mid node ahead, marking boss next")
       RunMemory.put_bosses_only(ctx, true)
     end
@@ -30,13 +30,20 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
     venue = if boss?, do: "md_boss", else: "md_battle"
     RunMemory.put_venue(ctx, venue)
 
+    recalled = with {:ok, graph, frame} <- graph_result, do: {:ok, recall(graph, ctx), frame}
+
     {direction, kind} =
-      case graph_result do
-        {:ok, graph} -> graph |> recall(ctx) |> best_move(ctx)
+      case recalled do
+        {:ok, graph, _frame} -> best_move(graph, ctx)
         {:error, reason} -> default_move(ctx, reason)
       end
 
     kind = if boss?, do: :boss, else: kind
+
+    with :risky_battle <- kind, {:ok, seen, frame} <- graph_result, {:ok, graph, _frame} <- recalled do
+      log_risky_entry(seen, graph, frame, direction, ctx)
+    end
+
     advance(direction, kind, venue, [], ctx)
   end
 
@@ -71,12 +78,11 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
           branch(leading_clauses ++ [
             gift_popup_clause(),
             {:dungeon_graph_dante, [key(direction), key(:enter)]},
-            {:dungeon_graph_enter_dante, [key(:enter)]},
-            {:dungeon_graph, [key(:enter)]},
+            {:dungeon_graph_enter_dante, [hold(:dungeon_graph_enter_dante, 200), key(:enter), await(any_of([:team_selector, :team_selector_tall, :team_selector_gone]), timeout: 1_500)]},
             {:default, []}
           ])
         ],
-        every: 100,
+        every: 150,
         timeout: 4_000)
       ], ctx)
     true ->
@@ -180,7 +186,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
         Engine.run_action(:dungeon_graph, :reset_view, ctx)
         grab_and_build()
 
-      {:ok, %DungeonGraph{current_level: level}} = ok when level != nil ->
+      {:ok, %DungeonGraph{current_level: level}, _frame} = ok when level != nil ->
         waited = System.monotonic_time(:millisecond) - started_at
         if waited >= @ready_poll_ms, do: Ctx.log(ctx, :info, "dungeon path planner: graph ready after #{waited}ms")
         ok
@@ -198,12 +204,12 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
         await_ready_graph(deadline, ctx)
       else
         case DungeonGraph.build(frame) do
-          {:ok, %DungeonGraph{current_level: level}} = ok when level != nil ->
-            ok
+          {:ok, %DungeonGraph{current_level: level} = graph} when level != nil ->
+            {:ok, graph, frame}
 
           result ->
             if System.monotonic_time(:millisecond) >= deadline do
-              result
+              with_frame(result, frame)
             else
               Process.sleep(@ready_poll_ms)
               await_ready_graph(deadline, ctx)
@@ -215,9 +221,110 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
 
   defp grab_and_build do
     with {:ok, frame} <- Capture.grab_frame() do
-      DungeonGraph.build(frame)
+      frame |> DungeonGraph.build() |> with_frame(frame)
     end
   end
+
+  defp with_frame({:ok, graph}, frame), do: {:ok, graph, frame}
+  defp with_frame(error, _frame), do: error
+
+  defp log_risky_entry(seen, graph, frame, direction, ctx) do
+    seen_edges = MapSet.new(seen.edges, &{&1.from_node, &1.to_node})
+    horizon = graph.edges |> Enum.map(&elem(&1.to_node, 0)) |> Enum.max()
+    {:ok, chosen} = choose_target(graph)
+
+    lines =
+      [
+        "dungeon path planner: RISKY BATTLE ENTERED, pressing #{direction} from #{graph.current_level} (floor #{inspect(graph.floor)})",
+        "frame saved: #{save_risky_frame(frame)}",
+        "graph warnings: #{inspect(graph.warnings)}",
+        "candidates (hop 0 from #{graph.current_level}, lowest rank wins):"
+      ] ++
+        Enum.map(edges_from({0, graph.current_level}, graph.edges), &describe_candidate(&1, chosen, graph, horizon, seen_edges)) ++
+        ["nodes (coin centered => battle, off-center => hard_battle, hard_battle + warning => risky_battle):"] ++
+        Enum.map(Enum.sort(graph.nodes), &describe_node(&1, graph, seen)) ++
+        ["hits on no visible node:"] ++
+        describe_stray_hits(graph) ++
+        ["edge hooks seen this frame (score / min):"] ++
+        Enum.map(Enum.sort_by(seen.diagnostics, &{&1.hop, &1.from, &1.to, &1.hook}), &describe_edge_hook/1)
+
+    Ctx.log(ctx, :error, Enum.join(lines, "\n"))
+  end
+
+  defp save_risky_frame(frame) do
+    dir = Path.join(File.cwd!(), "screenshots")
+    File.mkdir_p!(dir)
+    path = Path.join(dir, "risky_battle_#{Calendar.strftime(DateTime.utc_now(), "%Y-%m-%d_%H-%M-%S")}.png")
+
+    if Evision.imwrite(path, frame.mat), do: path, else: "failed to write #{path}"
+  end
+
+  defp describe_candidate(edge, chosen, graph, horizon, seen_edges) do
+    {cost, count, reach} = step_rank(edge, graph.nodes, graph.edges, horizon)
+    {_, target_level} = edge.to_node
+    marker = if edge.to_node == chosen.to_node, do: "*", else: " "
+
+    cheapest =
+      edge
+      |> full_paths(graph.edges)
+      |> Enum.min_by(&(path_cost(&1, graph.nodes) + unseen_cost(List.last(&1), horizon)))
+
+    path_text = Enum.map_join(cheapest, " > ", &"#{slot(&1.to_node)} #{edge_kind(&1, graph.nodes)} #{edge_cost(&1, graph.nodes)}")
+
+    "  #{marker} #{direction_key(graph.current_level, target_level)} -> #{slot(edge.to_node)} #{edge_kind(edge, graph.nodes)} " <>
+      "via #{describe_edge_source(edge, seen_edges)}; cost #{cost}, #{-count} cheapest path(s), reaches #{-reach}; " <>
+      "cheapest: #{path_text} + unseen #{unseen_cost(List.last(cheapest), horizon)}"
+  end
+
+  defp describe_edge_source(edge, seen_edges) do
+    origin = if MapSet.member?(seen_edges, {edge.from_node, edge.to_node}), do: "", else: " (remembered)"
+    "#{edge.hook} #{score_vs_min(edge.score, edge.hook)}#{origin}"
+  end
+
+  defp describe_node({{hop, level} = key, node}, graph, seen) do
+    origin = if Map.has_key?(seen.nodes, key), do: "", else: " (remembered)"
+    coins = Enum.filter(graph.node_hits, &(&1.hop == hop and &1.level == level))
+    warnings = Enum.filter(graph.warning_hits, &(&1.hop == hop and &1.level == level))
+
+    "    #{slot(key)} #{node.type}#{origin}; coin: #{describe_hits(coins, &describe_coin/1)}; warning: #{describe_hits(warnings, &describe_warning/1)}"
+  end
+
+  defp describe_stray_hits(graph) do
+    stray = Enum.reject(graph.node_hits ++ graph.warning_hits, &Map.has_key?(graph.nodes, {&1.hop, &1.level}))
+
+    case stray do
+      [] -> ["    none"]
+      hits -> Enum.map(hits, &"    #{slot({&1.hop, &1.level})} #{if Map.has_key?(&1, :centered?), do: describe_coin(&1), else: describe_warning(&1)}")
+    end
+  end
+
+  defp describe_hits([], _describe), do: "none"
+  defp describe_hits(hits, describe), do: Enum.map_join(hits, " | ", describe)
+
+  defp describe_coin(hit) do
+    "#{hit.hook} #{score_vs_min(hit.score, hit.hook)} offset #{hit.offset}px (#{if hit.centered?, do: "centered", else: "off-center"}) at #{inspect(hit.rect)}"
+  end
+
+  defp describe_warning(hit), do: "#{hit.hook} #{score_vs_min(hit.score, hit.hook)} at #{inspect(hit.rect)}"
+
+  defp describe_edge_hook(entry) do
+    status = if entry.matched?, do: "MATCH", else: "miss"
+    "    #{entry.hop} #{entry.from}->#{entry.to}#{if entry.variant, do: " #{entry.variant}"}: #{entry.hook} #{score_vs_min(entry.score, entry.hook)} #{status}"
+  end
+
+  defp score_vs_min(score, hook_name) do
+    min =
+      case HookRegistry.find(hook_name) do
+        {:ok, hook} -> format_score(hook.confidence)
+        {:error, :not_found} -> "?"
+      end
+
+    "#{format_score(score)} / #{min}"
+  end
+
+  defp format_score(score), do: :erlang.float_to_binary(score * 1.0, decimals: 3)
+
+  defp slot({hop, level}), do: "#{hop}:#{level}"
 
   @spec choose_target(DungeonGraph.t()) :: {:ok, map} | {:error, term}
   def choose_target(%DungeonGraph{current_level: nil}), do: {:error, :no_current_level}
