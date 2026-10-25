@@ -25,7 +25,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @overclock_release_settle_ms 50
   @ego_close_timeout_ms 1_500
   @ego_reclick_wait_ms 100
-  @target_tries 3
+  @target_tries 2
   @skill_hover_ms 200
   @screen_mid_x 960
   @skill_grab_inward_pct 0.1
@@ -588,7 +588,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     RunMemory.put(ctx, :target_panned?, true)
 
     try do
-      case Runner.run_steps([DSL.premove(:battle_safe_click_spot) | settle], ctx) do
+      case Runner.run_steps([DSL.move_to(:battle_drag_checkpoint) | settle], ctx) do
         {:ok, _} -> aim(enemy, 1, nil, [], ctx)
         {:error, reason} -> {{:error, reason}, []}
       end
@@ -600,7 +600,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp aim(_enemy, attempt, nil, attempts, ctx) when attempt > @target_tries do
     Ctx.log(ctx, :error, "playbook: no enemy detected after #{@target_tries} tries, releasing at battle_safe_click_spot")
-    Runner.run_steps([DSL.premove(:battle_safe_click_spot)], ctx)
+    Runner.run_steps([DSL.move_to(:battle_drag_checkpoint)], ctx)
     {:gave_up, Enum.reverse(attempts)}
   end
 
