@@ -5,7 +5,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
   alias StarlightBot.GiftPlans
 
   @menu_check_ms 1_000
-  @heal_settle_poll_ms 50
+  @heal_settle_poll_ms 200
   @heal_settle_timeout_ms 3_000
   @heal_settle_score_tolerance 0.01
   @first_check_poll_ms 100
@@ -64,8 +64,10 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
     end
   end
 
-  defp settled_full?(sinner, %{last_heal: healed}) when healed == sinner or healed == :all,
-    do: await_settled(sinner, Ops.sinner_full_reading(sinner), now() + @heal_settle_timeout_ms)
+  defp settled_full?(sinner, %{last_heal: healed}) when healed == sinner or healed == :all do
+    Process.sleep(400)
+    await_settled(sinner, Ops.sinner_full_reading(sinner), now() + @heal_settle_timeout_ms)
+  end
 
   defp settled_full?(sinner, _state), do: poll_full(sinner, now() + @first_check_settle_ms)
 
