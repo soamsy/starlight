@@ -10,6 +10,9 @@ defmodule StarlightBot.Input.Trajectory do
   @wobble_amp_max 100.0
   @wobble_knot_span 40.0
   @wobble_max_interior_knots 8
+  @ease_sharpness 5.0
+  @ease_peak_point_sigma 0.04
+  @ease_peak_point_max_offset 0.1
 
   @type point :: {float, float}
   @type waypoint :: {float, float, float}
@@ -77,12 +80,13 @@ defmodule StarlightBot.Input.Trajectory do
     jitter_y = correlated_jitter(n_steps + 1, jitter_sigma, @jitter_phi)
     {perp_x, perp_y} = perpendicular(from, to)
     wobble = wobble_knots(dist)
+    ease = sample_ease(t_peak)
 
     0..n_steps
     |> Enum.zip(Enum.zip(jitter_x, jitter_y))
     |> Enum.map(fn {i, {jx, jy}} ->
       t = i / n_steps
-      ease_t = ease_asymmetric(t, t_peak)
+      ease_t = ease_progress(ease, t)
       {x, y} = bezier_point(from, to, controls, ease_t)
       w = wobble_at(wobble, ease_t)
       {x + jx + w * perp_x, y + jy + w * perp_y, t * duration_ms}
@@ -174,13 +178,21 @@ defmodule StarlightBot.Input.Trajectory do
     |> de_casteljau(t)
   end
 
-  defp ease_asymmetric(t, t_peak), do: t |> warp_time(t_peak) |> ease_in_out_cubic()
+  defp sample_ease(t_peak) do
+    peak_point =
+      (0.5 + :rand.normal(0.0, @ease_peak_point_sigma))
+      |> max(0.5 - @ease_peak_point_max_offset)
+      |> min(0.5 + @ease_peak_point_max_offset)
 
-  defp warp_time(t, t_peak) when t < t_peak, do: 0.5 * t / t_peak
-  defp warp_time(t, t_peak), do: 0.5 + 0.5 * (t - t_peak) / (1.0 - t_peak)
+    skew = :math.sqrt(peak_point * (1.0 - t_peak) / ((1.0 - peak_point) * t_peak))
+    {t_peak, peak_point, max(@ease_sharpness / skew, 1.0), max(@ease_sharpness * skew, 1.0)}
+  end
 
-  defp ease_in_out_cubic(t) when t < 0.5, do: 4.0 * t * t * t
-  defp ease_in_out_cubic(t), do: 1.0 - :math.pow(-2.0 * t + 2.0, 3) / 2.0
+  defp ease_progress({t_peak, peak_point, p_in, _}, t) when t < t_peak,
+    do: peak_point * :math.pow(t / t_peak, p_in)
+
+  defp ease_progress({t_peak, peak_point, _, p_out}, t),
+    do: 1.0 - (1.0 - peak_point) * :math.pow((1.0 - t) / (1.0 - t_peak), p_out)
 
   defp biased_landing({tx, ty}, sigma) do
     {tx + :rand.normal(0.0, sigma), ty + :rand.normal(0.0, sigma)}

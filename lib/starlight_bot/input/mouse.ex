@@ -10,7 +10,7 @@ defmodule StarlightBot.Input.Mouse do
   @drag_settle_ms 50
   @mouse_down_settle_ms 30
   @release_settle_ms 50
-  @click_settle_ms 0
+  @click_settle_ms 2
   @land_check_delay_ms 5
   @land_tolerance_px 3
   @land_attempts 3
