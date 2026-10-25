@@ -1,10 +1,8 @@
 defmodule StarlightBot.Navigation.Screens.MdDoor do
   use StarlightBot.Navigation.DSL
 
-  @enter_arm_or_open_ms 1_500
+  @enter_arm_or_open_ms 1_200
   @enter_unlock_gap_ms 100
-  @popup_steady_ms 120
-  @popup_steady_within_ms 1_500
   @enter_results [
     :mirror_dungeon_door_popup_white_enter,
     :mirror_dungeon_door_progress,
@@ -27,12 +25,8 @@ defmodule StarlightBot.Navigation.Screens.MdDoor do
   screen :md_door_enter_popup, identity: :mirror_dungeon_door_popup_white_enter, refines: :md_door do
     transition to: :md_door, do: [key(:esc)]
     transition to: :team_select do
+      confirm_enter(:mirror_dungeon_door_popup_white_enter) ++
       [
-        hold(:mirror_dungeon_door_popup_white_enter, @popup_steady_ms,
-          within: @popup_steady_within_ms,
-          else: [fail({:retry_exhausted, :mirror_dungeon_door_popup_white_enter})]
-        ),
-        reclick_until_gone(:mirror_dungeon_door_popup_white_enter),
         wait_until_arrived(timeout: 4_800)
       ]
     end
