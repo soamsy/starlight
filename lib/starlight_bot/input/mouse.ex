@@ -14,6 +14,11 @@ defmodule StarlightBot.Input.Mouse do
   @land_check_delay_ms 5
   @land_tolerance_px 3
   @land_attempts 3
+  @hover_max_ms 30_000
+  @hover_sigma_px 3.2
+  @hover_radius_px 10
+  @hover_min_interval_ms 220
+  @hover_interval_spread_ms 60
 
   defstruct current_pos: {960, 540}, last_velocity: {0.0, 0.0}, held: MapSet.new(), premove: nil
 
@@ -179,7 +184,7 @@ defmodule StarlightBot.Input.Mouse do
         if inside?(start_pos(state), within) do
           {:noreply, state}
         else
-          {:noreply, start_premove(state, x, y)}
+          {:noreply, start_premove(state, x, y, within)}
         end
     end
   end
@@ -195,7 +200,8 @@ defmodule StarlightBot.Input.Mouse do
   def handle_info({:premove_tick, ref}, %{premove: %{ref: ref} = pm} = state) do
     case pm.remaining do
       [] ->
-        {:noreply, settle(state, pm.target, [pm.prev, pm.last])}
+        Process.send_after(self(), {:hover_tick, ref}, hover_interval_ms())
+        {:noreply, %{state | premove: %{pm | prev: nil, hover_until: System.monotonic_time(:millisecond) + @hover_max_ms}}}
 
       [{wx, wy, t} = waypoint | rest] ->
         {px, py, prev_t} = pm.last
@@ -209,16 +215,47 @@ defmodule StarlightBot.Input.Mouse do
 
   def handle_info({:premove_tick, _stale_ref}, state), do: {:noreply, state}
 
-  defp start_premove(state, tx, ty) do
+  def handle_info({:hover_tick, ref}, %{premove: %{ref: ref} = pm} = state) do
+    if System.monotonic_time(:millisecond) < pm.hover_until and game_focused?() do
+      {lx, ly, _} = pm.last
+      {hx, hy} = hover_point(pm.target, pm.within)
+      Native.move_relative(hx - lx, hy - ly)
+      Process.send_after(self(), {:hover_tick, ref}, hover_interval_ms())
+      {:noreply, %{state | premove: %{pm | last: {hx, hy, 0.0}}}}
+    else
+      {:noreply, halt_premove(state)}
+    end
+  end
+
+  def handle_info({:hover_tick, _stale_ref}, state), do: {:noreply, state}
+
+  defp hover_point({tx, ty}, {bx, by, bw, bh}) do
+    {(tx + hover_jitter()) |> max(bx) |> min(bx + bw), (ty + hover_jitter()) |> max(by) |> min(by + bh)}
+  end
+
+  defp hover_jitter, do: (:rand.normal() * @hover_sigma_px) |> max(-@hover_radius_px) |> min(@hover_radius_px)
+
+  defp hover_interval_ms, do: @hover_min_interval_ms + :rand.uniform(@hover_interval_spread_ms)
+
+  defp game_focused? do
+    match?({:ok, true}, Native.is_window_focused(Application.get_env(:starlight_bot, :game_window_class, "LimbusCompany")))
+  end
+
+  defp start_premove(state, tx, ty, within) do
     {fx, fy} = start_pos(state)
     waypoints = Trajectory.build({fx * 1.0, fy * 1.0}, {tx * 1.0, ty * 1.0}, state.last_velocity, MouseProfile.move_duration_mult())
     ref = make_ref()
     send(self(), {:premove_tick, ref})
 
-    %{state | premove: %{ref: ref, target: {tx, ty}, remaining: waypoints, prev: nil, last: {fx * 1.0, fy * 1.0, 0.0}}}
+    %{state | premove: %{ref: ref, target: {tx, ty}, within: within, hover_until: nil, remaining: waypoints, prev: nil, last: {fx * 1.0, fy * 1.0, 0.0}}}
   end
 
   defp halt_premove(%{premove: nil} = state), do: state
+
+  defp halt_premove(%{premove: %{hover_until: until} = pm} = state) when until != nil do
+    {lx, ly, _} = pm.last
+    settle(state, {lx, ly}, [pm.last])
+  end
 
   defp halt_premove(%{premove: pm} = state) do
     {lx, ly, _} = pm.last

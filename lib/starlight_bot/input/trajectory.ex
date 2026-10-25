@@ -10,7 +10,7 @@ defmodule StarlightBot.Input.Trajectory do
   @wobble_amp_max 100.0
   @wobble_knot_span 40.0
   @wobble_max_interior_knots 8
-  @ease_sharpness 5.0
+  @ease_sharpness 6.0
   @ease_peak_point_sigma 0.04
   @ease_peak_point_max_offset 0.1
 
