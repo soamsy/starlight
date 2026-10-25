@@ -660,7 +660,7 @@ defmodule StarlightBot.Navigation.Navigator do
 
     previous_run = ScreenTimes.current_run(state.screen_times)
     state = %{state | screen_times: ScreenTimes.track(state.screen_times, key, RunClock.elapsed_ms(clock, now_ms()), DateTime.utc_now())}
-    if previous_run != key.run, do: persist_run(state, previous_run, "success")
+    if previous_run != key.run, do: persist_run(state, previous_run, if(previous_run in Map.get(snapshot, :failed_runs, []), do: "failure", else: "success"))
     state
   end
 
