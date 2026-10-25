@@ -33,7 +33,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @sell_scroll_clicks 4
   @sell_scroll_settle_ms 400
   @sell_close_every_ms 250
-  @sell_confirm_steady_ms 120
+  @sell_confirm_steady_ms 200
   @sell_confirm_steady_timeout_ms 1_500
   @sell_confirm_retry_ms 1_200
   @sell_confirm_tries 3
@@ -90,7 +90,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @fuse_item_0_empty_hook :shop_fuse_popup_item_0_empty
   @fuse_item_1_empty_hook :shop_fuse_popup_item_1_empty
   @fuse_item_2_empty_hook :shop_fuse_popup_item_2_empty
-  @fuse_confirm_confirm_hook :shop_fuse_popup_confirm_confirm
+  @fuse_confirm_confirm_hooks [:shop_fuse_popup_confirm_confirm, :shop_fuse_popup_confirm_confirm_2]
   @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
   @heal_confirm_timeout 1_200
@@ -107,7 +107,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @new_shelf_poll_ms 100
   @shelf_settle_timeout_ms 1_000
   @fuse_dismiss_offset_px 15
-  @fuse_item_click_settle_ms 100
+  @fuse_item_click_settle_ms 130
   @fuse_slots_filled_ms 1_000
   @fuse_confirm_steady_ms 120
   @fuse_confirm_steady_timeout_ms 1_500
@@ -1082,12 +1082,12 @@ defmodule StarlightBot.Automation.Shop.Ops do
     else
       steps = [
         key(:enter),
-        await(@fuse_confirm_confirm_hook),
-        hold(@fuse_confirm_confirm_hook, @fuse_confirm_steady_ms, within: @fuse_confirm_steady_timeout_ms),
-        retry_until(not_hook(@fuse_confirm_confirm_hook), [key(:enter)],
+        await(any_of(@fuse_confirm_confirm_hooks)),
+        hold(any_of(@fuse_confirm_confirm_hooks), @fuse_confirm_steady_ms, within: @fuse_confirm_steady_timeout_ms),
+        retry_until(not_hook(any_of(@fuse_confirm_confirm_hooks)), [key(:enter)],
           every: @fuse_confirm_retry_ms,
           tries: @fuse_confirm_tries,
-          retry_if: @fuse_confirm_confirm_hook
+          retry_if: any_of(@fuse_confirm_confirm_hooks)
         )
       ]
 
