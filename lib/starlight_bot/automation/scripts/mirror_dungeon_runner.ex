@@ -52,6 +52,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   def started(teams, run_count, config, _errors, {:ok, first_screen}, _frame, ctx) do
     Ctx.log(ctx, :ok, "on screen: #{first_screen}")
     cycle = activate(%{teams: teams, index: 0}, ctx)
+    RunMemory.put_team(ctx, team_memory(cycle.team))
     RunMemory.put_context(ctx, :mirror_dungeon)
     RunMemory.put_floor(ctx, 1)
     RunMemory.put(ctx, :run_progress, %{current: min(1, run_count), total: run_count})
@@ -339,12 +340,13 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   defp activate(%{teams: teams, index: index} = cycle, ctx) do
     team = Enum.at(teams, index)
-    RunMemory.put_team(ctx, %{id: team.id, name: team.name, hook: team.hook, type: team.type, affinity: Atom.to_string(team.affinity)})
     if length(teams) > 1, do: Ctx.log(ctx, :info, "team cycle: using #{team.name} with #{team.hook} (#{index + 1}/#{length(teams)})")
     Map.put(cycle, :team, team)
   end
 
   defp next_team(%{teams: teams, index: index} = cycle, ctx), do: activate(%{cycle | index: rem(index + 1, length(teams))}, ctx)
+
+  defp team_memory(team), do: %{id: team.id, name: team.name, hook: team.hook, type: team.type, affinity: Atom.to_string(team.affinity)}
 
   defp fetch_team(team_id, ctx) do
     case Teams.get_team(team_id) do
@@ -414,8 +416,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     cycle =
       if run.count > 1 do
         progress = RunMemory.get(ctx, :run_progress, %{current: 0, total: 0})
-        RunMemory.merge(ctx, %{floor: 1, run_progress: %{progress | current: progress.current + 1}})
-        if own_run?, do: next_team(run.cycle, ctx), else: run.cycle
+        cycle = if own_run?, do: next_team(run.cycle, ctx), else: run.cycle
+        RunMemory.merge(ctx, %{floor: 1, run_progress: %{progress | current: progress.current + 1}, team: team_memory(cycle.team)})
+        cycle
       else
         run.cycle
       end

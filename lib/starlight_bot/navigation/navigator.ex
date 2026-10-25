@@ -544,7 +544,7 @@ defmodule StarlightBot.Navigation.Navigator do
 
   @impl true
   def handle_info({:nav_run_memory, snapshot}, state) do
-    state = %{state | run_memory: snapshot} |> track_split(snapshot) |> track_screen(snapshot)
+    state = state |> track_screen(snapshot) |> Map.put(:run_memory, snapshot) |> track_split(snapshot)
     broadcast(state)
     {:noreply, state}
   end
