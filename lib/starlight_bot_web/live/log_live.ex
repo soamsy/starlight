@@ -78,7 +78,7 @@ defmodule StarlightBotWeb.Live.LogLive do
     assigns = assigns |> assign_new(:class, fn -> "flex-1 min-h-0" end) |> assign(:embedded_lines, @embedded_lines)
 
     ~H"""
-    {live_render(@socket, __MODULE__, id: @id, session: %{"max_lines" => @embedded_lines}, container: {:div, class: "flex flex-col #{@class}"})}
+    {live_render(@socket, __MODULE__, id: @id, session: %{"max_lines" => @embedded_lines}, container: {:div, class: "flex flex-col min-w-0 #{@class}"})}
     """
   end
 
