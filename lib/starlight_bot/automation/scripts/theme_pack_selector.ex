@@ -18,7 +18,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   @max_refresh_attempts 10
   @drag_x_offsets [20, 60, 100]
   @pull_y 540
-  @drag_distance 380
+  @drag_distance 450
   @drag_confirm_poll_tries 15
   @drag_confirm_poll_every_ms 100
   @scan_poll_every_ms 100
@@ -708,7 +708,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
          {:ok, frame} <- Capture.grab_frame() do
       from = Frame.to_screen_coords(frame, {true_x + dx, @pull_y})
       to = Frame.to_screen_coords(frame, {true_x + dx, @pull_y + @drag_distance})
-      Mouse.drag(from, to, release_settle_ms: 150)
+      Mouse.drag(from, to, release_settle_ms: 200)
 
       if await_moved_away(ctx), do: :ok, else: try_pulls(rest, span, hook, ctx)
     else
