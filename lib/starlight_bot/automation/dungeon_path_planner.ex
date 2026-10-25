@@ -11,8 +11,6 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   @ready_timeout_ms 3_000
   @ready_poll_ms 50
   @shop_confirm_wait_ms 1_500
-  @arrival_space_ms 80
-  @arrival_timeout_ms 4_000
   @node_arrival_hooks [
     :event, :shop, :shop_super, :ego_gift_get, :team_selector, :team_selector_tall, :team_selector_gone, :loading_stage_1, :loading_stage_2
   ]
@@ -59,8 +57,9 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
 
       Engine.act([
         retry_until(any_of([:loading_stage_1, :loading_stage_2]), [
+          premove(:clear_selection),
           branch(leading_clauses ++ [gift_popup_clause(), {:default, [key(direction), key(:enter)]}])
-        ], every: 100, timeout: 10_000)
+        ], every: 100, timeout: 8_000)
       ] ++ loading() ++ [await(:battle_settings, timeout: 5_000, premove: false)], ctx)
     kind in [:battle, :hard_battle, :risky_battle, :boss] ->
       Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead, moving to team select")
@@ -68,15 +67,17 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
       Engine.act([
         retry_until(any_of([:team_selector, :team_selector_tall, :team_selector_gone]),
         [
+          premove(:clear_selection),
           branch(leading_clauses ++ [
             gift_popup_clause(),
-            {:dungeon_graph_dante, [key(direction), key(:enter), sleep(200)]},
+            {:dungeon_graph_dante, [key(direction), key(:enter)]},
             {:dungeon_graph_enter_dante, [key(:enter)]},
-            {:default, [key(:enter)]}
+            {:dungeon_graph, [key(:enter)]},
+            {:default, []}
           ])
         ],
         every: 100,
-        timeout: 5_000)
+        timeout: 4_000)
       ], ctx)
     true ->
       Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead (#{venue}), spamming #{direction} + enter until dungeon_graph is gone, then space + enter until it shows")
@@ -91,7 +92,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
         ],
         every: 80,
         timeout: 4_000),
-        attempt([retry_until(any_of(@node_arrival_hooks), [key(:space), key(:enter)], every: @arrival_space_ms, timeout: @arrival_timeout_ms)], else: [])
+        attempt([retry_until(any_of(@node_arrival_hooks), [key(:space), key(:enter)], every: 80, timeout: 4_000)], else: [])
       ], ctx)
     end
   end
