@@ -9,11 +9,15 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     Repo.query!("DELETE FROM fusion_route_defaults")
 
     Repo.insert_all("ego_gifts", [
-      %{id: "g_glimpse", name: "Glimpse of Flames", affinity: "burn", tier: 4, buying_cost: 300, ingredients: nil},
-      %{id: "g_fiery", name: "Fiery Down", affinity: "burn", tier: 2, buying_cost: 120, ingredients: nil},
-      %{id: "g_a", name: "Ing A", affinity: "burn", tier: 2, buying_cost: nil, ingredients: nil},
-      %{id: "g_b", name: "Ing B", affinity: "burn", tier: 2, buying_cost: nil, ingredients: nil},
-      %{id: "g_fixed", name: "Fixed Thing", affinity: "burn", tier: 4, buying_cost: nil, ingredients: "g_a,g_b"}
+      %{id: "g_glimpse", name: "Glimpse of Flames", affinity: "burn", tier: 4, buying_cost: 300, ingredients: nil, obtain_method: "Shop"},
+      %{id: "g_fiery", name: "Fiery Down", affinity: "burn", tier: 2, buying_cost: 120, ingredients: nil, obtain_method: "Shop"},
+      %{id: "g_a", name: "Ing A", affinity: "burn", tier: 2, buying_cost: nil, ingredients: nil, obtain_method: "Shop"},
+      %{id: "g_b", name: "Ing B", affinity: "burn", tier: 2, buying_cost: nil, ingredients: nil, obtain_method: "Event"},
+      %{id: "g_fixed", name: "Fixed Thing", affinity: "burn", tier: 4, buying_cost: nil, ingredients: "g_a,g_b", obtain_method: "Fuse #g_a# + #g_b#"}
+    ])
+
+    Repo.insert_all("ego_gifts", [
+      %{id: "g_uptied", name: "Uptied One", affinity: "burn", tier: 1, buying_cost: 50, obtain_method: "Shop", description: "Base text", uptie2: "Plus text", uptie3: "Plus plus text"}
     ])
 
     {:ok, socket} = Live.mount(%{}, %{}, %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, flash: %{}}})
@@ -53,150 +57,434 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert StarlightBot.GiftPlans.Routes.reorder(routes, nil, 4, ["c", "a"]) |> Enum.map(& &1["id"]) == ["c", "b", "a"]
   end
 
-  test "the shop pane opens on the top milestone, or the first non-empty library without milestones", %{socket: socket} do
-    [%{"id" => shop_id}] = saved(socket)["milestones"]
-    assert socket.assigns.shop_lib == "milestones"
-    assert socket.assigns.selected_milestone_id == shop_id
+  defp milestone(socket), do: hd(saved(socket)["milestones"])
+  defp entry(socket, name), do: Enum.find(milestone(socket)["entries"], &(GiftPlans.subject_gift(&1) == name))
+  defp shop(socket), do: event(socket, "set_tab", %{"tab" => "shop"})
 
-    socket = socket |> event("lib_add", %{"lib" => "upties"}) |> event("delete_milestone", %{"id" => shop_id})
-    socket = event(socket, "select_plan", %{"id" => to_string(socket.assigns.editing_id)})
-    assert socket.assigns.shop_lib == "upties"
-  end
-
-  test "a new plan starts as a valid v2 plan", %{socket: socket} do
-    assert saved(socket)["version"] == 3
+  test "a new plan starts as a valid v4 plan with the shop pane on its milestone", %{socket: socket} do
+    assert saved(socket)["version"] == 4
     assert GiftPlans.issues(saved(socket)) == []
     assert render(socket) =~ "No steps yet"
-  end
-
-  test "library definitions can be built and referenced by steps", %{socket: socket} do
-    socket =
-      socket
-      |> event("lib_add", %{"lib" => "upties"})
-      |> then(fn s -> event(s, "set_uptie_gift", %{"id" => s.assigns.selected_def["upties"], "gift" => "Fiery Down"}) end)
-      |> event("lib_add", %{"lib" => "fusions"})
-      |> then(fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["fusions"], "gift" => "Glimpse of Flames"}) end)
-
-    uptie_id = socket.assigns.selected_def["upties"]
-    fusion_id = socket.assigns.selected_def["fusions"]
-
-    [top_332, top_422] = hd(saved(socket)["library"]["fusions"])["routes"]
-
-    socket =
-      socket
-      |> event("rt_add", %{"def_id" => fusion_id, "parent" => "", "tier" => "4", "combo" => "4-4"})
-      |> event("rt_update", %{"def_id" => fusion_id, "route_id" => top_422["id"], "buy_up_to" => "2", "leftover" => %{"1" => "0", "2" => "1"}})
-      |> event("rt_add", %{"def_id" => fusion_id, "parent" => top_422["id"], "tier" => "2", "combo" => "2-2"})
-      |> event("rt_duplicate", %{"def_id" => fusion_id, "route_id" => top_332["id"]})
-      |> event("add_step", %{"kind" => "uptie", "ref" => uptie_id})
-      |> event("add_step", %{"kind" => "fusion", "ref" => fusion_id})
-
-    [fusion] = saved(socket)["library"]["fusions"]
-    [first, copy, edited, added] = fusion["routes"]
-    assert first["combo"] == [3, 3, 2] and copy["combo"] == [3, 3, 2]
-    assert copy["id"] != first["id"]
-    assert hd(copy["subgoals"]["3"])["id"] != hd(first["subgoals"]["3"])["id"]
-    assert edited["buy_up_to"] == 2 and edited["leftover"] == %{"2" => 1}
-    assert [%{"combo" => [2, 2]}] = edited["subgoals"]["2"]
-    assert added["combo"] == [4, 4]
-
-    socket = event(socket, "rt_reorder", %{"scope" => "#{fusion_id}||4", "ids" => [added["id"], first["id"]]})
-    assert Enum.map(hd(saved(socket)["library"]["fusions"])["routes"], & &1["id"]) == [added["id"], copy["id"], edited["id"], first["id"]]
-
-    socket = event(socket, "rt_delete", %{"def_id" => fusion_id, "route_id" => hd(first["subgoals"]["3"])["id"]})
-    assert hd(saved(socket)["library"]["fusions"])["routes"] |> Enum.find(&(&1["id"] == first["id"])) |> Map.get("subgoals") == %{"3" => []}
-    assert [%{"kind" => "uptie", "upties" => [^uptie_id], "max_gifts" => 1}, %{"kind" => "fusion", "fusions" => [^fusion_id]}] = steps(socket)
-    assert hd(saved(socket)["library"]["upties"])["gift"] == "Fiery Down"
-    assert hd(saved(socket)["library"]["upties"])["name"] == "Fiery Down"
-    assert hd(saved(socket)["library"]["fusions"])["name"] == "Glimpse of Flames"
+    assert socket.assigns.selected_milestone_id == milestone(socket)["id"]
+    assert render(shop(socket)) =~ "No entries yet"
 
     for tab <- ~w(workflows shop loadout) do
       assert is_binary(socket |> event("set_tab", %{"tab" => tab}) |> render())
     end
-
-    for lib <- ~w(upties lists fusions) do
-      assert is_binary(socket |> event("set_tab", %{"tab" => "shop"}) |> event("lib_select", %{"lib" => lib, "id" => socket.assigns.selected_def[lib]}) |> render())
-    end
-
-    html = render(event(socket, "set_tab", %{"tab" => "shop"}))
-    assert html =~ "super only"
-    assert html =~ "Sub-goal: make T3s"
-    assert html =~ "+ add T2 route"
   end
 
-  test "lists take Any-tier entries and keep them on paste", %{socket: socket} do
-    socket = socket |> event("lib_add", %{"lib" => "lists"}) |> event("set_tab", %{"tab" => "shop"})
-    list_id = socket.assigns.selected_def["lists"]
+  test "gifts join the milestone with keep and buy, fixed fusions bring their ingredients, and entry settings save per floor", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Fixed Thing"}) |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"})
+
+    assert Enum.map(milestone(socket)["entries"], &GiftPlans.subject_gift/1) == ["Fixed Thing", "Ing A", "Ing B", "Glimpse of Flames"]
+    assert %{"fusion" => %{"type" => "fixed"}, "floors" => [%{"fuse" => true, "buy" => true, "goal" => "required"}]} = entry(socket, "Fixed Thing")
+    assert %{"fusion" => %{"type" => "tiered"}, "floors" => [%{"fuse" => false, "goal" => "optional"}]} = entry(socket, "Ing A")
+    assert %{"fusion" => nil} = entry(socket, "Ing B")
+    assert %{"fusion" => %{"type" => "tiered", "routes" => [_, _]}, "floors" => [%{"fuse" => true}]} = entry(socket, "Glimpse of Flames")
+
+    html = render(socket)
+    assert html =~ "Made from:" and html =~ "Added"
+    assert html =~ ~s(phx-click="ms_add_gift" phx-value-gift="Fiery Down")
+    refute html =~ ~s(phx-click="ms_add_gift" phx-value-gift="Glimpse of Flames")
+
+    assert html =~ ~s(data-gift-popup="Glimpse of Flames")
+    refute html =~ "No description available."
+    popup = event(socket, "show_gift_popup", %{"gift" => "Glimpse of Flames", "x" => 120, "y" => 40})
+    assert render(popup) =~ "No description available."
+    refute render(event(popup, "hide_gift_popup", %{})) =~ "No description available."
+    assert event(socket, "show_gift_popup", %{"gift" => "Glimpse of Flames", "uptie" => "2", "x" => 0, "y" => 0}).assigns.gift_popup.view == "base"
+    uptied = event(socket, "show_gift_popup", %{"gift" => "Uptied One", "uptie" => "1", "x" => 0, "y" => 0})
+    assert render(uptied) =~ "Plus text"
+    assert render(event(uptied, "set_gift_popup_view", %{"level" => "uptie3"})) =~ "Plus plus text"
+
+    glimpse = entry(socket, "Glimpse of Flames")["id"]
 
     socket =
       socket
-      |> event("lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down"})
-      |> event("lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "tier:3"})
+      |> event("ms_set_uptie", %{"entry" => glimpse, "from" => "1", "level" => "2"})
+      |> event("ms_toggle", %{"entry" => glimpse, "from" => "1", "field" => "buy"})
+      |> event("ms_split", %{"entry" => glimpse, "floor" => "5"})
+      |> event("ms_update_segment", %{"entry" => glimpse, "from" => "5", "segment" => %{"disposition" => "sell", "max" => "2"}})
 
-    [keep, list] = saved(socket)["library"]["lists"]
-    assert list["gifts"] == ["Fiery Down", "tier:3"]
-    assert render(socket) =~ "Any T3"
+    assert [%{"from" => 1, "uptie" => 2, "buy" => false, "disposition" => "keep"}, %{"from" => 5, "disposition" => "sell", "max" => 2, "uptie" => 2}] =
+             entry(socket, "Glimpse of Flames")["floors"]
 
-    socket = socket |> event("gifts_copy", %{"lib" => "lists", "def_id" => list_id}) |> event("gifts_paste", %{"lib" => "lists", "def_id" => keep["id"]})
-    assert hd(saved(socket)["library"]["lists"])["gifts"] == ["Fiery Down", "tier:3"]
+    assert socket.assigns.entry_tabs[glimpse] == 5
+    html = render(socket)
+    assert html =~ "F1-4" and html =~ "F5+" and html =~ "Max per floor"
+
+    socket = event(socket, "ms_select_tab", %{"entry" => glimpse, "from" => "1"})
+    assert socket.assigns.entry_tabs[glimpse] == 1
+
+    socket = event(socket, "ms_remove_segment", %{"entry" => glimpse, "from" => "5"})
+    assert [%{"from" => 1}] = entry(socket, "Glimpse of Flames")["floors"]
+
+    ing_b = entry(socket, "Ing B")["id"]
+    socket = event(socket, "ms_remove_entry", %{"entry" => ing_b})
+    assert Enum.any?(GiftPlans.issues(saved(socket), socket.assigns.gifts_by_name), &(&1 =~ "Fixed Thing needs Ing B in the milestone."))
+    assert render(socket) =~ "text-error font-semibold\">Ing B"
+
+    ids = milestone(socket)["entries"] |> Enum.map(& &1["id"]) |> Enum.reverse()
+    socket = event(socket, "ms_reorder_entries", %{"scope" => milestone(socket)["id"], "ids" => ids})
+    assert Enum.map(milestone(socket)["entries"], & &1["id"]) == ids
   end
 
-  test "lists are marked protected and protected floors are shared per gift and kept until the gift leaves the plan", %{socket: socket} do
-    socket = socket |> event("lib_add", %{"lib" => "lists"}) |> event("set_tab", %{"tab" => "shop"})
-    list_id = socket.assigns.selected_def["lists"]
+  test "Add Schedule shows floor tabs, new tabs start after the last one, and a tab's start floor can move to any free floor", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"})
+    glimpse = entry(socket, "Glimpse of Flames")["id"]
+    assert render(socket) =~ "Add Schedule"
+
+    socket = event(socket, "ms_add_schedule", %{"entry" => glimpse})
+    assert entry(socket, "Glimpse of Flames")["scheduled"] == true
+    html = render(socket)
+    assert html =~ "F1+" and html =~ "ms_remove_schedule"
+    refute html =~ "Add Schedule"
+
+    socket = socket |> event("ms_split", %{"entry" => glimpse, "floor" => "2"}) |> event("ms_split", %{"entry" => glimpse, "floor" => "3"})
+    assert Enum.map(entry(socket, "Glimpse of Flames")["floors"], & &1["from"]) == [1, 2, 3]
+
+    socket = event(socket, "ms_move_segment", %{"entry" => glimpse, "from" => "2", "to" => "8"})
+    assert Enum.map(entry(socket, "Glimpse of Flames")["floors"], & &1["from"]) == [1, 3, 8]
+    assert socket.assigns.entry_tabs[glimpse] == 8
+    html = render(socket)
+    assert html =~ "F1-2" and html =~ "F3-7" and html =~ "F8+"
+
+    socket = event(socket, "ms_move_segment", %{"entry" => glimpse, "from" => "8", "to" => "3"})
+    assert Enum.map(entry(socket, "Glimpse of Flames")["floors"], & &1["from"]) == [1, 3, 8]
+
+    socket = socket |> event("ms_remove_segment", %{"entry" => glimpse, "from" => "3"}) |> event("ms_remove_segment", %{"entry" => glimpse, "from" => "8"})
+    assert render(socket) =~ "ms_remove_schedule"
+    socket = event(socket, "ms_remove_schedule", %{"entry" => glimpse})
+    assert entry(socket, "Glimpse of Flames")["scheduled"] == false
+    assert render(socket) =~ "Add Schedule"
+  end
+
+  test "Buy and Sell are exclusive, patterns show a cap for either, and a tab can abandon the gift from its floor", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("ms_add_tier", %{"tier" => "1"})
+    glimpse = entry(socket, "Glimpse of Flames")["id"]
+    [_, t1] = milestone(socket)["entries"]
+    seg = fn id -> Enum.find(milestone(socket)["entries"], &(&1["id"] == id))["floors"] end
+
+    socket = event(socket, "ms_toggle", %{"entry" => glimpse, "from" => "1", "field" => "sell"})
+    assert [%{"disposition" => "sell", "buy" => false}] = seg.(glimpse)
+    socket = event(socket, "ms_toggle", %{"entry" => glimpse, "from" => "1", "field" => "buy"})
+    assert [%{"disposition" => "keep", "buy" => true}] = seg.(glimpse)
+    socket = event(socket, "ms_toggle", %{"entry" => glimpse, "from" => "1", "field" => "buy"})
+    assert [%{"disposition" => "keep", "buy" => false}] = seg.(glimpse)
+    assert render(socket) =~ "Max per floor"
+
+    socket = event(socket, "ms_toggle", %{"entry" => t1["id"], "from" => "1", "field" => "buy"})
+    refute render(socket) =~ "Max per floor"
+    socket = event(socket, "ms_toggle", %{"entry" => t1["id"], "from" => "1", "field" => "sell"})
+    assert render(socket) =~ "Max per floor"
+
+    socket = socket |> event("ms_split", %{"entry" => glimpse, "floor" => "6"}) |> event("ms_set_segment_mode", %{"entry" => glimpse, "from" => "6", "mode" => "abandon"})
+    assert [%{"from" => 1}, %{"from" => 6, "abandoned" => true}] = seg.(glimpse)
+    assert render(socket) =~ "Abandoned"
+    socket = event(socket, "ms_set_segment_mode", %{"entry" => glimpse, "from" => "6", "mode" => "change"})
+    assert [_, %{"abandoned" => false}] = seg.(glimpse)
+    refute render(socket) =~ "Abandoned"
+
+    socket = event(socket, "ms_set_segment_mode", %{"entry" => glimpse, "from" => "1", "mode" => "abandon"})
+    assert [%{"from" => 1, "abandoned" => true}, _] = seg.(glimpse)
+    assert render(socket) =~ "Not started"
+    assert %{disposition: "keep"} = GiftPlans.resolve(Enum.find(milestone(socket)["entries"], &(&1["id"] == glimpse)), 6)
+
+    socket = socket |> event("ms_remove_segment", %{"entry" => glimpse, "from" => "6"}) |> event("ms_remove_schedule", %{"entry" => glimpse})
+    assert [%{"from" => 1, "abandoned" => false, "disposition" => "keep"}] = seg.(glimpse)
+    refute render(socket) =~ "Not started"
+  end
+
+  test "a new milestone opens its name for editing, and renaming commits a trimmed, non-blank name", %{socket: socket} do
+    socket = socket |> shop() |> event("add_milestone", %{})
+    [_, added] = saved(socket)["milestones"]
+    assert socket.assigns.editing_milestone_id == added["id"]
+    assert render(socket) =~ ~s(phx-hook="FocusSelect")
+
+    socket = event(socket, "rename_milestone", %{"id" => added["id"], "value" => "  Late Shop "})
+    assert socket.assigns.editing_milestone_id == nil
+    assert Enum.at(saved(socket)["milestones"], 1)["name"] == "Late Shop"
+
+    socket = socket |> event("edit_milestone_name", %{"id" => added["id"]}) |> event("rename_milestone", %{"id" => added["id"], "value" => " "})
+    assert Enum.at(saved(socket)["milestones"], 1)["name"] == "Late Shop"
+  end
+
+  test "dragging an entry into a schedule groups it, tab edits apply to the group, and dragging it out keeps a copy of the tabs", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("ms_add_gift", %{"gift" => "Fiery Down"}) |> event("ms_add_gift", %{"gift" => "Ing A"})
+    [glimpse, fiery, ing] = Enum.map(["Glimpse of Flames", "Fiery Down", "Ing A"], &entry(socket, &1)["id"])
+    ms_id = milestone(socket)["id"]
+    order = fn socket -> Enum.map(milestone(socket)["entries"], & &1["id"]) end
+    froms = fn socket, name -> Enum.map(entry(socket, name)["floors"], & &1["from"]) end
 
     socket =
       socket
-      |> event("toggle_list_protected", %{"id" => list_id})
-      |> event("lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down"})
-      |> event("set_protected_floors", %{"entry" => "Fiery Down", "from" => "2", "to" => "4"})
+      |> event("ms_split", %{"entry" => glimpse, "floor" => "5"})
+      |> event("ms_toggle", %{"entry" => fiery, "from" => "1", "field" => "buy"})
+      |> event("ms_move_entry", %{"scope" => "group:#{glimpse}", "from" => ms_id, "id" => fiery, "ids" => [glimpse, fiery]})
 
-    assert GiftPlans.find_definition(saved(socket), "lists", list_id)["protected"] == true
-    assert render(socket) =~ "Protected floors"
-    assert GiftPlans.protected_floors(saved(socket), "Fiery Down") == {2, 4}
-    assert "protected" in Live.list_roles(saved(socket), list_id)
+    group = entry(socket, "Glimpse of Flames")["group"]
+    assert "grp_" <> _ = group
+    assert %{"group" => ^group, "scheduled" => true, "floors" => [%{"from" => 1, "buy" => false}, %{"from" => 5}]} = entry(socket, "Fiery Down")
+    assert [{:group, ^group, [_, _]}, {:single, _}] = Live.entry_chunks(milestone(socket)["entries"])
 
-    socket = event(socket, "toggle_list_protected", %{"id" => list_id})
-    assert GiftPlans.protected_floors(saved(socket), "Fiery Down") == {2, 4}
+    socket = socket |> event("ms_split", %{"entry" => fiery, "floor" => "8"}) |> event("ms_set_segment_mode", %{"entry" => glimpse, "from" => "5", "mode" => "abandon"})
+    assert froms.(socket, "Glimpse of Flames") == [1, 5, 8] and froms.(socket, "Fiery Down") == [1, 5, 8]
+    assert Enum.all?([glimpse, fiery], fn id -> Enum.find(milestone(socket)["entries"], &(&1["id"] == id))["floors"] |> Enum.at(1) |> Map.get("abandoned") end)
+    assert socket.assigns.entry_tabs[group] == 5
 
-    socket = event(socket, "lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down"})
-    assert saved(socket)["protected_floors"] == %{}
+    socket = event(socket, "ms_reorder_entries", %{"scope" => "group:#{group}", "ids" => [fiery, glimpse]})
+    assert order.(socket) == [fiery, glimpse, ing]
+    socket = event(socket, "ms_reorder_entries", %{"scope" => ms_id, "ids" => [ing, "group:#{group}"]})
+    assert order.(socket) == [ing, fiery, glimpse]
+
+    socket = event(socket, "ms_move_entry", %{"scope" => ms_id, "from" => "group:#{group}", "id" => glimpse, "ids" => [ing, "group:#{group}", glimpse]})
+    assert order.(socket) == [ing, fiery, glimpse]
+    refute Map.has_key?(entry(socket, "Glimpse of Flames"), "group")
+    assert froms.(socket, "Glimpse of Flames") == [1, 5, 8]
+    assert [{:single, _}, {:group, ^group, [_]}, {:group, ^glimpse, [_]}] = Live.entry_chunks(milestone(socket)["entries"])
+
+    socket = socket |> event("ms_remove_segment", %{"entry" => fiery, "from" => "8"}) |> event("ms_remove_segment", %{"entry" => fiery, "from" => "5"}) |> event("ms_remove_schedule", %{"entry" => fiery})
+    refute Map.has_key?(entry(socket, "Fiery Down"), "group")
+    assert render(socket) =~ ~s(data-sort-id="group:#{glimpse}")
   end
 
-  test "lists take any-affinity entries with a tier filter, and they join milestones as optional", %{socket: socket} do
-    socket = socket |> event("lib_add", %{"lib" => "lists"}) |> event("set_tab", %{"tab" => "shop"})
-    list_id = socket.assigns.selected_def["lists"]
+  test "the goal dropdown can abandon an entry, and picking a goal or Change at brings back its last goal", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("ms_add_goal", %{})
+    glimpse = entry(socket, "Glimpse of Flames")["id"]
+    update = fn socket, goal -> event(socket, "ms_update_segment", %{"entry" => glimpse, "from" => "1", "segment" => %{"goal" => goal}}) end
+
+    socket = socket |> update.("A") |> update.("abandon")
+    assert [%{"goal" => "A", "abandoned" => true}] = entry(socket, "Glimpse of Flames")["floors"]
+    html = render(socket)
+    assert html =~ "Not started" and html =~ ~s(<option value="abandon" selected)
+
+    socket = event(socket, "ms_set_segment_mode", %{"entry" => glimpse, "from" => "1", "mode" => "change"})
+    assert [%{"goal" => "A", "abandoned" => false}] = entry(socket, "Glimpse of Flames")["floors"]
+
+    socket = socket |> update.("abandon") |> update.("optional")
+    assert [%{"goal" => "optional", "abandoned" => false}] = entry(socket, "Glimpse of Flames")["floors"]
+  end
+
+  test "heal entries pick sinners and a repeat mode per floor, and never take goals or Buy/Sell", %{socket: socket} do
+    [first, second | _] = StarlightBot.Teams.all_sinners()
 
     socket =
       socket
-      |> event("lib_add_affinity", %{"def_id" => list_id, "affinity" => "burn", "tiers" => ["3", "2"]})
-      |> event("lib_add_affinity", %{"def_id" => list_id, "affinity" => "burn", "tiers" => ["2", "3"]})
-      |> event("lib_add_affinity", %{"def_id" => list_id, "affinity" => "bleed"})
-      |> event("lib_add_affinity", %{"def_id" => list_id, "affinity" => ""})
+      |> shop()
+      |> event("ms_add_action", %{"action" => "heal", "sinner" => second})
+      |> event("ms_add_action", %{"action" => "revive", "sinner" => first})
+      |> event("ms_add_action", %{"action" => "heal_all"})
 
-    assert List.last(saved(socket)["library"]["lists"])["gifts"] == ["affinity:burn:2,3", "affinity:bleed"]
-    assert render(socket) =~ "Any burn T2, T3"
+    [heal, revive, all] = milestone(socket)["entries"]
+    assert %{"subject" => %{"action" => "heal"}, "floors" => [%{"sinners" => [^second], "repeat" => "once", "buy" => false}]} = heal
+    assert %{"floors" => [%{"sinners" => [^first]}]} = revive
+    assert %{"floors" => [%{"sinners" => []}]} = all
 
-    [%{"id" => shop_id}] = saved(socket)["milestones"]
-    socket = event(socket, "toggle_milestone", %{"lib" => "lists", "id" => list_id, "gift" => "affinity:bleed", "milestone" => shop_id})
-    assert [%{optional: true, gift: "affinity:bleed"}] = GiftPlans.milestone_entries(saved(socket), shop_id)
-    assert render(event(socket, "select_milestone", %{"id" => shop_id})) =~ "optional, buy if seen"
+    socket =
+      socket
+      |> event("ms_toggle_heal_sinner", %{"entry" => heal["id"], "from" => "1", "sinner" => first})
+      |> event("ms_set_heal_repeat", %{"entry" => heal["id"], "from" => "1", "repeat" => "until_full"})
+
+    assert [%{"sinners" => [^first, ^second], "repeat" => "until_full"}] = hd(milestone(socket)["entries"])["floors"]
+    assert %{disposition: "ignore", buy: false, goal: nil, sinners: [^first, ^second], repeat: "until_full"} = GiftPlans.resolve(hd(milestone(socket)["entries"]), 1)
+
+    socket = socket |> event("ms_toggle_heal_sinner", %{"entry" => revive["id"], "from" => "1", "sinner" => second}) |> event("ms_set_heal_repeat", %{"entry" => all["id"], "from" => "1", "repeat" => "3"})
+    assert [%{"repeat" => "3"}] = List.last(milestone(socket)["entries"])["floors"]
+
+    html = render(socket)
+    assert html =~ "Greatly Heal" and html =~ "Heal Everyone" and html =~ "Until healed" and html =~ "Until all healed"
+    assert html =~ "Cost 200-400" and html =~ "Cost 200" and html =~ "Cost 300"
+    refute html =~ ~s(phx-value-field="sell")
+    assert GiftPlans.keep_set(saved(socket), 1) == MapSet.new()
   end
 
-  test "buy steps buy one per run and save an optional stop-once-owning count", %{socket: socket} do
-    socket = socket |> event("lib_add", %{"lib" => "lists"})
-    list_id = socket.assigns.selected_def["lists"]
-    socket = event(socket, "add_step", %{"kind" => "buy_list", "ref" => list_id})
-    [buy] = steps(socket)
-    refute Map.has_key?(buy, "max_items")
+  test "skill replace entries pick sinners and replacement options, showing the cost range of the options picked", %{socket: socket} do
+    [first | _] = StarlightBot.Teams.all_sinners()
+    socket = socket |> shop() |> event("ms_add_action", %{"action" => "skill_replace", "sinner" => first})
+    [replace] = milestone(socket)["entries"]
+    assert [%{"sinners" => [^first], "options" => ["s1_s3", "s2_s3", "s1_s2"]}] = replace["floors"]
+    assert render(socket) =~ "Skill Replace" and render(socket) =~ "Cost 45-120"
 
-    socket = event(socket, "update_step", %{"step_id" => buy["id"], "step" => %{"list" => list_id, "done_at" => "2", "repeat" => "3"}})
-    assert %{"list" => ^list_id, "done_at" => 2, "repeat" => 3} = hd(steps(socket))
-    assert render(socket) =~ "Stop once owning"
-    assert Live.list_roles(saved(socket), list_id) == ["buy"]
+    socket = socket |> event("ms_toggle_skill_option", %{"entry" => replace["id"], "from" => "1", "option" => "s1_s3"})
+    assert [%{"options" => ["s2_s3", "s1_s2"]}] = hd(milestone(socket)["entries"])["floors"]
+    assert render(socket) =~ "Cost 45-75"
 
-    socket = event(socket, "update_step", %{"step_id" => buy["id"], "step" => %{"list" => list_id, "done_at" => "", "repeat" => "3"}})
-    assert hd(steps(socket))["done_at"] == nil
+    socket = socket |> event("ms_toggle_skill_option", %{"entry" => replace["id"], "from" => "1", "option" => "s1_s3"})
+    assert [%{"options" => ["s1_s3", "s2_s3", "s1_s2"]}] = hd(milestone(socket)["entries"])["floors"]
+    assert GiftPlans.heal_entries(GiftPlans.resolved_entries(milestone(socket), 1)) == []
+    assert [%{options: ["s1_s3", "s2_s3", "s1_s2"]}] = GiftPlans.skill_replace_entries(GiftPlans.resolved_entries(milestone(socket), 1))
+  end
+
+  test "refresh cases read like a case statement: each gets a condition and an action, and they reorder and delete", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_refresh_case", %{}) |> event("ms_add_refresh_case", %{})
+    [first, second] = milestone(socket)["refresh"]
+    assert %{"condition" => nil, "action" => "refresh"} = first
+
+    socket =
+      socket
+      |> event("cond_add", %{"case_id" => first["id"], "path" => "", "node" => "leaf"})
+      |> event("cond_update", %{"case_id" => first["id"], "path" => "", "op" => "refreshes_lt", "value" => "3"})
+      |> event("ms_update_refresh_case", %{"case_id" => first["id"], "action" => "affinity_refresh", "affinity" => "burn"})
+      |> event("ms_update_refresh_case", %{"case_id" => second["id"], "action" => "leave"})
+
+    assert [%{"condition" => %{"op" => "refreshes_lt", "value" => 3}, "action" => "affinity_refresh", "affinity" => "burn"}, %{"action" => "leave", "condition" => nil}] =
+             milestone(socket)["refresh"]
+
+    html = render(socket)
+    assert html =~ "else if" and html =~ "stop working on this milestone" and html =~ ~s(<option value="leave" selected)
+
+    socket = event(socket, "ms_reorder_refresh", %{"scope" => milestone(socket)["id"], "ids" => [second["id"], first["id"]]})
+    assert Enum.map(milestone(socket)["refresh"], & &1["id"]) == [second["id"], first["id"]]
+
+    socket = event(socket, "ms_remove_refresh_case", %{"case_id" => second["id"]})
+    assert [%{"id" => id}] = milestone(socket)["refresh"]
+    assert id == first["id"]
+  end
+
+  test "turning Fuse on for an entry without a fusion gives it the default one, and unfusable gifts can't", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Fixed Thing"})
+    ing_a = entry(socket, "Ing A")["id"]
+    socket = event(socket, "ms_update_segment", %{"entry" => ing_a, "from" => "1", "segment" => %{"disposition" => "keep", "goal" => "required"}})
+    socket = event(socket, "ms_add_gift", %{"gift" => "Fiery Down"})
+    fiery = entry(socket, "Fiery Down")["id"]
+    socket = update_in(socket.assigns.plan_data["milestones"], fn [m] -> [Map.update!(m, "entries", &Enum.map(&1, fn e -> if e["id"] == fiery, do: %{e | "fusion" => nil}, else: e end))] end)
+
+    socket = event(socket, "ms_toggle", %{"entry" => fiery, "from" => "1", "field" => "fuse"})
+    assert %{"fusion" => %{"type" => "tiered", "routes" => [_, _]}, "floors" => [%{"fuse" => true}]} = entry(socket, "Fiery Down")
+
+    html = render(socket)
+    assert html =~ "This gift can&#39;t be fused"
+  end
+
+  test "goals live at the top of the milestone and entries pick one", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("ms_add_goal", %{}) |> event("ms_set_goal_min", %{"letter" => "A", "min" => "2"})
+    glimpse = entry(socket, "Glimpse of Flames")["id"]
+    socket = event(socket, "ms_update_segment", %{"entry" => glimpse, "from" => "1", "segment" => %{"disposition" => "keep", "goal" => "A"}})
+
+    assert milestone(socket)["goals"] == [%{"letter" => "A", "min" => 2}]
+    assert [%{"goal" => "A"}] = entry(socket, "Glimpse of Flames")["floors"]
+    assert render(socket) =~ "at least"
+
+    socket = event(socket, "ms_remove_goal", %{"letter" => "A"})
+    assert milestone(socket)["goals"] == []
+    assert [%{"goal" => "required"}] = entry(socket, "Glimpse of Flames")["floors"]
+  end
+
+  test "any-tier and any-affinity entries can only ignore or sell", %{socket: socket} do
+    socket =
+      socket
+      |> shop()
+      |> event("ms_add_tier", %{"tier" => "1"})
+      |> event("ms_add_affinity", %{"affinity" => "burn", "tier" => "3"})
+      |> event("ms_add_affinity", %{"affinity" => "burn", "tier" => "3"})
+
+    assert Enum.map(milestone(socket)["entries"], & &1["subject"]) == [%{"tiers" => [1]}, %{"affinity" => "burn", "tiers" => [3]}]
+    html = render(socket)
+    assert html =~ "Any T1" and html =~ "Any burn T3"
+    refute html =~ ~s(<option value="keep")
+  end
+
+  test "the fusion popup edits an entry's routes, which copy, paste and become tier defaults", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("ms_add_gift", %{"gift" => "Ing A"})
+    glimpse = entry(socket, "Glimpse of Flames")["id"]
+    ing_a = entry(socket, "Ing A")["id"]
+    [top_332, top_422] = entry(socket, "Glimpse of Flames")["fusion"]["routes"]
+
+    socket =
+      socket
+      |> event("ms_open_fusion", %{"entry" => glimpse})
+      |> event("rt_add", %{"def_id" => glimpse, "parent" => "", "tier" => "4", "combo" => "4-4"})
+      |> event("rt_update", %{"def_id" => glimpse, "route_id" => top_422["id"], "buy_up_to" => "2", "leftover" => %{"1" => "0", "2" => "1"}})
+      |> event("rt_add", %{"def_id" => glimpse, "parent" => top_422["id"], "tier" => "2", "combo" => "2-2"})
+      |> event("rt_duplicate", %{"def_id" => glimpse, "route_id" => top_332["id"]})
+
+    [first, copy, edited, added] = entry(socket, "Glimpse of Flames")["fusion"]["routes"]
+    assert first["combo"] == [3, 3, 2] and copy["combo"] == [3, 3, 2] and copy["id"] != first["id"]
+    assert edited["buy_up_to"] == 2 and edited["leftover"] == %{"2" => 1}
+    assert [%{"combo" => [2, 2]}] = edited["subgoals"]["2"]
+    assert added["combo"] == [4, 4]
+
+    html = render(socket)
+    assert html =~ "modal-open" and html =~ "Sub-goal: make T3s" and html =~ "+ add T2 route"
+
+    socket = event(socket, "rt_reorder", %{"scope" => "#{glimpse}||4", "ids" => [added["id"], first["id"]]})
+    assert Enum.map(entry(socket, "Glimpse of Flames")["fusion"]["routes"], & &1["id"]) == [added["id"], copy["id"], edited["id"], first["id"]]
+
+    socket = event(socket, "rt_delete", %{"def_id" => glimpse, "route_id" => copy["id"]})
+    socket = socket |> event("rt_copy", %{"def_id" => glimpse}) |> event("rt_make_default", %{"def_id" => glimpse})
+    assert socket.assigns.route_clipboard.tier == 4
+
+    socket = event(socket, "rt_use_default", %{"def_id" => glimpse})
+    assert Enum.map(entry(socket, "Glimpse of Flames")["fusion"]["routes"], & &1["combo"]) == [[4, 4], [4, 2, 2], [3, 3, 2]]
+
+    socket = socket |> event("ms_close_fusion", %{}) |> event("ms_open_fusion", %{"entry" => ing_a})
+    assert [%{"combo" => [2, 1, 1], "buy_up_to" => 1}, %{"combo" => [1, 1, 1, 1]}] = entry(socket, "Ing A")["fusion"]["routes"]
+    socket = event(socket, "rt_add", %{"def_id" => ing_a, "parent" => "", "tier" => "2", "combo" => "2-2"})
+    assert [_, _, %{"combo" => [2, 2]}] = entry(socket, "Ing A")["fusion"]["routes"]
+    refute render(event(socket, "ms_close_fusion", %{})) =~ "Fuse (tiered)"
+  end
+
+  test "a fixed fusion's popup shows its recipe and which ingredients the milestone lacks", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Fixed Thing"})
+    socket = event(socket, "ms_remove_entry", %{"entry" => entry(socket, "Ing A")["id"]})
+    html = render(event(socket, "ms_open_fusion", %{"entry" => entry(socket, "Fixed Thing")["id"]}))
+
+    assert html =~ "Fixed recipe."
+    assert html =~ "(not in this milestone)"
+  end
+
+  test "steps can be edited, reordered, and given condition trees", %{socket: socket} do
+    socket = socket |> event("add_step", %{"kind" => "budget"}) |> event("add_step", %{"kind" => "refresh"})
+    [budget, refresh] = steps(socket)
+
+    socket =
+      socket
+      |> event("update_step", %{"step_id" => budget["id"], "step" => %{"amount" => "-150"}})
+      |> event("move_step", %{"id" => refresh["id"], "dir" => "up"})
+      |> event("cond_add", %{"step_id" => budget["id"], "path" => "", "node" => "leaf"})
+      |> event("cond_add", %{"step_id" => budget["id"], "path" => "", "node" => "group"})
+      |> event("cond_update", %{"step_id" => budget["id"], "path" => "0", "op" => "cost_gte", "value" => "200"})
+      |> event("cond_update", %{"step_id" => budget["id"], "path" => "1.0", "op" => "missing_gift", "gift" => "Glimpse of Flames"})
+      |> event("toggle_step", %{"id" => budget["id"]})
+
+    [_refresh, budget] = steps(socket)
+    assert budget["amount"] == -150
+    assert GiftPlans.condition_label(budget["condition"]) == "cost >= 200 AND missing Glimpse of Flames"
+    assert render(socket) =~ "if cost &gt;= 200 AND missing Glimpse of Flames"
+
+    socket =
+      socket
+      |> event("cond_remove", %{"step_id" => budget["id"], "path" => "1"})
+      |> event("cond_remove", %{"step_id" => budget["id"], "path" => "0"})
+
+    assert List.last(steps(socket))["condition"] == nil
+  end
+
+  test "milestones can be added, renamed, ordered, worked on by steps and deleted", %{socket: socket} do
+    %{"id" => shop_id} = milestone(socket)
+    socket = socket |> event("add_milestone", %{}) |> event("move_milestone", %{"id" => shop_id, "dir" => "down"})
+    [%{"id" => top_id}, %{"id" => ^shop_id}] = saved(socket)["milestones"]
+    assert socket.assigns.selected_milestone_id == top_id
+
+    socket = event(socket, "rename_milestone", %{"id" => top_id, "value" => " Early "})
+    assert hd(saved(socket)["milestones"])["name"] == "Early"
+
+    socket = event(socket, "add_step", %{"kind" => "milestone", "ref" => shop_id})
+    [step] = steps(socket)
+    socket = event(socket, "update_step", %{"step_id" => step["id"], "step" => %{"milestone" => top_id}})
+    assert hd(steps(socket))["milestone"] == top_id
+    assert render(event(socket, "set_tab", %{"tab" => "workflows"})) =~ "Work on Milestone · Early"
+
+    socket =
+      socket
+      |> event("cond_add", %{"step_id" => step["id"], "path" => "", "node" => "leaf"})
+      |> event("cond_update", %{"step_id" => step["id"], "path" => "0", "op" => "milestone", "milestone" => shop_id})
+
+    assert GiftPlans.condition_label(hd(steps(socket))["condition"], saved(socket)) == "milestone Shop Done reached"
+
+    socket = event(socket, "delete_milestone", %{"id" => top_id})
+    assert [%{"id" => ^shop_id}] = saved(socket)["milestones"]
+    assert socket.assigns.selected_milestone_id == shop_id
   end
 
   test "gift search holds up to 3 gifts of tier 3 or under", %{socket: socket} do
@@ -213,58 +501,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
     socket = event(socket, "toggle_search_gift", %{"gift" => "Ing A"})
     assert saved(socket)["gift_search"] == ["Fiery Down", "Ing B"]
-  end
-
-  test "routes can be copied from one tiered fusion and pasted over another", %{socket: socket} do
-    target = fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["fusions"], "gift" => "Glimpse of Flames"}) end
-
-    socket = socket |> event("lib_add", %{"lib" => "fusions"}) |> then(target)
-    source_id = socket.assigns.selected_def["fusions"]
-
-    socket =
-      socket
-      |> event("rt_add", %{"def_id" => source_id, "parent" => "", "tier" => "4", "combo" => "4-4"})
-      |> event("rt_copy", %{"def_id" => source_id})
-      |> event("lib_add", %{"lib" => "fusions"})
-      |> then(target)
-
-    dest_id = socket.assigns.selected_def["fusions"]
-    socket = event(socket, "rt_paste", %{"def_id" => dest_id})
-
-    [source, dest] = saved(socket)["library"]["fusions"]
-    assert Enum.map(dest["routes"], & &1["combo"]) == [[3, 3, 2], [4, 2, 2], [4, 4]]
-    assert Enum.map(dest["routes"], & &1["id"]) -- Enum.map(source["routes"], & &1["id"]) == Enum.map(dest["routes"], & &1["id"])
-    assert hd(dest["routes"])["subgoals"]["3"] |> hd() |> Map.get("id") != hd(source["routes"])["subgoals"]["3"] |> hd() |> Map.get("id")
-    assert render(event(socket, "set_tab", %{"tab" => "shop"})) =~ "3 route(s)"
-  end
-
-  test "uptie and fusion steps hold an ordered list of definitions", %{socket: socket} do
-    socket =
-      socket
-      |> event("lib_add", %{"lib" => "fusions"})
-      |> event("lib_add", %{"lib" => "fusions"})
-      |> event("lib_add", %{"lib" => "upties"})
-
-    [tf_a, tf_b] = Enum.map(saved(socket)["library"]["fusions"], & &1["id"])
-    socket = event(socket, "add_step", %{"kind" => "fusion", "ref" => tf_a})
-    [step] = steps(socket)
-
-    socket =
-      socket
-      |> event("toggle_step_list_item", %{"id" => step["id"], "field" => "fusions", "item" => tf_b, "value" => ""})
-      |> event("reorder_step_field", %{"scope" => "#{step["id"]}:fusions", "ids" => [tf_b, tf_a]})
-
-    assert hd(steps(socket))["fusions"] == [tf_b, tf_a]
-    assert render(socket) =~ "Fusions, in order:"
-
-    socket = event(socket, "toggle_step_list_item", %{"id" => step["id"], "field" => "fusions", "item" => tf_b, "value" => ""})
-    assert hd(steps(socket))["fusions"] == [tf_a]
-
-    socket = event(socket, "add_step", %{"kind" => "uptie", "ref" => hd(saved(socket)["library"]["upties"])["id"]})
-    [_fusion, uptie] = steps(socket)
-    socket = event(socket, "update_step", %{"step_id" => uptie["id"], "step" => %{"max_gifts" => "3"}})
-    assert List.last(steps(socket))["max_gifts"] == 3
-    assert render(socket) =~ "Upties, in order:"
   end
 
   test "a repeated step can run another workflow between repeats, but not one that leads back", %{socket: socket} do
@@ -357,81 +593,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert render(socket) =~ "Revives this sinner"
   end
 
-  test "steps can be edited, reordered, and given condition trees", %{socket: socket} do
-    socket =
-      socket
-      |> event("add_step", %{"kind" => "budget"})
-      |> event("add_step", %{"kind" => "sell"})
-      |> event("lib_add", %{"lib" => "fusions", "type" => "fixed"})
-
-    fixed_id = socket.assigns.selected_def["fusions"]
-
-    socket =
-      socket
-      |> event("set_fusion_target", %{"id" => fixed_id, "gift" => "Fixed Thing"})
-      |> event("lib_update", %{"lib" => "fusions", "def_id" => fixed_id, "def" => %{"name" => "Fixed", "buy_missing" => "false"}})
-      |> event("add_step", %{"kind" => "fusion", "ref" => fixed_id})
-
-    [budget, sell, fixed] = steps(socket)
-
-    socket =
-      socket
-      |> event("update_step", %{"step_id" => budget["id"], "step" => %{"amount" => "-150"}})
-      |> event("toggle_step_list_item", %{"id" => sell["id"], "field" => "tiers", "item" => "2", "value" => ""})
-      |> event("reorder_step_field", %{"scope" => "#{sell["id"]}:tiers", "ids" => ["2", "1"]})
-      |> event("move_step", %{"id" => fixed["id"], "dir" => "up"})
-      |> event("cond_add", %{"step_id" => budget["id"], "path" => "", "node" => "leaf"})
-      |> event("cond_add", %{"step_id" => budget["id"], "path" => "", "node" => "group"})
-      |> event("cond_update", %{"step_id" => budget["id"], "path" => "0", "op" => "cost_gte", "value" => "200"})
-      |> event("cond_update", %{"step_id" => budget["id"], "path" => "1.0", "op" => "missing_gift", "gift" => "Glimpse of Flames"})
-      |> event("toggle_step", %{"id" => budget["id"]})
-
-    [budget, fixed, sell] = steps(socket)
-    assert budget["amount"] == -150
-    assert fixed["fusions"] == [fixed_id]
-    assert %{"type" => "fixed", "target" => "Fixed Thing", "buy_missing" => false} = GiftPlans.find_definition(saved(socket), "fusions", fixed_id)
-    assert sell["tiers"] == [2, 1]
-    assert GiftPlans.condition_label(budget["condition"]) == "cost >= 200 AND missing Glimpse of Flames"
-
-    workflow = hd(saved(socket)["workflows"])
-    assert GiftPlans.derived_protected(saved(socket), workflow, socket.assigns.gifts) == ["Fixed Thing", "Ing A", "Ing B"]
-    assert render(socket) =~ "if cost &gt;= 200 AND missing Glimpse of Flames"
-
-    socket =
-      socket
-      |> event("cond_remove", %{"step_id" => budget["id"], "path" => "1"})
-      |> event("cond_remove", %{"step_id" => budget["id"], "path" => "0"})
-
-    assert hd(steps(socket))["condition"] == nil
-  end
-
-  test "fixed fusions link ingredients to sub-fusions and protect everything they reach", %{socket: socket} do
-    socket =
-      socket
-      |> event("lib_add", %{"lib" => "fusions", "type" => "tiered"})
-      |> then(fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["fusions"], "gift" => "Ing A"}) end)
-
-    ing_a_id = socket.assigns.selected_def["fusions"]
-    socket = event(socket, "lib_add", %{"lib" => "fusions", "type" => "fixed"})
-    fixed_id = socket.assigns.selected_def["fusions"]
-    socket = event(socket, "set_fusion_target", %{"id" => fixed_id, "gift" => "Fixed Thing"})
-
-    assert GiftPlans.find_definition(saved(socket), "fusions", fixed_id)["sub_fusions"] == %{"Ing A" => ing_a_id}
-
-    socket = event(socket, "create_sub_fusion", %{"def_id" => fixed_id, "ingredient" => "Ing B"})
-    data = saved(socket)
-    %{"sub_fusions" => %{"Ing B" => ing_b_id}} = GiftPlans.find_definition(data, "fusions", fixed_id)
-    assert %{"type" => "tiered", "target" => "Ing B"} = GiftPlans.find_definition(data, "fusions", ing_b_id)
-
-    socket = event(socket, "set_sub_fusion", %{"def_id" => fixed_id, "ingredient" => "Ing A", "sub" => ""})
-    assert GiftPlans.find_definition(saved(socket), "fusions", fixed_id)["sub_fusions"] == %{"Ing B" => ing_b_id}
-    assert GiftPlans.issues(saved(socket), socket.assigns.gifts_by_name) == []
-
-    html = render(event(socket, "set_tab", %{"tab" => "shop"}))
-    assert html =~ "fuse via Ing B"
-    assert html =~ "+ Fixed"
-  end
-
   test "workflows can be added and scheduled, and scheduled workflows can't be deleted", %{socket: socket} do
     [first] = saved(socket)["workflows"]
 
@@ -450,33 +611,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert GiftPlans.workflow_for_floor(data, 5)["id"] == second
   end
 
-  test "a fusion's routes can become its tier's default, which new fusions of that tier start with", %{socket: socket} do
-    socket =
-      socket
-      |> event("lib_add", %{"lib" => "fusions"})
-      |> then(fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["fusions"], "gift" => "Glimpse of Flames"}) end)
-
-    source_id = socket.assigns.selected_def["fusions"]
-
-    socket =
-      socket
-      |> event("rt_add", %{"def_id" => source_id, "parent" => "", "tier" => "4", "combo" => "4-4"})
-      |> event("rt_make_default", %{"def_id" => source_id})
-      |> event("lib_add", %{"lib" => "fusions"})
-      |> then(fn s -> event(s, "set_fusion_target", %{"id" => s.assigns.selected_def["fusions"], "gift" => "Glimpse of Flames"}) end)
-
-    combos = fn id -> Enum.map(GiftPlans.find_definition(saved(socket), "fusions", id)["routes"], & &1["combo"]) end
-    new_id = socket.assigns.selected_def["fusions"]
-
-    assert combos.(new_id) == [[3, 3, 2], [4, 2, 2], [4, 4]]
-
-    socket = event(socket, "rt_delete", %{"def_id" => new_id, "route_id" => hd(GiftPlans.find_definition(saved(socket), "fusions", new_id)["routes"])["id"]})
-    assert combos.(new_id) == [[4, 2, 2], [4, 4]]
-
-    event(socket, "rt_use_default", %{"def_id" => new_id})
-    assert combos.(new_id) == [[3, 3, 2], [4, 2, 2], [4, 4]]
-  end
-
   test "workflows can be copied in from another plan", %{socket: socket} do
     {:ok, source_id} = Plans.save(:gift_plans, %{name: "Source", data: GiftPlans.blank("burn")})
     source = Plans.get(:gift_plans, source_id)
@@ -488,89 +622,5 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
       |> event("import_workflows", %{"workflow" => wf_id})
 
     assert Enum.map(saved(socket)["workflows"], & &1["name"]) == ["Standard", "Standard (Source)"]
-  end
-
-  test "milestones: new upties and fusions join the top one, entries reorder, group, include, and conditions skip cycles", %{socket: socket} do
-    [%{"id" => shop_id, "name" => "Shop Done"}] = saved(socket)["milestones"]
-
-    socket = socket |> event("add_milestone", %{}) |> event("move_milestone", %{"id" => shop_id, "dir" => "down"})
-    [%{"id" => top_id}, %{"id" => ^shop_id}] = saved(socket)["milestones"]
-
-    socket = socket |> event("lib_add", %{"lib" => "upties"}) |> event("lib_add", %{"lib" => "fusions", "type" => "tiered"}) |> event("lib_add", %{"lib" => "lists"})
-    uptie_id = socket.assigns.selected_def["upties"]
-    fusion_id = socket.assigns.selected_def["fusions"]
-    list_id = socket.assigns.selected_def["lists"]
-    uptie_ref = GiftPlans.entry_ref("upties", uptie_id)
-    gift_ref = GiftPlans.entry_ref("lists", list_id, "Fiery Down")
-
-    assert Enum.map(GiftPlans.milestone_entries(saved(socket), top_id), & &1.ref) == [uptie_ref, GiftPlans.entry_ref("fusions", fusion_id)]
-    assert GiftPlans.milestone_entries(saved(socket), shop_id) == []
-
-    socket =
-      socket
-      |> event("lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down"})
-      |> event("toggle_milestone", %{"lib" => "upties", "id" => uptie_id, "milestone" => shop_id})
-
-    assert GiftPlans.assignments(saved(socket), gift_ref) == %{}
-
-    socket =
-      socket
-      |> event("toggle_milestone", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down", "milestone" => shop_id})
-      |> event("reorder_milestone_blocks", %{"scope" => shop_id, "ids" => [GiftPlans.entry_key(gift_ref), GiftPlans.entry_key(uptie_ref)]})
-
-    assert Enum.map(GiftPlans.milestone_entries(saved(socket), shop_id), & &1.ref) == [gift_ref, uptie_ref]
-
-    keep_entry = %{"milestone_id" => shop_id, "lib" => "lists", "def_id" => list_id, "gift" => "Fiery Down"}
-    uptie_entry = %{"milestone_id" => shop_id, "lib" => "upties", "def_id" => uptie_id}
-
-    socket =
-      socket
-      |> event("set_entry_group", Map.put(keep_entry, "group", "new"))
-      |> event("set_entry_group", Map.put(uptie_entry, "group", "A"))
-      |> event("set_group_min", %{"milestone_id" => shop_id, "group" => "A", "min" => "2"})
-
-    assert [%{group: "A"}, %{group: "A"}] = GiftPlans.milestone_entries(saved(socket), shop_id)
-
-    socket = event(socket, "set_entry_group", Map.put(uptie_entry, "group", "optional"))
-    assert [%{group: "A"}, %{optional: true, ref: ^uptie_ref}] = GiftPlans.milestone_entries(saved(socket), shop_id)
-    assert render(event(socket, "set_tab", %{"tab" => "shop"}) |> event("select_milestone", %{"id" => shop_id})) =~ ~s(value="optional" selected)
-    socket = event(socket, "set_entry_group", Map.put(uptie_entry, "group", "A"))
-
-    socket = event(socket, "move_milestone_entry", %{"scope" => shop_id, "id" => GiftPlans.entry_key(uptie_ref), "ids" => [GiftPlans.entry_key(uptie_ref), "group:A"]})
-    assert [%{group: nil, ref: ^uptie_ref}, %{group: "A"}] = GiftPlans.milestone_entries(saved(socket), shop_id)
-    socket = event(socket, "move_milestone_entry", %{"scope" => "#{shop_id}|A", "id" => GiftPlans.entry_key(uptie_ref), "ids" => [GiftPlans.entry_key(gift_ref), GiftPlans.entry_key(uptie_ref)]})
-    assert [%{group: "A", ref: ^gift_ref}, %{group: "A", ref: ^uptie_ref}] = GiftPlans.milestone_entries(saved(socket), shop_id)
-    assert GiftPlans.group_min(Enum.at(saved(socket)["milestones"], 1), "A") == 2
-    assert render(event(socket, "set_tab", %{"tab" => "shop"}) |> event("select_milestone", %{"id" => shop_id})) =~ "Group A: at least"
-
-    socket = event(socket, "lib_toggle_gift", %{"lib" => "lists", "id" => list_id, "gift" => "Fiery Down"})
-    assert GiftPlans.assignments(saved(socket), gift_ref) == %{}
-
-    socket = event(socket, "include_milestone", %{"milestone_id" => shop_id, "sub" => top_id})
-    assert GiftPlans.assignments(saved(socket), GiftPlans.entry_ref("milestones", top_id)) == %{shop_id => nil}
-    socket = event(socket, "include_milestone", %{"milestone_id" => top_id, "sub" => shop_id})
-    assert GiftPlans.milestone_entries(saved(socket), top_id) |> Enum.all?(&(&1.lib != "milestones"))
-
-    socket =
-      socket
-      |> event("cond_add", %{"milestone_id" => top_id, "path" => "", "node" => "leaf"})
-      |> event("cond_update", %{"milestone_id" => top_id, "path" => "0", "op" => "milestone", "milestone" => shop_id})
-
-    assert Enum.at(saved(socket)["milestones"], 0)["condition"] == %{"op" => "and", "children" => [%{"op" => "cost_gte", "value" => 0}]}
-    assert Live.milestone_options(saved(socket), top_id) == []
-
-    socket = event(socket, "add_step", %{"kind" => "milestone", "ref" => shop_id})
-    [step] = steps(socket)
-    assert step["milestone"] == shop_id
-    socket = event(socket, "update_step", %{"step_id" => step["id"], "step" => %{"milestone" => top_id}})
-    assert hd(steps(socket))["milestone"] == top_id
-    assert render(event(socket, "set_tab", %{"tab" => "workflows"})) =~ "Work on Milestone"
-
-    socket = event(socket, "lib_delete", %{"lib" => "upties", "id" => uptie_id})
-    assert GiftPlans.milestone_entries(saved(socket), shop_id) |> Enum.map(& &1.lib) == ["milestones"]
-
-    socket = event(socket, "delete_milestone", %{"id" => top_id})
-    assert GiftPlans.milestone_entries(saved(socket), shop_id) == []
-    assert socket.assigns.selected_milestone_id == shop_id
   end
 end

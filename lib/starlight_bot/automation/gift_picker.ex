@@ -17,7 +17,7 @@ defmodule StarlightBot.Automation.GiftPicker do
     badge_slots = badge_slots(named, tier_badges(frame, tier_hooks))
     slots = assign_hp(named ++ badge_slots, hp_badges(frame, opts[:hp_hooks]), hp_gates(frame, opts[:hp_gate_hook]))
     {selected, available} = split_selected(slots, frame, opts[:selected_hook])
-    ranked = rank(available, wanted_names(gifts_by_id, ctx), RunMemory.ego_gifts(ctx), gifts_by_id)
+    ranked = rank(available, wanted_names(ctx), RunMemory.ego_gifts(ctx), gifts_by_id)
     ranked = if opts[:hp_hooks], do: avoid_hp(ranked), else: ranked
     chosen = Enum.take(ranked, count)
 
@@ -172,13 +172,9 @@ defmodule StarlightBot.Automation.GiftPicker do
   defp center(%{x: x, y: y, w: w, h: h}), do: {x + w / 2, y + h / 2}
   defp center({x, y, w, h}), do: {x + w / 2, y + h / 2}
 
-  defp wanted_names(gifts_by_id, ctx) do
-    with %{} = data <- RunMemory.gift_plan(ctx),
-         plan = GiftPlans.normalize(data),
-         floor = RunMemory.floor(ctx),
-         %{} = workflow <- GiftPlans.workflow_for_floor(plan, floor) do
-      plan |> GiftPlans.protected_set(workflow, Map.values(gifts_by_id), floor) |> MapSet.to_list()
-    else
+  defp wanted_names(ctx) do
+    case RunMemory.gift_plan(ctx) do
+      %{} = data -> data |> GiftPlans.normalize() |> GiftPlans.keep_set(RunMemory.floor(ctx)) |> MapSet.to_list()
       _ -> []
     end
   end

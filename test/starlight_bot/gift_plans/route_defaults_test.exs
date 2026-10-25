@@ -19,7 +19,7 @@ defmodule StarlightBot.GiftPlans.RouteDefaultsTest do
     assert [%{"combo" => [1, 1, 1]}] = Routes.subgoals_for(copy, 2)
 
     Repo.query!("DELETE FROM fusion_route_defaults WHERE tier = 2")
-    assert RouteDefaults.get(2) == Routes.defaults(2)
+    assert Enum.map(RouteDefaults.get(2), &Map.delete(&1, "id")) == Enum.map(Routes.defaults(2), &Map.delete(&1, "id"))
   end
 
   test "saving a tier again replaces its default" do

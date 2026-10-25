@@ -589,6 +589,12 @@ const SortableList = {
       if (!sortDrag || !this.accepts(sortDrag)) return
       e.preventDefault()
       e.stopPropagation()
+      const highlight = sortDrag.source !== this.el && "sortHighlight" in this.el.dataset ? this.el : null
+      if (sortDrag.highlight !== highlight) {
+        sortDrag.highlight?.classList.remove("bg-primary/15")
+        highlight?.classList.add("bg-primary/15")
+        sortDrag.highlight = highlight
+      }
       const over = eventElement(e)?.closest("[data-sort-id]")
       if (!over && !Array.from(this.el.children).some(c => c.dataset.sortId)) {
         this.el.appendChild(sortDrag.item)
@@ -604,7 +610,8 @@ const SortableList = {
 
     this.el.addEventListener("dragend", () => {
       if (!sortDrag || sortDrag.item.parentElement !== this.el) return
-      const { item, source } = sortDrag
+      const { item, source, highlight } = sortDrag
+      highlight?.classList.remove("bg-primary/15")
       sortDrag = null
       item.classList.remove("opacity-40")
       item.draggable = false
@@ -651,6 +658,81 @@ const LocalStorageForm = {
   }
 }
 
+const TeamNavMemory = {
+  mounted() {
+    if (this.el.dataset.team) this.store()
+    else this.pushEvent("restore_nav", {
+      team: localStorage.getItem("starlight-team-editor-team"),
+      pane: localStorage.getItem("starlight-team-editor-pane")
+    })
+  },
+  updated() {
+    this.store()
+  },
+  store() {
+    const { team, pane } = this.el.dataset
+    if (team) localStorage.setItem("starlight-team-editor-team", team)
+    if (["battle", "packs", "gifts"].includes(pane)) localStorage.setItem("starlight-team-editor-pane", pane)
+  }
+}
+
+const GiftPopup = {
+  mounted() {
+    this.onClick = (e) => {
+      const trigger = e.target.closest("[data-gift-popup]")
+      const open = this.el.dataset.gift
+
+      if (open && this.el.contains(e.target) && e.target.closest("[data-popup-control]")) return
+
+      if (trigger && trigger.dataset.giftPopup !== open) {
+        e.preventDefault()
+        e.stopPropagation()
+        this.pushEvent("show_gift_popup", { gift: trigger.dataset.giftPopup, uptie: trigger.dataset.giftUptie, x: e.clientX, y: e.clientY })
+      } else if (open) {
+        if (trigger) {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+        this.pushEvent("hide_gift_popup", {})
+      }
+    }
+    document.addEventListener("click", this.onClick, true)
+    this.place()
+  },
+  updated() {
+    this.place()
+  },
+  destroyed() {
+    document.removeEventListener("click", this.onClick, true)
+  },
+  place() {
+    const box = this.el.firstElementChild
+    if (!box) return
+    const margin = 8
+    const x = Number(this.el.dataset.x)
+    const y = Number(this.el.dataset.y)
+    const { width, height } = box.getBoundingClientRect()
+    const left = Math.max(margin, Math.min(x + margin, window.innerWidth - width - margin))
+    const below = y + margin
+    const top = below + height <= window.innerHeight - margin ? below : Math.max(margin, y - height - margin)
+    box.style.left = `${left}px`
+    box.style.top = `${top}px`
+  }
+}
+
+const FocusSelect = {
+  mounted() {
+    this.el.focus()
+    this.el.select()
+    this.el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault()
+        this.el.blur()
+      }
+    })
+  }
+}
+
 const DblClickEvent = {
   mounted() {
     this.el.addEventListener("dblclick", () => this.pushEvent(this.el.dataset.event, { id: this.el.dataset.id }))
@@ -663,7 +745,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, DblClickEvent, DragScroll }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, DblClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
 })
 
 liveSocket.connect()

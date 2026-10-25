@@ -3,63 +3,59 @@ defmodule StarlightBot.Automation.Shop.Actions.Sell do
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.GiftPlans
 
-  def run(step, list, state, ctx) do
-    case plan(step, list, state, ctx) do
-      {:skip, reason} ->
-        {:skipped, reason, state}
+  def run_entries([], _entries, _keep, state, ctx), do: {[], false, close_popup(state, ctx)}
 
-      {:sell, gifts, total, enough?} ->
-        result = with_popup(state, ctx, fn -> sell_all(gifts, [], ctx) end)
+  def run_entries(sell_entries, entries, keep, state, ctx) do
+    case plan(sell_entries, entries, keep, state, ctx) do
+      [] ->
+        {[], false, close_popup(state, ctx)}
+
+      picks ->
+        result = with_popup(state, ctx, fn -> sell_all(picks, [], ctx) end)
         state = %{state | sell_popup_open: false}
 
         case result do
-          {:ok, sold} when enough? -> {:done, sold_label(sold, total), state}
-          {:ok, sold} -> {:partial, sold_label(sold, total) <> ", not enough to reach #{step["stop_at_cost"]}", state}
-          {:error, [], failure} -> {:failed, failure, state}
-          {:error, sold, failure} -> {:partial, sold_label(sold, nil) <> ", then " <> failure, state}
+          {:ok, sold} -> {[sold_label(sold)], true, count_sold(state, sold)}
+          {:error, [], failure} -> {["sell: #{failure}"], false, state}
+          {:error, sold, failure} -> {[sold_label(sold) <> ", then " <> failure], true, count_sold(state, sold)}
         end
     end
   end
 
-  def preview(step, list, state, ctx) do
-    case plan(step, list, state, ctx) do
-      {:skip, reason} -> {:would_run, reason, state}
-      {:sell, gifts, total, enough?} ->
-        suffix = if enough?, do: "", else: ", not enough to reach #{step["stop_at_cost"]}"
-        {:would_run, "would sell " <> Enum.map_join(gifts, ", ", &"#{&1.name} (#{&1.selling_cost})") <> " for #{total}#{suffix}", state}
-    end
+  def plan(sell_entries, entries, keep, state, ctx) do
+    order = sell_entries |> Enum.with_index() |> Map.new(fn {entry, index} -> {entry.id, index} end)
+
+    ctx
+    |> RunMemory.ego_gifts()
+    |> GiftPlans.fodder(keep, state.gifts_by_id)
+    |> Enum.flat_map(fn gift ->
+      case GiftPlans.ruling_entry(entries, gift) do
+        %{disposition: "sell"} = entry -> [{gift, entry}]
+        _ -> []
+      end
+    end)
+    |> Enum.sort_by(fn {gift, entry} -> {order[entry.id], -gift.selling_cost, gift.name} end)
+    |> Enum.reduce({[], Map.get(state, :sold, %{})}, fn {gift, entry}, {picked, counts} ->
+      sold = Map.get(counts, entry.id, 0)
+
+      if is_integer(entry.max) and sold >= entry.max,
+        do: {picked, counts},
+        else: {picked ++ [{gift, entry}], Map.put(counts, entry.id, sold + 1)}
+    end)
+    |> elem(0)
   end
 
-  defp plan(step, list, state, ctx) do
-    fodder = ctx |> RunMemory.ego_gifts() |> GiftPlans.fodder(state.protected, state.gifts_by_id)
-    queue = if list, do: GiftPlans.list_sell_order(fodder, list["gifts"]), else: GiftPlans.sell_order(fodder, step["tiers"] || [])
-
-    case needed(step, state, ctx) do
-      :unknown_cost ->
-        {:skip, "cost unknown, can't work out how much to sell"}
-
-      needed when is_integer(needed) and needed <= 0 ->
-        {:skip, "wallet already at #{step["stop_at_cost"]}"}
-
-      needed ->
-        case GiftPlans.sell_plan(queue, needed, step["max_items"] || 1) do
-          {[], _total} -> {:skip, nothing_label(list)}
-          {gifts, total} -> {:sell, gifts, total, is_nil(needed) or total >= needed}
-        end
-    end
+  defp count_sold(state, sold) do
+    counts = Enum.reduce(sold, Map.get(state, :sold, %{}), fn {_gift, entry}, counts -> Map.update(counts, entry.id, 1, &(&1 + 1)) end)
+    Map.put(state, :sold, counts)
   end
 
-  defp nothing_label(nil), do: "nothing unprotected in those tiers"
-  defp nothing_label(list), do: "nothing unprotected from #{list["name"]}"
-
-  defp needed(%{"stop_at_cost" => stop}, state, ctx) when is_integer(stop) do
-    case RunMemory.cost(ctx) do
-      nil -> :unknown_cost
-      cost -> stop - (cost - state.reserve)
-    end
+  defp close_popup(%{sell_popup_open: true} = state, ctx) do
+    Ops.close_sell_popup(ctx)
+    %{state | sell_popup_open: false}
   end
 
-  defp needed(_step, _state, _ctx), do: nil
+  defp close_popup(state, _ctx), do: state
 
   defp with_popup(state, ctx, fun) do
     opened = if state.sell_popup_open, do: {:ok, :already_open}, else: Ops.open_sell_popup(ctx)
@@ -77,13 +73,15 @@ defmodule StarlightBot.Automation.Shop.Actions.Sell do
 
   defp sell_all([], sold, _ctx), do: {:ok, sold}
 
-  defp sell_all([gift | rest], sold, ctx) do
+  defp sell_all([{gift, _entry} = pick | rest], sold, ctx) do
     case Ops.sell_gift(gift.id, ctx) do
-      :ok -> sell_all(rest, sold ++ [gift.name], ctx)
+      :ok -> sell_all(rest, sold ++ [pick], ctx)
       {:error, reason} -> {:error, sold, "#{gift.name} failed: #{inspect(reason)}"}
     end
   end
 
-  defp sold_label(sold, nil), do: "sold #{Enum.join(sold, ", ")}"
-  defp sold_label(sold, total), do: "sold #{Enum.join(sold, ", ")} for #{total}"
+  defp sold_label(sold) do
+    total = sold |> Enum.map(fn {gift, _entry} -> gift.selling_cost end) |> Enum.sum()
+    "sold #{Enum.map_join(sold, ", ", fn {gift, _entry} -> gift.name end)} for #{total}"
+  end
 end

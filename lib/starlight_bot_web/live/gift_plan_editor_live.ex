@@ -14,8 +14,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @gift_sorts ~w(default name tier affinity)
   @uptie_views ~w(base uptie2 uptie3)
   @stat_codes %{"cp" => "Clash Power", "fc" => "Final Power", "bc" => "Base Power", "cg" => "Coin Count"}
-  @palette_kinds ~w(if refresh affinity_refresh sell skill_replace heal heal_all revive budget bail leave)
-  @library_kinds [{"upties", "uptie"}, {"fusions", "fusion"}, {"lists", "buy_list"}]
+  @palette_kinds ~w(if refresh affinity_refresh skill_replace heal heal_all revive budget bail leave)
   @default_leaf %{"op" => "cost_gte", "value" => 0}
 
   @graces [
@@ -98,7 +97,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:route_shop, :normal)
       |> assign(:route_defaults, RouteDefaults.all())
       |> assign(:import_source, nil)
-      |> assign(:gift_clipboard, nil)
+      |> assign(:gift_popup, nil)
       |> reset_editor()
 
     {:ok, if(team && team.gift_plan_id, do: load_plan(socket, team.gift_plan_id), else: socket)}
@@ -165,7 +164,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("set_tab", %{"tab" => tab}, socket) do
-    {:noreply, socket |> assign(:active_tab, String.to_existing_atom(tab)) |> assign(:selected_gift_name, nil)}
+    {:noreply, socket |> assign(:active_tab, String.to_existing_atom(tab)) |> assign(:selected_gift_name, nil) |> assign(:gift_popup, nil)}
   end
 
   @impl true
@@ -192,6 +191,29 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("show_gift", %{"gift" => gift}, socket) do
     {:noreply, socket |> assign(:selected_gift_name, gift) |> assign(:uptie_view, "base")}
+  end
+
+  @impl true
+  def handle_event("show_gift_popup", %{"gift" => gift, "x" => x, "y" => y} = params, socket) do
+    view =
+      case params["uptie"] do
+        "1" -> "uptie2"
+        "2" -> "uptie3"
+        _ -> "base"
+      end
+
+    view = if (found = socket.assigns.gifts_by_name[gift]) && uptie_view_available?(found, view, socket.assigns.gifts_by_id), do: view, else: "base"
+    {:noreply, assign(socket, :gift_popup, %{name: gift, x: x, y: y, view: view})}
+  end
+
+  @impl true
+  def handle_event("set_gift_popup_view", %{"level" => level}, socket) when level in @uptie_views do
+    {:noreply, update(socket, :gift_popup, &(&1 && %{&1 | view: level}))}
+  end
+
+  @impl true
+  def handle_event("hide_gift_popup", _params, socket) do
+    {:noreply, assign(socket, :gift_popup, nil)}
   end
 
   @impl true
@@ -320,17 +342,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
-  def handle_event("toggle_list_protected", %{"id" => id}, socket) do
-    {:noreply, update_plan(socket, &update_definition(&1, "lists", id, fn list -> Map.put(list, "protected", list["protected"] != true) end))}
-  end
-
-  @impl true
-  def handle_event("set_protected_floors", %{"entry" => entry, "from" => from, "to" => to}, socket) do
-    to = if to == "", do: nil, else: String.to_integer(to)
-    {:noreply, update_plan(socket, &GiftPlans.put_protected_floors(&1, entry, String.to_integer(from), to))}
-  end
-
-  @impl true
   def handle_event("duplicate_workflow", %{"id" => id}, socket) do
     case GiftPlans.find_workflow(socket.assigns.plan_data, id) do
       nil ->
@@ -450,18 +461,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
-  def handle_event("add_step", %{"kind" => kind} = params, socket) do
-    step =
-      case GiftPlans.library_ref(kind) do
-        {_lib, field} ->
-          step = GiftPlans.new_step(kind, socket.assigns.plan_data)
-          Map.put(step, field, if(is_list(step[field]), do: [params["ref"]], else: params["ref"]))
-
-        nil ->
-          GiftPlans.new_step(kind, socket.assigns.plan_data)
-      end
-
-    {:noreply, add_to_target(socket, step)}
+  def handle_event("add_step", %{"kind" => kind}, socket) do
+    {:noreply, add_to_target(socket, GiftPlans.new_step(kind, socket.assigns.plan_data))}
   end
 
   @impl true
@@ -556,22 +557,17 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def handle_event("copy_step", _params, socket), do: {:noreply, socket}
 
   @impl true
-  def handle_event("toggle_step_list_item", %{"id" => id, "field" => field, "item" => item}, socket)
-      when field in ["tiers", "options", "upties", "fusions"] do
-    value = if field == "tiers", do: String.to_integer(item), else: item
-
+  def handle_event("toggle_step_list_item", %{"id" => id, "field" => "options", "item" => item}, socket) do
     {:noreply,
      update_step(socket, id, fn step ->
-       items = step[field] || []
-       items = if value in items, do: List.delete(items, value), else: items ++ [value]
-       Map.put(step, field, items)
+       items = step["options"] || []
+       Map.put(step, "options", if(item in items, do: List.delete(items, item), else: items ++ [item]))
      end)}
   end
 
   @impl true
   def handle_event("reorder_step_field", %{"scope" => scope, "ids" => ids}, socket) do
     [id, field] = String.split(scope, ":")
-    ids = if field == "tiers", do: Enum.map(ids, &String.to_integer/1), else: ids
     {:noreply, update_step(socket, id, &Map.put(&1, field, ids))}
   end
 
@@ -597,20 +593,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       case params["op"] do
         op when op in ["cost_gte", "cost_lt"] -> %{"op" => op, "value" => parse_int(params["value"], 0)}
         op when op in ["refreshes_lt", "refreshes_gte"] -> %{"op" => op, "value" => max(parse_int(params["value"], 0), 0)}
-        op when op in ["fusions_complete", "upties_complete"] -> %{"op" => op}
-        "fusion_done" -> %{"op" => "fusion_done", "fusion" => blank_to_nil(params["fusion"])}
-        "uptie_done" -> %{"op" => "uptie_done", "uptie" => blank_to_nil(params["uptie"])}
         op when op in ["milestone", "milestone_not"] -> %{"op" => op, "milestone" => blank_to_nil(params["milestone"])}
         op -> %{"op" => op, "gift" => String.trim(params["gift"] || "")}
       end
 
-    host = params["milestone_id"]
-
-    if host && leaf["milestone"] && GiftPlans.milestone_cycle?(socket.assigns.plan_data, host, leaf["milestone"]) do
-      {:noreply, put_flash(socket, :error, "That would make the milestone depend on itself.")}
-    else
-      {:noreply, update_condition(socket, params, &Conditions.put_leaf(&1, path, leaf))}
-    end
+    {:noreply, update_condition(socket, params, &Conditions.put_leaf(&1, path, leaf))}
   end
 
   @impl true
@@ -621,17 +608,24 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
      socket
      |> update_plan(&Map.update!(&1, "milestones", fn milestones -> milestones ++ [milestone] end))
      |> assign(:selected_milestone_id, milestone["id"])
-     |> assign(:shop_lib, "milestones")}
+     |> assign(:editing_milestone_id, milestone["id"])}
+  end
+
+  @impl true
+  def handle_event("edit_milestone_name", %{"id" => id}, socket) do
+    {:noreply, assign(socket, :editing_milestone_id, id)}
+  end
+
+  @impl true
+  def handle_event("rename_milestone", %{"id" => id, "value" => name}, socket) do
+    socket = assign(socket, :editing_milestone_id, nil)
+    name = String.trim(name)
+    {:noreply, if(name == "", do: socket, else: update_milestone(socket, id, &Map.put(&1, "name", name)))}
   end
 
   @impl true
   def handle_event("select_milestone", %{"id" => id}, socket) do
-    {:noreply, socket |> assign(:selected_milestone_id, id) |> assign(:shop_lib, "milestones")}
-  end
-
-  @impl true
-  def handle_event("update_milestone", %{"milestone_id" => id, "name" => name}, socket) do
-    {:noreply, update_milestone(socket, id, &Map.put(&1, "name", String.trim(name)))}
+    {:noreply, socket |> assign(:selected_milestone_id, id) |> assign(:fusion_entry_id, nil)}
   end
 
   @impl true
@@ -662,207 +656,245 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
-  def handle_event("toggle_milestone", %{"milestone" => milestone} = params, socket) do
-    ref = GiftPlans.entry_ref(params["lib"], params["id"], params["gift"])
+  def handle_event("ms_add_gift", %{"gift" => name}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.add_gift(&1, socket.assigns.selected_milestone_id, name, socket.assigns.gifts_by_name, fn tier -> RouteDefaults.get(tier) end))}
+  end
 
+  @impl true
+  def handle_event("ms_add_tier", %{"tier" => tier}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.add_pattern(&1, socket.assigns.selected_milestone_id, GiftPlans.tier_subject([String.to_integer(tier)])))}
+  end
+
+  @impl true
+  def handle_event("ms_add_affinity", %{"affinity" => affinity, "tier" => tier}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.add_pattern(&1, socket.assigns.selected_milestone_id, GiftPlans.affinity_subject(affinity, [String.to_integer(tier)])))}
+  end
+
+  @impl true
+  def handle_event("ms_add_action", %{"action" => action} = params, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.add_action(&1, socket.assigns.selected_milestone_id, action, params["sinner"]))}
+  end
+
+  @impl true
+  def handle_event("ms_toggle_heal_sinner", %{"entry" => entry_id, "from" => from, "sinner" => sinner}, socket) do
     {:noreply,
-     update_plan(socket, fn data ->
-       if Map.has_key?(GiftPlans.assignments(data, ref), milestone),
-         do: GiftPlans.remove_entry(data, milestone, ref),
-         else: GiftPlans.add_entry(data, milestone, ref)
+     update_segment(socket, entry_id, from, fn segment ->
+       picked = segment["sinners"] || []
+       picked = if sinner in picked, do: List.delete(picked, sinner), else: picked ++ [sinner]
+       Map.put(segment, "sinners", Enum.filter(Teams.all_sinners(), &(&1 in picked)))
      end)}
   end
 
   @impl true
-  def handle_event("include_milestone", %{"milestone_id" => host, "sub" => sub}, socket) when sub != "" do
-    if GiftPlans.milestone_cycle?(socket.assigns.plan_data, host, sub) do
-      {:noreply, put_flash(socket, :error, "That would make the milestone depend on itself.")}
-    else
-      {:noreply, update_plan(socket, &GiftPlans.add_entry(&1, host, GiftPlans.entry_ref("milestones", sub)))}
-    end
-  end
-
-  @impl true
-  def handle_event("include_milestone", _params, socket), do: {:noreply, socket}
-
-  @impl true
-  def handle_event("set_entry_group", %{"milestone_id" => milestone, "group" => group} = params, socket) do
-    ref = GiftPlans.entry_ref(params["lib"], params["def_id"], params["gift"])
-    {:noreply, update_plan(socket, &GiftPlans.set_entry_group(&1, milestone, ref, blank_to_nil(group)))}
-  end
-
-  @impl true
-  def handle_event("set_group_min", %{"milestone_id" => id, "group" => letter, "min" => min}, socket) do
-    {:noreply, update_plan(socket, &GiftPlans.set_group_min(&1, id, letter, parse_int(min, 1)))}
-  end
-
-  @impl true
-  def handle_event("reorder_milestone_blocks", %{"scope" => id, "ids" => keys}, socket) do
-    {:noreply, update_plan(socket, &GiftPlans.reorder_blocks(&1, id, keys))}
-  end
-
-  @impl true
-  def handle_event("move_milestone_entry", %{"scope" => scope, "id" => key, "ids" => keys}, socket) do
-    {id, letter} =
-      case String.split(scope, "|") do
-        [id, letter] -> {id, letter}
-        [id] -> {id, nil}
-      end
-
-    {:noreply, update_plan(socket, &GiftPlans.move_entry(&1, id, key, letter, keys))}
-  end
-
-  @impl true
-  def handle_event("reorder_milestone_group", %{"scope" => scope, "ids" => keys}, socket) do
-    [id, letter] = String.split(scope, "|")
-    {:noreply, update_plan(socket, &GiftPlans.reorder_group(&1, id, letter, keys))}
-  end
-
-  @impl true
-  def handle_event("lib_add", %{"lib" => lib} = params, socket) do
-    count = length(socket.assigns.plan_data["library"][lib])
-    name = "#{lib_label(lib)} #{count + 1}"
-    definition = if params["type"], do: GiftPlans.new_definition(lib, name, params["type"]), else: GiftPlans.new_definition(lib, name)
-    top = first_id(socket.assigns.plan_data["milestones"])
-    add_to_top = &if(top && lib in ["upties", "fusions"], do: GiftPlans.add_entry(&1, top, GiftPlans.entry_ref(lib, definition["id"])), else: &1)
-
+  def handle_event("ms_toggle_skill_option", %{"entry" => entry_id, "from" => from, "option" => option}, socket) do
     {:noreply,
-     socket
-     |> update_plan(&(&1 |> update_in(["library", lib], fn defs -> defs ++ [definition] end) |> add_to_top.()))
-     |> select_definition(lib, definition["id"])}
-  end
-
-  @impl true
-  def handle_event("lib_select", %{"lib" => lib, "id" => id}, socket) do
-    {:noreply, select_definition(socket, lib, id)}
-  end
-
-  @impl true
-  def handle_event("lib_delete", %{"lib" => lib, "id" => id}, socket) do
-    remaining = Enum.reject(socket.assigns.plan_data["library"][lib], &(&1["id"] == id))
-
-    {:noreply,
-     socket
-     |> update_plan(&(&1 |> put_in(["library", lib], remaining) |> GiftPlans.drop_refs_everywhere(fn ref -> ref["lib"] == lib and ref["id"] == id end)))
-     |> select_definition(lib, first_id(remaining))}
-  end
-
-  @impl true
-  def handle_event("lib_update", %{"lib" => lib, "def_id" => id, "def" => params}, socket) do
-    {:noreply, update_plan(socket, &update_definition(&1, lib, id, fn definition -> apply_definition_params(lib, definition, params) end))}
-  end
-
-  @impl true
-  def handle_event("lib_toggle_gift", %{"lib" => lib, "id" => id, "gift" => gift}, socket) do
-    {:noreply,
-     update_plan(socket, fn data ->
-       removing? = gift in GiftPlans.find_definition(data, lib, id)["gifts"]
-       key = GiftPlans.entry_key(GiftPlans.entry_ref(lib, id, gift))
-
-       data
-       |> update_definition(lib, id, fn definition ->
-         gifts = definition["gifts"]
-         Map.put(definition, "gifts", if(removing?, do: List.delete(gifts, gift), else: gifts ++ [gift]))
-       end)
-       |> then(&if(removing?, do: GiftPlans.drop_refs_everywhere(&1, fn ref -> GiftPlans.entry_key(ref) == key end), else: &1))
+     update_segment(socket, entry_id, from, fn segment ->
+       picked = segment["options"] || []
+       picked = if option in picked, do: List.delete(picked, option), else: picked ++ [option]
+       Map.put(segment, "options", Enum.filter(GiftPlans.skill_options(), &(&1 in picked)))
      end)}
   end
 
   @impl true
-  def handle_event("lib_add_affinity", %{"def_id" => id, "affinity" => affinity} = params, socket) when affinity != "" do
-    tiers = for tier <- params["tiers"] || [], do: String.to_integer(tier)
-    entry = GiftPlans.affinity_entry(affinity, tiers)
+  def handle_event("ms_set_heal_repeat", %{"entry" => entry_id, "from" => from, "repeat" => repeat}, socket) when repeat in ~w(once 2 3 until_full) do
+    {:noreply, update_segment(socket, entry_id, from, &Map.put(&1, "repeat", repeat))}
+  end
 
+  @impl true
+  def handle_event("ms_add_refresh_case", _params, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.add_refresh_case(&1, socket.assigns.selected_milestone_id))}
+  end
+
+  @impl true
+  def handle_event("ms_update_refresh_case", %{"case_id" => id, "action" => action} = params, socket) do
     {:noreply,
-     update_plan(socket, &update_definition(&1, "lists", id, fn list ->
-       if entry in list["gifts"], do: list, else: Map.put(list, "gifts", list["gifts"] ++ [entry])
+     update_plan(socket, &GiftPlans.update_refresh_case(&1, socket.assigns.selected_milestone_id, id, fn refresh_case ->
+       Map.merge(refresh_case, %{
+         "action" => if(action in GiftPlans.refresh_actions(), do: action, else: refresh_case["action"]),
+         "affinity" => blank_to_nil(params["affinity"])
+       })
      end))}
   end
 
   @impl true
-  def handle_event("lib_add_affinity", _params, socket), do: {:noreply, socket}
-
-  @impl true
-  def handle_event("lib_reorder_gifts", %{"scope" => scope, "ids" => ids}, socket) do
-    [lib, id] = String.split(scope, ":")
-    {:noreply, update_plan(socket, &update_definition(&1, lib, id, fn definition -> Map.put(definition, "gifts", ids) end))}
+  def handle_event("ms_remove_refresh_case", %{"case_id" => id}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.remove_refresh_case(&1, socket.assigns.selected_milestone_id, id))}
   end
 
   @impl true
-  def handle_event("set_uptie_gift", %{"id" => id, "gift" => gift_name}, socket) do
-    {:noreply, update_plan(socket, &update_definition(&1, "upties", id, fn definition -> Map.merge(definition, %{"gift" => gift_name, "name" => gift_name}) end))}
+  def handle_event("ms_reorder_refresh", %{"ids" => ids}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.reorder_refresh_cases(&1, socket.assigns.selected_milestone_id, ids))}
   end
 
   @impl true
-  def handle_event("set_fusion_target", %{"id" => id, "gift" => gift_name}, socket) do
-    gift = socket.assigns.gifts_by_name[gift_name]
-    tier = gift.tier
+  def handle_event("ms_remove_entry", %{"entry" => entry_id}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.remove_entry(&1, socket.assigns.selected_milestone_id, entry_id))}
+  end
+
+  @impl true
+  def handle_event("ms_reorder_entries", %{"scope" => "group:" <> key, "ids" => ids}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.reorder_group(&1, socket.assigns.selected_milestone_id, key, ids))}
+  end
+
+  def handle_event("ms_reorder_entries", %{"scope" => id, "ids" => ids}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.reorder_entries(&1, id, ids))}
+  end
+
+  @impl true
+  def handle_event("ms_move_entry", %{"scope" => "group:" <> key, "id" => entry_id, "ids" => ids}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.join_group(&1, socket.assigns.selected_milestone_id, entry_id, key, ids))}
+  end
+
+  def handle_event("ms_move_entry", %{"id" => entry_id, "ids" => ids}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.leave_group(&1, socket.assigns.selected_milestone_id, entry_id, ids))}
+  end
+
+  @impl true
+  def handle_event("ms_update_segment", %{"entry" => entry_id, "from" => from, "segment" => params}, socket) do
+    {:noreply,
+     update_segment(socket, entry_id, from, fn segment ->
+       segment
+       |> Map.put("disposition", if(params["disposition"] in GiftPlans.dispositions(), do: params["disposition"], else: segment["disposition"]))
+       |> apply_goal(params["goal"])
+       |> Map.put("max", if(Map.has_key?(params, "max"), do: parse_optional_int(params["max"]), else: segment["max"]))
+     end)}
+  end
+
+  @impl true
+  def handle_event("ms_toggle", %{"entry" => entry_id, "from" => from, "field" => "fuse"}, socket) do
+    {:noreply, socket |> ensure_fusion(entry_id) |> update_segment(entry_id, from, &Map.put(&1, "fuse", &1["fuse"] != true))}
+  end
+
+  def handle_event("ms_toggle", %{"entry" => entry_id, "from" => from, "field" => "buy"}, socket) do
+    {:noreply,
+     update_segment(socket, entry_id, from, fn segment ->
+       if segment["buy"] == true and segment["disposition"] != "sell",
+         do: Map.put(segment, "buy", false),
+         else: Map.merge(segment, %{"buy" => true, "disposition" => if(segment["disposition"] == "sell", do: "keep", else: segment["disposition"])})
+     end)}
+  end
+
+  def handle_event("ms_toggle", %{"entry" => entry_id, "from" => from, "field" => "sell"}, socket) do
+    {:noreply,
+     update_segment(socket, entry_id, from, fn segment ->
+       if segment["disposition"] == "sell",
+         do: Map.put(segment, "disposition", "keep"),
+         else: Map.merge(segment, %{"disposition" => "sell", "buy" => false})
+     end)}
+  end
+
+  @impl true
+  def handle_event("ms_set_segment_mode", %{"entry" => entry_id, "from" => from, "mode" => mode}, socket) when mode in ~w(abandon change) do
+    key = tab_key(socket, entry_id)
 
     {:noreply,
-     update_plan(socket, fn data ->
-       update_definition(data, "fusions", id, fn
-         %{"type" => "fixed"} = definition ->
-           %{definition | "target" => gift_name, "name" => gift_name, "sub_fusions" => auto_sub_fusions(data, id, gift, socket.assigns.gifts_by_id)}
-
-         definition ->
-         routes =
-           case Routes.valid_for_tier(definition["routes"] || [], tier) do
-             [] -> RouteDefaults.get(tier)
-             kept -> kept
-           end
-
-         %{definition | "target" => gift_name, "name" => gift_name, "routes" => routes}
+     socket
+     |> for_group(entry_id, fn socket, id ->
+       update_segment(socket, id, from, fn segment ->
+         segment = Map.put(segment, "abandoned", mode == "abandon")
+         if mode == "change" and segment["disposition"] == "ignore", do: Map.put(segment, "disposition", "keep"), else: segment
        end)
+     end)
+     |> assign(:entry_tabs, Map.put(socket.assigns.entry_tabs, key, String.to_integer(from)))}
+  end
+
+  @impl true
+  def handle_event("ms_set_uptie", %{"entry" => entry_id, "from" => from, "level" => level}, socket) do
+    level = level |> parse_int(0) |> max(0) |> min(GiftPlans.max_uptie())
+    {:noreply, update_segment(socket, entry_id, from, &Map.put(&1, "uptie", level))}
+  end
+
+  @impl true
+  def handle_event("ms_split", %{"entry" => entry_id, "floor" => floor}, socket) when floor != "" do
+    floor = String.to_integer(floor)
+    key = tab_key(socket, entry_id)
+
+    {:noreply,
+     socket
+     |> for_group(entry_id, fn socket, id ->
+       socket
+       |> update_plan(&GiftPlans.split_entry(&1, socket.assigns.selected_milestone_id, id, floor))
+       |> set_scheduled(id)
+     end)
+     |> assign(:entry_tabs, Map.put(socket.assigns.entry_tabs, key, floor))}
+  end
+
+  @impl true
+  def handle_event("ms_split", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("ms_add_schedule", %{"entry" => entry_id}, socket) do
+    {:noreply, set_scheduled(socket, entry_id)}
+  end
+
+  @impl true
+  def handle_event("ms_remove_schedule", %{"entry" => entry_id}, socket) do
+    {:noreply,
+     for_group(socket, entry_id, fn socket, id ->
+       socket
+       |> update_segment(id, "1", fn segment ->
+         segment = Map.put(segment, "abandoned", false)
+         if segment["disposition"] == "ignore", do: Map.put(segment, "disposition", "keep"), else: segment
+       end)
+       |> update_plan(&GiftPlans.update_entry(&1, socket.assigns.selected_milestone_id, id, fn entry -> entry |> Map.put("scheduled", false) |> Map.delete("group") end))
      end)}
   end
 
   @impl true
-  def handle_event("set_sub_fusion", %{"def_id" => id, "ingredient" => ingredient} = params, socket) do
-    sub_id = blank_to_nil(params["sub"])
+  def handle_event("ms_move_segment", %{"entry" => entry_id, "from" => from, "to" => to}, socket) do
+    to = String.to_integer(to)
+    key = tab_key(socket, entry_id)
 
     {:noreply,
-     update_plan(socket, &update_definition(&1, "fusions", id, fn definition ->
-       subs = definition["sub_fusions"] || %{}
-       Map.put(definition, "sub_fusions", if(sub_id, do: Map.put(subs, ingredient, sub_id), else: Map.delete(subs, ingredient)))
-     end))}
+     socket
+     |> for_group(entry_id, fn socket, id -> update_plan(socket, &GiftPlans.move_segment(&1, socket.assigns.selected_milestone_id, id, String.to_integer(from), to)) end)
+     |> assign(:entry_tabs, Map.put(socket.assigns.entry_tabs, key, to))}
   end
 
   @impl true
-  def handle_event("create_sub_fusion", %{"def_id" => id, "ingredient" => ingredient}, socket) do
-    tier = socket.assigns.gifts_by_name[ingredient].tier
-    sub = %{GiftPlans.new_definition("fusions", ingredient, "tiered") | "target" => ingredient, "routes" => RouteDefaults.get(tier)}
+  def handle_event("ms_remove_segment", %{"entry" => entry_id, "from" => from}, socket) do
+    key = tab_key(socket, entry_id)
 
     {:noreply,
-     update_plan(socket, fn data ->
-       data
-       |> update_in(["library", "fusions"], &(&1 ++ [sub]))
-       |> update_definition("fusions", id, fn definition -> Map.put(definition, "sub_fusions", Map.put(definition["sub_fusions"] || %{}, ingredient, sub["id"])) end)
-     end)}
+     socket
+     |> for_group(entry_id, fn socket, id -> update_plan(socket, &GiftPlans.remove_segment(&1, socket.assigns.selected_milestone_id, id, String.to_integer(from))) end)
+     |> assign(:entry_tabs, Map.delete(socket.assigns.entry_tabs, key))}
   end
 
   @impl true
-  def handle_event("gifts_copy", %{"lib" => lib, "def_id" => id}, socket) do
-    definition = GiftPlans.find_definition(socket.assigns.plan_data, lib, id)
-    clipboard = %{name: definition["name"], lib: lib, gifts: definition["gifts"]}
-    {:noreply, assign(socket, :gift_clipboard, clipboard)}
+  def handle_event("ms_select_tab", %{"entry" => entry_id, "from" => from}, socket) do
+    {:noreply, assign(socket, :entry_tabs, Map.put(socket.assigns.entry_tabs, tab_key(socket, entry_id), String.to_integer(from)))}
   end
 
   @impl true
-  def handle_event("gifts_paste", %{"lib" => lib, "def_id" => id}, socket) do
-    case socket.assigns.gift_clipboard do
-      %{gifts: gifts} ->
-        {:noreply, update_plan(socket, &update_definition(&1, lib, id, fn definition -> Map.put(definition, "gifts", gifts) end))}
+  def handle_event("ms_add_goal", _params, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.add_goal(&1, socket.assigns.selected_milestone_id))}
+  end
 
-      nil -> {:noreply, socket}
-    end
+  @impl true
+  def handle_event("ms_set_goal_min", %{"letter" => letter, "min" => min}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.set_goal_min(&1, socket.assigns.selected_milestone_id, letter, parse_int(min, 1)))}
+  end
+
+  @impl true
+  def handle_event("ms_remove_goal", %{"letter" => letter}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.remove_goal(&1, socket.assigns.selected_milestone_id, letter))}
+  end
+
+  @impl true
+  def handle_event("ms_open_fusion", %{"entry" => entry_id}, socket) do
+    {:noreply, assign(socket, :fusion_entry_id, entry_id)}
+  end
+
+  @impl true
+  def handle_event("ms_close_fusion", _params, socket) do
+    {:noreply, assign(socket, :fusion_entry_id, nil)}
   end
 
   @impl true
   def handle_event("rt_copy", %{"def_id" => id}, socket) do
-    definition = GiftPlans.find_definition(socket.assigns.plan_data, "fusions", id)
-    target = socket.assigns.gifts_by_name[definition["target"]]
-
-    clipboard = %{name: definition["name"], tier: target.tier, routes: definition["routes"] || []}
+    {entry, gift} = fusion_entry(socket, id)
+    clipboard = %{name: gift.name, tier: gift.tier, routes: entry["fusion"]["routes"] || []}
     {:noreply, assign(socket, :route_clipboard, clipboard)}
   end
 
@@ -876,10 +908,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("rt_make_default", %{"def_id" => id}, socket) do
-    definition = GiftPlans.find_definition(socket.assigns.plan_data, "fusions", id)
-    tier = socket.assigns.gifts_by_name[definition["target"]].tier
+    {entry, %{tier: tier}} = fusion_entry(socket, id)
 
-    case RouteDefaults.put(tier, definition["routes"] || []) do
+    case RouteDefaults.put(tier, entry["fusion"]["routes"] || []) do
       :ok ->
         {:noreply,
          socket
@@ -893,8 +924,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("rt_use_default", %{"def_id" => id}, socket) do
-    definition = GiftPlans.find_definition(socket.assigns.plan_data, "fusions", id)
-    tier = socket.assigns.gifts_by_name[definition["target"]].tier
+    {_entry, %{tier: tier}} = fusion_entry(socket, id)
     {:noreply, update_routes(socket, id, fn _routes -> RouteDefaults.get(tier) end)}
   end
 
@@ -941,7 +971,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def gift_tiers, do: @gift_tiers
   def affinities, do: @affinities
   def palette_kinds, do: @palette_kinds
-  def library_kinds, do: @library_kinds
 
   def tab_label(:workflows), do: "Workflows"
   def tab_label(:shop), do: "Shop"
@@ -950,13 +979,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def accent_tab?(tab), do: tab in [:loadout]
 
   def searchable_gifts(gifts), do: Enum.filter(gifts, &GiftPlans.gift_searchable?/1)
-
-  def lib_label("upties"), do: "Uptie"
-  def lib_label("fusions"), do: "Fusion"
-  def lib_label("lists"), do: "List"
-
-  def lib_heading("lists"), do: "Item Lists"
-  def lib_heading(lib), do: "#{lib_label(lib)}s"
 
   def grace_pick(plan_data, index), do: Enum.find(plan_data["grace_picks"], &(&1["index"] == index))
 
@@ -987,78 +1009,77 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def selected_milestone(assigns), do: GiftPlans.find_milestone(assigns.plan_data, assigns.selected_milestone_id)
 
-  def milestone_entry_gift(%{lib: "fusions", definition: d}), do: d["target"]
-  def milestone_entry_gift(%{lib: "upties", definition: d}), do: d["gift"]
-  def milestone_entry_gift(%{lib: "lists", gift: gift}), do: gift
-  def milestone_entry_gift(_entry), do: nil
+  def active_from(entry_tabs, entry) do
+    froms = Enum.map(entry["floors"], & &1["from"])
 
-  def milestone_entry_kind(%{lib: "fusions"}), do: "fusion"
-  def milestone_entry_kind(%{lib: "upties"}), do: "uptie"
-  def milestone_entry_kind(%{lib: "lists"}), do: "list"
-  def milestone_entry_kind(%{lib: "milestones"}), do: "milestone"
-
-  def milestone_entry_label(%{lib: "fusions", definition: d}), do: "#{d["name"]} · #{d["target"] || "(no target)"}"
-  def milestone_entry_label(%{lib: "upties", definition: d}), do: "#{d["name"]} · #{d["gift"] || "(no gift)"} +#{d["target_level"]}"
-  def milestone_entry_label(%{lib: "lists", definition: d, gift: gift}), do: "#{GiftPlans.entry_label(gift)} · #{d["name"]}"
-  def milestone_entry_label(%{lib: "milestones", definition: d}), do: "#{d["name"]} (its entries run first)"
-
-  def includable_milestones(data, host_id) do
-    included = for %{"lib" => "milestones", "id" => id} <- GiftPlans.milestone_refs(GiftPlans.find_milestone(data, host_id) || %{}), do: id
-    Enum.reject(milestone_options(data, host_id), &(&1["id"] in included))
+    case entry_tabs[GiftPlans.group_key(entry)] do
+      from when is_integer(from) -> if from in froms, do: from, else: hd(froms)
+      _ -> hd(froms)
+    end
   end
 
-  def milestone_options(data, nil), do: data["milestones"]
-  def milestone_options(data, host_id), do: Enum.reject(data["milestones"], &GiftPlans.milestone_cycle?(data, host_id, &1["id"]))
+  def segment_label(entry, from) do
+    next = entry["floors"] |> Enum.map(& &1["from"]) |> Enum.filter(&(&1 > from)) |> Enum.min(fn -> nil end)
 
-  def selected_definition(assigns, lib), do: GiftPlans.find_definition(assigns.plan_data, lib, assigns.selected_def[lib])
-
-  def list_roles(data, id) do
-    steps = Enum.flat_map(data["workflows"], & &1["steps"])
-
-    [
-      Enum.any?(GiftPlans.protected_lists(data), &(&1["id"] == id)) && "protected",
-      Enum.any?(steps, &(&1["kind"] == "buy_list" and &1["list"] == id)) && "buy",
-      Enum.any?(steps, &(&1["kind"] == "sell" and &1["list"] == id)) && "sell"
-    ]
-    |> Enum.filter(& &1)
+    cond do
+      is_nil(next) -> "F#{from}+"
+      next - 1 == from -> "F#{from}"
+      true -> "F#{from}-#{next - 1}"
+    end
   end
 
-  def uncaptured_protected(data, workflow, gifts, gifts_by_name) do
-    kept = GiftPlans.keep_gifts(data)
+  @required_colors {"border-base-content/20 bg-base-content/10", "bg-neutral border-neutral text-neutral-content"}
 
-    data
-    |> GiftPlans.derived_protected(workflow, gifts)
-    |> Enum.reject(fn name ->
-      gift = gifts_by_name[name]
-      Enum.any?(kept, &(&1 == name or (gift && GiftPlans.entry_matches?(&1, gift))))
-    end)
+  @goal_colors [
+    {"bg-sky-500/15 border-sky-500/50", "bg-sky-600 border-sky-700 text-white"},
+    {"bg-amber-500/15 border-amber-500/50", "bg-amber-600 border-amber-700 text-white"},
+    {"bg-emerald-500/15 border-emerald-500/50", "bg-emerald-600 border-emerald-700 text-white"},
+    {"bg-fuchsia-500/15 border-fuchsia-500/50", "bg-fuchsia-600 border-fuchsia-700 text-white"},
+    {"bg-orange-500/15 border-orange-500/50", "bg-orange-600 border-orange-700 text-white"},
+    {"bg-teal-500/15 border-teal-500/50", "bg-teal-600 border-teal-700 text-white"},
+    {"bg-violet-500/15 border-violet-500/50", "bg-violet-600 border-violet-700 text-white"},
+    {"bg-lime-500/15 border-lime-500/50", "bg-lime-600 border-lime-700 text-white"}
+  ]
+
+  defp goal_colors("required"), do: @required_colors
+  defp goal_colors(<<letter, _::binary>>), do: Enum.at(@goal_colors, rem(letter - ?A, length(@goal_colors)))
+
+  def goal_color(goal), do: elem(goal_colors(goal), 0)
+
+  def goal_select_color("optional"), do: ""
+  def goal_select_color(goal), do: elem(goal_colors(goal), 1)
+
+  def action_repeats("heal"), do: [{"once", "Once each"}, {"until_full", "Until healed"}]
+  def action_repeats("heal_all"), do: [{"once", "1 time"}, {"2", "2 times"}, {"3", "3 times"}, {"until_full", "Until all healed"}]
+  def action_repeats(_action), do: []
+
+  def goal_label("required"), do: "Required"
+  def goal_label("optional"), do: "Optional"
+  def goal_label("abandon"), do: "Abandon"
+  def goal_label(letter), do: "Goal #{letter}"
+
+  def goal_member_count(milestone, letter) do
+    Enum.count(milestone["entries"] || [], fn entry -> Enum.any?(entry["floors"], &(&1["goal"] == letter and &1["disposition"] == "keep")) end)
+  end
+
+  def uptie_title(nil, _level), do: nil
+  def uptie_title(_gift, 0), do: "No uptie"
+
+  def uptie_title(gift, level) do
+    case GiftPlans.uptie_cost(gift.tier, 0, level) do
+      nil -> "Uptie to +#{level}"
+      cost -> "Uptie to +#{level} (#{cost} from +0, estimate)"
+    end
+  end
+
+  def recipe_parts(milestone, gift, gifts_by_id) do
+    names = for name <- GiftPlans.recipe_names(gift, gifts_by_id), do: {name, GiftPlans.has_gift?(milestone, name)}
+    slots = GiftPlans.fragment_slots(gift)
+    fragments = Enum.count(milestone["entries"] || [], &(GiftPlans.subject_gift(&1) in GiftPlans.sin_fragments()))
+    if slots > 0, do: names ++ [{"#{slots} Sin Fragments", fragments >= slots}], else: names
   end
 
   def step_broken?(data, step), do: match?({:error, _}, GiftPlans.definition_for(data, step))
-
-  def step_summary(data, %{"kind" => "uptie"} = step) do
-    case GiftPlans.definition_for(data, step) do
-      {:ok, defs} -> "up to #{step["max_gifts"]} · " <> Enum.map_join(defs, " › ", &"#{&1["gift"] || "(no gift)"} +#{&1["target_level"]}")
-      _ -> nil
-    end
-  end
-
-  def step_summary(data, %{"kind" => "fusion"} = step) do
-    case GiftPlans.definition_for(data, step) do
-      {:ok, defs} ->
-        targets = Enum.map_join(defs, " › ", &(&1["target"] || "(no target)"))
-        if is_integer(step["max_retries"]), do: "#{targets} · #{step["max_retries"]} retries", else: targets
-      _ -> nil
-    end
-  end
-
-  def step_summary(_data, %{"kind" => "buy_list", "done_at" => done_at}) when is_integer(done_at), do: "until owning #{done_at}"
-
-  def step_summary(_data, %{"kind" => "sell"} = step) do
-    source = if step["list"], do: "from list", else: Enum.map_join(step["tiers"] || [], " then ", &"T#{&1}")
-    stop = if step["stop_at_cost"], do: "until #{step["stop_at_cost"]} or ", else: "up to "
-    "#{source} · #{stop}#{step["max_items"]} sold"
-  end
 
   def step_summary(_data, %{"kind" => "skill_replace"} = step), do: Enum.map_join(step["options"] || [], ", ", &String.replace(&1, "_", "→"))
 
@@ -1096,36 +1117,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   def combo_meta(combo), do: "#{Combos.points(combo)} pts · #{Combos.keyword_odds(combo)}% keyword"
-
-  def fusion_target_eligible?(gift), do: gift.tier in 2..4 and GiftPlans.ingredient_ids(gift) == []
-
-  def fixed_target_eligible?(gift), do: GiftPlans.ingredient_ids(gift) != []
-
-  def sub_fusion_options(data, definition, ingredient) do
-    Enum.filter(data["library"]["fusions"], &(&1["target"] == ingredient and &1["id"] != definition["id"]))
-  end
-
-  defp auto_sub_fusions(data, id, gift, gifts_by_id) do
-    for name <- GiftPlans.ingredient_names(gift, gifts_by_id),
-        sub = Enum.find(data["library"]["fusions"], &(&1["target"] == name and &1["id"] != id)),
-        into: %{},
-        do: {name, sub["id"]}
-  end
-
-  def uptie_cost_hint(gift, definition) do
-    target = definition["target_level"]
-    tier = gift && gift.tier
-
-    [
-      GiftPlans.uptie_cost(tier, 0, target) && "0→#{target}: #{GiftPlans.uptie_cost(tier, 0, target)}",
-      target == 2 && GiftPlans.uptie_cost(tier, 1, 2) && "1→2: #{GiftPlans.uptie_cost(tier, 1, 2)}"
-    ]
-    |> Enum.filter(& &1)
-    |> Enum.join(" · ")
-  end
-
-
-  def fusion_ingredient_ids(gift), do: GiftPlans.ingredient_ids(gift)
 
   def filtered_gifts(gifts, filter, tier_filter, affinity_filter, sort_by) do
     gifts
@@ -1222,9 +1213,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> assign(:active_tab, :workflows)
     |> assign(:selected_workflow_id, nil)
     |> assign(:expanded_step_id, nil)
-    |> assign(:selected_def, %{})
     |> assign(:selected_milestone_id, nil)
-    |> assign(:shop_lib, "fusions")
+    |> assign(:editing_milestone_id, nil)
+    |> assign(:entry_tabs, %{})
+    |> assign(:fusion_entry_id, nil)
     |> assign(:add_target, "")
     |> reset_browser()
   end
@@ -1254,10 +1246,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         |> assign(:active_tab, :workflows)
         |> assign(:selected_workflow_id, first_id(data["workflows"]))
         |> assign(:expanded_step_id, nil)
-        |> assign(:selected_def, Map.new(GiftPlans.library_keys(), &{&1, first_id(data["library"][&1])}))
         |> assign(:selected_milestone_id, first_id(data["milestones"]))
+        |> assign(:editing_milestone_id, nil)
+        |> assign(:entry_tabs, %{})
+        |> assign(:fusion_entry_id, nil)
         |> assign(:add_target, "")
-        |> assign(:shop_lib, if(data["milestones"] != [], do: "milestones", else: Enum.find(GiftPlans.library_keys(), "fusions", &(data["library"][&1] != []))))
         |> reset_browser()
     end
   end
@@ -1271,7 +1264,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     end
   end
 
-  defp update_plan(socket, fun), do: socket |> assign(:plan_data, GiftPlans.prune_protected_floors(fun.(socket.assigns.plan_data))) |> persist_plan()
+  defp update_plan(socket, fun), do: socket |> assign(:plan_data, fun.(socket.assigns.plan_data)) |> persist_plan()
 
   defp update_workflow(data, id, fun) do
     Map.update!(data, "workflows", fn workflows -> Enum.map(workflows, &if(&1["id"] == id, do: fun.(&1), else: &1)) end)
@@ -1306,8 +1299,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     if GiftPlans.find_step(selected_workflow(assigns)["steps"], id), do: assigns.add_target, else: ""
   end
 
-  defp update_condition(socket, %{"milestone_id" => id}, fun) do
-    update_milestone(socket, id, fn milestone -> Map.put(milestone, "condition", milestone["condition"] |> fun.() |> GiftPlans.prune_condition()) end)
+  defp update_condition(socket, %{"case_id" => id}, fun) do
+    update_plan(socket, &GiftPlans.update_refresh_case(&1, socket.assigns.selected_milestone_id, id, fn refresh_case ->
+      Map.put(refresh_case, "condition", refresh_case["condition"] |> fun.() |> GiftPlans.prune_condition())
+    end))
   end
 
   defp update_condition(socket, %{"step_id" => id}, fun) do
@@ -1316,37 +1311,55 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp update_milestone(socket, id, fun), do: update_plan(socket, &GiftPlans.update_milestone(&1, id, fun))
 
-  defp update_routes(socket, id, fun) do
-    update_plan(socket, &update_definition(&1, "fusions", id, fn definition -> Map.update(definition, "routes", fun.([]), fun) end))
+  defp update_routes(socket, entry_id, fun) do
+    update_plan(socket, &GiftPlans.update_entry(&1, socket.assigns.selected_milestone_id, entry_id, fn entry ->
+      Map.update!(entry, "fusion", fn fusion -> Map.update(fusion, "routes", fun.([]), fun) end)
+    end))
   end
 
-  defp update_definition(data, lib, id, fun) do
-    update_in(data, ["library", lib], fn defs -> Enum.map(defs, &if(&1["id"] == id, do: fun.(&1), else: &1)) end)
+  defp apply_goal(segment, nil), do: segment
+  defp apply_goal(segment, "abandon"), do: Map.put(segment, "abandoned", true)
+
+  defp apply_goal(segment, goal) do
+    segment = Map.merge(segment, %{"goal" => goal, "abandoned" => false})
+    if segment["disposition"] == "ignore", do: Map.put(segment, "disposition", "keep"), else: segment
   end
 
-  defp select_definition(socket, lib, id) do
-    socket
-    |> assign(:selected_def, Map.put(socket.assigns.selected_def, lib, id))
-    |> assign(:shop_lib, lib)
-    |> assign(:selected_gift_name, nil)
+  defp set_scheduled(socket, entry_id) do
+    update_plan(socket, &GiftPlans.update_entry(&1, socket.assigns.selected_milestone_id, entry_id, fn entry -> Map.put(entry, "scheduled", true) end))
+  end
+
+  defp tab_key(socket, entry_id), do: GiftPlans.group_key(GiftPlans.find_entry(selected_milestone(socket.assigns), entry_id))
+
+  defp for_group(socket, entry_id, fun) do
+    socket.assigns
+    |> selected_milestone()
+    |> GiftPlans.group_members(entry_id)
+    |> Enum.reduce(socket, &fun.(&2, &1["id"]))
+  end
+
+  defp update_segment(socket, entry_id, from, fun) do
+    update_plan(socket, &GiftPlans.update_segment(&1, socket.assigns.selected_milestone_id, entry_id, String.to_integer(from), fun))
+  end
+
+  defp ensure_fusion(socket, entry_id) do
+    case fusion_entry(socket, entry_id) do
+      {%{"fusion" => nil}, %{} = gift} ->
+        fusion = GiftPlans.default_fusion(gift, &RouteDefaults.get/1)
+        update_plan(socket, &GiftPlans.update_entry(&1, socket.assigns.selected_milestone_id, entry_id, fn entry -> Map.put(entry, "fusion", fusion) end))
+
+      _ ->
+        socket
+    end
+  end
+
+  defp fusion_entry(socket, entry_id) do
+    entry = socket.assigns |> selected_milestone() |> GiftPlans.find_entry(entry_id)
+    {entry, socket.assigns.gifts_by_name[GiftPlans.subject_gift(entry)]}
   end
 
   defp apply_step_params(%{"kind" => "milestone"} = step, p), do: Map.put(step, "milestone", blank_to_nil(p["milestone"]))
-  defp apply_step_params(%{"kind" => "uptie"} = step, p), do: Map.put(step, "max_gifts", max(parse_int(p["max_gifts"], 1), 1))
-
-  defp apply_step_params(%{"kind" => "fusion"} = step, p) do
-    Map.put(step, "max_retries", if(p["max_retries"] in [nil, ""], do: nil, else: max(parse_int(p["max_retries"], 0), 0)))
-  end
-
-  defp apply_step_params(%{"kind" => "buy_list"} = step, p) do
-    %{step | "list" => blank_to_nil(p["list"])} |> Map.put("done_at", if(p["done_at"] in [nil, ""], do: nil, else: max(parse_int(p["done_at"], 1), 1)))
-  end
-
   defp apply_step_params(%{"kind" => "affinity_refresh"} = step, p), do: Map.put(step, "affinity", blank_to_nil(p["affinity"]))
-
-  defp apply_step_params(%{"kind" => "sell"} = step, p) do
-    %{Map.put(step, "list", blank_to_nil(p["list"])) | "stop_at_cost" => parse_optional_int(p["stop_at_cost"]), "max_items" => max(parse_int(p["max_items"], 1), 1)}
-  end
 
   defp apply_step_params(%{"kind" => "skill_replace"} = step, p), do: Map.put(step, "sinner", blank_to_nil(p["sinner"]))
   defp apply_step_params(%{"kind" => kind} = step, p) when kind in ["heal", "revive"], do: Map.put(step, "sinner", blank_to_nil(p["sinner"]))
@@ -1380,16 +1393,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   defp apply_repeat(step, _p), do: step
-
-  defp apply_definition_params("upties", definition, p) do
-    %{definition | "name" => p["name"] || definition["name"], "target_level" => parse_int(p["target_level"], 2)}
-  end
-
-  defp apply_definition_params("fusions", %{"type" => "fixed"} = definition, p) do
-    %{definition | "name" => p["name"] || definition["name"], "buy_missing" => p["buy_missing"] == "true"}
-  end
-
-  defp apply_definition_params(_lib, definition, p), do: Map.put(definition, "name", p["name"] || definition["name"])
 
   defp sort_schedule(rows) do
     case Enum.sort_by(rows, & &1["from_floor"]) do
@@ -1472,32 +1475,16 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <option value="refreshes_gte" selected={@node["op"] == "refreshes_gte"}>refreshes this shop at least</option>
       <option value="has_gift" selected={@node["op"] == "has_gift"}>owns gift</option>
       <option value="missing_gift" selected={@node["op"] == "missing_gift"}>doesn't own gift</option>
-      <option value="fusions_complete" selected={@node["op"] == "fusions_complete"}>all fusions complete</option>
-      <option value="upties_complete" selected={@node["op"] == "upties_complete"}>all upties complete</option>
-      <option value="fusion_done" selected={@node["op"] == "fusion_done"}>fusion done</option>
-      <option value="uptie_done" selected={@node["op"] == "uptie_done"}>uptie done</option>
       <option value="milestone" selected={@node["op"] == "milestone"}>milestone reached</option>
       <option value="milestone_not" selected={@node["op"] == "milestone_not"}>milestone not reached</option>
     </select>
     <%= cond do %>
       <% @node["op"] in ["cost_gte", "cost_lt", "refreshes_lt", "refreshes_gte"] -> %>
         <input type="number" name="value" value={@node["value"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
-      <% @node["op"] in ["fusions_complete", "upties_complete"] -> %>
-        <span class="flex-1"></span>
-      <% @node["op"] == "fusion_done" -> %>
-        <select name="fusion" class="select select-bordered select-xs flex-1 min-w-0">
-          <option value="">pick one</option>
-          <option :for={fusion <- @plan_data["library"]["fusions"]} value={fusion["id"]} selected={@node["fusion"] == fusion["id"]}><%= fusion["name"] %></option>
-        </select>
-      <% @node["op"] == "uptie_done" -> %>
-        <select name="uptie" class="select select-bordered select-xs flex-1 min-w-0">
-          <option value="">pick one</option>
-          <option :for={uptie <- @plan_data["library"]["upties"]} value={uptie["id"]} selected={@node["uptie"] == uptie["id"]}><%= uptie["name"] %></option>
-        </select>
       <% @node["op"] in ["milestone", "milestone_not"] -> %>
         <select name="milestone" class="select select-bordered select-xs flex-1 min-w-0">
           <option value="">pick one</option>
-          <option :for={milestone <- milestone_options(@plan_data, @milestone_host)} value={milestone["id"]} selected={@node["milestone"] == milestone["id"]}><%= milestone["name"] %></option>
+          <option :for={milestone <- @plan_data["milestones"]} value={milestone["id"]} selected={@node["milestone"] == milestone["id"]}><%= milestone["name"] %></option>
         </select>
       <% true -> %>
         <input type="text" name="gift" value={@node["gift"]} list="gift-name-options" phx-debounce="blur"
@@ -1507,56 +1494,265 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   attr :entry, :map, required: true
-  attr :milestone_id, :string, required: true
-  attr :letters, :list, required: true
-  attr :gifts_by_name, :map, required: true
+  attr :members, :list, required: true
+  attr :from, :integer, required: true
 
-  def milestone_entry_row(assigns) do
+  def schedule_tabs(assigns) do
+    froms = Enum.map(assigns.entry["floors"], & &1["from"])
+
+    abandoned_by_from =
+      Map.new(froms, fn from ->
+        {from,
+         Enum.map(assigns.members, fn member ->
+           segment = Enum.find(member["floors"], &(&1["from"] == from))
+           segment != nil and GiftPlans.abandoned?(member, segment)
+         end)}
+      end)
+
+    assigns =
+      assign(assigns,
+        froms: froms,
+        abandoned_froms: for({from, flags} <- abandoned_by_from, Enum.all?(flags), do: from),
+        kept_froms: for({from, flags} <- abandoned_by_from, not Enum.any?(flags), do: from)
+      )
+
     ~H"""
-    <div data-sort-id={GiftPlans.entry_key(@entry.ref)} data-sort-stay={GiftPlans.fixed_placement?(@entry.ref)}
-         class={"flex items-center gap-2 rounded px-1 py-0.5 " <> if(@entry.optional, do: "border border-dashed border-base-300 opacity-70", else: "bg-base-200")}>
-      <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
-      <span class="badge badge-ghost badge-xs w-16"><%= milestone_entry_kind(@entry) %></span>
-      <% gift = @gifts_by_name[milestone_entry_gift(@entry)] %>
-      <img :if={gift} src={gift.image_path} title={gift.name} class="w-6 h-6 rounded object-cover shrink-0" />
-      <span :if={is_nil(gift)} class="w-6 h-6 shrink-0"></span>
-      <span class="text-[11px] flex-1 truncate"><%= milestone_entry_label(@entry) %></span>
-      <span :if={GiftPlans.pattern_ref?(@entry.ref)} class="text-[11px] text-base-content/50" title="Tier and affinity entries are always optional: bought if seen on the shelf">optional, buy if seen</span>
-      <form :if={not GiftPlans.fixed_placement?(@entry.ref)} phx-change="set_entry_group">
-        <input type="hidden" name="milestone_id" value={@milestone_id} />
-        <input type="hidden" name="lib" value={@entry.lib} />
-        <input type="hidden" name="def_id" value={@entry.definition["id"]} />
-        <input :if={@entry.gift} type="hidden" name="gift" value={@entry.gift} />
-        <select name="group" class="select select-bordered select-xs">
-          <option value="" selected={is_nil(@entry.group) and not @entry.optional}>required</option>
-          <option value="optional" selected={@entry.optional}>optional</option>
-          <option :for={letter <- @letters} value={letter} selected={@entry.group == letter}>group <%= letter %></option>
-          <option value="new">new group</option>
-        </select>
-      </form>
-      <button type="button" phx-click="toggle_milestone" phx-value-milestone={@milestone_id}
-              phx-value-lib={@entry.lib} phx-value-id={@entry.definition["id"]} phx-value-gift={@entry.gift}
-              class="btn btn-ghost btn-2xs px-1 text-error" title="Remove from this milestone">✕</button>
+      <div class="flex items-end gap-0.5">
+        <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1 pb-0.5" title="Drag this schedule and its entries">⠿</span>
+        <div :for={from <- @froms}
+             class={"flex items-center gap-0.5 rounded-t-lg border border-b-0 px-2 py-0.5 text-[11px] " <>
+               if(from == @from, do: "border-primary bg-primary text-primary-content font-semibold", else: "border-primary/40 bg-primary/25 hover:bg-primary/40")}
+             style={if from in @abandoned_froms, do: StarlightBotWeb.Live.PackPlanEditorLive.disabled_stripes_style()}>
+          <button type="button" phx-click="ms_select_tab" phx-value-entry={@entry["id"]} phx-value-from={from}><%= segment_label(@entry, from) %></button>
+          <div class="dropdown">
+            <div tabindex="0" role="button" class="cursor-pointer opacity-60 hover:opacity-100" title={if from == 1, do: "Start later", else: "Change or abandon from a floor"}>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><path d="m6 9 6 6 6-6" /></svg>
+            </div>
+            <div tabindex="0" class={"dropdown-content z-30 mt-1 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg space-y-1 " <> if(from == 1, do: "w-max", else: "w-56")}>
+              <button :if={from == 1} type="button" phx-click="ms_set_segment_mode" phx-value-entry={@entry["id"]} phx-value-from={from}
+                      phx-value-mode={if from in @abandoned_froms, do: "change", else: "abandon"}
+                      class={"btn btn-xs " <> if(from in @abandoned_froms, do: "btn-primary", else: "btn-outline")}>Start later</button>
+              <div :if={from != 1} class="join w-full">
+                <button :for={{mode, label} <- [{"change", "Change at"}, {"abandon", "Abandon at"}]} type="button" phx-click="ms_set_segment_mode"
+                        phx-value-entry={@entry["id"]} phx-value-from={from} phx-value-mode={mode}
+                        class={"btn btn-xs join-item flex-1 whitespace-nowrap " <> if(from in if(mode == "abandon", do: @abandoned_froms, else: @kept_froms), do: "btn-primary", else: "btn-outline")}><%= label %></button>
+              </div>
+              <div :if={from != 1} class="grid grid-cols-5 gap-0.5">
+                <button :for={floor <- 2..GiftPlans.max_floor()} type="button" phx-click="ms_move_segment" phx-value-entry={@entry["id"]}
+                        phx-value-from={from} phx-value-to={floor} disabled={floor != from and floor in @froms}
+                        class={"btn btn-xs " <> if(floor == from, do: "btn-primary", else: "btn-ghost")}>F<%= floor %></button>
+              </div>
+            </div>
+          </div>
+          <button :if={from != 1} type="button" phx-click="ms_remove_segment" phx-value-entry={@entry["id"]} phx-value-from={from}
+                  class="opacity-60 hover:opacity-100" title={"Close this tab; #{segment_label(@entry, from)} use the earlier tab's settings"}>✕</button>
+          <button :if={from == 1 and length(@froms) == 1} type="button" phx-click="ms_remove_schedule" phx-value-entry={@entry["id"]}
+                  class="opacity-60 hover:opacity-100" title="Remove the schedule">✕</button>
+        </div>
+        <button type="button" phx-click="ms_split" phx-value-entry={@entry["id"]} phx-value-floor={Enum.max(@froms) + 1}
+                disabled={Enum.max(@froms) >= GiftPlans.max_floor()} title="New tab"
+                class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/20 disabled:opacity-30">+</button>
+      </div>
+    """
+  end
+
+  attr :milestone, :map, required: true
+  attr :entry_tabs, :map, required: true
+  attr :gifts_by_name, :map, required: true
+  attr :gifts_by_id, :map, required: true
+
+  def milestone_entries(assigns) do
+    ~H"""
+    <div id={"milestone-entries-#{@milestone["id"]}"} phx-hook="SortableList" data-sort-event="ms_reorder_entries" data-sort-move-event="ms_move_entry"
+         data-sort-shared={"ms-#{@milestone["id"]}"} data-sort-scope={@milestone["id"]} class="flex flex-col gap-1">
+      <%= for chunk <- entry_chunks(@milestone["entries"]) do %>
+        <%= case chunk do %>
+          <% {:single, entry} -> %>
+            <.milestone_entry_row entry={entry} milestone={@milestone} from={active_from(@entry_tabs, entry)} in_group={false}
+                                  gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+          <% {:group, key, [lead | _] = members} -> %>
+            <div data-sort-id={"group:#{key}"} data-sort-stay class="flex flex-col">
+              <.schedule_tabs entry={lead} members={members} from={active_from(@entry_tabs, lead)} />
+              <div id={"entry-group-#{key}"} phx-hook="SortableList" data-sort-event="ms_reorder_entries" data-sort-move-event="ms_move_entry"
+                   data-sort-shared={"ms-#{@milestone["id"]}"} data-sort-scope={"group:#{key}"} data-sort-highlight
+                   class="flex flex-col gap-1 min-h-8 p-1 border-2 border-primary rounded-b-lg rounded-tr-lg transition-colors">
+                <.milestone_entry_row :for={entry <- members} entry={entry} milestone={@milestone} from={active_from(@entry_tabs, entry)} in_group={true}
+                                      gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+              </div>
+            </div>
+        <% end %>
+      <% end %>
     </div>
     """
   end
 
-  attr :milestones, :list, required: true
-  attr :assigned, :map, required: true
-  attr :lib, :string, required: true
-  attr :def_id, :string, required: true
-  attr :gift, :string, default: nil
+  defp scheduled?(entry), do: entry["scheduled"] == true or length(entry["floors"]) > 1
 
-  def milestone_picker(assigns) do
+  def entry_chunks(entries) do
+    entries
+    |> Enum.chunk_by(&if(scheduled?(&1), do: {:group, GiftPlans.group_key(&1)}, else: {:single, &1["id"]}))
+    |> Enum.map(fn [first | _] = run -> if scheduled?(first), do: {:group, GiftPlans.group_key(first), run}, else: {:single, first} end)
+  end
+
+  attr :entry, :map, required: true
+  attr :milestone, :map, required: true
+  attr :from, :integer, required: true
+  attr :in_group, :boolean, required: true
+  attr :gifts_by_name, :map, required: true
+  attr :gifts_by_id, :map, required: true
+
+  def milestone_entry_row(assigns) do
+    entry = assigns.entry
+    segment = Enum.find(entry["floors"], &(&1["from"] == assigns.from))
+    pattern? = GiftPlans.pattern_entry?(entry)
+    action? = GiftPlans.action_entry?(entry)
+    gift = assigns.gifts_by_name[GiftPlans.subject_gift(entry)]
+    abandoned? = GiftPlans.abandoned?(entry, segment)
+    sell? = not abandoned? and segment["disposition"] == "sell"
+    keep? = not abandoned? and not sell? and not pattern?
+    buy? = not abandoned? and not sell? and segment["buy"] == true
+    made_from = keep? and segment["fuse"] == true and GiftPlans.fixed_fusion?(entry) and gift && recipe_parts(assigns.milestone, gift, assigns.gifts_by_id)
+
+    assigns =
+      assign(assigns,
+        segment: segment,
+        pattern?: pattern?,
+        action?: action?,
+        gift: gift,
+        keep?: keep?,
+        sell?: sell?,
+        buy?: buy?,
+        abandoned?: abandoned?,
+        made_from: made_from || nil,
+        fusable?: entry["fusion"] != nil or (gift != nil and GiftPlans.fusable?(gift)),
+        uptie?: gift != nil and String.trim(gift.uptie2 || "") != "",
+        surface:
+          cond do
+            abandoned? -> "border-base-300 bg-base-100"
+            sell? -> "border-error/40 bg-[color-mix(in_oklab,var(--color-error)_5%,var(--color-base-100))]"
+            action? and entry["subject"]["action"] == "skill_replace" -> "border-info/40 bg-info/10"
+            action? -> "border-success/40 bg-success/10"
+            keep? and segment["goal"] == "optional" -> "border-base-content/10 bg-base-300"
+            keep? -> goal_color(segment["goal"] || "required")
+            true -> "border-base-300 bg-base-200"
+          end
+      )
+
     ~H"""
-    <div :if={@milestones != []} class="flex items-center gap-1 flex-wrap">
-      <span class="text-[10px] text-base-content/50">Milestones</span>
-      <button :for={milestone <- @milestones} type="button" phx-click="toggle_milestone"
-              phx-value-lib={@lib} phx-value-id={@def_id} phx-value-gift={@gift} phx-value-milestone={milestone["id"]}
-              class={"btn btn-2xs " <> if(Map.has_key?(@assigned, milestone["id"]), do: "btn-secondary", else: "btn-outline")}>
-        <%= milestone["name"] %><%= if group = @assigned[milestone["id"]], do: " · #{group}" %>
-      </button>
-    </div>
+    <form data-sort-id={@entry["id"]} phx-change="ms_update_segment"
+          class={"border px-1 py-1 flex items-center gap-2 flex-wrap " <> @surface <> " rounded"}
+          style={
+            cond do
+              @abandoned? -> StarlightBotWeb.Live.PackPlanEditorLive.disabled_stripes_style()
+              @keep? and @segment["goal"] == "optional" -> "background-image: radial-gradient(color-mix(in oklab, var(--color-base-content) 16%, transparent) 0.9px, transparent 1.2px), radial-gradient(color-mix(in oklab, var(--color-base-content) 16%, transparent) 0.9px, transparent 1.2px); background-size: 8px 8px; background-position: -2px -2px, 2px 2px; background-clip: padding-box"
+              true -> nil
+            end
+          }>
+      <input type="hidden" name="entry" value={@entry["id"]} />
+      <input type="hidden" name="from" value={@from} />
+      <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
+      <div class="w-24 shrink-0">
+        <select :if={@keep? or (@abandoned? and not @pattern?)} name="segment[goal]"
+                class={"select select-bordered select-xs w-full " <> if(@abandoned?, do: "", else: goal_select_color(@segment["goal"] || "required"))}>
+          <option :for={goal <- ["required", "optional" | GiftPlans.goal_letters(@milestone)] ++ ["abandon"]} value={goal}
+                  selected={if @abandoned?, do: goal == "abandon", else: (@segment["goal"] || "required") == goal}><%= goal_label(goal) %></option>
+        </select>
+      </div>
+      <div class="flex items-center gap-1.5 w-52 min-w-0 shrink-0">
+        <img :if={@gift} src={@gift.image_path} data-gift-popup={@gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class="w-6 h-6 rounded object-cover shrink-0 cursor-pointer" />
+        <span :if={@gift} class="badge badge-ghost badge-xs">T<%= @gift.tier %></span>
+        <span :if={@pattern? and not @action?} class="badge badge-secondary badge-xs">any</span>
+        <span :if={@action?} class={"badge badge-xs " <> if(@entry["subject"]["action"] == "skill_replace", do: "badge-info", else: "badge-success")}>
+          <%= if @entry["subject"]["action"] == "skill_replace", do: "skill", else: "heal" %>
+        </span>
+        <span data-gift-popup={@gift && @gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class={"text-xs font-medium truncate " <> if(@gift, do: "cursor-pointer select-none", else: "")} title={GiftPlans.subject_label(@entry["subject"])}><%= GiftPlans.subject_label(@entry["subject"]) %></span>
+        <span :if={@action? and not @abandoned?} class="ml-auto pr-1 text-[11px] text-base-content/60 whitespace-nowrap">
+          Cost <%= case GiftPlans.action_cost_range(@entry["subject"]["action"], @segment) do
+            {same, same} -> same
+            {low, high} -> "#{low}-#{high}"
+          end %>
+        </span>
+      </div>
+      <%= cond do %>
+      <% @abandoned? -> %>
+        <span class="text-[11px] font-semibold text-base-content/60"><%= if @from == 1, do: "Not started", else: "Abandoned" %></span>
+      <% @action? -> %>
+        <div :if={@entry["subject"]["action"] in ["heal", "revive", "skill_replace"]} class="grid grid-cols-6 gap-0.5">
+          <button :for={sinner <- Teams.all_sinners()} type="button" phx-click="ms_toggle_heal_sinner"
+                  phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-sinner={sinner}
+                  class={"btn btn-xs " <> if(sinner in (@segment["sinners"] || []), do: "btn-success", else: "btn-outline")}><%= sinner_label(sinner) %></button>
+        </div>
+        <div :if={@entry["subject"]["action"] == "skill_replace"} class="join">
+          <button :for={option <- GiftPlans.skill_options()} type="button" phx-click="ms_toggle_skill_option"
+                  phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-option={option}
+                  class={"btn btn-xs join-item " <> if(option in (@segment["options"] || []), do: "btn-info", else: "btn-outline")}><%= skill_option_label(option) %></button>
+        </div>
+        <div :if={action_repeats(@entry["subject"]["action"]) != []} class="join">
+          <button :for={{repeat, label} <- action_repeats(@entry["subject"]["action"])} type="button" phx-click="ms_set_heal_repeat"
+                  phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-repeat={repeat}
+                  class={"btn btn-xs join-item " <> if((@segment["repeat"] || "once") == repeat, do: "btn-success", else: "btn-outline")}><%= label %></button>
+        </div>
+      <% true -> %>
+        <div class="min-w-16 shrink-0">
+          <div :if={not @pattern? and @uptie?} class="join">
+            <% current = @segment["uptie"] || 0 %>
+            <button :for={{level, icon} <- Enum.zip(1..GiftPlans.max_uptie(), ~w(+ ++))} type="button" phx-click="ms_set_uptie"
+                    phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-level={if current == level, do: 0, else: level}
+                    disabled={not @keep?} title={uptie_title(@gift, level)}
+                    class={"btn btn-xs join-item " <> if(@keep? and level <= current, do: "btn-secondary", else: "btn-outline")}>
+              <%= icon %>
+            </button>
+          </div>
+        </div>
+        <div class="join">
+          <button type="button" phx-click="ms_toggle" phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-field="buy"
+                  class={"btn btn-xs join-item " <> if(@buy?, do: "btn-secondary", else: "btn-outline")}>Buy</button>
+          <button type="button" phx-click="ms_toggle" phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-field="sell"
+                  class={"btn btn-xs join-item " <> if(@sell?, do: "btn-error", else: "btn-outline")}>Sell</button>
+        </div>
+        <div class="min-w-20 shrink-0">
+          <div :if={not @pattern?} class="join">
+            <button type="button" phx-click="ms_toggle" phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-field="fuse"
+                    disabled={not @keep? or not @fusable?}
+                    title={if not @fusable?, do: "This gift can't be fused"}
+                    class={"btn btn-xs join-item " <> if(@keep? and @segment["fuse"] == true and @entry["fusion"], do: "btn-secondary", else: "btn-outline")}>
+              Fuse
+            </button>
+            <button :if={@entry["fusion"] != nil and @keep? and @segment["fuse"] == true} type="button" phx-click="ms_open_fusion" phx-value-entry={@entry["id"]}
+                    class="btn btn-xs btn-outline join-item" title="Fusion settings">⚙</button>
+          </div>
+        </div>
+        <label :if={@sell? or (@pattern? and @buy?)} class="flex items-center gap-1">
+          <span class="text-[11px] text-base-content/60">Max per floor</span>
+          <input type="number" min="1" name="segment[max]" value={@segment["max"]} placeholder="no cap" phx-debounce="400" class="input input-bordered input-xs w-20" />
+        </label>
+      <% end %>
+      <span :if={@made_from} class="text-[11px] text-base-content/60 truncate min-w-0 max-w-64">
+        Made from:
+        <%= for {{name, present?}, index} <- Enum.with_index(@made_from) do %><%= if index > 0, do: ", " %><span class={if present?, do: "", else: "text-error font-semibold"}><%= name %></span><% end %>
+      </span>
+      <button :if={not @in_group} type="button" phx-click="ms_add_schedule" phx-value-entry={@entry["id"]} class="btn btn-ghost btn-xs ml-auto">Add Schedule</button>
+      <button type="button" phx-click="ms_remove_entry" phx-value-entry={@entry["id"]}
+              class={"btn btn-ghost btn-xs px-1 text-error " <> if(@in_group, do: "ml-auto", else: "")} title="Remove from this milestone">✕</button>
+    </form>
+    """
+  end
+
+  attr :gift, :map, required: true
+  attr :milestone, :map, required: true
+  attr :gifts_by_id, :map, required: true
+  attr :gifts_by_name, :map, required: true
+
+  def recipe_tree(assigns) do
+    ~H"""
+    <ul class="pl-4 flex flex-col gap-0.5 list-disc">
+      <li :for={{name, present?} <- recipe_parts(@milestone, @gift, @gifts_by_id)} class="text-[11px]">
+        <span class={if present?, do: "", else: "text-error font-semibold"}><%= name %></span>
+        <span :if={not present?} class="text-error">(not in this milestone)</span>
+        <% ingredient = @gifts_by_name[name] %>
+        <.recipe_tree :if={ingredient && GiftPlans.fixed_recipe?(ingredient)} gift={ingredient} milestone={@milestone} gifts_by_id={@gifts_by_id} gifts_by_name={@gifts_by_name} />
+      </li>
+    </ul>
     """
   end
 
@@ -1630,140 +1826,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     """
   end
 
-  attr :lib, :string, required: true
-  attr :defs, :list, required: true
-  attr :selected_id, :any, required: true
-  attr :roles, :any, default: nil
-
-  def library_list(assigns) do
-    ~H"""
-    <div class="flex flex-col gap-1">
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-semibold text-base-content/70"><%= lib_heading(@lib) %></span>
-        <%= if @lib == "fusions" do %>
-          <button phx-click="lib_add" phx-value-lib={@lib} phx-value-type="tiered" class="btn btn-primary btn-xs ml-auto">+ Tiered</button>
-          <button phx-click="lib_add" phx-value-lib={@lib} phx-value-type="fixed" class="btn btn-primary btn-xs">+ Fixed</button>
-        <% else %>
-          <button phx-click="lib_add" phx-value-lib={@lib} class="btn btn-primary btn-xs ml-auto">+ New</button>
-        <% end %>
-      </div>
-      <div :for={definition <- @defs}
-           phx-click="lib_select" phx-value-lib={@lib} phx-value-id={definition["id"]}
-           class={"flex items-center gap-1 rounded px-2 py-1 cursor-pointer text-xs " <>
-             if(definition["id"] == @selected_id, do: "bg-primary/10 border-l-2 border-primary", else: "hover:bg-base-200")}>
-        <span class="flex-1 truncate"><%= definition["name"] %></span>
-        <span :if={@lib == "fusions"} class={"badge badge-xs " <> if(GiftPlans.fixed_fusion?(definition), do: "badge-accent", else: "badge-ghost")}>
-          <%= if GiftPlans.fixed_fusion?(definition), do: "fixed", else: "tiered" %>
-        </span>
-        <span :for={role <- if(@roles, do: @roles.(definition["id"]), else: [])} class="badge badge-ghost badge-xs"><%= role %></span>
-        <button phx-click="lib_delete" phx-value-lib={@lib} phx-value-id={definition["id"]}
-                data-confirm={"Delete '#{definition["name"]}'? Steps using it will break."}
-                class="btn btn-ghost btn-2xs text-error">✕</button>
-      </div>
-      <div :if={@defs == []} class="text-[11px] text-base-content/40 italic">None yet.</div>
-    </div>
-    """
-  end
-
-  attr :step, :map, required: true
-  attr :field, :string, required: true
-  attr :defs, :list, required: true
-  attr :label, :string, required: true
-
-  def step_definition_list(assigns) do
-    assigns = assign(assigns, :by_id, Map.new(assigns.defs, &{&1["id"], &1}))
-
-    ~H"""
-    <div class="flex items-center gap-1 flex-wrap">
-      <span class="text-[11px] text-base-content/60"><%= @label %></span>
-      <div id={"#{@field}-#{@step["id"]}"} phx-hook="SortableList" data-sort-event="reorder_step_field"
-           data-sort-scope={"#{@step["id"]}:#{@field}"} class="flex items-center gap-1 flex-wrap">
-        <span :for={id <- @step[@field] || []} data-sort-id={id}
-              class={"badge badge-sm gap-1 " <> if(@by_id[id], do: "badge-secondary", else: "badge-error")}>
-          <span data-sort-handle class="cursor-grab">⠿</span><%= if d = @by_id[id], do: d["name"], else: "(deleted)" %>
-          <button type="button" phx-click="toggle_step_list_item" phx-value-id={@step["id"]} phx-value-field={@field} phx-value-item={id}>✕</button>
-        </span>
-      </div>
-      <button :for={d <- Enum.reject(@defs, &(&1["id"] in (@step[@field] || [])))} type="button"
-              phx-click="toggle_step_list_item" phx-value-id={@step["id"]} phx-value-field={@field} phx-value-item={d["id"]}
-              class="btn btn-outline btn-2xs">+ <%= d["name"] %></button>
-    </div>
-    """
-  end
-
-  attr :lib, :string, required: true
-  attr :definition, :map, required: true
-  attr :clipboard, :any, required: true
-
-  def gift_clipboard(assigns) do
-    ~H"""
-    <div class="flex items-center gap-2">
-      <button type="button" phx-click="gifts_copy" phx-value-lib={@lib} phx-value-def_id={@definition["id"]} class="btn btn-xs">Copy gifts</button>
-      <button type="button" phx-click="gifts_paste" phx-value-lib={@lib} phx-value-def_id={@definition["id"]} class="btn btn-xs"
-              disabled={is_nil(@clipboard)} data-confirm="Replace all gifts with the copied ones?">Paste gifts</button>
-      <span :if={@clipboard} class="text-[11px] text-base-content/60">
-        Clipboard: <%= @clipboard.name %> (<%= lib_label(@clipboard.lib) %>, <%= length(@clipboard.gifts) %> gift(s))
-      </span>
-    </div>
-    """
-  end
-
-  attr :plan_data, :map, required: true
-  attr :entry, :string, required: true
-
-  def protected_floors_picker(assigns) do
-    assigns = assign(assigns, :range, GiftPlans.protected_floors(assigns.plan_data, assigns.entry))
-
-    ~H"""
-    <form phx-change="set_protected_floors" class="flex items-center gap-0.5"
-          title={"Protected #{GiftPlans.protected_floors_label(@plan_data, @entry)}. On other floors it can be sold or used as fusion material. Shared by every list, fusion and uptie with this gift."}>
-      <input type="hidden" name="entry" value={@entry} />
-      <span class={"text-[10px] whitespace-nowrap " <> if(@range == {1, nil}, do: "text-base-content/40", else: "text-secondary font-semibold")}>Protected floors</span>
-      <select name="from" class="select select-bordered h-5 min-h-0 text-[10px] pl-1 pr-5 w-12">
-        <option :for={floor <- 1..GiftPlans.max_floor()} value={floor} selected={elem(@range, 0) == floor}>F<%= floor %></option>
-      </select>
-      <span class="text-[10px] text-base-content/40">to</span>
-      <select name="to" class="select select-bordered h-5 min-h-0 text-[10px] pl-1 pr-5 w-14">
-        <option :for={floor <- elem(@range, 0)..(GiftPlans.max_floor() - 1)//1} value={floor} selected={elem(@range, 1) == floor}>F<%= floor %></option>
-        <option value="" selected={is_nil(elem(@range, 1))}>end</option>
-      </select>
-    </form>
-    """
-  end
-
-  attr :lib, :string, required: true
-  attr :definition, :map, required: true
-  attr :gifts_by_name, :map, required: true
-  attr :selected_gift_name, :any, default: nil
-  slot :extra
-
-  def gift_order_list(assigns) do
-    ~H"""
-    <div id={"gift-order-#{@definition["id"]}"} phx-hook="SortableList" data-sort-event="lib_reorder_gifts"
-         data-sort-scope={"#{@lib}:#{@definition["id"]}"} class="flex flex-col gap-1">
-      <div :for={{name, index} <- Enum.with_index(@definition["gifts"], 1)} data-sort-id={name}
-           class="flex items-center gap-2 bg-base-200 rounded px-1 py-0.5">
-        <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
-        <span class="text-[10px] text-base-content/40 w-4 text-right"><%= index %></span>
-        <% gift = @gifts_by_name[name] %>
-        <div phx-click={gift && "show_gift"} phx-value-gift={gift && name}
-             class={"flex items-center gap-2 flex-1 min-w-0 " <> if(gift, do: "cursor-pointer", else: "")}>
-          <img :if={gift} src={gift.image_path} class="w-6 h-6 rounded object-cover" />
-          <span :if={gift} class="badge badge-ghost badge-xs">T<%= gift.tier %></span>
-          <span :if={GiftPlans.pattern_entry?(name)} class="badge badge-secondary badge-xs">any</span>
-          <span class={"text-[11px] flex-1 truncate " <> if(gift && @selected_gift_name == name, do: "font-semibold text-primary", else: "")}><%= GiftPlans.entry_label(name) %></span>
-        </div>
-        <%= render_slot(@extra, %{name: name, gift: gift}) %>
-        <button phx-click="lib_toggle_gift" phx-value-lib={@lib} phx-value-id={@definition["id"]} phx-value-gift={name}
-                class="btn btn-ghost btn-2xs px-1">✕</button>
-      </div>
-      <div :if={@definition["gifts"] == []} class="text-[11px] text-base-content/40 italic">
-        No gifts yet. Pick one from the browser below.
-      </div>
-    </div>
-    """
-  end
-
   attr :gifts, :list, required: true
   attr :gifts_by_id, :map, required: true
   attr :gift_filter, :string, required: true
@@ -1772,7 +1834,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :gift_sort, :string, required: true
   attr :selected_gift_name, :any, required: true
   attr :uptie_view, :string, required: true
-  attr :show_fusion_info, :boolean, default: false
   slot :form, required: true
 
   def gift_browser(assigns) do
@@ -1869,23 +1930,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
               <span class="text-[10px] text-base-content/40">uptie</span>
             </div>
             <p class="text-xs whitespace-pre-line"><%= gift_detail_text(selected, @uptie_view, @gifts_by_id) %></p>
-
-            <%= if @show_fusion_info do %>
-              <div class="border-t border-base-300 pt-1 flex flex-col gap-1">
-                <%= if fusion_ingredient_ids(selected) != [] do %>
-                  <span class="text-[11px] font-medium text-base-content/70">Fixed recipe — requires:</span>
-                  <div class="flex flex-wrap gap-1">
-                    <%= for ing_id <- fusion_ingredient_ids(selected) do %>
-                      <span class="badge badge-outline badge-xs"><%= gift_ref_name(ing_id, @gifts_by_id) || ing_id %></span>
-                    <% end %>
-                  </div>
-                <% else %>
-                  <span class="text-[11px] text-base-content/50">
-                    No fixed recipe — obtained via tier-based fusion (combine lower-tier <%= selected.affinity %> gifts).
-                  </span>
-                <% end %>
-              </div>
-            <% end %>
           </div>
 
           <div class="w-56 shrink-0 border-l border-base-300 pl-2 flex flex-col gap-2">

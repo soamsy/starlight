@@ -1,8 +1,7 @@
 defmodule StarlightBot.Automation.Shop.Actions.Heal do
   alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Automation.Shop.Ops
-  alias StarlightBot.Ctx
-  alias StarlightBot.GiftPlans
+  alias StarlightBot.{Ctx, GiftPlans, Teams}
 
   @menu_check_ms 1_000
   @heal_settle_poll_ms 200
@@ -63,6 +62,58 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
       {:error, reason} -> {:failed, inspect(reason), state}
     end
   end
+
+  def run_entries([], state, _ctx), do: {[], false, state}
+
+  def run_entries(entries, state, ctx) do
+    {lines, acted?, state} = Enum.reduce(entries, {[], false, state}, &run_entry(&1, &2, ctx))
+    {lines, acted?, close_menu(state, ctx)}
+  end
+
+  defp run_entry(%{subject: %{"action" => "heal_all"}, repeat: "until_full"}, acc, ctx), do: heal_all_until_healed(acc, ctx)
+  defp run_entry(%{subject: %{"action" => "heal_all"}, repeat: repeat}, acc, ctx), do: heal_up_to(%{"kind" => "heal_all"}, "all", GiftPlans.heal_all_times(repeat), acc, ctx)
+
+  defp run_entry(%{subject: %{"action" => "revive"}, sinners: sinners}, acc, ctx) do
+    Enum.reduce(sinners, acc, fn sinner, acc -> heal_up_to(%{"kind" => "revive", "sinner" => sinner}, "revive:#{sinner}", 1, acc, ctx) end)
+  end
+
+  defp run_entry(%{subject: %{"action" => "heal"}, sinners: sinners, repeat: repeat}, acc, ctx) do
+    limit = if repeat == "until_full", do: 2, else: 1
+    Enum.reduce(sinners, acc, fn sinner, acc -> heal_up_to(%{"kind" => "heal", "sinner" => sinner}, "heal:#{sinner}", limit, acc, ctx) end)
+  end
+
+  defp heal_up_to(step, key, limit, {lines, acted?, state} = acc, ctx) do
+    if healed_count(state, key) >= limit do
+      acc
+    else
+      case run(step, nil, state, ctx) do
+        {:done, detail, state} ->
+          state = Map.put(state, :healed, Map.update(Map.get(state, :healed, %{}), key, 1, &(&1 + 1)))
+          heal_up_to(step, key, limit, {lines ++ [detail], true, state}, ctx)
+
+        {:failed, detail, state} ->
+          {lines ++ ["heal: #{detail}"], acted?, state}
+
+        {:skipped, _detail, state} ->
+          {lines, acted?, state}
+      end
+    end
+  end
+
+  defp heal_all_until_healed({_lines, _acted?, state} = acc, ctx) do
+    done = healed_count(state, "all")
+
+    if done >= GiftPlans.heal_all_max() or everyone_healed?(state) do
+      acc
+    else
+      {_lines, _acted?, next_state} = next = heal_up_to(%{"kind" => "heal_all"}, "all", done + 1, acc, ctx)
+      if healed_count(next_state, "all") > done, do: heal_all_until_healed(next, ctx), else: next
+    end
+  end
+
+  defp healed_count(state, key), do: Map.get(Map.get(state, :healed, %{}), key, 0)
+
+  defp everyone_healed?(state), do: Enum.all?(Teams.all_sinners(), &(Ops.sinner_dead?(&1) == true or settled_full?(&1, state)))
 
   defp settled_full?(sinner, %{last_heal: healed}) when healed == sinner or healed == :all do
     Process.sleep(400)

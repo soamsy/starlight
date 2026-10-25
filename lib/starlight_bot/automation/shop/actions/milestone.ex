@@ -1,21 +1,90 @@
 defmodule StarlightBot.Automation.Shop.Actions.Milestone do
   alias StarlightBot.Automation.RunMemory
-  alias StarlightBot.Automation.Shop.Actions.Fusion
+  alias StarlightBot.Automation.Scripts.ShopRunner
+  alias StarlightBot.Automation.Shop.Actions.{AffinityRefresh, Fusion, Heal, Refresh, Sell, SkillReplace}
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.GiftPlans
 
   @passes [:upties, :buys, :fixed, :tiered, :upties]
   @max_actions 20
+  @max_refresh_rounds 20
 
-  def run(_step, milestone, state, ctx) do
+  def run(_step, milestone, state, ctx), do: run_rounds(milestone, state, ctx, 1, [], [])
+
+  defp run_rounds(milestone, state, ctx, round, details, outcomes) do
+    {outcome, detail, state} = work(milestone, state, ctx)
+    details = details ++ [detail]
+    outcomes = outcomes ++ [outcome]
+
+    case refresh_case(milestone, state, ctx) do
+      nil ->
+        finish(milestone, details, outcomes, state, ctx)
+
+      %{"action" => "leave"} ->
+        finish(milestone, details ++ ["leaving the shop"], outcomes, Map.put(state, :left, true), ctx)
+
+      _refresh_case when round >= @max_refresh_rounds ->
+        finish(milestone, details ++ ["stopped after #{@max_refresh_rounds} refreshes"], outcomes, state, ctx)
+
+      refresh_case ->
+        Ops.close_fuse_popup(ctx)
+
+        case refresh(refresh_case, state, ctx) do
+          {:done, refreshed, state} ->
+            Ops.detect_and_update_cost(ctx)
+            run_rounds(milestone, state, ctx, round + 1, details ++ [refreshed], outcomes ++ [:partial])
+
+          {_outcome, reason, state} ->
+            finish(milestone, details ++ ["refresh: #{reason}"], outcomes, state, ctx)
+        end
+    end
+  end
+
+  defp finish(milestone, details, outcomes, state, ctx) do
+    outcome =
+      cond do
+        reached?(milestone, state, ctx) and Enum.any?(outcomes, &(&1 == :done)) -> :done
+        Enum.any?(outcomes, &(&1 in [:done, :partial])) -> :partial
+        true -> List.last(outcomes)
+      end
+
+    {outcome, Enum.join(details, "; "), state}
+  end
+
+  defp refresh_case(%{"refresh" => [_ | _]} = milestone, state, ctx), do: GiftPlans.matching_refresh_case(milestone, ShopRunner.condition_env(state, ctx))
+  defp refresh_case(_milestone, _state, _ctx), do: nil
+
+  defp refresh(%{"action" => "affinity_refresh"} = refresh_case, state, ctx), do: AffinityRefresh.run(%{"affinity" => refresh_case["affinity"]}, nil, state, ctx)
+  defp refresh(_refresh_case, state, ctx), do: Refresh.run(%{}, nil, state, ctx)
+
+  defp refresh_preview(%{"refresh" => [_ | _]} = milestone, state, ctx) do
+    case refresh_case(milestone, state, ctx) do
+      nil -> ["no refresh case matches now"]
+      refresh_case -> ["then would #{refresh_label(refresh_case)}"]
+    end
+  end
+
+  defp refresh_preview(_milestone, _state, _ctx), do: []
+
+  defp refresh_label(%{"action" => "affinity_refresh", "affinity" => affinity}) when is_binary(affinity), do: "keyword refresh for #{affinity}"
+  defp refresh_label(%{"action" => action}), do: String.downcase(GiftPlans.refresh_action_label(action))
+
+  defp work(milestone, state, ctx) do
+    {sold_lines, sold?, state} = Sell.run_entries(sells(milestone, state), entries(milestone, state), keep(state), state, ctx)
+    {heal_lines, healed?, state} = Heal.run_entries(GiftPlans.heal_entries(entries(milestone, state)), state, ctx)
+    {replace_lines, replaced?, state} = SkillReplace.run_entries(GiftPlans.skill_replace_entries(entries(milestone, state)), state, ctx)
+    sell_lines = sold_lines ++ heal_lines ++ replace_lines
+    sold? = sold? or healed? or replaced?
+
     if reached?(milestone, state, ctx) do
-      {:skipped, "#{milestone["name"]} already reached", state}
+      detail = Enum.join(sell_lines ++ ["#{milestone["name"]} already reached"], "; ")
+      {if(sold?, do: :done, else: :skipped), detail, state}
     else
-      entries = GiftPlans.work_entries(state.plan, milestone["id"])
+      state = Map.put(state, :milestone_entries, entries(milestone, state))
 
       {lines, progressed?, state} =
-        Enum.reduce(@passes, {[], false, state}, fn pass, {lines, progressed?, state} ->
-          {pass_lines, pass_progressed?, state} = run_pass(pass, entries, state, ctx)
+        Enum.reduce(@passes, {sell_lines, sold?, state}, fn pass, {lines, progressed?, state} ->
+          {pass_lines, pass_progressed?, state} = run_pass(pass, milestone, state, ctx)
           {lines ++ pass_lines, progressed? or pass_progressed?, state}
         end)
 
@@ -30,26 +99,33 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
   end
 
   def preview(_step, milestone, state, ctx) do
+    sold = Sell.plan(sells(milestone, state), entries(milestone, state), keep(state), state, ctx)
+    selling = if sold == [], do: [], else: ["sell " <> Enum.map_join(sold, ", ", fn {gift, _entry} -> gift.name end)]
+    heals = milestone |> entries(state) |> GiftPlans.heal_entries() |> Enum.map(&heal_label/1)
+    selling = selling ++ if(heals == [], do: [], else: ["check heals: " <> Enum.join(heals, ", ")])
+    replaces = milestone |> entries(state) |> GiftPlans.skill_replace_entries() |> Enum.flat_map(& &1.sinners)
+    selling = selling ++ if(replaces == [], do: [], else: ["check skill replace for " <> Enum.join(Enum.uniq(replaces), ", ")])
+
     if reached?(milestone, state, ctx) do
-      {:would_run, "#{milestone["name"]} already reached", state}
+      {:would_run, Enum.join(selling ++ ["#{milestone["name"]} already reached"] ++ refresh_preview(milestone, state, ctx), "; "), state}
     else
-      all = GiftPlans.work_entries(state.plan, milestone["id"])
-      entries = Enum.filter(all, &GiftPlans.entry_needed?(state.plan, &1, env(state, ctx)))
-      optional = Enum.filter(all, &(&1.optional and GiftPlans.entry_status(state.plan, &1, env(state, ctx)) != :done))
+      progress = progress(milestone, state, ctx)
+      needed = Enum.filter(progress.entries, &GiftPlans.needed?(progress, &1))
+      optional = Enum.filter(progress.entries, &(&1.goal == "optional" and GiftPlans.status(progress, &1) != :done))
 
       plan =
         summarize([
-          {"uptie", entries |> of(:upties) |> Enum.map(& &1.definition["gift"])},
-          {"buy if on the shelf", entries |> of(:buys) |> Enum.map(&buy_name/1) |> Enum.reject(&owned?(&1, ctx)) |> Enum.uniq()},
-          {"fuse", entries |> of(:fixed) |> Enum.map(& &1.definition["target"])},
-          {"fuse", entries |> of(:tiered) |> tier_order(state) |> Enum.map(&"T#{target_tier(&1, state)} #{&1.definition["target"]}")}
+          {"uptie", needed |> upties(progress) |> Enum.map(& &1.gift)},
+          {"buy if on the shelf", needed |> Enum.filter(& &1.buy) |> Enum.map(& &1.gift) |> Enum.reject(&owned?(&1, ctx))},
+          {"fuse", needed |> fixed() |> Enum.map(& &1.gift)},
+          {"fuse", needed |> tiered() |> tier_order(state) |> Enum.map(&"T#{target_tier(&1, state)} #{&1.gift}")}
         ])
 
       extras =
         summarize([
-          {"uptie", optional |> of(:upties) |> Enum.map(& &1.definition["gift"])},
-          {"buy", optional |> Enum.filter(&(&1.lib == "lists")) |> Enum.map(&GiftPlans.entry_label(&1.gift))},
-          {"fuse", optional |> of(:fusions) |> Enum.map(& &1.definition["target"])}
+          {"uptie", optional |> upties(progress) |> Enum.map(& &1.gift)},
+          {"buy", (optional ++ ignored(progress)) |> Enum.filter(& &1.buy) |> Enum.map(&GiftPlans.subject_label(&1.subject))},
+          {"fuse", optional |> Enum.filter(& &1.fuse) |> Enum.map(& &1.gift)}
         ])
 
       detail =
@@ -60,13 +136,13 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
           {plan, extras} -> "would #{plan}, then uptie again; optionals if possible: #{extras}"
         end
 
-      {:would_run, detail, state}
+      {:would_run, Enum.join(selling ++ [detail] ++ refresh_preview(milestone, state, ctx), "; "), state}
     end
   end
 
-  defp run_pass(:upties, entries, state, ctx) do
+  defp run_pass(:upties, milestone, state, ctx) do
     Ops.close_fuse_popup(ctx)
-    {lines, progressed?} = uptie_loop(of(entries, :upties), state, RunMemory.cost(ctx) || 0, [], ctx)
+    {lines, progressed?} = uptie_loop(milestone, state, RunMemory.cost(ctx) || 0, [], ctx)
 
     if progressed? do
       Ops.recover_to_shop(ctx)
@@ -76,39 +152,45 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
     {lines, progressed?, state}
   end
 
-  defp run_pass(:buys, entries, state, ctx) do
-    {lines, progressed?} = buy_loop(of(entries, :buys), state, [], ctx)
-    {lines, progressed?, state}
+  defp run_pass(:buys, milestone, state, ctx) do
+    buy_loop(milestone, state, [], ctx)
   end
 
-  defp run_pass(:fixed, entries, state, ctx) do
-    fixed = of(entries, :fixed)
-    {required, optional} = split_optional(fixed)
-    {lines, progressed?, state} = fuse_each(required, state, ctx, &GiftPlans.entry_needed?(state.plan, &1, env(state, ctx)))
-    {more, more?, state} = fuse_each(optional, state, ctx, &(not owned?(&1.definition["target"], ctx) and ingredients_owned?(&1, state, ctx)))
+  defp run_pass(:fixed, milestone, state, ctx) do
+    progress = progress(milestone, state, ctx)
+    {required, optional} = progress.entries |> fixed() |> split_optional()
+    {lines, progressed?, state} = fuse_each(required, state, ctx, &GiftPlans.needed?(progress(milestone, state, ctx), &1))
+    {more, more?, state} = fuse_each(optional, state, ctx, &(not owned?(&1.gift, ctx) and ingredients_owned?(&1, state, ctx)))
     {lines ++ more, progressed? or more?, state}
   end
 
-  defp run_pass(:tiered, entries, state, ctx) do
-    {required, optional} = entries |> of(:tiered) |> tier_order(state) |> split_optional()
-    {lines, progressed?, state} = fuse_each(required, state, ctx, &GiftPlans.entry_needed?(state.plan, &1, env(state, ctx)))
-    fusions_done? = fn -> entries |> of(:fusions) |> Enum.reject(& &1.optional) |> Enum.all?(&(not GiftPlans.entry_needed?(state.plan, &1, env(state, ctx)))) end
-    {more, more?, state} = fuse_each(optional, state, ctx, &(not owned?(&1.definition["target"], ctx) and fusions_done?.()))
+  defp run_pass(:tiered, milestone, state, ctx) do
+    progress = progress(milestone, state, ctx)
+    {required, optional} = progress.entries |> tiered() |> tier_order(state) |> split_optional()
+    {lines, progressed?, state} = fuse_each(required, state, ctx, &GiftPlans.needed?(progress(milestone, state, ctx), &1))
+
+    fusions_done? = fn ->
+      now = progress(milestone, state, ctx)
+      now.entries |> Enum.filter(& &1.fuse) |> Enum.reject(&(&1.goal == "optional")) |> Enum.all?(&(not GiftPlans.needed?(now, &1)))
+    end
+
+    {more, more?, state} = fuse_each(optional, state, ctx, &(not owned?(&1.gift, ctx) and fusions_done?.()))
     {lines ++ more, progressed? or more?, state}
   end
 
-  defp uptie_loop(_entries, _state, _cost, done, _ctx) when length(done) >= @max_actions, do: {["upties: " <> Enum.join(done, ", ")], true}
+  defp uptie_loop(_milestone, _state, _cost, done, _ctx) when length(done) >= @max_actions, do: {["upties: " <> Enum.join(done, ", ")], true}
 
-  defp uptie_loop(entries, state, cost, done, ctx) do
-    {required, optional} = split_optional(entries)
+  defp uptie_loop(milestone, state, cost, done, ctx) do
+    progress = progress(milestone, state, ctx)
+    {required, optional} = progress.entries |> upties(progress) |> split_optional()
 
     needed =
-      Enum.filter(required, &GiftPlans.entry_needed?(state.plan, &1, env(state, ctx))) ++
-        Enum.filter(optional, &(GiftPlans.entry_status(state.plan, &1, env(state, ctx)) == :partial))
+      Enum.filter(required, &GiftPlans.needed?(progress, &1)) ++
+        Enum.filter(optional, &(GiftPlans.status(progress, &1) == :partial))
 
-    needed = Enum.map(needed, & &1.definition)
+    definitions = Enum.map(needed, &%{"gift" => &1.gift, "target_level" => &1.uptie})
 
-    case GiftPlans.uptie_plan(needed, RunMemory.ego_gifts(ctx), state.gifts_by_name, cost, 1) do
+    case GiftPlans.uptie_plan(definitions, RunMemory.ego_gifts(ctx), state.gifts_by_name, cost, 1) do
       {[item], _reason} ->
         case Ops.uptie_gift(item.gift.id, item.from, item.to, ctx) do
           {:ok, level} ->
@@ -117,7 +199,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
             price = GiftPlans.uptie_cost(item.gift.tier, item.from, level) || item.price
 
             if level == item.to,
-              do: uptie_loop(entries, state, cost - price, done, ctx),
+              do: uptie_loop(milestone, state, cost - price, done, ctx),
               else: uptie_summary(done, "couldn't afford +#{item.to}")
 
           {:error, reason} ->
@@ -134,15 +216,21 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
   defp uptie_summary(done, nil), do: {["uptied " <> Enum.join(done, ", ")], true}
   defp uptie_summary(done, reason), do: {["uptied #{Enum.join(done, ", ")} (#{reason})"], true}
 
-  defp buy_loop(_entries, _state, bought, _ctx) when length(bought) >= @max_actions, do: buy_summary(bought, nil)
+  defp buy_loop(_milestone, state, bought, _ctx) when length(bought) >= @max_actions, do: buy_done(bought, nil, state)
 
-  defp buy_loop(entries, state, bought, ctx) do
-    {required, optional} = split_optional(entries)
-    wanted = required |> Enum.filter(&GiftPlans.entry_needed?(state.plan, &1, env(state, ctx))) |> Enum.map(&buy_name/1) |> Enum.reject(&owned?(&1, ctx)) |> Enum.uniq()
-    extras = optional |> Enum.filter(&(&1.lib == "lists")) |> Enum.map(& &1.gift) |> Enum.reject(&(not GiftPlans.pattern_entry?(&1) and owned?(&1, ctx))) |> Enum.uniq()
+  defp buy_loop(milestone, state, bought, ctx) do
+    progress = progress(milestone, state, ctx)
+    buyable = Enum.filter(progress.entries, & &1.buy)
+    wanted = buyable |> Enum.filter(&GiftPlans.needed?(progress, &1)) |> Enum.reject(&owned?(&1.gift, ctx))
+
+    extras =
+      Enum.filter(buyable, fn entry ->
+        (entry.goal == "optional" and GiftPlans.status(progress, entry) == :open and not owned?(entry.gift, ctx)) or
+          (entry.disposition == "ignore" and under_buy_cap?(entry, state))
+      end)
 
     if wanted == [] and extras == [] do
-      buy_summary(bought, nil)
+      buy_done(bought, nil, state)
     else
       case Ops.shelf_items(ctx) do
         {:ok, items} ->
@@ -152,13 +240,29 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
           end
           |> Ops.buy_first_affordable(ctx)
           |> case do
-            {:bought, item} -> buy_loop(entries, state, bought ++ [item.gift_name], ctx)
-            :none_available -> buy_summary(bought, if(bought == [], do: "nothing wanted and affordable on the shelf"))
+            {:bought, item} -> buy_loop(milestone, count_bought(state, item, wanted ++ extras), bought ++ [item.gift_name], ctx)
+            :none_available -> buy_done(bought, if(bought == [], do: "nothing wanted and affordable on the shelf"), state)
           end
 
         {:error, reason} ->
-          buy_summary(bought, "shelf scan failed: #{inspect(reason)}")
+          buy_done(bought, "shelf scan failed: #{inspect(reason)}", state)
       end
+    end
+  end
+
+  defp buy_done(bought, reason, state) do
+    {lines, progressed?} = buy_summary(bought, reason)
+    {lines, progressed?, state}
+  end
+
+  defp under_buy_cap?(entry, state), do: not (is_integer(entry.max) and Map.get(Map.get(state, :bought, %{}), entry.id, 0) >= entry.max)
+
+  defp count_bought(state, item, entries) do
+    gift = Map.get(state, :gifts_by_id, %{})[item.gift_id] || %{name: item.gift_name, tier: nil}
+
+    case Enum.find(entries, &GiftPlans.subject_matches?(&1.subject, gift)) do
+      %{max: max, id: id} when is_integer(max) -> Map.put(state, :bought, Map.update(Map.get(state, :bought, %{}), id, 1, &(&1 + 1)))
+      _ -> state
     end
   end
 
@@ -170,9 +274,9 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
   defp fuse_each(entries, state, ctx, eligible?) do
     Enum.reduce(entries, {[], false, state}, fn entry, {lines, progressed?, state} ->
       if eligible?.(entry) do
-        {outcome, detail, state} = Fusion.obtain(entry.definition, %{"max_retries" => nil}, state, ctx, [])
+        {outcome, detail, state} = Fusion.obtain(entry, %{"max_retries" => nil}, state, ctx, [])
         if outcome == :failed, do: Ops.recover_to_shop(ctx)
-        {lines ++ ["#{entry.definition["name"]}: #{detail}"], progressed? or outcome in [:done, :partial], state}
+        {lines ++ ["#{entry.gift}: #{detail}"], progressed? or outcome in [:done, :partial], state}
       else
         {lines, progressed?, state}
       end
@@ -183,22 +287,25 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
     items
     |> Enum.reject(&owned?(&1.gift_name, ctx))
     |> Enum.uniq_by(& &1.gift_id)
-    |> Enum.map(&{&1, GiftPlans.list_rank(entries, Map.get(state, :gifts_by_id, %{})[&1.gift_id] || %{name: &1.gift_name, tier: nil})})
+    |> Enum.map(fn item ->
+      gift = Map.get(state, :gifts_by_id, %{})[item.gift_id] || %{name: item.gift_name, tier: nil}
+      {item, Enum.find_index(entries, &GiftPlans.subject_matches?(&1.subject, gift))}
+    end)
     |> Enum.reject(fn {_item, rank} -> is_nil(rank) end)
     |> Enum.sort_by(fn {_item, rank} -> rank end)
     |> Enum.map(fn {item, _rank} -> item end)
   end
 
-  defp split_optional(entries), do: entries |> Enum.split_with(& &1.optional) |> then(fn {optional, required} -> {required, optional} end)
+  defp split_optional(entries), do: entries |> Enum.split_with(&(&1.goal == "optional")) |> then(fn {optional, required} -> {required, optional} end)
 
   defp ingredients_owned?(entry, state, ctx) do
-    case state.gifts_by_name[entry.definition["target"]] do
+    case state.gifts_by_name[entry.gift] do
       nil ->
         false
 
       target ->
         inventory = RunMemory.ego_gifts(ctx)
-        ids = GiftPlans.ingredient_ids(target)
+        ids = GiftPlans.recipe_ids(target)
         ids != [] and Enum.all?(ids, &Map.has_key?(inventory, &1))
     end
   end
@@ -206,35 +313,57 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
   defp summarize(sections) do
     sections
     |> Enum.reject(fn {_verb, names} -> names == [] end)
-    |> Enum.map_join("; ", fn {verb, names} -> "#{verb} #{Enum.join(names, ", ")}" end)
+    |> Enum.map_join("; ", fn {verb, names} -> "#{verb} #{Enum.join(Enum.uniq(names), ", ")}" end)
   end
 
-  defp of(entries, :upties), do: Enum.filter(entries, &(&1.lib == "upties"))
-  defp of(entries, :fusions), do: Enum.filter(entries, &(&1.lib == "fusions"))
-  defp of(entries, :buys), do: Enum.filter(entries, &(&1.lib in ["lists", "upties", "fusions"]))
-  defp of(entries, :fixed), do: Enum.filter(entries, &(&1.lib == "fusions" and GiftPlans.fixed_fusion?(&1.definition)))
-  defp of(entries, :tiered), do: Enum.filter(entries, &(&1.lib == "fusions" and not GiftPlans.fixed_fusion?(&1.definition)))
+  defp upties(entries, progress), do: Enum.filter(entries, &(&1.uptie > 0 and not MapSet.member?(progress.pending, &1.gift)))
+  defp fixed(entries), do: Enum.filter(entries, &(&1.fuse and GiftPlans.fixed_fusion?(&1)))
+  defp tiered(entries), do: Enum.filter(entries, &(&1.fuse and GiftPlans.tiered_fusion?(&1)))
+  defp ignored(progress), do: Enum.filter(progress.entries, &(&1.disposition == "ignore"))
 
-  defp buy_name(%{lib: "lists", gift: gift}), do: gift
-  defp buy_name(%{lib: "upties", definition: definition}), do: definition["gift"]
-  defp buy_name(%{lib: "fusions", definition: definition}), do: definition["target"]
+  defp heal_label(%{subject: %{"action" => "heal_all"}} = entry), do: GiftPlans.subject_label(entry.subject)
+  defp heal_label(entry), do: "#{GiftPlans.subject_label(entry.subject)} #{Enum.join(entry.sinners, ", ")}"
 
+  defp owned?(nil, _ctx), do: false
   defp owned?(name, ctx), do: ctx |> RunMemory.ego_gifts() |> Enum.any?(fn {_id, entry} -> entry.name == name end)
 
   defp tier_order(entries, state), do: Enum.sort_by(entries, &(-target_tier(&1, state)))
 
   defp target_tier(entry, state) do
-    case state.gifts_by_name[entry.definition["target"]] do
+    case state.gifts_by_name[entry.gift] do
       %{tier: tier} when is_integer(tier) -> tier
       _ -> 0
     end
   end
 
-  defp reached?(milestone, state, ctx), do: GiftPlans.milestone_reached?(state.plan, milestone["id"], env(state, ctx))
+  defp sells(milestone, state), do: milestone |> entries(state) |> GiftPlans.sell_entries()
+  defp entries(milestone, state), do: GiftPlans.resolved_entries(milestone, shop_floor(state))
+
+  defp keep(state), do: Map.get_lazy(state, :protected, fn -> GiftPlans.keep_set(state.plan, shop_floor(state)) end)
+
+  defp shop_floor(state), do: Map.get(state, :floor) || 1
+
+  defp progress(milestone, state, ctx), do: GiftPlans.progress(state.plan, milestone["id"], env(state, ctx))
+
+  defp reached?(milestone, state, ctx), do: milestone |> progress(state, ctx) |> GiftPlans.reached?()
 
   defp env(state, ctx) do
     inventory = RunMemory.ego_gifts(ctx)
-    %{plan: state.plan, wallet: wallet(state, ctx), gifts: state.gifts_by_name, refreshes: Map.get(state, :refreshes, 0), owned: inventory |> Map.values() |> MapSet.new(& &1.name), inventory: inventory}
+
+    env = %{
+      plan: state.plan,
+      floor: shop_floor(state),
+      wallet: wallet(state, ctx),
+      gifts: state.gifts_by_name,
+      refreshes: Map.get(state, :refreshes, 0),
+      owned: inventory |> Map.values() |> MapSet.new(& &1.name),
+      inventory: inventory
+    }
+
+    case Map.get(state, :gifts_by_id) do
+      nil -> env
+      by_id -> Map.put(env, :gifts_by_id, by_id)
+    end
   end
 
   defp wallet(state, ctx) do

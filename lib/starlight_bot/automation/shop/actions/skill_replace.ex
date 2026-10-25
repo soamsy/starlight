@@ -21,6 +21,19 @@ defmodule StarlightBot.Automation.Shop.Actions.SkillReplace do
     end
   end
 
+  def run_entries(entries, state, ctx) do
+    attempts = for entry <- entries, sinner <- entry.sinners, entry.options != [], do: %{"sinner" => sinner, "options" => entry.options}
+
+    Enum.reduce_while(attempts, {[], false, state}, fn step, {lines, _acted?, state} ->
+      case run(step, nil, state, ctx) do
+        {:done, detail, state} -> {:halt, {lines ++ [detail], true, state}}
+        {:failed, detail, state} -> {:cont, {lines ++ ["skill replace: #{detail}"], false, state}}
+        {:skipped, "skill replacement already purchased in this shop", state} -> {:halt, {lines, false, state}}
+        {:skipped, _detail, state} -> {:cont, {lines, false, state}}
+      end
+    end)
+  end
+
   defp replace(sinner, options, state, ctx) do
     case Ops.replace_skill(sinner, options, ctx) do
       {:ok, option} ->

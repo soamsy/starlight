@@ -9,11 +9,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
   @actions %{
     "budget" => Actions.Budget,
     "refresh" => Actions.Refresh,
-    "buy_list" => Actions.BuyList,
-    "fusion" => Actions.Fusion,
     "milestone" => Actions.Milestone,
-    "sell" => Actions.Sell,
-    "uptie" => Actions.Uptie,
     "affinity_refresh" => Actions.AffinityRefresh,
     "heal" => Actions.Heal,
     "heal_all" => Actions.Heal,
@@ -21,16 +17,12 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     "skill_replace" => Actions.SkillReplace
   }
   @previews %{
-    "fusion" => Actions.Fusion,
     "milestone" => Actions.Milestone,
-    "sell" => Actions.Sell,
-    "uptie" => Actions.Uptie,
     "skill_replace" => Actions.SkillReplace,
     "revive" => Actions.Heal
   }
 
   @heal_kinds ["heal", "heal_all", "revive"]
-  @fusion_kinds ["fusion"]
   @assumed_starting_cost 200
 
   def run(ctx), do: Engine.act(program(:run), ctx)
@@ -58,7 +50,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     with {:ok, plan} <- fetch_plan(ctx),
          {:ok, workflow} <- fetch_workflow(plan, ctx),
          steps = Enum.filter(workflow["steps"], &(&1["enabled"] != false)),
-         keep_open? = mode == :run and sell_first?(GiftPlans.expand_steps(plan, workflow)),
+         keep_open? = mode == :run and sell_first?(plan, GiftPlans.expand_steps(plan, workflow), RunMemory.floor(ctx)),
          {:ok, _} <- Ops.check_inventory(ctx, keep_open?) do
       state = %{initial_state(plan, workflow, mode, ctx) | sell_popup_open: keep_open?}
       Ctx.log(ctx, :info, "shop runner: floor #{state.floor}, #{state.shop_type} shop, workflow #{workflow["name"]}")
@@ -111,9 +103,12 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       reserve: (progress && progress.reserve) || 0,
       refreshes: (progress && progress[:refreshes]) || 0,
       replaced: (progress && progress[:replaced]) || MapSet.new(),
+      sold: (progress && progress[:sold]) || %{},
+      bought: (progress && progress[:bought]) || %{},
+      healed: (progress && progress[:healed]) || %{},
       gifts_by_name: Map.new(gifts, &{&1.name, &1}),
       gifts_by_id: Map.new(gifts, &{&1.id, &1}),
-      protected: GiftPlans.protected_set(plan, workflow, gifts, floor),
+      protected: GiftPlans.keep_set(plan, floor),
       sell_popup_open: false,
       heal_menu_open: false,
       last_heal: nil,
@@ -145,9 +140,9 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
 
   defp step_key(step, state), do: state.label_prefix <> to_string(step["id"])
 
-  defp sell_first?(steps) do
+  defp sell_first?(plan, steps, floor) do
     case Enum.reject(steps, &(&1["kind"] == "budget")) do
-      [%{"kind" => "sell"} | _] -> true
+      [%{"kind" => "milestone", "milestone" => id} | _] -> plan |> GiftPlans.find_milestone(id) |> GiftPlans.resolved_entries(floor) |> GiftPlans.sell_entries() != []
       _ -> false
     end
   end
@@ -323,9 +318,18 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
 
   defp condition_met?(step, state, ctx), do: GiftPlans.eval_condition(step["condition"], condition_env(state, ctx))
 
-  defp condition_env(state, ctx) do
+  def condition_env(state, ctx) do
     inventory = RunMemory.ego_gifts(ctx)
-    %{wallet: wallet(state, ctx), owned: owned_names(inventory), inventory: inventory, plan: state.plan, gifts: state.gifts_by_name, refreshes: state.refreshes}
+    %{
+      wallet: wallet(state, ctx),
+      owned: owned_names(inventory),
+      inventory: inventory,
+      plan: state.plan,
+      floor: state.floor,
+      gifts: state.gifts_by_name,
+      gifts_by_id: state.gifts_by_id,
+      refreshes: state.refreshes
+    }
   end
 
   defp milestone_reached?(%{"kind" => "milestone", "milestone" => id}, state, ctx) when is_binary(id),
@@ -361,9 +365,9 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
   end
 
   defp run_action_step(step, state, mode, ctx) do
-    state = if step["kind"] in ["sell", "budget"], do: state, else: close_sell_popup(state, ctx)
+    state = if step["kind"] in ["milestone", "budget"], do: state, else: close_sell_popup(state, ctx)
     state = if step["kind"] in @heal_kinds ++ ["budget"], do: state, else: close_heal_menu(state, ctx)
-    if mode == :run and step["kind"] not in @fusion_kinds ++ ["budget"], do: Ops.close_fuse_popup(ctx)
+    if mode == :run and step["kind"] != "budget", do: Ops.close_fuse_popup(ctx)
     label = state.label_prefix <> GiftPlans.step_label(state.plan, step)
     RunMemory.put(ctx, :task, "shop: #{label}")
 
@@ -410,8 +414,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       module.run(step, definition, state, ctx)
     else
       :error -> {:not_implemented, "no automation for #{step["kind"]} yet", state}
-      {:error, :missing_definition} -> {:failed, "references a deleted definition", state}
-      {:error, :no_definitions} -> {:failed, "no definitions selected", state}
+      {:error, :missing_definition} -> {:failed, "references a deleted milestone", state}
     end
   end
 
@@ -420,8 +423,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
          {:ok, definition} <- GiftPlans.definition_for(state.plan, step) do
       module.preview(step, definition, state, ctx)
     else
-      {:error, :missing_definition} -> {:failed, "references a deleted definition", state}
-      {:error, :no_definitions} -> {:failed, "no definitions selected", state}
+      {:error, :missing_definition} -> {:failed, "references a deleted milestone", state}
       :error -> {:would_run, "condition passes", state}
     end
   end
@@ -431,7 +433,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     Ops.detect_and_update_cost(ctx)
   end
 
-  defp after_step(outcome, %{"kind" => kind}, ctx) when outcome in [:done, :partial] and kind not in ["budget" | @heal_kinds] and kind not in @fusion_kinds do
+  defp after_step(outcome, %{"kind" => kind}, ctx) when outcome in [:done, :partial] and kind not in ["budget" | @heal_kinds] do
     Ops.detect_and_update_cost(ctx)
   end
 
@@ -457,6 +459,9 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       reserve: state.reserve,
       refreshes: state.refreshes,
       replaced: state.replaced,
+      sold: state.sold,
+      bought: state.bought,
+      healed: state.healed,
       steps: state.steps,
       done: state.done
     }

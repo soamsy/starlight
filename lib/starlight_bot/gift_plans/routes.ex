@@ -18,6 +18,9 @@ defmodule StarlightBot.GiftPlans.Routes do
     ]
   end
 
+  def defaults(3), do: [new([2, 2, 2], buy_up_to: 2), new([3, 2, 1])]
+  def defaults(2), do: [new([2, 1, 1], buy_up_to: 1), new([1, 1, 1, 1], buy_up_to: 1)]
+  def defaults(1), do: [new([1, 1, 1], buy_up_to: 1), new([2, 1])]
   def defaults(_tier), do: []
 
   def subgoal_tiers(combo), do: combo |> Enum.uniq() |> Enum.filter(&(&1 >= 2)) |> Enum.sort(:desc)

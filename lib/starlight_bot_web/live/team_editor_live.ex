@@ -51,6 +51,18 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
+  def handle_event("restore_nav", params, socket) do
+    team_ids = Enum.map(socket.assigns.teams, & &1.id)
+    stored_id = parse_id(params["team"])
+    pane = if Map.has_key?(@panes, params["pane"]), do: params["pane"], else: socket.assigns.pane
+
+    case if(stored_id in team_ids, do: stored_id, else: List.first(team_ids)) do
+      nil -> {:noreply, socket}
+      id -> {:noreply, push_patch(socket, to: ~p"/teams?team=#{id}&pane=#{pane}")}
+    end
+  end
+
+  @impl true
   def handle_event("new_team", _, socket) do
     case Teams.create_default_team() do
       {:ok, id} ->
