@@ -98,15 +98,18 @@
                       <span class="text-xs font-semibold text-base-content/70">Workflows</span>
                       <button phx-click="add_workflow" class="btn btn-primary btn-xs ml-auto">+ New</button>
                     </div>
-                    <div :for={wf <- @plan_data["workflows"]}
+                    <div id="workflow-list" phx-hook="SortableList" data-sort-event="reorder_workflows" class="flex flex-col gap-1">
+                    <div :for={wf <- @plan_data["workflows"]} data-sort-id={wf["id"]}
                          phx-click="select_workflow" phx-value-id={wf["id"]}
                          class={"flex items-center gap-1 rounded px-2 py-1 cursor-pointer text-xs " <>
                            if(workflow && wf["id"] == workflow["id"], do: "bg-primary/10 border-l-2 border-primary", else: "hover:bg-base-200")}>
+                      <span data-sort-handle class="cursor-grab text-base-content/40 select-none">⠿</span>
                       <span class="flex-1 truncate"><%= wf["name"] %></span>
                       <span class="text-[10px] text-base-content/40"><%= length(wf["steps"]) %> steps</span>
                       <button phx-click="duplicate_workflow" phx-value-id={wf["id"]} class="btn btn-ghost btn-2xs">Dup</button>
                       <button phx-click="delete_workflow" phx-value-id={wf["id"]} data-confirm={"Delete workflow '#{wf["name"]}'?"}
                               class="btn btn-ghost btn-2xs text-error">✕</button>
+                    </div>
                     </div>
                   </div>
 

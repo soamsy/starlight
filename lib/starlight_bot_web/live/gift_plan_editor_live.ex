@@ -352,6 +352,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("reorder_workflows", %{"ids" => ids}, socket) do
+    {:noreply, update_plan(socket, &Map.update!(&1, "workflows", fn workflows -> reorder_by_ids(workflows, ids, fn wf -> wf["id"] end) end))}
+  end
+
+  @impl true
   def handle_event("delete_workflow", %{"id" => id}, socket) do
     data = socket.assigns.plan_data
     callers = GiftPlans.callers(data, id) |> Enum.reject(&(&1["id"] == id))
