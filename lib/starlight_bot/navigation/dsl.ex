@@ -1,6 +1,6 @@
 defmodule StarlightBot.Navigation.DSL do
   @confirm_enter_rounds 5
-  @confirm_steady_ms 120
+  @confirm_steady_ms 130
   @confirm_steady_timeout_ms 1_500
   @confirm_gone_hold_ms 250
   @confirm_gone_window_ms 1_200
@@ -142,6 +142,8 @@ defmodule StarlightBot.Navigation.DSL do
 
   def fail(reason), do: {:fail, reason}
 
+  @spec hold(atom() | tuple(), integer(), keyword()) ::
+          {:hold, atom() | tuple(), integer(), any(), any()}
   def hold(hook, hold_ms, opts \\ []) when (is_atom(hook) or is_tuple(hook)) and is_integer(hold_ms) do
     {:hold, hook, hold_ms, Keyword.get(opts, :within, 5_000), Keyword.get(opts, :else, [])}
   end
