@@ -107,7 +107,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
 
   defp turn_boundary_clauses do
     [
-      {:battle_turn, [sleep(100), wait_until(not_hook(:turn_opener)), sleep(50)]},
+      {:battle_turn, [sleep(100), wait_until(not_hook(:turn_opener)), sleep(150)]},
       {:loading_stage_1, loading() ++ after_loading()},
       {:loading_stage_2, loading() ++ after_loading()},
       confirm_battle_clause(),
