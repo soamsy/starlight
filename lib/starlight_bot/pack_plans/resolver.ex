@@ -13,6 +13,14 @@ defmodule StarlightBot.PackPlans.Resolver do
     end
   end
 
+  @last_searchable_floor 10
+
+  def extreme_allowed?(plan_data), do: plan_data["mode_schedule"] == [%{"from_floor" => 1, "mode" => "hard"}]
+
+  def extreme?(plan_data), do: plan_data["extreme"] == true and extreme_allowed?(plan_data)
+
+  def searchable_floor?(floor), do: floor <= @last_searchable_floor
+
   def eligible_floors(pack, "hard"), do: ThemePacks.decode_floors(pack.hard_floors)
   def eligible_floors(pack, "normal"), do: ThemePacks.decode_floors(pack.normal_floors)
 

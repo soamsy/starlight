@@ -11,7 +11,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   alias StarlightBot.Vision.{Capture, EgoGiftCapture}
 
   @max_dispatch_iterations 2_000
-  @max_consecutive_errors 5
+  @max_consecutive_errors 7
   @server_error_close_from_error 3
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)a
   @home_screens [:home, :home_drive, :home_window, :home_sinners, :home_theater, :home_extract, :home_dispense, :home_unknown]
@@ -21,11 +21,11 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   @shop_screens [:shop, :shop_super | @shop_popup_screens]
   @team_select_screens [:team_select, :team_selector, :team_selector_tall, :team_selector_gone]
   @in_dungeon_screens [
-    :team_selector_md, :grace, :grace_confirm, :cabinet_ego_gifts, :gift_search, :ego_gift_get, :theme_pack, :dungeon_graph,
+    :team_selector_md, :grace, :grace_confirm, :cabinet_ego_gifts, :gift_search, :ego_gift_get, :theme_pack, :dungeon_graph, :dungeon_graph_superposition_popup, :adversities,
     :event, :shop, :shop_super, :cabinet_reward, :mounting_trials, :encounter_reward, :battle_over_confirm
   ] ++ @team_select_screens ++ @shop_popup_screens
   @recovery_kept_screens @in_dungeon_screens ++ [:md_door_unknown, :md_door_enter_popup, :md_door_progress, :md_door_forfeit]
-  @dungeon_graph_floor_hooks Enum.map(1..5, &:"dungeon_graph_floor_#{&1}")
+  @dungeon_graph_floor_hooks 15..1//-1 |> Enum.reject(&(&1 == 13)) |> Enum.map(&:"dungeon_graph_floor_#{&1}")
   @clear_graph_timeout_ms 8_000
   @clear_graph_poll_ms 100
   @fresh_check_ms 1
@@ -159,6 +159,22 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   def given_up_dungeon(run, _run_state, {:ok, _}, frame, ctx), do: dispatched(run, :gave_up, frame, ctx)
   def given_up_dungeon(run, run_state, result, frame, ctx), do: dispatched(run, continue_after(result, run_state), frame, ctx)
+
+  def forfeited_dungeon(run, run_state, {:ok, _}, frame, ctx) do
+    Ctx.log(ctx, :info, "mirror dungeon runner: forfeited from floor #{RunMemory.floor(ctx)}, evaluating rewards as a completed dungeon")
+    RunMemory.put_give_up(ctx, nil)
+    RunMemory.reset_battle_retries(ctx)
+    dispatched(run, {:continue, run_state}, frame, ctx)
+  end
+
+  def forfeited_dungeon(run, run_state, result, frame, ctx), do: dispatched(run, continue_after(result, run_state), frame, ctx)
+
+  def superposition_entered(run, run_state, {:ok, _} = result, frame, ctx) do
+    RunMemory.raise_floor(ctx, max(RunMemory.floor(ctx) + 1, 6))
+    resume(run, :after, run_state, result, frame, ctx)
+  end
+
+  def superposition_entered(run, run_state, result, frame, ctx), do: resume(run, :after, run_state, result, frame, ctx)
 
   def charged(run, run_state, {:error, :window_not_focused} = err, frame, ctx),
     do: dispatched(run, continue_after(err, Map.put(run_state, :enkephalin_charged?, false)), frame, ctx)
@@ -459,6 +475,16 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     unless Engine.in_battle?(screen), do: RunMemory.reset_battle_retries(ctx)
 
     cond do
+      screen == :dungeon_graph_superposition_popup and RunMemory.extreme?(team_id) ->
+        [log(:info, "extreme mode is on, entering the next floors"), goto(screen, :dungeon_graph_superposition_entered, then: {__MODULE__, :superposition_entered, [run, run_state]})]
+
+      screen == :dungeon_graph_superposition_popup ->
+        [log(:info, "extreme mode is off, taking the rewards"), goto(screen, :exploration_reward, then: resume_at(run, run_state))]
+
+      RunMemory.give_up?(ctx) and screen in [:dungeon_graph, :dungeon_progress] and forfeit_keeps_rewards?(ctx, config) ->
+        Ctx.log(ctx, :info, "giving up (#{inspect(RunMemory.give_up(ctx))}) past floor 5, forfeiting the dungeon to keep its rewards")
+        [goto(screen, :dungeon_forfeited, then: {__MODULE__, :forfeited_dungeon, [run, run_state]})]
+
       RunMemory.give_up?(ctx) and screen in [:dungeon_graph, :dungeon_progress] ->
         Ctx.log(ctx, :info, "giving up (#{inspect(RunMemory.give_up(ctx))}), leaving the dungeon to the window")
         [goto(screen, :dungeon_given_up, then: {__MODULE__, :given_up_dungeon, [run, run_state]})]
@@ -478,7 +504,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         [goto(screen, :md_door, then: resume_at(run, run_state))]
 
       screen in [:md_door, :md_door_unknown] ->
-        [goto(screen, :md_door_enter, then: resume_at(run, run_state))]
+        superposition_steps(RunMemory.extreme?(team_id)) ++ [goto(screen, :md_door_enter, then: resume_at(run, run_state))]
 
       screen == :md_door_enter_popup ->
         [goto(:md_door_enter_popup, :team_select, then: resume_at(run, run_state))]
@@ -556,6 +582,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       screen == :mounting_trials ->
         [goto(:mounting_trials, :mounting_trials_over, then: {__MODULE__, :continue_to_screen, [run, run_state, :theme_pack]})]
 
+      screen == :adversities ->
+        [goto(:adversities, :adversities_over, then: resume_at(run, run_state))]
+
       screen == :encounter_reward ->
         [goto(:encounter_reward, :encounter_reward_over, then: resume_at(run, run_state))]
 
@@ -581,6 +610,13 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     forfeit = ClaimRewards.steps(%{action: :give_up, weekly_bonus?: true})
     [log(:info, "mirror dungeon runner: forfeiting stale/unclaimed rewards from a previous run"), capture(forfeit, then: resume_after(run, run_state))]
   end
+
+  defp superposition_steps(extreme?) do
+    wrong_state = if extreme?, do: :mirror_dungeon_door_superposition_off, else: :mirror_dungeon_door_superposition_on
+    [branch([{wrong_state, [reclick_until_gone(wrong_state)]}, {:default, []}], wait: @fresh_check_ms)]
+  end
+
+  defp forfeit_keeps_rewards?(ctx, config), do: RunMemory.floor(ctx) >= 6 and config.rewards != :none
 
   defp grace_pick_steps({index, 0}), do: [click(:"grace_#{index}")]
   defp grace_pick_steps({index, enhance}), do: [click(:"grace_#{index}"), click(:"grace_#{index}_#{enhance}")]

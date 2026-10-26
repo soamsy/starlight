@@ -14,5 +14,16 @@ defmodule StarlightBot.Navigation.Screens.DungeonGraph do
     end
   end
 
+  screen :dungeon_graph_superposition_popup, identity: :dungeon_graph_superposition_popup, refines: :dungeon_graph do
+    transition to: :dungeon_graph_superposition_entered do
+      confirm_enter(:dungeon_graph_superposition_popup_confirm)
+    end
+
+    transition to: :exploration_reward do
+      confirm_enter(:dungeon_graph_superposition_popup_cancel)
+    end
+  end
+
+  screen :dungeon_graph_superposition_entered, identity: nil, catch_all: true
   screen :dungeon_graph_node, identity: nil, catch_all: true
 end

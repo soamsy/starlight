@@ -88,10 +88,22 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   @impl true
+  def handle_event("toggle_extreme_mode", _, socket) do
+    plan_data = socket.assigns.plan_data
+
+    if Resolver.extreme_allowed?(plan_data) do
+      plan_data = Map.put(plan_data, "extreme", not Resolver.extreme?(plan_data))
+      {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_event("toggle_breakpoint", %{"floor" => floor}, socket) do
     floor = String.to_integer(floor)
     schedule = toggle_breakpoint(socket.assigns.plan_data["mode_schedule"], floor)
-    plan_data = Map.put(socket.assigns.plan_data, "mode_schedule", schedule)
+    plan_data = socket.assigns.plan_data |> Map.put("mode_schedule", schedule) |> drop_extreme_unless_allowed()
     {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
   end
 
@@ -100,11 +112,15 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     floor = String.to_integer(floor)
     search_floors = socket.assigns.plan_data["search_floors"]
 
-    search_floors =
-      if floor in search_floors, do: List.delete(search_floors, floor), else: Enum.sort([floor | search_floors])
+    if Resolver.searchable_floor?(floor) do
+      search_floors =
+        if floor in search_floors, do: List.delete(search_floors, floor), else: Enum.sort([floor | search_floors])
 
-    plan_data = Map.put(socket.assigns.plan_data, "search_floors", search_floors)
-    {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
+      plan_data = Map.put(socket.assigns.plan_data, "search_floors", search_floors)
+      {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -288,7 +304,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     Map.new(path)
   end
 
-  def extreme_disabled?(plan_data), do: plan_data["mode_schedule"] != [%{"from_floor" => 1, "mode" => "hard"}]
+  def extreme_disabled?(plan_data), do: not Resolver.extreme_allowed?(plan_data)
 
   def disabled_stripes_style do
     "background-image: repeating-linear-gradient(135deg, color-mix(in oklab, var(--color-base-content) 14%, transparent) 0 4px, transparent 4px 10px)"
@@ -497,6 +513,10 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     else
       [%{"from_floor" => floor, "mode" => "hard"}]
     end
+  end
+
+  defp drop_extreme_unless_allowed(plan_data) do
+    if Resolver.extreme_allowed?(plan_data), do: plan_data, else: Map.put(plan_data, "extreme", false)
   end
 
   defp put_priority(plan_data, pack_id, mode, "fine") do

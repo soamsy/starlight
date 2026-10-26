@@ -103,6 +103,12 @@
                   Assign a pack
                   <%= if @floor_filter, do: " (eligible for F#{@floor_filter})" %>
                 </span>
+                <label class={"flex items-center gap-1 text-xs " <> if(extreme_disabled?, do: "opacity-50 cursor-not-allowed", else: "cursor-pointer")}
+                       title={if(extreme_disabled?, do: "Requires F1-F5 to be hard mode", else: "Turn on superposition and continue into extreme floors F6-15 after beating the F5 boss")}>
+                  <input type="checkbox" class="toggle toggle-xs toggle-warning" phx-click="toggle_extreme_mode"
+                         checked={StarlightBot.PackPlans.Resolver.extreme?(@plan_data)} disabled={extreme_disabled?} />
+                  Extreme mode
+                </label>
                 <input type="text" placeholder="Search packs…" value={@filter} phx-keyup="filter_packs"
                        class="input input-bordered input-xs w-48 ml-auto" />
               </div>
@@ -140,7 +146,8 @@
                   <%= for floor <- 1..floor_count do %>
                     <% hard? = StarlightBot.PackPlans.Resolver.mode_for_floor(@plan_data["mode_schedule"], floor) == "hard" %>
                     <% breakpoint? = Enum.any?(@plan_data["mode_schedule"], &(&1["from_floor"] == floor)) %>
-                    <% search? = floor in @plan_data["search_floors"] %>
+                    <% searchable? = StarlightBot.PackPlans.Resolver.searchable_floor?(floor) %>
+                    <% search? = searchable? and floor in @plan_data["search_floors"] %>
                     <div class={"row-start-2 flex items-center justify-between gap-1 px-1 py-1 rounded-t " <> if(hard?, do: "bg-warning/15", else: "")}
                          style={"grid-column: #{floor + 1}; " <> if(extreme_disabled? and floor >= 6, do: disabled_stripes_style(), else: "")}
                          title={if(extreme_disabled? and floor >= 6, do: "Extreme floors only matter when the plan goes hard from F1")}>
@@ -162,9 +169,9 @@
                           go hard
                         </button>
                         <% end %>
-                        <button phx-click="toggle_search_floor" phx-value-floor={floor}
+                        <button phx-click="toggle_search_floor" phx-value-floor={floor} disabled={not searchable?}
                                 class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(search?, do: "btn-error", else: "btn-ghost border-base-300")}
-                                title="Once refreshes run out, search-replace the leftmost pack with the highest unvisited non-chance Hunt pack that has a search hook">
+                                title={if(searchable?, do: "Once refreshes run out, search-replace the leftmost pack with the highest unvisited non-chance Hunt pack that has a search hook", else: "Pack search is unavailable on F11+")}>
                           search
                         </button>
                       </div>

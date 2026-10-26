@@ -34,7 +34,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   @search_scroll_settle_ms 400
   @search_pack_poll_tries 50
 
-  @floor_hooks Enum.map(1..5, &:"theme_pack_floor_#{&1}")
+  @floor_hooks Enum.map(15..1//-1, &:"theme_pack_floor_#{&1}")
   @base_pack_count 3
   @max_pack_count 5
   @pack_count_graces [0, 2, 9]
@@ -380,7 +380,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   end
 
   def search_target(plan_data, theme_packs, mode, floor, visited_ids, search_hook_ready?) do
-    if floor in Map.get(plan_data, "search_floors", []) do
+    if Resolver.searchable_floor?(floor) and floor in Map.get(plan_data, "search_floors", []) do
       plan_data
       |> packs_with_priority(theme_packs, mode, floor, "hunt")
       |> Enum.reject(&Resolver.chance?(plan_data, &1.id, mode))

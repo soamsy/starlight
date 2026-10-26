@@ -125,6 +125,12 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
       assert ThemePackSelector.search_target(Map.delete(plan, "search_floors"), packs, "normal", 2, [], fn _ -> true end) == nil
     end
 
+    test "nil on F11+ even when listed as a search floor", %{packs: packs, plan: plan} do
+      packs = Enum.map(packs, &%{&1 | hard_floors: Jason.encode!([11])})
+      plan = %{plan | "search_floors" => [11], "packs" => %{"thm_a" => %{"hard" => %{"priority" => "hunt"}}}}
+      assert ThemePackSelector.search_target(plan, packs, "hard", 11, [], fn _ -> true end) == nil
+    end
+
     test "follows hunt order and skips chance packs", %{packs: packs, plan: plan} do
       assert %{id: "thm_b"} = ThemePackSelector.search_target(Map.put(plan, "hunt_order", %{"normal" => ["thm_b", "thm_a"]}), packs, "normal", 2, [], fn _ -> true end)
 

@@ -7,6 +7,28 @@ defmodule StarlightBot.PackPlans.ResolverTest do
     %{id: id, normal_floors: Jason.encode!(normal_floors), hard_floors: Jason.encode!(hard_floors)}
   end
 
+  describe "extreme mode" do
+    @all_hard [%{"from_floor" => 1, "mode" => "hard"}]
+
+    test "is only allowed when F1 starts hard" do
+      assert Resolver.extreme_allowed?(%{"mode_schedule" => @all_hard})
+      refute Resolver.extreme_allowed?(%{"mode_schedule" => []})
+      refute Resolver.extreme_allowed?(%{"mode_schedule" => [%{"from_floor" => 2, "mode" => "hard"}]})
+      refute Resolver.extreme_allowed?(%{})
+    end
+
+    test "requires both the toggle and an all-hard schedule" do
+      assert Resolver.extreme?(%{"extreme" => true, "mode_schedule" => @all_hard})
+      refute Resolver.extreme?(%{"mode_schedule" => @all_hard})
+      refute Resolver.extreme?(%{"extreme" => true, "mode_schedule" => []})
+    end
+
+    test "pack search stops at F10" do
+      assert Resolver.searchable_floor?(10)
+      refute Resolver.searchable_floor?(11)
+    end
+  end
+
   describe "mode_for_floor/2" do
     test "resolves the mode from the last breakpoint at or before the floor" do
       schedule = [%{"from_floor" => 1, "mode" => "normal"}, %{"from_floor" => 3, "mode" => "hard"}]
