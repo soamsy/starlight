@@ -111,7 +111,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     track = RunMemory.battle_track(ctx, kind)
     floor = if BattlePlans.lux_track?(track), do: 1, else: RunMemory.floor(ctx)
     playbook = playbook(ctx, track, floor, kind)
-    actions = playbook |> Resolver.phase_for(turn) |> Map.get("actions", []) |> order_actions()
+    actions = playbook |> Resolver.actions_for(turn) |> order_actions()
 
     Ctx.log(
       ctx,

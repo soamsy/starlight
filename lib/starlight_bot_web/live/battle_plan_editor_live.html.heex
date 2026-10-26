@@ -17,6 +17,10 @@
               <input type="number" name="max_retries" min="0" value={StarlightBot.BattlePlans.max_retries(@data)}
                      phx-debounce="300" class="input input-bordered input-xs w-16" />
             </form>
+            <label class="flex items-center gap-1 text-xs text-base-content/60 cursor-pointer">
+              <input type="checkbox" checked={@extreme?} phx-click="toggle_extreme" class="checkbox checkbox-xs" />
+              floors 6-15
+            </label>
           </div>
 
           <% lineup_issues = StarlightBot.BattlePlans.lineup_issues(@data) %>
@@ -33,8 +37,8 @@
                 <% used = StarlightBot.BattlePlans.venues_using(@data, lineup["id"]) %>
                 <%= if @renaming_lineup_id == lineup["id"] do %>
                   <form phx-submit="rename_lineup" class="flex">
-                    <input type="text" name="value" value={lineup["name"]} phx-blur="rename_lineup"
-                           phx-keydown="cancel_rename_lineup" phx-key="Escape" phx-mounted={JS.focus()}
+                    <input type="text" id={"rename-lineup-#{lineup["id"]}"} name="value" value={lineup["name"]} phx-blur="rename_lineup"
+                           phx-keydown="cancel_rename_lineup" phx-key="Escape" phx-hook="FocusSelect"
                            class="input input-bordered input-sm w-40 font-semibold" />
                   </form>
                 <% else %>
@@ -44,7 +48,7 @@
                     <button phx-click="select_lineup" phx-value-id={lineup["id"]} class="flex items-center gap-1.5 pl-1.5 pr-1 py-1">
                       <span class="inline-block w-5 text-center rounded-full text-[10px] font-semibold text-white" style={lineup_color(@data, lineup["id"], 0.9)}><%= playbook_tag(lineup) %></span>
                       <span class="font-medium"><%= lineup["name"] %></span>
-                      <span class={"text-[10px] " <> if(lineup["sinners"] == [], do: "text-warning", else: "text-base-content/40")}><%= length(lineup["sinners"]) %> sin</span>
+                      <span class={"text-[10px] " <> if(lineup["sinners"] == [], do: "text-warning", else: "text-base-content/40")}><%= length(lineup["sinners"]) %>/12</span>
                     </button>
                     <button phx-click="delete_lineup" phx-value-id={lineup["id"]}
                             data-confirm={"Delete lineup '#{lineup["name"]}'?"}
@@ -95,9 +99,6 @@
                       <% end %>
                     </span>
                   </div>
-                  <span class="text-xs text-base-content/60">
-                    Click sinners in pick order. The first <%= StarlightBot.BattlePlans.front_line_size() %> go on the front line, the rest are backups.
-                  </span>
                 </div>
                 <div class="flex flex-col gap-1">
                   <table class="text-[11px] border-separate border-spacing-0.5 self-start">
@@ -167,29 +168,8 @@
 
           <div class="divider my-0"></div>
 
-          <div class="flex flex-col gap-1">
-            <div class="flex items-center gap-2 text-xs text-base-content/60 flex-wrap">
-              <span class="font-medium">Tracks</span>
-              <span>Click a floor to start a playbook there. It applies until the next change point.</span>
-              <label class="ml-auto flex items-center gap-1 cursor-pointer">
-                <input type="checkbox" checked={@extreme?} phx-click="toggle_extreme" class="checkbox checkbox-xs" />
-                floors 6-15
-              </label>
-            </div>
-
-            <div class="flex items-center gap-1 flex-wrap text-xs">
-              <span class="text-base-content/60">Painting:</span>
-              <%= for pb <- @data["playbooks"] do %>
-                <button phx-click="set_paint" phx-value-id={pb["id"]} title={"#{pb["name"]} (#{pb["kind"]})"}
-                        class={"btn btn-2xs gap-1 " <> if(@paint == pb["id"], do: "ring ring-offset-1 ring-base-content/50", else: "btn-ghost")}>
-                  <span class="inline-block w-2.5 h-2.5 rounded-sm" style={playbook_color(@data, pb["id"], 1)}></span>
-                  <%= pb["name"] %>
-                </button>
-              <% end %>
-              <button phx-click="set_paint" phx-value-id="erase" title="Remove a change point"
-                      class={"btn btn-2xs " <> if(@paint == "erase", do: "btn-error", else: "btn-ghost text-error")}>eraser</button>
-            </div>
-
+          <div class="grid grid-cols-[auto_1fr] gap-3 flex-1 min-h-0">
+            <div class="flex flex-col gap-3 self-start max-w-[45vw] min-w-0">
             <div class="overflow-x-auto">
               <table class="text-[11px] border-separate border-spacing-0.5">
                 <thead>
@@ -217,6 +197,7 @@
                         <% start? = change_point?(entries, floor) %>
                         <td>
                           <button phx-click="paint_cell" phx-value-track={track} phx-value-floor={floor}
+                                  id={"cell-#{track}-#{floor}"} phx-hook="RightClickEvent" data-event="erase_cell" data-track={track} data-floor={floor}
                                   title={if lux?, do: find_playbook(@data, id)["name"], else: run_tooltip(@data, entries, floor)}
                                   style={playbook_color(@data, id, if(start?, do: 0.9, else: 0.25))}
                                   class={"w-8 h-6 rounded text-[10px] font-semibold " <> if(start?, do: "border-l-4 border-base-content/70 text-white", else: "text-base-content/40")}>
@@ -235,16 +216,15 @@
                           </button>
                         </td>
                       <% end %>
+                      <td :if={track == "lux_chain"} rowspan="2" colspan={length(floors(@extreme?)) + if(@extreme?, do: 0, else: 1) - 1} class="text-right align-middle">
+                        <button phx-click="set_paint" phx-value-id="erase" title="Remove a change point"
+                                class={"btn btn-2xs " <> if(@paint == "erase", do: "btn-error", else: "btn-ghost text-error")}>eraser</button>
+                      </td>
                     </tr>
                   <% end %>
                 </tbody>
               </table>
             </div>
-          </div>
-
-          <div class="divider my-0"></div>
-
-          <div class="grid grid-cols-[14rem_1fr] gap-3 flex-1 min-h-0">
             <div class="flex flex-col gap-2">
               <%= for kind <- ~w(chain focused) do %>
                 <div class="flex flex-col gap-0.5">
@@ -264,6 +244,7 @@
                 </div>
               <% end %>
             </div>
+            </div>
 
             <div class="flex flex-col gap-2 min-w-0">
               <% playbook = find_playbook(@data, @playbook_id) %>
@@ -278,51 +259,8 @@
                           class="btn btn-xs btn-ghost text-error">Delete</button>
                 </div>
 
-                <div class="flex items-center gap-1 text-xs flex-wrap">
-                  <span class="text-base-content/60 mr-1">Turns (click to split):</span>
-                  <% turns = ruler_turns(playbook) %>
-                  <%= for turn <- turns do %>
-                    <% boundary? = Enum.any?(playbook["phases"], &(&1["from_turn"] == turn)) %>
-                    <button phx-click="split_phase" phx-value-turn={turn} disabled={turn == 1 or boundary?}
-                            class={"btn btn-2xs w-7 " <> if(boundary?, do: "btn-primary", else: "btn-outline")}>
-                      <%= turn %><%= if turn == List.last(turns), do: "+" %>
-                    </button>
-                  <% end %>
-                </div>
-
-                <%= for phase <- playbook["phases"] do %>
-                  <% turn = phase["from_turn"] %>
-                  <div class="border border-base-300 rounded-lg p-2 flex flex-col gap-1">
-                    <div class="flex items-center text-xs font-semibold text-base-content/70">
-                      <%= phase_range(playbook["phases"], phase) %>
-                      <%= if turn > 1 do %>
-                        <button phx-click="remove_phase" phx-value-turn={turn}
-                                class="btn btn-2xs btn-ghost text-error ml-auto" title="Merge into the previous phase">remove phase</button>
-                      <% end %>
-                    </div>
-
-                    <%= for {action, index} <- Enum.with_index(phase["actions"], 1) do %>
-                      <.action_row action={action} index={index} turn={turn} sinner_options={@sinner_options} kind={playbook["kind"]} phase_actions={phase["actions"]} />
-                    <% end %>
-
-                    <form id={"add-#{playbook["id"]}-#{turn}-#{length(phase["actions"])}"} phx-change="add_action" class="flex items-center gap-2">
-                      <input type="hidden" name="turn" value={turn} />
-                      <select name="type" class="select select-bordered select-xs">
-                        <option value="" selected>+ action</option>
-                        <%= for type <- available_actions(playbook, phase["actions"]) do %>
-                          <option value={type}><%= action_label(type) %></option>
-                        <% end %>
-                      </select>
-                      <span class="text-[11px] text-base-content/50 italic">
-                        <%= if ends_with_chain?(phase["actions"]) do %>
-                          then: the chain drag starts the turn; fallback only if it didn't
-                        <% else %>
-                          then: fallback (enter, then p + enter if the turn didn't start)
-                        <% end %>
-                      </span>
-                    </form>
-                  </div>
-                <% end %>
+                <.action_list container="root" playbook={playbook} sinner_options={@sinner_options} editing_condition_id={@editing_condition_id}
+                              schedule_tabs={@schedule_tabs} reorder_rev={@reorder_rev} />
               <% end %>
               <%= if is_nil(playbook) do %>
                 <div class="text-xs text-base-content/40 italic">Select a playbook to edit.</div>

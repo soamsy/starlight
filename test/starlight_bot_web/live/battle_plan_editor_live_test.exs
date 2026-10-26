@@ -24,7 +24,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
 
   defp actions(socket, playbook_id) do
     saved = Plans.get(:battle_plans, socket.assigns.editing_id).data
-    hd(Enum.find(saved["playbooks"], &(&1["id"] == playbook_id))["phases"])["actions"]
+    Enum.find(saved["playbooks"], &(&1["id"] == playbook_id))["actions"]
   end
 
   test "new plans are named after the team, numbered when the name is taken" do
@@ -47,21 +47,21 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
   end
 
   test "if blocks hold then and else actions and a hook condition tree", %{socket: socket, playbook_id: playbook_id} do
-    socket = event(socket, "add_action", %{"turn" => "1", "type" => "if"})
+    socket = event(socket, "add_action", %{"container" => "root", "type" => "if"})
     [_win_rate, _commit, block] = actions(socket, playbook_id)
     id = block["id"]
 
     socket =
       socket
-      |> event("add_action", %{"turn" => "1", "type" => "ego", "parent" => id, "branch" => "then"})
-      |> event("add_action", %{"turn" => "1", "type" => "target", "parent" => id, "branch" => "then"})
-      |> event("add_action", %{"turn" => "1", "type" => "clear", "parent" => id, "branch" => "else"})
-      |> event("cond_update", %{"turn" => "1", "action" => id, "path" => "0", "op" => "hook_off", "hook" => "battle_combat_ready"})
-      |> event("cond_add", %{"turn" => "1", "action" => id, "path" => "", "node" => "leaf"})
-      |> event("cond_update", %{"turn" => "1", "action" => id, "path" => "1", "op" => "hook_on", "hook" => "battle_chain"})
-      |> event("cond_add", %{"turn" => "1", "action" => id, "path" => "", "node" => "leaf"})
-      |> event("cond_update", %{"turn" => "1", "action" => id, "path" => "2", "op" => "sinners_eq", "hook" => ""})
-      |> event("cond_update", %{"turn" => "1", "action" => id, "path" => "2", "op" => "sinners_eq", "value" => "1"})
+      |> event("add_action", %{"container" => "root", "type" => "ego", "parent" => id, "branch" => "then"})
+      |> event("add_action", %{"container" => "root", "type" => "target", "parent" => id, "branch" => "then"})
+      |> event("add_action", %{"container" => "root", "type" => "clear", "parent" => id, "branch" => "else"})
+      |> event("cond_update", %{"action" => id, "path" => "0", "op" => "hook_off", "hook" => "battle_combat_ready"})
+      |> event("cond_add", %{"action" => id, "path" => "", "node" => "leaf"})
+      |> event("cond_update", %{"action" => id, "path" => "1", "op" => "hook_on", "hook" => "battle_chain"})
+      |> event("cond_add", %{"action" => id, "path" => "", "node" => "leaf"})
+      |> event("cond_update", %{"action" => id, "path" => "2", "op" => "sinners_eq", "hook" => ""})
+      |> event("cond_update", %{"action" => id, "path" => "2", "op" => "sinners_eq", "value" => "1"})
 
     [_, _, block] = actions(socket, playbook_id)
     [ego, target] = block["then"]
@@ -70,30 +70,78 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
 
     socket =
       socket
-      |> event("move_action", %{"turn" => "1", "action" => target["id"], "dir" => "up"})
-      |> event("update_action", %{"turn" => "1", "action" => ego["id"], "grade" => "he", "pick" => "last"})
-      |> event("remove_action", %{"turn" => "1", "action" => hd(block["else"])["id"]})
+      |> event("move_action", %{"action" => target["id"], "dir" => "up"})
+      |> event("update_action", %{"action" => ego["id"], "grade" => "he", "pick" => "last"})
+      |> event("remove_action", %{"action" => hd(block["else"])["id"]})
 
     [_, _, block] = actions(socket, playbook_id)
     assert Enum.map(block["then"], & &1["type"]) == ["target", "ego"]
     assert Enum.at(block["then"], 1)["grade"] == "he"
 
-    socket = event(socket, "update_action", %{"turn" => "1", "action" => ego["id"], "who" => "except", "add_sinner" => "faust", "pick" => "all"})
-    socket = event(socket, "update_action", %{"turn" => "1", "action" => ego["id"], "who" => "except", "sinners" => ["faust"], "add_sinner" => "ryoshu", "pick" => "all"})
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "except", "add_sinner" => "faust", "pick" => "all"})
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "except", "sinners" => ["faust"], "add_sinner" => "ryoshu", "pick" => "all"})
     [_, _, block] = actions(socket, playbook_id)
     assert Map.take(Enum.at(block["then"], 1), ["who", "sinners"]) == %{"who" => "except", "sinners" => ["faust", "ryoshu"]}
     assert render(socket) =~ "all but"
 
-    socket = event(socket, "update_action", %{"turn" => "1", "action" => ego["id"], "who" => "everyone", "pick" => "all"})
-    socket = event(socket, "update_action", %{"turn" => "1", "action" => ego["id"], "who" => "only", "pick" => "all"})
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "everyone", "pick" => "all"})
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "only", "pick" => "all"})
     [_, _, block] = actions(socket, playbook_id)
     assert Map.take(Enum.at(block["then"], 1), ["who", "sinners"]) == %{"who" => "only", "sinners" => ["faust", "ryoshu"]}
 
-    socket = event(socket, "remove_sinner", %{"turn" => "1", "action" => ego["id"], "sinner" => "faust"})
+    socket = event(socket, "remove_sinner", %{"action" => ego["id"], "sinner" => "faust"})
     [_, _, block] = actions(socket, playbook_id)
     assert Enum.at(block["then"], 1)["sinners"] == ["ryoshu"]
     assert block["else"] == []
+    socket = event(socket, "close_action_condition", %{})
     assert render(socket) =~ "battle_combat_ready off AND battle_chain on AND sinners = 1"
+  end
+
+  test "schedules wrap an action, tab per turn, and unwrap back into the list", %{socket: socket, playbook_id: playbook_id} do
+    [win_rate, _commit] = actions(socket, playbook_id)
+
+    socket = event(socket, "add_schedule", %{"action" => win_rate["id"]})
+    [schedule, _commit] = actions(socket, playbook_id)
+    assert schedule["type"] == "schedule"
+    assert render(socket) =~ "Turns 1+"
+
+    socket = event(socket, "split_schedule", %{"schedule" => schedule["id"], "turn" => "3"})
+    [schedule, _commit] = actions(socket, playbook_id)
+    assert BattlePlans.segment_froms(schedule) == [1, 3]
+    assert socket.assigns.schedule_tabs[schedule["id"]] == 3
+    assert render(socket) =~ "Turns 3+"
+
+    socket = event(socket, "move_schedule_segment", %{"schedule" => schedule["id"], "from" => "3", "to" => "6"})
+    [schedule, _commit] = actions(socket, playbook_id)
+    assert BattlePlans.segment_froms(schedule) == [1, 6]
+
+    socket = event(socket, "add_action", %{"container" => schedule["id"] <> "|6", "type" => "clear"})
+    [schedule, _commit] = actions(socket, playbook_id)
+    assert Enum.map(Enum.at(schedule["segments"], 1)["actions"], & &1["type"]) == ["win_rate", "clear"]
+
+    socket = event(socket, "remove_schedule_segment", %{"schedule" => schedule["id"], "from" => "6"})
+    [schedule, _commit] = actions(socket, playbook_id)
+    assert BattlePlans.segment_froms(schedule) == [1]
+
+    socket = event(socket, "remove_schedule", %{"schedule" => schedule["id"]})
+    assert Enum.map(actions(socket, playbook_id), & &1["type"]) == ["win_rate", "commit"]
+  end
+
+  test "dragging an action into a schedule tab and back", %{socket: socket, playbook_id: playbook_id} do
+    [win_rate, commit] = actions(socket, playbook_id)
+    socket = event(socket, "add_schedule", %{"action" => win_rate["id"]})
+    [schedule, _commit] = actions(socket, playbook_id)
+    tab = schedule["id"] <> "|1"
+
+    socket = event(socket, "move_action_to", %{"scope" => tab, "from" => "root", "id" => commit["id"], "ids" => [win_rate["id"], commit["id"]]})
+    [schedule] = actions(socket, playbook_id)
+    assert Enum.map(hd(schedule["segments"])["actions"], & &1["type"]) == ["win_rate", "commit"]
+
+    socket = event(socket, "move_action_to", %{"scope" => "root", "from" => tab, "id" => commit["id"], "ids" => [commit["id"], schedule["id"]]})
+    assert Enum.map(actions(socket, playbook_id), & &1["type"]) == ["commit", "schedule"]
+
+    socket = event(socket, "reorder_actions", %{"scope" => "root", "ids" => [schedule["id"], commit["id"]]})
+    assert Enum.map(actions(socket, playbook_id), & &1["type"]) == ["schedule", "commit"]
   end
 
   test "retries per battle saves non-negative integers only", %{socket: socket} do
@@ -105,17 +153,17 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
 
   test "an if block with a chain in a branch sorts last and blocks a second chain", %{socket: socket} do
     chain = Enum.find(socket.assigns.data["playbooks"], &(&1["kind"] == "chain"))
-    socket = socket |> event("select_playbook", %{"id" => chain["id"]}) |> event("remove_action", %{"turn" => "1", "action" => hd(hd(chain["phases"])["actions"])["id"]})
-    socket = event(socket, "add_action", %{"turn" => "1", "type" => "if"})
+    socket = socket |> event("select_playbook", %{"id" => chain["id"]}) |> event("remove_action", %{"action" => hd(chain["actions"])["id"]})
+    socket = event(socket, "add_action", %{"container" => "root", "type" => "if"})
     [block] = actions(socket, chain["id"])
 
     socket =
       socket
-      |> event("add_action", %{"turn" => "1", "type" => "chain_a_res", "parent" => block["id"], "branch" => "then"})
-      |> event("add_action", %{"turn" => "1", "type" => "chain_fast", "parent" => block["id"], "branch" => "else"})
-      |> event("add_action", %{"turn" => "1", "type" => "chain_fast", "parent" => block["id"], "branch" => "else"})
-      |> event("add_action", %{"turn" => "1", "type" => "chain_fast"})
-      |> event("add_action", %{"turn" => "1", "type" => "dodge"})
+      |> event("add_action", %{"container" => "root", "type" => "chain_a_res", "parent" => block["id"], "branch" => "then"})
+      |> event("add_action", %{"container" => "root", "type" => "chain_fast", "parent" => block["id"], "branch" => "else"})
+      |> event("add_action", %{"container" => "root", "type" => "chain_fast", "parent" => block["id"], "branch" => "else"})
+      |> event("add_action", %{"container" => "root", "type" => "chain_fast"})
+      |> event("add_action", %{"container" => "root", "type" => "dodge"})
 
     assert [%{"type" => "dodge"}, %{"type" => "if"} = block] = actions(socket, chain["id"])
     assert Enum.map(block["then"], & &1["type"]) == ["chain_a_res"]
@@ -123,83 +171,83 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
   end
 
   test "chain pins and focused targets can pick their row by a mixed priority list", %{socket: socket, playbook_id: playbook_id} do
-    socket = event(socket, "add_action", %{"turn" => "1", "type" => "target"})
+    socket = event(socket, "add_action", %{"container" => "root", "type" => "target"})
     [_, _, target] = actions(socket, playbook_id)
 
     socket =
       socket
-      |> event("update_action", %{"turn" => "1", "action" => target["id"], "pick" => "first", "enemy_pick" => "last", "row" => "priority"})
-      |> event("update_action", %{"turn" => "1", "action" => target["id"], "pick" => "first", "enemy_pick" => "last", "row" => "priority", "priority_order" => ["s3", "wrath", "dodge", ""]})
+      |> event("update_action", %{"action" => target["id"], "pick" => "first", "enemy_pick" => "last", "row" => "priority"})
+      |> event("update_action", %{"action" => target["id"], "pick" => "first", "enemy_pick" => "last", "row" => "priority", "priority_order" => ["s3", "wrath", "dodge", ""]})
 
     [_, _, target] = actions(socket, playbook_id)
     assert target["priority"] == %{"order" => ["s3", "wrath", "dodge"]}
 
-    socket = event(socket, "update_action", %{"turn" => "1", "action" => target["id"], "pick" => "first_with", "n" => "3", "match" => "gloom", "enemy_pick" => "first_with", "row" => "top"})
+    socket = event(socket, "update_action", %{"action" => target["id"], "pick" => "first_with", "n" => "3", "match" => "gloom", "enemy_pick" => "first_with", "row" => "top"})
     [_, _, target] = actions(socket, playbook_id)
     assert target["skill"] == %{"pick" => "first_with", "n" => 3, "match" => "gloom"}
     assert target["enemy"] == %{"pick" => "first"}
-    socket = event(socket, "update_action", %{"turn" => "1", "action" => target["id"], "pick" => "first", "enemy_pick" => "last", "row" => "priority", "priority_order" => ["s3", "wrath", "dodge"]})
+    socket = event(socket, "update_action", %{"action" => target["id"], "pick" => "first", "enemy_pick" => "last", "row" => "priority", "priority_order" => ["s3", "wrath", "dodge"]})
     html = render(socket)
     assert html =~ "(else bottom)"
     assert html =~ ~s(<optgroup label="sin">)
 
     chain = Enum.find(socket.assigns.data["playbooks"], &(&1["kind"] == "chain"))
-    [chain_action] = hd(chain["phases"])["actions"]
+    [chain_action] = chain["actions"]
 
     socket =
       socket
       |> event("select_playbook", %{"id" => chain["id"]})
-      |> event("add_pin", %{"turn" => "1", "action" => chain_action["id"]})
-      |> event("update_action", %{"turn" => "1", "action" => chain_action["id"], "pins" => %{"0" => %{"pick" => "all", "row" => "priority"}}})
+      |> event("add_pin", %{"action" => chain_action["id"]})
+      |> event("update_action", %{"action" => chain_action["id"], "pins" => %{"0" => %{"pick" => "all", "row" => "priority"}}})
 
     [chain_action] = actions(socket, chain["id"])
     assert [%{"row" => "priority", "priority" => %{"order" => ["s3", "s2", "s1"]}, "skill" => %{"pick" => "all"}}] = chain_action["pins"]
 
-    socket = event(socket, "update_action", %{"turn" => "1", "action" => chain_action["id"], "pins" => %{"0" => %{"pick" => "all", "row" => "priority", "priority_order" => ["pride", "s2"]}}})
+    socket = event(socket, "update_action", %{"action" => chain_action["id"], "pins" => %{"0" => %{"pick" => "all", "row" => "priority", "priority_order" => ["pride", "s2"]}}})
     [chain_action] = actions(socket, chain["id"])
     assert hd(chain_action["pins"])["priority"] == %{"order" => ["pride", "s2"]}
 
     pin_params = %{"pick" => "all", "row" => "priority", "priority_order" => ["wrath", "s2"], "keep_min" => "1", "keep_max" => "4"}
-    socket = event(socket, "update_action", %{"turn" => "1", "action" => chain_action["id"], "pins" => %{"0" => pin_params}})
+    socket = event(socket, "update_action", %{"action" => chain_action["id"], "pins" => %{"0" => pin_params}})
     [chain_action] = actions(socket, chain["id"])
     assert hd(chain_action["pins"])["priority"] == %{"order" => ["wrath", "s2"], "min" => 1, "max" => 4}
     assert render(socket) =~ ~s(name="pins[0][keep_max]")
 
     socket =
       socket
-      |> event("add_pin", %{"turn" => "1", "action" => chain_action["id"]})
-      |> event("update_action", %{"turn" => "1", "action" => chain_action["id"], "pins" => %{"0" => pin_params, "1" => %{"pick" => "all", "row" => "top"}}})
-      |> event("reorder_pins", %{"scope" => "1|#{chain_action["id"]}", "ids" => ["1", "0"]})
+      |> event("add_pin", %{"action" => chain_action["id"]})
+      |> event("update_action", %{"action" => chain_action["id"], "pins" => %{"0" => pin_params, "1" => %{"pick" => "all", "row" => "top"}}})
+      |> event("reorder_pins", %{"scope" => chain_action["id"], "ids" => ["1", "0"]})
 
     [chain_action] = actions(socket, chain["id"])
     assert Enum.map(chain_action["pins"], & &1["row"]) == ["top", "priority"]
     assert render(socket) =~ "the first pin wins"
 
-    socket = event(socket, "reorder_pins", %{"scope" => "1|#{chain_action["id"]}", "ids" => ["0"]})
+    socket = event(socket, "reorder_pins", %{"scope" => chain_action["id"], "ids" => ["0"]})
     assert Enum.map(hd(actions(socket, chain["id"]))["pins"], & &1["row"]) == ["top", "priority"]
   end
 
   test "an if nested in an else branch acts as else-if, with one chain per path", %{socket: socket} do
     chain = Enum.find(socket.assigns.data["playbooks"], &(&1["kind"] == "chain"))
-    socket = socket |> event("select_playbook", %{"id" => chain["id"]}) |> event("remove_action", %{"turn" => "1", "action" => hd(hd(chain["phases"])["actions"])["id"]})
-    socket = event(socket, "add_action", %{"turn" => "1", "type" => "if"})
+    socket = socket |> event("select_playbook", %{"id" => chain["id"]}) |> event("remove_action", %{"action" => hd(chain["actions"])["id"]})
+    socket = event(socket, "add_action", %{"container" => "root", "type" => "if"})
     [outer] = actions(socket, chain["id"])
 
     socket =
       socket
-      |> event("add_action", %{"turn" => "1", "type" => "win_rate", "parent" => outer["id"], "branch" => "then"})
-      |> event("add_action", %{"turn" => "1", "type" => "if", "parent" => outer["id"], "branch" => "else"})
+      |> event("add_action", %{"container" => "root", "type" => "win_rate", "parent" => outer["id"], "branch" => "then"})
+      |> event("add_action", %{"container" => "root", "type" => "if", "parent" => outer["id"], "branch" => "else"})
 
     [outer] = actions(socket, chain["id"])
     [inner] = outer["else"]
 
     socket =
       socket
-      |> event("add_action", %{"turn" => "1", "type" => "chain_fast", "parent" => inner["id"], "branch" => "then"})
-      |> event("add_action", %{"turn" => "1", "type" => "chain_a_res", "parent" => inner["id"], "branch" => "else"})
-      |> event("add_action", %{"turn" => "1", "type" => "chain_fast", "parent" => inner["id"], "branch" => "else"})
-      |> event("add_action", %{"turn" => "1", "type" => "chain_fast", "parent" => outer["id"], "branch" => "then"})
-      |> event("cond_update", %{"turn" => "1", "action" => inner["id"], "path" => "0", "op" => "tray_count", "match" => "pride", "cmp" => "eq", "value" => "1", "sinner" => ""})
+      |> event("add_action", %{"container" => "root", "type" => "chain_fast", "parent" => inner["id"], "branch" => "then"})
+      |> event("add_action", %{"container" => "root", "type" => "chain_a_res", "parent" => inner["id"], "branch" => "else"})
+      |> event("add_action", %{"container" => "root", "type" => "chain_fast", "parent" => inner["id"], "branch" => "else"})
+      |> event("add_action", %{"container" => "root", "type" => "chain_fast", "parent" => outer["id"], "branch" => "then"})
+      |> event("cond_update", %{"action" => inner["id"], "path" => "0", "op" => "tray_count", "match" => "pride", "cmp" => "eq", "value" => "1", "sinner" => ""})
 
     [outer] = actions(socket, chain["id"])
     [inner] = outer["else"]

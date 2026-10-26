@@ -29,9 +29,16 @@ defmodule StarlightBot.BattlePlans.Resolver do
 
   def lineup_for(_data, _venue, _floor), do: nil
 
-  def phase_for(%{"phases" => phases}, turn) do
-    phases
-    |> Enum.filter(&(&1["from_turn"] <= turn))
-    |> Enum.max_by(& &1["from_turn"], fn -> nil end)
+  def actions_for(%{"actions" => items}, turn) do
+    Enum.flat_map(items, fn
+      %{"type" => "schedule"} = schedule ->
+        case StarlightBot.BattlePlans.segment_at(schedule, turn) do
+          nil -> []
+          segment -> segment["actions"]
+        end
+
+      action ->
+        [action]
+    end)
   end
 end

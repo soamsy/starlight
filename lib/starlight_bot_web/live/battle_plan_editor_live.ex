@@ -129,6 +129,12 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_event("erase_cell", %{"track" => track, "floor" => floor}, socket) do
+    entries = socket.assigns.data["tracks"][track]
+    {:noreply, put_track(socket, track, BattlePlans.erase(entries, String.to_integer(floor)))}
+  end
+
+  @impl true
   def handle_event("paint_lineup", %{"venue" => venue, "floor" => floor}, socket) do
     floor = String.to_integer(floor)
     lineup_id = socket.assigns.lineup_id
@@ -169,6 +175,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
      socket
      |> assign(:data, Map.put(socket.assigns.data, "lineups", BattlePlans.lineups(socket.assigns.data) ++ [lineup]))
      |> assign(:lineup_id, lineup["id"])
+     |> assign(:renaming_lineup_id, lineup["id"])
      |> assign(:lineup_erase?, false)
      |> persist()}
   end
@@ -277,26 +284,66 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
-  def handle_event("split_phase", %{"turn" => turn}, socket) do
-    {:noreply, update_playbook(socket, &BattlePlans.split_phase(&1, String.to_integer(turn)))}
+  def handle_event("add_schedule", %{"action" => action_id}, socket) do
+    {:noreply, update_items(socket, &BattlePlans.wrap_in_schedule(&1, action_id))}
   end
 
   @impl true
-  def handle_event("remove_phase", %{"turn" => turn}, socket) do
-    {:noreply, update_playbook(socket, &BattlePlans.remove_phase(&1, String.to_integer(turn)))}
+  def handle_event("select_schedule_tab", %{"schedule" => schedule_id, "from" => from}, socket) do
+    {:noreply, put_schedule_tab(socket, schedule_id, String.to_integer(from))}
   end
 
   @impl true
-  def handle_event("add_action", %{"turn" => turn, "type" => type, "parent" => parent, "branch" => branch}, socket)
+  def handle_event("split_schedule", %{"schedule" => schedule_id, "turn" => turn}, socket) when turn != "" do
+    turn = String.to_integer(turn)
+    socket = update_items(socket, &BattlePlans.update_schedule(&1, schedule_id, fn schedule -> BattlePlans.split_segment(schedule, turn) end))
+    {:noreply, put_schedule_tab(socket, schedule_id, turn)}
+  end
+
+  @impl true
+  def handle_event("split_schedule", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("move_schedule_segment", %{"schedule" => schedule_id, "from" => from, "to" => to}, socket) do
+    to = String.to_integer(to)
+    socket = update_items(socket, &BattlePlans.update_schedule(&1, schedule_id, fn schedule -> BattlePlans.move_segment(schedule, String.to_integer(from), to) end))
+    {:noreply, put_schedule_tab(socket, schedule_id, to)}
+  end
+
+  @impl true
+  def handle_event("remove_schedule_segment", %{"schedule" => schedule_id, "from" => from}, socket) do
+    socket = update_items(socket, &BattlePlans.update_schedule(&1, schedule_id, fn schedule -> BattlePlans.remove_segment(schedule, String.to_integer(from)) end))
+    {:noreply, put_schedule_tab(socket, schedule_id, 1)}
+  end
+
+  @impl true
+  def handle_event("remove_schedule", %{"schedule" => schedule_id}, socket) do
+    {:noreply, update_items(socket, &BattlePlans.unwrap_schedule(&1, schedule_id))}
+  end
+
+  @impl true
+  def handle_event("reorder_actions", %{"scope" => scope, "ids" => ids}, socket) do
+    {:noreply, socket |> update_items(&BattlePlans.reorder_container(&1, scope, ids)) |> update(:reorder_rev, &(&1 + 1))}
+  end
+
+  @impl true
+  def handle_event("move_action_to", %{"scope" => scope, "from" => from, "id" => id, "ids" => ids}, socket) do
+    {:noreply, socket |> update_items(&BattlePlans.move_to_container(&1, from, scope, id, ids)) |> update(:reorder_rev, &(&1 + 1))}
+  end
+
+  @impl true
+  def handle_event("add_action", %{"type" => type, "container" => container, "parent" => parent, "branch" => branch}, socket)
       when type != "" and branch in ["then", "else"] do
     kind = find_playbook(socket.assigns.data, socket.assigns.playbook_id)["kind"]
 
     {:noreply,
-     update_phase(socket, String.to_integer(turn), fn actions ->
-       update_list_containing(actions, parent, fn list ->
+     update_items(socket, fn items ->
+       scope = BattlePlans.scope_actions(items, container)
+
+       BattlePlans.update_list_containing(items, parent, fn list ->
          Enum.map(list, fn
            %{"id" => ^parent} = block ->
-             if type in branch_available_actions(kind, actions, block, branch),
+             if type in branch_available_actions(kind, scope, block, branch),
                do: Map.update!(block, branch, &(&1 ++ [BattlePlans.new_action(type)])),
                else: block
 
@@ -308,12 +355,14 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
-  def handle_event("add_action", %{"turn" => turn, "type" => type}, socket) when type != "" do
+  def handle_event("add_action", %{"type" => type, "container" => container}, socket) when type != "" do
     playbook = find_playbook(socket.assigns.data, socket.assigns.playbook_id)
 
     {:noreply,
-     update_phase(socket, String.to_integer(turn), fn actions ->
-       if type in available_actions(playbook, actions), do: actions ++ [BattlePlans.new_action(type)], else: actions
+     update_items(socket, fn items ->
+       if type in available_actions(playbook, BattlePlans.scope_actions(items, container)),
+         do: BattlePlans.update_container(items, container, &(&1 ++ [BattlePlans.new_action(type)])),
+         else: items
      end)}
   end
 
@@ -321,12 +370,12 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   def handle_event("add_action", _params, socket), do: {:noreply, socket}
 
   @impl true
-  def handle_event("move_action", %{"turn" => turn, "action" => action_id, "dir" => dir}, socket) do
+  def handle_event("move_action", %{"action" => action_id, "dir" => dir}, socket) do
     offset = if dir == "up", do: -1, else: 1
 
     {:noreply,
-     update_phase(socket, String.to_integer(turn), fn actions ->
-       update_list_containing(actions, action_id, fn list ->
+     update_items(socket, fn items ->
+       BattlePlans.update_list_containing(items, action_id, fn list ->
          index = Enum.find_index(list, &(&1["id"] == action_id))
          target = index + offset
 
@@ -340,48 +389,58 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
-  def handle_event("remove_action", %{"turn" => turn, "action" => action_id}, socket) do
+  def handle_event("remove_action", %{"action" => action_id}, socket) do
     {:noreply,
-     update_phase(socket, String.to_integer(turn), fn actions ->
-       update_list_containing(actions, action_id, fn list -> Enum.reject(list, &(&1["id"] == action_id)) end)
+     update_items(socket, fn items ->
+       BattlePlans.update_list_containing(items, action_id, fn list -> Enum.reject(list, &(&1["id"] == action_id)) end)
      end)}
   end
 
   @impl true
-  def handle_event("cond_add", %{"turn" => turn, "action" => action_id, "path" => path, "node" => node}, socket) do
+  def handle_event("cond_add", %{"action" => action_id, "path" => path, "node" => node}, socket) do
     leaf = BattlePlans.hook_leaf()
     child = if node == "group", do: Conditions.group(leaf), else: leaf
-    {:noreply, update_condition(socket, turn, action_id, &Conditions.add(&1, path, child))}
+    {:noreply, socket |> assign(:editing_condition_id, action_id) |> update_condition(action_id, &Conditions.add(&1, path, child))}
   end
 
   @impl true
-  def handle_event("cond_remove", %{"turn" => turn, "action" => action_id, "path" => path}, socket) do
-    {:noreply, update_condition(socket, turn, action_id, &Conditions.remove(&1, path))}
+  def handle_event("open_action_condition", %{"action" => action_id}, socket) do
+    {:noreply, assign(socket, :editing_condition_id, action_id)}
   end
 
   @impl true
-  def handle_event("cond_toggle_op", %{"turn" => turn, "action" => action_id, "path" => path}, socket) do
-    {:noreply, update_condition(socket, turn, action_id, &Conditions.toggle_op(&1, path))}
+  def handle_event("close_action_condition", _params, socket) do
+    {:noreply, assign(socket, :editing_condition_id, nil)}
   end
 
   @impl true
-  def handle_event("cond_update", %{"turn" => turn, "action" => action_id, "path" => path} = params, socket) do
+  def handle_event("cond_remove", %{"action" => action_id, "path" => path}, socket) do
+    {:noreply, update_condition(socket, action_id, &Conditions.remove(&1, path))}
+  end
+
+  @impl true
+  def handle_event("cond_toggle_op", %{"action" => action_id, "path" => path}, socket) do
+    {:noreply, update_condition(socket, action_id, &Conditions.toggle_op(&1, path))}
+  end
+
+  @impl true
+  def handle_event("cond_update", %{"action" => action_id, "path" => path} = params, socket) do
     leaf = BattlePlans.condition_leaf(params)
-    {:noreply, update_condition(socket, turn, action_id, &Conditions.put_leaf(&1, path, leaf))}
+    {:noreply, update_condition(socket, action_id, &Conditions.put_leaf(&1, path, leaf))}
   end
 
   @impl true
-  def handle_event("update_action", %{"turn" => turn, "action" => action_id} = params, socket) do
-    {:noreply, update_action(socket, String.to_integer(turn), action_id, &apply_action_params(&1, params))}
+  def handle_event("update_action", %{"action" => action_id} = params, socket) do
+    {:noreply, update_action(socket, action_id, &apply_action_params(&1, params))}
   end
 
   @impl true
-  def handle_event("add_pin", %{"turn" => turn, "action" => action_id}, socket) do
-    {:noreply, update_action(socket, String.to_integer(turn), action_id, &Map.update!(&1, "pins", fn pins -> pins ++ [BattlePlans.new_pin()] end))}
+  def handle_event("add_pin", %{"action" => action_id}, socket) do
+    {:noreply, update_action(socket, action_id, &Map.update!(&1, "pins", fn pins -> pins ++ [BattlePlans.new_pin()] end))}
   end
 
   @impl true
-  def handle_event("remove_sinner", %{"turn" => turn, "action" => action_id, "sinner" => sinner} = params, socket) do
+  def handle_event("remove_sinner", %{"action" => action_id, "sinner" => sinner} = params, socket) do
     drop = fn holder -> Map.update(holder, "sinners", [], &List.delete(&1, sinner)) end
 
     update =
@@ -390,25 +449,25 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         index -> &Map.update!(&1, "pins", fn pins -> List.update_at(pins, index, drop) end)
       end
 
-    {:noreply, update_action(socket, String.to_integer(turn), action_id, update)}
+    {:noreply, update_action(socket, action_id, update)}
   end
 
   @impl true
   def handle_event("reorder_pins", %{"scope" => scope, "ids" => ids}, socket) do
-    [turn, action_id] = String.split(scope, "|")
+    action_id = scope
     order = Enum.map(ids, &String.to_integer/1)
 
     {:noreply,
-     update_action(socket, String.to_integer(turn), action_id, fn action ->
+     update_action(socket, action_id, fn action ->
        pins = action["pins"]
        if Enum.sort(order) == Enum.to_list(0..(length(pins) - 1)//1), do: Map.put(action, "pins", Enum.map(order, &Enum.at(pins, &1))), else: action
      end)}
   end
 
   @impl true
-  def handle_event("remove_pin", %{"turn" => turn, "action" => action_id, "index" => index}, socket) do
+  def handle_event("remove_pin", %{"action" => action_id, "index" => index}, socket) do
     index = String.to_integer(index)
-    {:noreply, update_action(socket, String.to_integer(turn), action_id, &Map.update!(&1, "pins", fn pins -> List.delete_at(pins, index) end))}
+    {:noreply, update_action(socket, action_id, &Map.update!(&1, "pins", fn pins -> List.delete_at(pins, index) end))}
   end
 
   def floors(true), do: Enum.to_list(1..BattlePlans.max_floor())
@@ -509,28 +568,13 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     "Floor #{floor}: #{find_playbook(data, id)["name"]} (from F#{start})"
   end
 
-  def phase_range(phases, phase) do
-    next = phases |> Enum.map(& &1["from_turn"]) |> Enum.filter(&(&1 > phase["from_turn"])) |> Enum.min(fn -> nil end)
-
-    cond do
-      is_nil(next) -> "Turns #{phase["from_turn"]}+"
-      next - 1 == phase["from_turn"] -> "Turn #{phase["from_turn"]}"
-      true -> "Turns #{phase["from_turn"]}-#{next - 1}"
-    end
-  end
-
-  def ruler_turns(playbook) do
-    last = playbook["phases"] |> Enum.map(& &1["from_turn"]) |> Enum.max()
-    Enum.to_list(1..max(10, last + 2))
-  end
-
   def available_actions(playbook, actions) do
     has_terminal? = Enum.any?(actions, &BattlePlans.terminal?/1)
     Enum.reject(BattlePlans.action_types(playbook["kind"]), &(has_terminal? and BattlePlans.chain_action?(&1)))
   end
 
-  def branch_available_actions(kind, phase_actions, block, branch) do
-    blocked? = not BattlePlans.chain_allowed_in?(phase_actions, block["id"], branch)
+  def branch_available_actions(kind, scope_actions, block, branch) do
+    blocked? = not BattlePlans.chain_allowed_in?(scope_actions, block["id"], branch)
     Enum.reject(BattlePlans.action_types(kind), &(blocked? and BattlePlans.chain_action?(&1)))
   end
 
@@ -539,41 +583,150 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   def branch_label("then"), do: "then"
   def branch_label("else"), do: "else"
 
+  attr :container, :string, required: true
+  attr :playbook, :map, required: true
+  attr :sinner_options, :list, required: true
+  attr :editing_condition_id, :string, default: nil
+  attr :schedule_tabs, :map, required: true
+  attr :reorder_rev, :integer, required: true
+
+  def action_list(assigns) do
+    items = BattlePlans.container_actions(assigns.playbook["actions"], assigns.container)
+    scope = BattlePlans.scope_actions(assigns.playbook["actions"], assigns.container)
+    assigns = assign(assigns, items: items, scope: scope, dom_key: String.replace(assigns.container, "|", "-"))
+
+    ~H"""
+    <div class="flex flex-col gap-1">
+      <div id={"actions-#{@playbook["id"]}-#{@dom_key}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_actions" data-sort-move-event="move_action_to"
+           data-sort-shared={@playbook["id"]} data-sort-scope={@container} data-sort-highlight class="flex flex-col gap-1 min-h-6 rounded">
+        <div :for={{item, index} <- Enum.with_index(@items, 1)} data-sort-id={item["id"]} data-sort-stay={BattlePlans.schedule?(item)}>
+          <%= if BattlePlans.schedule?(item) do %>
+            <.schedule_block schedule={item} playbook={@playbook} sinner_options={@sinner_options} editing_condition_id={@editing_condition_id}
+                             schedule_tabs={@schedule_tabs} reorder_rev={@reorder_rev} />
+          <% else %>
+            <.action_row action={item} index={index} sinner_options={@sinner_options} kind={@playbook["kind"]} scope_actions={@scope} container={@container}
+                         editing_condition_id={@editing_condition_id} handle?={true} schedulable?={@container == "root"} />
+          <% end %>
+        </div>
+      </div>
+      <form id={"add-#{@playbook["id"]}-#{@dom_key}-#{length(@items)}"} phx-change="add_action" class="flex items-center gap-2">
+        <input type="hidden" name="container" value={@container} />
+        <select name="type" class="select select-bordered select-xs">
+          <option value="" selected>+ action</option>
+          <%= for type <- available_actions(@playbook, @scope) do %>
+            <option value={type}><%= action_label(type) %></option>
+          <% end %>
+        </select>
+        <span class="text-[11px] text-base-content/50 italic">
+          <%= if ends_with_chain?(@items) do %>
+            then: the chain drag starts the turn; fallback only if it didn't
+          <% else %>
+            then: fallback (enter, then p + enter if the turn didn't start)
+          <% end %>
+        </span>
+      </form>
+    </div>
+    """
+  end
+
+  attr :schedule, :map, required: true
+  attr :playbook, :map, required: true
+  attr :sinner_options, :list, required: true
+  attr :editing_condition_id, :string, default: nil
+  attr :schedule_tabs, :map, required: true
+  attr :reorder_rev, :integer, required: true
+
+  def schedule_block(assigns) do
+    froms = BattlePlans.segment_froms(assigns.schedule)
+    wanted = Map.get(assigns.schedule_tabs, assigns.schedule["id"], 1)
+    assigns = assign(assigns, froms: froms, active: if(wanted in froms, do: wanted, else: 1), max_turn: BattlePlans.max_turn())
+
+    ~H"""
+    <div class="flex flex-col">
+      <div class="flex items-end gap-0.5">
+        <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1 leading-6">⠿</span>
+        <div :for={from <- @froms}
+             class={"flex items-center gap-0.5 rounded-t-lg border border-b-0 px-2 py-0.5 text-[11px] " <>
+               if(from == @active, do: "border-primary bg-primary text-primary-content font-semibold", else: "border-primary/40 bg-primary/25 hover:bg-primary/40")}>
+          <button type="button" phx-click="select_schedule_tab" phx-value-schedule={@schedule["id"]} phx-value-from={from}><%= BattlePlans.segment_label(@schedule, from) %></button>
+          <div :if={from != 1} class="dropdown">
+            <div tabindex="0" role="button" class="cursor-pointer opacity-60 hover:opacity-100" title="Change the turn this starts on">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><path d="m6 9 6 6 6-6" /></svg>
+            </div>
+            <div tabindex="0" class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg">
+              <div class="grid grid-cols-5 gap-0.5">
+                <button :for={turn <- 2..@max_turn} type="button" phx-click="move_schedule_segment" phx-value-schedule={@schedule["id"]} phx-value-from={from} phx-value-to={turn}
+                        disabled={turn != from and turn in @froms} class={"btn btn-xs " <> if(turn == from, do: "btn-primary", else: "btn-ghost")}>T<%= turn %></button>
+              </div>
+            </div>
+          </div>
+          <button :if={from != 1} type="button" phx-click="remove_schedule_segment" phx-value-schedule={@schedule["id"]} phx-value-from={from} class="opacity-60 hover:opacity-100"
+                  title={"Close this tab; #{BattlePlans.segment_label(@schedule, from)} use the earlier tab's actions"}>✕</button>
+          <button :if={from == 1 and length(@froms) == 1} type="button" phx-click="remove_schedule" phx-value-schedule={@schedule["id"]} class="opacity-60 hover:opacity-100"
+                  title="Remove the schedule, keeping its actions">✕</button>
+        </div>
+        <button type="button" phx-click="split_schedule" phx-value-schedule={@schedule["id"]} phx-value-turn={Enum.max(@froms) + 1}
+                disabled={Enum.max(@froms) >= @max_turn} title="New tab"
+                class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/20 disabled:opacity-30">+</button>
+      </div>
+      <div class="p-1 border-2 border-primary rounded-b-lg rounded-tr-lg">
+        <.action_list container={@schedule["id"] <> "|" <> to_string(@active)} playbook={@playbook} sinner_options={@sinner_options}
+                      editing_condition_id={@editing_condition_id} schedule_tabs={@schedule_tabs} reorder_rev={@reorder_rev} />
+      </div>
+    </div>
+    """
+  end
+
   attr :action, :map, required: true
   attr :index, :integer, required: true
-  attr :turn, :integer, required: true
   attr :sinner_options, :list, required: true
   attr :kind, :string, required: true
-  attr :phase_actions, :list, required: true
+  attr :scope_actions, :list, required: true
+  attr :container, :string, default: "root"
+  attr :handle?, :boolean, default: false
+  attr :schedulable?, :boolean, default: false
+  attr :editing_condition_id, :string, default: nil
 
   def action_row(%{action: %{"type" => "if"}} = assigns) do
     ~H"""
     <div class="flex items-start gap-2 bg-base-200 rounded p-1.5 text-xs">
+      <span :if={@handle?} data-sort-handle class="cursor-grab text-base-content/40 select-none pt-1">⠿</span>
       <span class="text-base-content/50 w-4 pt-1"><%= @index %>.</span>
       <div class="flex flex-col gap-1 flex-1 min-w-0">
         <div class="flex items-center gap-2">
           <span class="font-semibold cursor-help" title={action_tooltip("if")}><%= action_label("if") %></span>
-          <span class="text-[11px] text-secondary truncate"><%= BattlePlans.condition_label(@action["condition"], Map.new(@sinner_options, &{&1.id, &1.name})) %></span>
         </div>
         <%= if @action["condition"] do %>
-          <.condition_node node={@action["condition"]} path="" values={%{"turn" => @turn, "action" => @action["id"]}} leaf={&hook_leaf(Map.put(&1, :sinner_options, @sinner_options))} />
+          <%= if @editing_condition_id == @action["id"] do %>
+            <div phx-click-away="close_action_condition" class="flex items-start gap-1">
+              <button type="button" phx-click="close_action_condition" title="Close the condition editor" class="btn btn-ghost btn-xs h-6 min-h-6 px-1">▾</button>
+              <div class="flex-1 min-w-0">
+                <.condition_node node={@action["condition"]} path="" values={%{"action" => @action["id"]}} removable={not is_map_key(@action["condition"], "children")}
+                                 leaf={&hook_leaf(Map.put(&1, :sinner_options, @sinner_options))} />
+              </div>
+            </div>
+          <% else %>
+            <button type="button" phx-click="open_action_condition" phx-value-action={@action["id"]}
+                    class="btn btn-outline btn-xs bg-base-100 h-6 min-h-6 w-full justify-start font-normal normal-case">
+              <span class="text-base-content/50">▸</span><span class="truncate"><%= BattlePlans.condition_label(@action["condition"], Map.new(@sinner_options, &{&1.id, &1.name})) %></span>
+            </button>
+          <% end %>
         <% else %>
-          <button type="button" phx-click="cond_add" phx-value-turn={@turn} phx-value-action={@action["id"]} phx-value-path="" phx-value-node="leaf"
+          <button type="button" phx-click="cond_add" phx-value-action={@action["id"]} phx-value-path="" phx-value-node="leaf"
                   class="btn btn-2xs btn-ghost self-start">+ Add condition</button>
         <% end %>
         <%= for branch <- BattlePlans.branches() do %>
           <div class="flex flex-col gap-1 pl-3 border-l-2 border-base-300">
             <span class="text-[11px] font-medium text-base-content/70"><%= branch_label(branch) %></span>
             <%= for {child, child_index} <- Enum.with_index(@action[branch], 1) do %>
-              <.action_row action={child} index={child_index} turn={@turn} sinner_options={@sinner_options} kind={@kind} phase_actions={@phase_actions} />
+              <.action_row action={child} index={child_index} sinner_options={@sinner_options} kind={@kind} scope_actions={@scope_actions} container={@container} editing_condition_id={@editing_condition_id} />
             <% end %>
             <form id={"add-#{@action["id"]}-#{branch}-#{length(@action[branch])}"} phx-change="add_action" class="flex items-center gap-2">
-              <input type="hidden" name="turn" value={@turn} />
-              <input type="hidden" name="parent" value={@action["id"]} />
+                    <input type="hidden" name="parent" value={@action["id"]} />
               <input type="hidden" name="branch" value={branch} />
               <select name="type" class="select select-bordered select-xs">
                 <option value="" selected>+ action</option>
-                <%= for type <- branch_available_actions(@kind, @phase_actions, @action, branch) do %>
+                <%= for type <- branch_available_actions(@kind, @scope_actions, @action, branch) do %>
                   <option value={type}><%= action_label(type) %></option>
                 <% end %>
               </select>
@@ -582,9 +735,11 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         <% end %>
       </div>
       <div class="flex gap-0.5">
-        <button phx-click="move_action" phx-value-turn={@turn} phx-value-action={@action["id"]} phx-value-dir="up" class="btn btn-2xs btn-ghost">↑</button>
-        <button phx-click="move_action" phx-value-turn={@turn} phx-value-action={@action["id"]} phx-value-dir="down" class="btn btn-2xs btn-ghost">↓</button>
-        <button phx-click="remove_action" phx-value-turn={@turn} phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
+        <button :if={@schedulable?} type="button" phx-click="add_schedule" phx-value-action={@action["id"]} title="Change this action across turns"
+                class="btn btn-2xs btn-ghost">Add Schedule</button>
+        <button phx-click="move_action" phx-value-action={@action["id"]} phx-value-dir="up" class="btn btn-2xs btn-ghost">↑</button>
+        <button phx-click="move_action" phx-value-action={@action["id"]} phx-value-dir="down" class="btn btn-2xs btn-ghost">↓</button>
+        <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
       </div>
     </div>
     """
@@ -593,15 +748,15 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   def action_row(assigns) do
     ~H"""
     <div class="flex items-start gap-2 bg-base-200 rounded p-1.5 text-xs">
+      <span :if={@handle?} data-sort-handle class="cursor-grab text-base-content/40 select-none pt-1">⠿</span>
       <span class="text-base-content/50 w-4 pt-1"><%= @index %>.</span>
       <form phx-change="update_action" class="flex flex-col gap-1 flex-1">
-        <input type="hidden" name="turn" value={@turn} />
         <input type="hidden" name="action" value={@action["id"]} />
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="font-semibold w-32 cursor-help" title={action_tooltip(@action["type"])}><%= action_label(@action["type"]) %></span>
+          <span class="font-semibold min-w-32 shrink-0 whitespace-nowrap cursor-help" title={action_tooltip(@action["type"])}><%= action_label(@action["type"]) %></span>
 
           <%= if @action["type"] in ~w(dodge ego target) do %>
-            <.sinner_picker holder={@action} prefix="" sinner_options={@sinner_options} turn={@turn} action_id={@action["id"]} />
+            <.sinner_picker holder={@action} prefix="" sinner_options={@sinner_options} action_id={@action["id"]} />
             <span class="text-base-content/60">skill</span>
             <select name="pick" class="select select-bordered select-xs">
               <%= for pick <- skill_picks(false) do %>
@@ -660,14 +815,14 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         </div>
 
         <%= if Map.has_key?(@action, "pins") do %>
-          <div id={"pins-#{@turn}-#{@action["id"]}"} phx-hook="SortableList" data-sort-event="reorder_pins"
-               data-sort-scope={"#{@turn}|#{@action["id"]}"} class="flex flex-col gap-1"
+          <div id={"pins-#{@action["id"]}"} phx-hook="SortableList" data-sort-event="reorder_pins"
+               data-sort-scope={@action["id"]} class="flex flex-col gap-1"
                title="When pins cover the same slot, the first pin wins. Drag ⠿ to reorder.">
           <%= for {pin, pin_index} <- Enum.with_index(@action["pins"]) do %>
             <div data-sort-id={pin_index} class="flex items-center gap-2 pl-4">
               <span data-sort-handle class="cursor-grab text-base-content/40 select-none">⠿</span>
               <span class="text-base-content/60">pin</span>
-              <.sinner_picker holder={pin} prefix={"pins[#{pin_index}]"} sinner_options={@sinner_options} turn={@turn} action_id={@action["id"]} pin={pin_index} />
+              <.sinner_picker holder={pin} prefix={"pins[#{pin_index}]"} sinner_options={@sinner_options} action_id={@action["id"]} pin={pin_index} />
               <span class="text-base-content/60">skill</span>
               <select name={"pins[#{pin_index}][pick]"} class="select select-bordered select-xs">
                 <%= for pick <- skill_picks(true) do %>
@@ -680,20 +835,22 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
               <.match_picker :if={pin["skill"]["pick"] == "first_with"} name={"pins[#{pin_index}][match]"} value={pin["skill"]["match"]} />
               <span class="text-base-content/60">row</span>
               <.row_picker holder={pin} prefix={"pins[#{pin_index}]"} keep?={true} />
-              <button type="button" phx-click="remove_pin" phx-value-turn={@turn} phx-value-action={@action["id"]} phx-value-index={pin_index}
+              <button type="button" phx-click="remove_pin" phx-value-action={@action["id"]} phx-value-index={pin_index}
                       class="btn btn-2xs btn-ghost text-error">✕</button>
             </div>
           <% end %>
           </div>
           <span :if={length(@action["pins"]) > 1} class="text-[11px] text-base-content/50 pl-4">When pins cover the same slot, the first pin wins.</span>
-          <button type="button" phx-click="add_pin" phx-value-turn={@turn} phx-value-action={@action["id"]}
+          <button type="button" phx-click="add_pin" phx-value-action={@action["id"]}
                   class="btn btn-2xs btn-ghost self-start ml-4">+ pin</button>
         <% end %>
       </form>
       <div class="flex gap-0.5">
-        <button phx-click="move_action" phx-value-turn={@turn} phx-value-action={@action["id"]} phx-value-dir="up" class="btn btn-2xs btn-ghost">↑</button>
-        <button phx-click="move_action" phx-value-turn={@turn} phx-value-action={@action["id"]} phx-value-dir="down" class="btn btn-2xs btn-ghost">↓</button>
-        <button phx-click="remove_action" phx-value-turn={@turn} phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
+        <button :if={@schedulable?} type="button" phx-click="add_schedule" phx-value-action={@action["id"]} title="Change this action across turns"
+                class="btn btn-2xs btn-ghost">Add Schedule</button>
+        <button phx-click="move_action" phx-value-action={@action["id"]} phx-value-dir="up" class="btn btn-2xs btn-ghost">↑</button>
+        <button phx-click="move_action" phx-value-action={@action["id"]} phx-value-dir="down" class="btn btn-2xs btn-ghost">↓</button>
+        <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
       </div>
     </div>
     """
@@ -717,7 +874,6 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   attr :holder, :map, required: true
   attr :prefix, :string, required: true
   attr :sinner_options, :list, required: true
-  attr :turn, :integer, required: true
   attr :action_id, :string, required: true
   attr :pin, :integer, default: nil
 
@@ -737,7 +893,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         <input type="hidden" name={field_name(@prefix, "sinners") <> "[]"} value={id} />
         <span class="badge badge-sm gap-1">
           <%= Map.get(@names, id, id) %>
-          <button type="button" phx-click="remove_sinner" phx-value-turn={@turn} phx-value-action={@action_id} phx-value-pin={@pin} phx-value-sinner={id}
+          <button type="button" phx-click="remove_sinner" phx-value-action={@action_id} phx-value-pin={@pin} phx-value-sinner={id}
                   class="text-error">✕</button>
         </span>
       <% end %>
@@ -872,13 +1028,16 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     |> assign(:lineup_id, nil)
     |> assign(:lineup_erase?, false)
     |> assign(:renaming_lineup_id, nil)
+    |> assign(:editing_condition_id, nil)
+    |> assign(:schedule_tabs, %{})
+    |> assign(:reorder_rev, 0)
     |> assign(:paint, nil)
     |> assign(:extreme?, false)
   end
 
   defp load_plan(socket, id) do
     case Plans.get(:battle_plans, id) do
-      %{data: %{"version" => 3} = data} = plan ->
+      %{data: %{"version" => 4} = data} = plan ->
         first_playbook = List.first(data["playbooks"])
 
         socket
@@ -895,7 +1054,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         put_flash(socket, :error, "Plan not found.")
 
       _ ->
-        put_flash(socket, :error, "Plan data is not version 3. Run mix db.migrate.")
+        put_flash(socket, :error, "Plan data is not version 4. Run mix db.migrate.")
     end
   end
 
@@ -943,12 +1102,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   defp copy_playbook(source) do
-    phases =
-      Enum.map(source["phases"], fn phase ->
-        Map.update!(phase, "actions", fn actions -> Enum.map(actions, &BattlePlans.refresh_ids/1) end)
-      end)
-
-    %{source | "id" => StarlightBot.GiftPlans.new_id("pb"), "name" => source["name"] <> " copy", "phases" => phases}
+    %{source | "id" => StarlightBot.GiftPlans.new_id("pb"), "name" => source["name"] <> " copy", "actions" => Enum.map(source["actions"], &BattlePlans.refresh_ids/1)}
   end
 
   defp update_playbook(socket, fun) do
@@ -957,38 +1111,20 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     socket |> assign(:data, Map.put(socket.assigns.data, "playbooks", playbooks)) |> persist()
   end
 
-  defp update_phase(socket, turn, fun) do
-    update_playbook(socket, fn playbook ->
-      Map.update!(playbook, "phases", fn phases ->
-        Enum.map(phases, fn phase ->
-          if phase["from_turn"] == turn, do: Map.update!(phase, "actions", &BattlePlans.chain_last(fun.(&1))), else: phase
-        end)
-      end)
+  defp update_items(socket, fun) do
+    update_playbook(socket, fn playbook -> Map.update!(playbook, "actions", &BattlePlans.normalize_items(fun.(&1))) end)
+  end
+
+  defp update_action(socket, action_id, fun) do
+    update_items(socket, fn items ->
+      BattlePlans.update_list_containing(items, action_id, fn list -> Enum.map(list, &if(&1["id"] == action_id, do: fun.(&1), else: &1)) end)
     end)
   end
 
-  defp update_action(socket, turn, action_id, fun) do
-    update_phase(socket, turn, fn actions ->
-      update_list_containing(actions, action_id, fn list -> Enum.map(list, &if(&1["id"] == action_id, do: fun.(&1), else: &1)) end)
-    end)
-  end
+  defp put_schedule_tab(socket, schedule_id, from), do: update(socket, :schedule_tabs, &Map.put(&1, schedule_id, from))
 
-  defp update_list_containing(actions, id, fun) do
-    if Enum.any?(actions, &(&1["id"] == id)) do
-      fun.(actions)
-    else
-      Enum.map(actions, fn
-        %{"type" => "if"} = block ->
-          Enum.reduce(BattlePlans.branches(), block, fn branch, acc -> Map.update!(acc, branch, &update_list_containing(&1, id, fun)) end)
-
-        action ->
-          action
-      end)
-    end
-  end
-
-  defp update_condition(socket, turn, action_id, fun) do
-    update_action(socket, String.to_integer(turn), action_id, fn action ->
+  defp update_condition(socket, action_id, fun) do
+    update_action(socket, action_id, fn action ->
       Map.put(action, "condition", action["condition"] |> fun.() |> Conditions.prune())
     end)
   end

@@ -780,13 +780,22 @@ const DblClickEvent = {
   }
 }
 
+const RightClickEvent = {
+  mounted() {
+    this.el.addEventListener("contextmenu", (e) => {
+      e.preventDefault()
+      this.pushEvent(this.el.dataset.event, { track: this.el.dataset.track, floor: this.el.dataset.floor })
+    })
+  }
+}
+
 // --- LiveSocket setup ---
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, DblClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
 })
 
 liveSocket.connect()

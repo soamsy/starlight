@@ -5,13 +5,19 @@ defmodule StarlightBot.BattlePlans.ResolverTest do
 
   @data %{
     "playbooks" => [
-      %{"id" => "fast", "kind" => "chain", "phases" => [%{"from_turn" => 1, "actions" => [%{"type" => "chain_fast"}]}]},
+      %{"id" => "fast", "kind" => "chain", "actions" => [%{"type" => "chain_fast"}]},
       %{
         "id" => "boss",
         "kind" => "chain",
-        "phases" => [
-          %{"from_turn" => 1, "actions" => [%{"type" => "dodge"}, %{"type" => "chain_a_res"}]},
-          %{"from_turn" => 5, "actions" => [%{"type" => "win_rate"}, %{"type" => "commit"}]}
+        "actions" => [
+          %{"type" => "dodge"},
+          %{
+            "type" => "schedule",
+            "segments" => [
+              %{"from_turn" => 1, "actions" => [%{"type" => "chain_a_res"}]},
+              %{"from_turn" => 5, "actions" => [%{"type" => "win_rate"}, %{"type" => "commit"}]}
+            ]
+          }
         ]
       }
     ],
@@ -57,13 +63,15 @@ defmodule StarlightBot.BattlePlans.ResolverTest do
     end
   end
 
-  describe "phase_for/2" do
-    test "the split turn itself adopts the new phase" do
+  describe "actions_for/2" do
+    test "plain actions apply every turn and the split turn itself adopts the new tab" do
       boss = Resolver.playbook_for(@data, "hard_chain", 5)
+      types = fn turn -> boss |> Resolver.actions_for(turn) |> Enum.map(& &1["type"]) end
 
-      assert Resolver.phase_for(boss, 4)["from_turn"] == 1
-      assert Resolver.phase_for(boss, 5)["from_turn"] == 5
-      assert Resolver.phase_for(boss, 9)["from_turn"] == 5
+      assert types.(1) == ["dodge", "chain_a_res"]
+      assert types.(4) == ["dodge", "chain_a_res"]
+      assert types.(5) == ["dodge", "win_rate", "commit"]
+      assert types.(9) == ["dodge", "win_rate", "commit"]
     end
   end
 end

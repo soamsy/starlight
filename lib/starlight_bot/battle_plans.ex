@@ -10,6 +10,7 @@ defmodule StarlightBot.BattlePlans do
   @backup_size 5
   @max_floor 15
   @default_max_retries 5
+  @max_turn 20
   @chain_actions ~w(chain_fast chain_a_res)
   @common_actions ~w(win_rate damage_rate commit clear dodge ego retry)
   @focused_actions ~w(target)
@@ -40,6 +41,7 @@ defmodule StarlightBot.BattlePlans do
     %{front: front, backup: Enum.take(rest, @backup_size)}
   end
   def max_floor, do: @max_floor
+  def max_turn, do: @max_turn
   def skill_picks, do: @skill_picks
   def enemy_picks, do: @skill_picks ++ ["percent"]
 
@@ -260,12 +262,18 @@ defmodule StarlightBot.BattlePlans do
   def flatten_actions(actions) do
     Enum.flat_map(actions, fn
       %{"type" => "if"} = block -> [block | Enum.flat_map(@branches, &flatten_actions(block[&1]))]
+      %{"type" => "schedule"} = schedule -> Enum.flat_map(schedule["segments"], &flatten_actions(&1["actions"]))
       action -> [action]
     end)
   end
 
   def refresh_ids(%{"type" => "if"} = block) do
     Enum.reduce(@branches, Map.put(block, "id", GiftPlans.new_id("ac")), &Map.update!(&2, &1, fn actions -> Enum.map(actions, fn a -> refresh_ids(a) end) end))
+  end
+
+  def refresh_ids(%{"type" => "schedule"} = schedule) do
+    segments = Enum.map(schedule["segments"], &Map.update!(&1, "actions", fn actions -> Enum.map(actions, fn a -> refresh_ids(a) end) end))
+    %{schedule | "id" => GiftPlans.new_id("sc"), "segments" => segments}
   end
 
   def refresh_ids(action), do: Map.put(action, "id", GiftPlans.new_id("ac"))
@@ -431,7 +439,7 @@ defmodule StarlightBot.BattlePlans do
     lineup = new_lineup("Lineup")
 
     %{
-      "version" => 3,
+      "version" => 4,
       "max_retries" => @default_max_retries,
       "profiles" => %{},
       "playbooks" => [chain, focused],
@@ -450,7 +458,7 @@ defmodule StarlightBot.BattlePlans do
       "id" => GiftPlans.new_id("pb"),
       "name" => name,
       "kind" => kind,
-      "phases" => [%{"from_turn" => 1, "actions" => default_actions(kind)}]
+      "actions" => default_actions(kind)
     }
   end
 
@@ -516,22 +524,190 @@ defmodule StarlightBot.BattlePlans do
     |> Enum.dedup_by(& &1[key])
   end
 
-  def split_phase(playbook, turn) when turn > 1 do
-    if Enum.any?(playbook["phases"], &(&1["from_turn"] == turn)) do
-      playbook
-    else
-      source = Resolver.phase_for(playbook, turn)
-      actions = Enum.map(source["actions"], &refresh_ids/1)
-      phases = Enum.sort_by(playbook["phases"] ++ [%{"from_turn" => turn, "actions" => actions}], & &1["from_turn"])
-      Map.put(playbook, "phases", phases)
+  def schedule?(%{"type" => "schedule"}), do: true
+  def schedule?(_item), do: false
+
+  def segment_froms(schedule), do: Enum.map(schedule["segments"], & &1["from_turn"])
+
+  def segment_label(schedule, from) do
+    next = schedule |> segment_froms() |> Enum.filter(&(&1 > from)) |> Enum.min(fn -> nil end)
+
+    cond do
+      is_nil(next) -> "Turns #{from}+"
+      next - 1 == from -> "Turn #{from}"
+      true -> "Turns #{from}-#{next - 1}"
     end
   end
 
-  def remove_phase(playbook, 1), do: playbook
-
-  def remove_phase(playbook, turn) do
-    Map.update!(playbook, "phases", fn phases -> Enum.reject(phases, &(&1["from_turn"] == turn)) end)
+  def segment_at(schedule, turn) do
+    schedule["segments"]
+    |> Enum.filter(&(&1["from_turn"] <= turn))
+    |> Enum.max_by(& &1["from_turn"], fn -> nil end)
   end
+
+  def find_item(items, id) do
+    Enum.find_value(items, fn
+      %{"id" => ^id} = item -> item
+      %{"type" => "if"} = block -> Enum.find_value(@branches, &find_item(block[&1], id))
+      %{"type" => "schedule"} = schedule -> Enum.find_value(schedule["segments"], &find_item(&1["actions"], id))
+      _item -> nil
+    end)
+  end
+
+  def update_list_containing(items, id, fun) do
+    if Enum.any?(items, &(&1["id"] == id)) do
+      fun.(items)
+    else
+      Enum.map(items, fn
+        %{"type" => "if"} = block ->
+          Enum.reduce(@branches, block, fn branch, acc -> Map.update!(acc, branch, &update_list_containing(&1, id, fun)) end)
+
+        %{"type" => "schedule"} = schedule ->
+          Map.update!(schedule, "segments", fn segments ->
+            Enum.map(segments, &Map.update!(&1, "actions", fn actions -> update_list_containing(actions, id, fun) end))
+          end)
+
+        item ->
+          item
+      end)
+    end
+  end
+
+  def update_container(items, "root", fun), do: fun.(items)
+
+  def update_container(items, container, fun) do
+    [schedule_id, from] = String.split(container, "|")
+    from = String.to_integer(from)
+
+    update_list_containing(items, schedule_id, fn list ->
+      Enum.map(list, fn
+        %{"id" => ^schedule_id} = schedule ->
+          Map.update!(schedule, "segments", fn segments ->
+            Enum.map(segments, &if(&1["from_turn"] == from, do: Map.update!(&1, "actions", fun), else: &1))
+          end)
+
+        item ->
+          item
+      end)
+    end)
+  end
+
+  def container_actions(items, "root"), do: items
+
+  def container_actions(items, container) do
+    [schedule_id, from] = String.split(container, "|")
+    from = String.to_integer(from)
+
+    with %{"segments" => segments} <- find_item(items, schedule_id),
+         %{"actions" => actions} <- Enum.find(segments, &(&1["from_turn"] == from)) do
+      actions
+    else
+      _ -> []
+    end
+  end
+
+  def scope_actions(items, container) do
+    plain = Enum.reject(items, &schedule?/1)
+
+    case container do
+      "root" -> plain ++ Enum.flat_map(Enum.filter(items, &schedule?/1), fn schedule -> Enum.flat_map(schedule["segments"], & &1["actions"]) end)
+      _ -> plain ++ container_actions(items, container)
+    end
+  end
+
+  def normalize_items(items) do
+    items
+    |> chain_last()
+    |> Enum.map(fn
+      %{"type" => "schedule"} = schedule -> Map.update!(schedule, "segments", fn segments -> Enum.map(segments, &Map.update!(&1, "actions", fn actions -> chain_last(actions) end)) end)
+      item -> item
+    end)
+  end
+
+  def new_schedule(action) do
+    %{"id" => GiftPlans.new_id("sc"), "type" => "schedule", "segments" => [%{"from_turn" => 1, "actions" => [action]}]}
+  end
+
+  def wrap_in_schedule(items, action_id) do
+    Enum.map(items, fn
+      %{"id" => ^action_id, "type" => type} = action when type != "schedule" -> new_schedule(action)
+      item -> item
+    end)
+  end
+
+  def unwrap_schedule(items, schedule_id) do
+    Enum.flat_map(items, fn
+      %{"id" => ^schedule_id} = schedule -> Enum.find(schedule["segments"], &(&1["from_turn"] == 1))["actions"]
+      item -> [item]
+    end)
+  end
+
+  def update_schedule(items, schedule_id, fun) do
+    Enum.map(items, fn
+      %{"id" => ^schedule_id, "type" => "schedule"} = schedule -> fun.(schedule)
+      item -> item
+    end)
+  end
+
+  def split_segment(schedule, turn) when turn in 2..@max_turn do
+    if turn in segment_froms(schedule) do
+      schedule
+    else
+      copied = schedule |> segment_at(turn) |> Map.fetch!("actions") |> Enum.map(&refresh_ids/1)
+      segment = %{"from_turn" => turn, "actions" => copied}
+      Map.update!(schedule, "segments", &Enum.sort_by(&1 ++ [segment], fn s -> s["from_turn"] end))
+    end
+  end
+
+  def split_segment(schedule, _turn), do: schedule
+
+  def move_segment(schedule, from, to) when from != 1 and to in 2..@max_turn do
+    if to in segment_froms(schedule) do
+      schedule
+    else
+      Map.update!(schedule, "segments", fn segments ->
+        segments |> Enum.map(&if(&1["from_turn"] == from, do: %{&1 | "from_turn" => to}, else: &1)) |> Enum.sort_by(& &1["from_turn"])
+      end)
+    end
+  end
+
+  def move_segment(schedule, _from, _to), do: schedule
+
+  def remove_segment(schedule, 1), do: schedule
+
+  def remove_segment(schedule, from) do
+    Map.update!(schedule, "segments", &Enum.reject(&1, fn segment -> segment["from_turn"] == from end))
+  end
+
+  def reorder_container(items, container, ids) do
+    update_container(items, container, fn list ->
+      by_id = Map.new(list, &{&1["id"], &1})
+      ordered = for id <- ids, Map.has_key?(by_id, id), do: by_id[id]
+      if length(ordered) == length(list), do: ordered, else: list
+    end)
+  end
+
+  def move_to_container(items, from, to, id, ids) do
+    moved = find_item(items, id)
+
+    cond do
+      is_nil(moved) or from == to -> items
+      schedule?(moved) -> items
+      true ->
+        removed = update_container(items, from, fn list -> Enum.reject(list, &(&1["id"] == id)) end)
+
+        placed =
+          update_container(removed, to, fn list ->
+            by_id = Map.new([moved | list], &{&1["id"], &1})
+            ordered = for item_id <- ids, Map.has_key?(by_id, item_id), do: by_id[item_id]
+            if length(ordered) == length(list) + 1, do: ordered, else: list ++ [moved]
+          end)
+
+        if terminal_conflict?(placed, to), do: items, else: placed
+    end
+  end
+
+  def terminal_conflict?(items, container), do: Enum.count(scope_actions(items, container), &terminal?/1) > 1
 
   def tracks_using(data, playbook_id) do
     Enum.filter(@tracks, fn track ->

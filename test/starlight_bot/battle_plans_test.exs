@@ -95,30 +95,89 @@ defmodule StarlightBot.BattlePlansTest do
     end
   end
 
-  describe "split_phase/2" do
-    test "copies the covering phase's actions into the new phase" do
-      playbook = BattlePlans.new_playbook("focused", "Win rate")
-      split = BattlePlans.split_phase(playbook, 5)
+  describe "schedules" do
+    defp scheduled(kind \\ "focused") do
+      playbook = BattlePlans.new_playbook(kind, "Win rate")
+      [first | _] = playbook["actions"]
+      %{playbook | "actions" => BattlePlans.wrap_in_schedule(playbook["actions"], first["id"])}
+    end
 
-      assert Enum.map(split["phases"], & &1["from_turn"]) == [1, 5]
-      [first, second] = split["phases"]
+    test "wrapping an action puts it in a single turn 1 tab, in place" do
+      playbook = scheduled()
+      assert [%{"type" => "schedule", "segments" => [%{"from_turn" => 1, "actions" => [%{"type" => "win_rate"}]}]}, %{"type" => "commit"}] = playbook["actions"]
+    end
+
+    test "split_segment copies the covering tab's actions with fresh ids" do
+      [schedule | _] = scheduled()["actions"]
+      split = BattlePlans.split_segment(schedule, 5)
+
+      assert BattlePlans.segment_froms(split) == [1, 5]
+      [first, second] = split["segments"]
       assert Enum.map(first["actions"], & &1["type"]) == Enum.map(second["actions"], & &1["type"])
       refute Enum.map(first["actions"], & &1["id"]) == Enum.map(second["actions"], & &1["id"])
+      assert BattlePlans.split_segment(split, 5) == split
     end
-  end
 
-  describe "if blocks" do
-    test "split_phase gives branch actions fresh ids" do
+    test "split_segment gives branch actions fresh ids" do
       block = BattlePlans.new_action("if") |> Map.put("then", [BattlePlans.new_action("clear")])
-      playbook = BattlePlans.new_playbook("focused", "Win rate") |> put_in(["phases", Access.at(0), "actions"], [block])
+      schedule = BattlePlans.new_schedule(block)
 
-      [first, second] = BattlePlans.split_phase(playbook, 3)["phases"]
+      [first, second] = BattlePlans.split_segment(schedule, 3)["segments"]
       [old_block] = first["actions"]
       [new_block] = second["actions"]
       refute old_block["id"] == new_block["id"]
       refute hd(old_block["then"])["id"] == hd(new_block["then"])["id"]
     end
 
+    test "labels cover single turns, ranges and the open tail" do
+      schedule = BattlePlans.new_schedule(BattlePlans.new_action("clear")) |> BattlePlans.split_segment(2) |> BattlePlans.split_segment(4)
+
+      assert Enum.map(BattlePlans.segment_froms(schedule), &BattlePlans.segment_label(schedule, &1)) == ["Turn 1", "Turns 2-3", "Turns 4+"]
+    end
+
+    test "tab 1 cannot be moved or removed, others can" do
+      schedule = BattlePlans.new_schedule(BattlePlans.new_action("clear")) |> BattlePlans.split_segment(3)
+
+      assert BattlePlans.move_segment(schedule, 1, 2) == schedule
+      assert BattlePlans.remove_segment(schedule, 1) == schedule
+      assert BattlePlans.segment_froms(BattlePlans.move_segment(schedule, 3, 6)) == [1, 6]
+      assert BattlePlans.segment_froms(BattlePlans.remove_segment(schedule, 3)) == [1]
+    end
+
+    test "unwrapping splices tab 1's actions back in place" do
+      playbook = scheduled()
+      [schedule | _] = playbook["actions"]
+
+      assert playbook["actions"] |> BattlePlans.unwrap_schedule(schedule["id"]) |> Enum.map(& &1["type"]) == ["win_rate", "commit"]
+    end
+
+    test "moving an action into a tab and reordering within containers" do
+      playbook = scheduled()
+      [schedule, commit] = playbook["actions"]
+      container = schedule["id"] <> "|1"
+      [win_rate] = BattlePlans.container_actions(playbook["actions"], container)
+
+      moved = BattlePlans.move_to_container(playbook["actions"], "root", container, commit["id"], [commit["id"], win_rate["id"]])
+
+      assert Enum.map(moved, & &1["type"]) == ["schedule"]
+      assert Enum.map(BattlePlans.container_actions(moved, container), & &1["type"]) == ["commit", "win_rate"]
+
+      reordered = BattlePlans.reorder_container(moved, container, [win_rate["id"], commit["id"]])
+      assert Enum.map(BattlePlans.container_actions(reordered, container), & &1["type"]) == ["win_rate", "commit"]
+    end
+
+    test "schedules never move into a tab and a second chain action is refused" do
+      playbook = scheduled("chain")
+      [schedule, chain] = playbook["actions"] ++ [BattlePlans.new_action("chain_a_res")]
+      container = schedule["id"] <> "|1"
+      items = playbook["actions"] ++ [chain]
+
+      assert BattlePlans.move_to_container(items, "root", container, schedule["id"], [schedule["id"]]) == items
+      assert BattlePlans.move_to_container(items, "root", container, chain["id"], [chain["id"]]) == items
+    end
+  end
+
+  describe "if blocks" do
     test "sinner count leaves parse, label and match" do
       leaf = BattlePlans.condition_leaf(%{"op" => "sinners_lte", "value" => "2", "hook" => "ignored"})
       assert leaf == %{"op" => "sinners_lte", "value" => 2}

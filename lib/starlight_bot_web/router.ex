@@ -14,7 +14,7 @@ defmodule StarlightBotWeb.Router do
     pipe_through :browser
 
     live_session :default, on_mount: StarlightBotWeb.Live.PageHook do
-      live "/", Live.HookEditorLive
+      live "/", Live.MirrorDungeonLive
       live "/hooks", Live.HookEditorLive
       live "/screenshots", Live.ScreenshotViewerLive
       live "/battle", Live.BattleInspectorLive
