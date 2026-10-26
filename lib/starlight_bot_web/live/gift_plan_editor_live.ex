@@ -424,13 +424,14 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
-  def handle_event("ms_toggle_skill_option", %{"entry" => entry_id, "from" => from, "option" => option}, socket) do
-    {:noreply,
-     update_segment(socket, entry_id, from, fn segment ->
-       picked = segment["options"] || []
-       picked = if option in picked, do: List.delete(picked, option), else: picked ++ [option]
-       Map.put(segment, "options", Enum.filter(GiftPlans.skill_options(), &(&1 in picked)))
-     end)}
+  def handle_event("ms_step_skill_target", %{"entry" => entry_id, "from" => from, "key" => key, "delta" => delta}, socket) when key in ~w(s1 s2) do
+    delta = parse_int(delta, 0)
+    {:noreply, update_segment(socket, entry_id, from, &Map.put(&1, "target", GiftPlans.step_skill_target(&1["target"], key, delta, &1["lock_s2"] != false)))}
+  end
+
+  @impl true
+  def handle_event("ms_toggle_skill_lock", %{"entry" => entry_id, "from" => from}, socket) do
+    {:noreply, update_segment(socket, entry_id, from, &Map.merge(&1, %{"lock_s2" => &1["lock_s2"] == false, "target" => GiftPlans.skill_target(&1["target"], &1["lock_s2"] == false)}))}
   end
 
   @impl true
@@ -769,10 +770,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
   def sinner_label(nil), do: "(none)"
   def sinner_label(sinner), do: sinner |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
-
-  def skill_option_label("s1_s2"), do: "S1 → S2 (45)"
-  def skill_option_label("s2_s3"), do: "S2 → S3 (75)"
-  def skill_option_label("s1_s3"), do: "S1 → S3 (120)"
 
   def loadout_offers(plan_data, milestone) do
     if milestone["id"] == hd(plan_data["milestones"])["id"] do
@@ -1389,6 +1386,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         segment: segment,
         pattern?: pattern?,
         action?: action?,
+        skill?: action? and entry["subject"]["action"] == "skill_replace",
         gift: gift,
         keep?: keep?,
         sell?: sell?,
@@ -1423,7 +1421,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <input type="hidden" name="from" value={@from} />
       <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
       <div class="w-24 shrink-0">
-        <select :if={@keep? or (@abandoned? and not @pattern?)} name="segment[goal]"
+        <select :if={@keep? or @skill? or (@abandoned? and not @pattern?)} name="segment[goal]"
                 class={"select select-bordered select-xs w-full " <> if(@abandoned?, do: "", else: goal_select_color(@segment["goal"] || "required"))}>
           <option :for={goal <- ["required", "optional" | GiftPlans.goal_letters(@milestone)] ++ ["abandon"]} value={goal}
                   selected={if @abandoned?, do: goal == "abandon", else: (@segment["goal"] || "required") == goal}><%= goal_label(goal) %></option>
@@ -1436,7 +1434,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         <span :if={@action?} class={"badge badge-xs " <> if(@entry["subject"]["action"] == "skill_replace", do: "badge-info text-black", else: "badge-success")}>
           <%= if @entry["subject"]["action"] == "skill_replace", do: "skill", else: "heal" %>
         </span>
-        <span data-gift-popup={@gift && @gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class={"text-xs font-medium truncate " <> if(@gift, do: "cursor-pointer select-none", else: "")} title={GiftPlans.subject_label(@entry["subject"])}><%= GiftPlans.subject_label(@entry["subject"]) %></span>
+        <span data-sort-handle data-gift-popup={@gift && @gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class={"text-xs font-medium truncate select-none " <> if(@gift, do: "cursor-pointer", else: "cursor-grab")} title={GiftPlans.subject_label(@entry["subject"])}><%= GiftPlans.subject_label(@entry["subject"]) %></span>
         <span :if={@action? and not @abandoned?} class="ml-auto pr-1 text-[11px] text-base-content/60 whitespace-nowrap">
           Cost <%= case GiftPlans.action_cost_range(@entry["subject"]["action"], @segment) do
             {same, same} -> same
@@ -1453,10 +1451,28 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
                   phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-sinner={sinner}
                   class={"btn btn-xs h-5 min-h-0 px-0.5 min-w-0 text-[10px] " <> if(sinner in (@segment["sinners"] || []), do: if(@entry["subject"]["action"] == "skill_replace", do: "btn-info text-black", else: "btn-success"), else: "btn-outline")}><%= sinner_label(sinner) %></button>
         </div>
-        <div :if={@entry["subject"]["action"] == "skill_replace"} class="grid grid-cols-2 gap-0.5">
-          <button :for={option <- GiftPlans.skill_options()} type="button" phx-click="ms_toggle_skill_option"
-                  phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-option={option}
-                  class={"btn btn-xs h-[18px] min-h-0 px-1.5 text-[11px] " <> if(option == "s1_s3", do: "col-span-2 ", else: "") <> if(option in (@segment["options"] || []), do: "btn-info text-black", else: "btn-outline")}><%= skill_option_label(option) %></button>
+        <div :if={@skill?} class="flex items-center gap-2 text-[11px]">
+          <% locked? = @segment["lock_s2"] != false %>
+          <% target = GiftPlans.skill_target(@segment["target"], locked?) %>
+          <span :for={key <- ~w(s1 s2 s3)} class="flex items-center gap-0.5">
+            <%= String.upcase(key) %>
+            <span :if={key == "s3"} class="w-4 text-center font-semibold"><%= target[key] %></span>
+            <span :if={key != "s3"} class="join">
+              <button type="button" phx-click="ms_step_skill_target" phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-key={key} phx-value-delta="-1"
+                      disabled={target[key] <= GiftPlans.skill_min(locked?, key)} class="btn btn-xs join-item h-5 min-h-0 px-1">-</button>
+              <span class="join-item flex w-4 items-center justify-center border border-base-300 font-semibold"><%= target[key] %></span>
+              <button type="button" phx-click="ms_step_skill_target" phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-key={key} phx-value-delta="1"
+                      disabled={target[key] >= GiftPlans.skill_max(target, key)} class="btn btn-xs join-item h-5 min-h-0 px-1">+</button>
+            </span>
+            <button :if={key == "s2"} type="button" phx-click="ms_toggle_skill_lock" phx-value-entry={@entry["id"]} phx-value-from={@from}
+                    title={"Don't let S2 drop or go past #{target["s2"]}"}
+                    class={"btn btn-xs h-5 min-h-0 px-1 " <> if(@segment["lock_s2"] != false, do: "btn-info text-black", else: "btn-ghost")}>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5">
+                <path :if={@segment["lock_s2"] != false} stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                <path :if={@segment["lock_s2"] == false} stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+            </button>
+          </span>
         </div>
         <div :if={action_repeats(@entry["subject"]["action"]) != []} class="join">
           <button :for={{repeat, label} <- action_repeats(@entry["subject"]["action"])} type="button" phx-click="ms_set_heal_repeat"

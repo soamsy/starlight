@@ -296,21 +296,37 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert GiftPlans.keep_set(saved(socket), 1) == MapSet.new()
   end
 
-  test "skill replace entries pick sinners and replacement options, showing the cost range of the options picked", %{socket: socket} do
+  test "skill replace entries pick sinners, a goal and a wanted skill distribution", %{socket: socket} do
     [first | _] = StarlightBot.Teams.all_sinners()
     socket = socket |> shop() |> event("ms_add_action", %{"action" => "skill_replace", "sinner" => first})
     [replace] = milestone(socket)["entries"]
-    assert [%{"sinners" => [^first], "options" => ["s1_s3", "s2_s3", "s1_s2"]}] = replace["floors"]
-    assert render(socket) =~ "Skill Replace" and render(socket) =~ "Cost 45-120"
+    assert [%{"sinners" => [^first], "goal" => "optional", "target" => %{"s1" => 1, "s2" => 2, "s3" => 3}}] = replace["floors"]
+    assert render(socket) =~ "Skill Replace" and render(socket) =~ "Cost 240"
 
-    socket = socket |> event("ms_toggle_skill_option", %{"entry" => replace["id"], "from" => "1", "option" => "s1_s3"})
-    assert [%{"options" => ["s2_s3", "s1_s2"]}] = hd(milestone(socket)["entries"])["floors"]
-    assert render(socket) =~ "Cost 45-75"
-
-    socket = socket |> event("ms_toggle_skill_option", %{"entry" => replace["id"], "from" => "1", "option" => "s1_s3"})
-    assert [%{"options" => ["s1_s3", "s2_s3", "s1_s2"]}] = hd(milestone(socket)["entries"])["floors"]
+    socket = event(socket, "ms_update_segment", %{"entry" => replace["id"], "from" => "1", "segment" => %{"goal" => "optional"}})
+    id = replace["id"]
+    socket = socket |> event("ms_step_skill_target", %{"entry" => id, "from" => "1", "key" => "s1", "delta" => "-1"}) |> event("ms_step_skill_target", %{"entry" => id, "from" => "1", "key" => "s2", "delta" => "5"}) |> event("ms_toggle_skill_lock", %{"entry" => id, "from" => "1"})
+    assert [%{"goal" => "optional", "lock_s2" => false, "target" => %{"s1" => 0, "s2" => 5, "s3" => 1}}] = hd(milestone(socket)["entries"])["floors"]
+    socket = event(socket, "ms_step_skill_target", %{"entry" => id, "from" => "1", "key" => "s1", "delta" => "3"})
+    assert [%{"target" => %{"s1" => 3, "s2" => 2, "s3" => 1}}] = hd(milestone(socket)["entries"])["floors"]
     assert GiftPlans.heal_entries(GiftPlans.resolved_entries(milestone(socket), 1)) == []
-    assert [%{options: ["s1_s3", "s2_s3", "s1_s2"]}] = GiftPlans.skill_replace_entries(GiftPlans.resolved_entries(milestone(socket), 1))
+    assert [%{goal: "optional", lock_s2: false, target: %{"s1" => 3, "s2" => 2, "s3" => 1}}] = GiftPlans.skill_replace_entries(GiftPlans.resolved_entries(milestone(socket), 1))
+  end
+
+  test "locking S2 keeps its target at or above the starting 2", %{socket: socket} do
+    [first | _] = StarlightBot.Teams.all_sinners()
+    socket = socket |> shop() |> event("ms_add_action", %{"action" => "skill_replace", "sinner" => first})
+    [%{"id" => id}] = milestone(socket)["entries"]
+    step = fn socket, key, delta -> event(socket, "ms_step_skill_target", %{"entry" => id, "from" => "1", "key" => key, "delta" => delta}) end
+
+    socket = step.(socket, "s2", "-5")
+    assert %{"s2" => 2} = hd(hd(milestone(socket)["entries"])["floors"])["target"]
+
+    socket = socket |> event("ms_toggle_skill_lock", %{"entry" => id, "from" => "1"}) |> step.("s2", "-5")
+    assert %{"s2" => 0, "s3" => 5} = hd(hd(milestone(socket)["entries"])["floors"])["target"]
+
+    socket = event(socket, "ms_toggle_skill_lock", %{"entry" => id, "from" => "1"})
+    assert %{"s2" => 2} = hd(hd(milestone(socket)["entries"])["floors"])["target"]
   end
 
   test "refresh cases read like a case statement: each gets a condition and an action, and they reorder and delete", %{socket: socket} do

@@ -53,16 +53,27 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
   def work(_milestones, %{left: true} = state, mode, _frame, ctx), do: finish(state, mode, ctx)
 
   def work([milestone | rest], state, mode, _frame, ctx) do
-    if GiftPlans.milestone_reached?(state.plan, milestone["id"], condition_env(state, ctx)) do
-      state = record(state, milestone, milestone["name"], :skipped, "required and goals already done, moving on", ctx)
-      {:steps, [call(__MODULE__, :work, [rest, state, mode])]}
-    else
-      state = if sell_first?(milestone, state.floor), do: state, else: close_sell_popup(state, ctx)
+    env = condition_env(state, ctx)
 
-      case run_milestone(milestone, state, mode, ctx) do
-        :interrupted -> {:error, :window_not_focused}
-        state -> {:steps, [call(__MODULE__, :work, [rest, state, mode])]}
-      end
+    cond do
+      GiftPlans.milestone_reached?(state.plan, milestone["id"], env) and Milestone.heals?(milestone, state) and
+          Enum.all?(rest, &GiftPlans.milestone_reached?(state.plan, &1["id"], env)) ->
+        case run_milestone(milestone, close_sell_popup(state, ctx), mode, ctx, :heal_only) do
+          :interrupted -> {:error, :window_not_focused}
+          state -> {:steps, [call(__MODULE__, :work, [rest, state, mode])]}
+        end
+
+      GiftPlans.milestone_reached?(state.plan, milestone["id"], env) ->
+        state = record(state, milestone, milestone["name"], :skipped, "required and goals already done, moving on", ctx)
+        {:steps, [call(__MODULE__, :work, [rest, state, mode])]}
+
+      true ->
+        state = if sell_first?(milestone, state.floor), do: state, else: close_sell_popup(state, ctx)
+
+        case run_milestone(milestone, state, mode, ctx, :full) do
+          :interrupted -> {:error, :window_not_focused}
+          state -> {:steps, [call(__MODULE__, :work, [rest, state, mode])]}
+        end
     end
   end
 
@@ -144,19 +155,23 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       gifts: state.gifts_by_name,
       gifts_by_id: state.gifts_by_id,
       refreshes: state.refreshes,
+      skill_replaces: RunMemory.skill_replaces(ctx),
       case_runs: Map.get(state, :case_runs, %{})
     }
   end
 
-  defp run_milestone(milestone, state, mode, ctx) do
+  defp run_milestone(milestone, state, mode, ctx, scope) do
     if mode == :run, do: Ops.close_fuse_popup(ctx)
     label = milestone["name"]
     RunMemory.put(ctx, :task, "shop: #{label}")
 
     {outcome, detail, state} =
-      if mode == :dry_run,
-        do: Milestone.preview(nil, milestone, state, ctx),
-        else: Milestone.run(nil, milestone, state, ctx)
+      case {mode, scope} do
+        {:dry_run, :heal_only} -> Milestone.heal_only_preview(milestone, state)
+        {:dry_run, :full} -> Milestone.preview(nil, milestone, state, ctx)
+        {:run, :heal_only} -> Milestone.heal_only(milestone, state, ctx)
+        {:run, :full} -> Milestone.run(nil, milestone, state, ctx)
+      end
 
     if mode == :run and outcome not in [:done, :skipped] and interrupted?(ctx) do
       Ctx.log(ctx, :info, "shop runner: #{label} — interrupted by a pause or focus loss, it will run again on resume")

@@ -64,10 +64,38 @@ defmodule StarlightBot.Automation.Shop.Actions.MilestoneTest do
     gone = entry("me_gone", %{"action" => "heal_all"}, %{"disposition" => "ignore", "buy" => false, "goal" => nil, "abandoned" => true})
     milestone = Map.update!(milestone, "entries", &([heal, gone] ++ &1))
 
-    replace = entry("me_replace", %{"action" => "skill_replace"}, %{"disposition" => "ignore", "buy" => false, "goal" => nil, "sinners" => ["faust"], "options" => ["s1_s3"]})
+    replace = entry("me_replace", %{"action" => "skill_replace"}, %{"disposition" => "ignore", "buy" => false, "goal" => nil, "sinners" => ["faust"]})
     milestone = Map.update!(milestone, "entries", &([replace] ++ &1))
 
     assert {:would_run, "check heals: Greatly Heal yi_sang, faust; check skill replace for faust; would uptie Owned" <> _, _} = Milestone.preview(%{}, milestone, state, ctx)
+  end
+
+  test "skill replace entries count toward the milestone until each sinner reaches the wanted distribution", %{ctx: ctx, state: state, milestone: milestone} do
+    for {id, name} <- [{"g_fixed", "Fixed"}, {"g_3", "Three"}, {"g_4", "Four"}, {"g_owned", "Owned"}], do: RunMemory.add_ego_gift(ctx, id, name)
+    RunMemory.set_ego_gift_uptie(ctx, "g_owned", 2)
+    replace = entry("me_replace", %{"action" => "skill_replace"}, %{"disposition" => "ignore", "buy" => false, "goal" => "required", "sinners" => ["faust"], "target" => %{"s1" => 1, "s2" => 2, "s3" => 3}})
+    plan = %{"milestones" => [Map.update!(milestone, "entries", &[replace | &1])]}
+    env = fn -> %{plan: plan, floor: 1, gifts: state.gifts_by_name, inventory: RunMemory.ego_gifts(ctx), skill_replaces: RunMemory.skill_replaces(ctx)} end
+
+    refute GiftPlans.milestone_reached?(plan, "ms_main", env.())
+
+    RunMemory.add_skill_replace(ctx, "faust", "s1_s3")
+    refute GiftPlans.milestone_reached?(plan, "ms_main", env.())
+
+    RunMemory.add_skill_replace(ctx, "faust", "s1_s3")
+    assert GiftPlans.milestone_reached?(plan, "ms_main", env.())
+  end
+
+  test "overshooting the wanted distribution still counts as complete" do
+    target = %{"s1" => 1, "s2" => 2, "s3" => 3}
+    replaces = %{"s1_s3" => 3, "s2_s3" => 1}
+    assert GiftPlans.skill_distribution(replaces) == %{"s1" => 0, "s2" => 1, "s3" => 5}
+    assert GiftPlans.skill_complete?(GiftPlans.skill_distribution(replaces), target)
+    refute GiftPlans.skill_complete?(GiftPlans.skill_distribution(%{"s1_s3" => 1}), target)
+    assert GiftPlans.useful_skill_options(GiftPlans.skill_distribution(%{"s1_s3" => 1}), target, false) == ["s1_s3", "s2_s3", "s1_s2"]
+    assert GiftPlans.useful_skill_options(GiftPlans.skill_distribution(%{}), target, true) == ["s1_s3"]
+    assert GiftPlans.useful_skill_options(GiftPlans.skill_distribution(%{"s1_s3" => 1}), %{"s1" => 0, "s2" => 3, "s3" => 3}, true) == ["s1_s3", "s1_s2"]
+    assert GiftPlans.useful_skill_options(GiftPlans.skill_distribution(%{"s1_s2" => 1, "s1_s3" => 1}), %{"s1" => 0, "s2" => 3, "s3" => 3}, true) == ["s1_s3"]
   end
 
   test "a reached milestone never consults its refresh cases", %{ctx: ctx, state: state, milestone: milestone} do

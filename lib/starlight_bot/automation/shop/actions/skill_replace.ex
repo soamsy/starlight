@@ -4,12 +4,15 @@ defmodule StarlightBot.Automation.Shop.Actions.SkillReplace do
   alias StarlightBot.GiftPlans
 
   def run(%{"sinner" => nil}, _definition, state, _ctx), do: {:failed, "no sinner selected", state}
-  def run(%{"options" => []}, _definition, state, _ctx), do: {:failed, "no replacement options selected", state}
 
-  def run(%{"sinner" => sinner, "options" => options}, _definition, state, ctx) do
+  def run(%{"sinner" => sinner, "target" => target, "lock_s2" => lock_s2?}, _definition, state, ctx) do
     cost = RunMemory.cost(ctx)
+    options = GiftPlans.useful_skill_options(distribution(sinner, ctx), target, lock_s2?)
 
     cond do
+      options == [] ->
+        {:skipped, "#{sinner} already has the wanted skills", state}
+
       MapSet.member?(state.replaced, sinner) ->
         {:skipped, "#{sinner} was already replaced in this shop", state}
 
@@ -22,7 +25,7 @@ defmodule StarlightBot.Automation.Shop.Actions.SkillReplace do
   end
 
   def run_entries(entries, state, ctx) do
-    attempts = for entry <- entries, sinner <- entry.sinners, entry.options != [], do: %{"sinner" => sinner, "options" => entry.options}
+    attempts = for entry <- entries, sinner <- entry.sinners, do: %{"sinner" => sinner, "target" => entry.target, "lock_s2" => entry.lock_s2}
 
     Enum.reduce_while(attempts, {[], false, state}, fn step, {lines, _acted?, state} ->
       case run(step, nil, state, ctx) do
@@ -37,6 +40,7 @@ defmodule StarlightBot.Automation.Shop.Actions.SkillReplace do
   defp replace(sinner, options, state, ctx) do
     case Ops.replace_skill(sinner, options, ctx) do
       {:ok, option} ->
+        RunMemory.add_skill_replace(ctx, sinner, option)
         {:done, "replaced #{sinner} #{option_label(option)}", %{state | replaced: MapSet.put(state.replaced, sinner)}}
 
       {:error, :no_hook} ->
@@ -56,6 +60,10 @@ defmodule StarlightBot.Automation.Shop.Actions.SkillReplace do
         {:failed, inspect(reason), state}
     end
   end
+
+  def pending?(sinner, entry, ctx), do: GiftPlans.useful_skill_options(distribution(sinner, ctx), entry.target, entry.lock_s2) != []
+
+  defp distribution(sinner, ctx), do: ctx |> RunMemory.skill_replaces() |> Map.get(sinner) |> GiftPlans.skill_distribution()
 
   def preview(%{"sinner" => sinner}, _definition, state, _ctx) when is_binary(sinner) do
     case Ops.skill_replace_offer(sinner) do

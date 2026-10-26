@@ -85,12 +85,12 @@
                     <div class="flex items-center gap-1 shrink-0">
                       <input type="text" placeholder="Search gifts…" value={@gift_filter} phx-keyup="filter_gifts"
                              class="input input-bordered input-xs flex-1 min-w-0" />
-                      <div class="dropdown dropdown-end">
-                        <div tabindex="0" role="button" title="Filter"
+                      <details class="dropdown dropdown-end">
+                        <summary title="Filter"
                              class={"btn btn-xs btn-square " <> if(@gift_tier_filter || @gift_affinity_filter, do: "btn-primary", else: "btn-ghost")}>
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" /></svg>
-                        </div>
-                        <div tabindex="0" class="dropdown-content z-30 mt-1 w-44 rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg space-y-2">
+                        </summary>
+                        <div class="dropdown-content z-30 mt-1 w-44 rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg space-y-2">
                           <form phx-change="set_gift_tier_filter" class="flex flex-col gap-0.5">
                             <span class="text-[11px] text-base-content/60">Tier</span>
                             <select name="value" class="select select-bordered select-xs">
@@ -108,7 +108,7 @@
                             </select>
                           </form>
                         </div>
-                      </div>
+                      </details>
                       <div class="dropdown dropdown-end">
                         <div tabindex="0" role="button" title={"Sort: #{gift_sort_label(@gift_sort)}"}
                              class={"btn btn-xs btn-square " <> if(@gift_sort != "default", do: "btn-primary", else: "btn-ghost")}>

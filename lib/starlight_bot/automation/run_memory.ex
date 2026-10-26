@@ -102,6 +102,14 @@ defmodule StarlightBot.Automation.RunMemory do
     gifts_after
   end
 
+  def skill_replaces(ctx), do: get(ctx, :skill_replaces, %{})
+
+  def add_skill_replace(ctx, sinner, option) do
+    update(ctx, :skill_replaces, %{}, fn replaces ->
+      Map.update(replaces, sinner, %{option => 1}, &Map.update(&1, option, 1, fn count -> count + 1 end))
+    end)
+  end
+
   def unfusable_gifts(ctx), do: get(ctx, :unfusable_gifts, MapSet.new())
 
   def add_unfusable_gifts(ctx, gift_ids), do: update(ctx, :unfusable_gifts, MapSet.new(), &MapSet.union(&1, MapSet.new(gift_ids)))
@@ -250,12 +258,16 @@ defmodule StarlightBot.Automation.RunMemory do
   def mode_for(%{id: team_id}, floor), do: Resolver.mode_for_floor(mode_schedule(team_id), floor)
   def mode_for(_team, _floor), do: "normal"
 
-  defp mode_schedule(team_id) do
+  def extreme?(team_id), do: team_id |> pack_plan_data() |> Resolver.extreme?()
+
+  defp mode_schedule(team_id), do: Map.get(pack_plan_data(team_id), "mode_schedule", [])
+
+  defp pack_plan_data(team_id) do
     with %{pack_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
-         %{data: %{"mode_schedule" => schedule}} when is_list(schedule) <- Plans.get(:pack_plans, id) do
-      schedule
+         %{data: %{"mode_schedule" => schedule} = data} when is_list(schedule) <- Plans.get(:pack_plans, id) do
+      data
     else
-      _ -> []
+      _ -> %{}
     end
   end
 end

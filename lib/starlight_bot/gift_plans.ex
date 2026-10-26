@@ -10,6 +10,10 @@ defmodule StarlightBot.GiftPlans do
   @heal_all_max 7
   @refresh_actions ~w(refresh affinity_refresh leave)
   @skill_option_costs %{"s1_s2" => 45, "s2_s3" => 75, "s1_s3" => 120}
+  @skill_moves %{"s1_s2" => {"s1", "s2"}, "s2_s3" => {"s2", "s3"}, "s1_s3" => {"s1", "s3"}}
+  @skill_start %{"s1" => 3, "s2" => 2, "s3" => 1}
+  @skill_default_target %{"s1" => 1, "s2" => 2, "s3" => 3}
+  @skill_slots 6
   @skill_replace_cost 50
   @uptie_step_costs %{1 => [50, 100], 2 => [60, 120], 3 => [75, 150], 4 => [100, 200]}
   @max_uptie 2
@@ -72,6 +76,75 @@ defmodule StarlightBot.GiftPlans do
 
   def dispositions, do: @dispositions
   def skill_options, do: @skill_options
+  def skill_slots, do: @skill_slots
+
+  def skill_target(target, lock_s2?) when is_map(target) do
+    s1 = clamp_skill_count(target["s1"], @skill_default_target["s1"], 0, skill_max(%{"s1" => 0}, "s1"))
+    s2 = clamp_skill_count(target["s2"], @skill_default_target["s2"], skill_min(lock_s2?, "s2"), skill_max(%{"s1" => s1}, "s2"))
+    %{"s1" => s1, "s2" => s2, "s3" => @skill_slots - s1 - s2}
+  end
+
+  def skill_target(_target, lock_s2?), do: skill_target(@skill_default_target, lock_s2?)
+
+  def skill_max(_target, "s1"), do: 3
+  def skill_max(%{"s1" => s1}, "s2"), do: @skill_slots - @skill_start["s3"] - s1
+
+  def skill_min(true, "s2"), do: @skill_start["s2"]
+  def skill_min(_lock_s2?, _key), do: 0
+
+  def step_skill_target(target, key, delta, lock_s2?) when key in ["s1", "s2"] do
+    target = skill_target(target, lock_s2?)
+    skill_target(Map.update!(target, key, &(&1 + delta)), lock_s2?)
+  end
+
+  defp clamp_skill_count(count, _default, min, max) when is_integer(count), do: count |> max(min) |> min(max)
+  defp clamp_skill_count(_count, default, min, max), do: default |> max(min) |> min(max)
+
+  def skill_distribution(replaces) do
+    Enum.reduce(replaces || %{}, @skill_start, fn {option, count}, distribution ->
+      {from, to} = @skill_moves[option]
+      distribution |> Map.update!(from, &(&1 - count)) |> Map.update!(to, &(&1 + count))
+    end)
+  end
+
+  def skill_complete?(distribution, target) do
+    distribution["s3"] >= target["s3"] and distribution["s3"] + distribution["s2"] >= target["s3"] + target["s2"]
+  end
+
+  def useful_skill_options(distribution, target, lock_s2?) do
+    reach_s3? = distribution["s3"] < target["s3"]
+    reach_s2_or_better? = distribution["s3"] + distribution["s2"] < target["s3"] + target["s2"]
+    s2_room? = not lock_s2? or distribution["s2"] < target["s2"]
+
+    Enum.filter(@skill_options, fn
+      "s1_s3" -> reach_s3? and (lock_s2? or reach_s2_or_better?) and distribution["s1"] > 0
+      "s2_s3" -> not lock_s2? and reach_s3? and distribution["s2"] > 0
+      "s1_s2" -> reach_s2_or_better? and s2_room? and distribution["s1"] > 0
+    end)
+  end
+
+  defp skill_path_costs(distribution, target, lock_s2?) do
+    case useful_skill_options(distribution, target, lock_s2?) do
+      [] ->
+        {0, 0}
+
+      options ->
+        costs =
+          Enum.map(options, fn option ->
+            {low, high} = distribution |> apply_skill_option(option) |> skill_path_costs(target, lock_s2?)
+            {low + @skill_option_costs[option], high + @skill_option_costs[option]}
+          end)
+
+        {costs |> Enum.map(&elem(&1, 0)) |> Enum.min(), costs |> Enum.map(&elem(&1, 1)) |> Enum.max()}
+    end
+  end
+
+  defp apply_skill_option(distribution, option) do
+    {from, to} = @skill_moves[option]
+    distribution |> Map.update!(from, &(&1 - 1)) |> Map.update!(to, &(&1 + 1))
+  end
+
+  def skill_sinner_complete?(replaces, target), do: replaces |> skill_distribution() |> skill_complete?(target)
   def heal_cost, do: @heal_cost
   def skill_replace_cost, do: @skill_replace_cost
   def max_uptie, do: @max_uptie
@@ -189,10 +262,10 @@ defmodule StarlightBot.GiftPlans do
   def action_cost_range("heal_all", segment), do: twice(heal_all_times(segment["repeat"]) * @heal_cost)
 
   def action_cost_range("skill_replace", segment) do
-    case Enum.map(segment["options"] || [], &@skill_option_costs[&1]) do
-      [] -> {0, 0}
-      costs -> Enum.min_max(costs)
-    end
+    lock_s2? = segment["lock_s2"] != false
+    sinners = length(segment["sinners"] || [])
+    {low, high} = skill_path_costs(@skill_start, skill_target(segment["target"], lock_s2?), lock_s2?)
+    {low * sinners, high * sinners}
   end
 
   def heal_all_times("2"), do: 2
@@ -253,7 +326,7 @@ defmodule StarlightBot.GiftPlans do
       gift: subject_gift(entry),
       fusion: entry["fusion"],
       disposition: disposition,
-      goal: if(keep?, do: segment["goal"] || "required"),
+      goal: if(keep? or (skill_replace_subject?(entry["subject"]) and not abandoned?), do: segment["goal"] || "required"),
       buy: buy?,
       fuse: keep? and segment["fuse"] == true and not is_nil(entry["fusion"]),
       uptie: if(keep?, do: segment["uptie"] || 0, else: 0),
@@ -261,9 +334,13 @@ defmodule StarlightBot.GiftPlans do
       abandoned: abandoned?,
       sinners: segment["sinners"] || [],
       repeat: segment["repeat"] || "once",
-      options: segment["options"] || []
+      target: skill_target(segment["target"], segment["lock_s2"] != false),
+      lock_s2: segment["lock_s2"] != false
     }
   end
+
+  defp skill_replace_subject?(%{"action" => "skill_replace"}), do: true
+  defp skill_replace_subject?(_subject), do: false
 
   def resolved_entries(nil, _floor), do: []
   def resolved_entries(milestone, floor), do: Enum.map(milestone["entries"] || [], &resolve(&1, floor))
@@ -377,7 +454,7 @@ defmodule StarlightBot.GiftPlans do
 
   def add_action(data, id, action, sinner) when action in ["skill_replace" | @heal_actions] do
     segment = Map.merge(default_segment(), %{"disposition" => "ignore", "goal" => nil, "buy" => false, "sinners" => List.wrap(sinner), "repeat" => "once"})
-    segment = if action == "skill_replace", do: Map.put(segment, "options", @skill_options), else: segment
+    segment = if action == "skill_replace", do: Map.merge(segment, %{"goal" => "optional", "target" => @skill_default_target}), else: segment
     entry = %{"id" => new_id("me"), "subject" => %{"action" => action}, "fusion" => nil, "floors" => [segment]}
     update_milestone(data, id, fn milestone -> Map.update(milestone, "entries", [], &(&1 ++ [entry])) end)
   end
@@ -698,6 +775,11 @@ defmodule StarlightBot.GiftPlans do
 
   defp owns?(env, name), do: Enum.any?(Map.get(env, :inventory, %{}), fn {_id, entry} -> entry.name == name end)
 
+  def entry_status(%{subject: %{"action" => "skill_replace"}} = entry, env, _covered) do
+    replaces = Map.get(env, :skill_replaces, %{})
+    if Enum.all?(entry.sinners, &skill_sinner_complete?(replaces[&1], entry.target)), do: :done, else: :open
+  end
+
   def entry_status(%{gift: nil}, _env, _covered), do: :none
 
   def entry_status(entry, env, covered) do
@@ -721,7 +803,7 @@ defmodule StarlightBot.GiftPlans do
 
   def status(progress, entry), do: progress.statuses[entry.id]
 
-  def goal_entries(progress), do: Enum.filter(progress.entries, &(&1.disposition == "keep" and is_binary(&1.gift)))
+  def goal_entries(progress), do: Enum.filter(progress.entries, &((&1.disposition == "keep" and is_binary(&1.gift)) or (skill_replace_subject?(&1.subject) and is_binary(&1.goal))))
 
   def goal_members(progress, letter), do: Enum.filter(goal_entries(progress), &(&1.goal == letter))
 

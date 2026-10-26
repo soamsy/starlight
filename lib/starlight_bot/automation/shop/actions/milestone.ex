@@ -100,12 +100,24 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
     end
   end
 
+  def heals?(milestone, state), do: milestone |> entries(state) |> GiftPlans.heal_entries() != []
+
+  def heal_only(milestone, state, ctx) do
+    {lines, healed?, state} = Heal.run_entries(GiftPlans.heal_entries(entries(milestone, state)), state, ctx)
+    {if(healed?, do: :done, else: :skipped), Enum.join(lines ++ ["#{milestone["name"]} already reached, only healing"], "; "), state}
+  end
+
+  def heal_only_preview(milestone, state) do
+    heals = milestone |> entries(state) |> GiftPlans.heal_entries() |> Enum.map(&heal_label/1)
+    {:would_run, "check heals: #{Enum.join(heals, ", ")}; #{milestone["name"]} already reached, only healing", state}
+  end
+
   def preview(_step, milestone, state, ctx) do
     sold = Sell.plan(sells(milestone, state), entries(milestone, state), keep(state), state, ctx)
     selling = if sold == [], do: [], else: ["sell " <> Enum.map_join(sold, ", ", fn {gift, _entry} -> gift.name end)]
     heals = milestone |> entries(state) |> GiftPlans.heal_entries() |> Enum.map(&heal_label/1)
     selling = selling ++ if(heals == [], do: [], else: ["check heals: " <> Enum.join(heals, ", ")])
-    replaces = milestone |> entries(state) |> GiftPlans.skill_replace_entries() |> Enum.flat_map(& &1.sinners)
+    replaces = milestone |> entries(state) |> GiftPlans.skill_replace_entries() |> Enum.flat_map(fn entry -> Enum.filter(entry.sinners, &SkillReplace.pending?(&1, entry, ctx)) end)
     selling = selling ++ if(replaces == [], do: [], else: ["check skill replace for " <> Enum.join(Enum.uniq(replaces), ", ")])
 
     if reached?(milestone, state, ctx) do
@@ -359,7 +371,8 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
       gifts: state.gifts_by_name,
       refreshes: Map.get(state, :refreshes, 0),
       owned: inventory |> Map.values() |> MapSet.new(& &1.name),
-      inventory: inventory
+      inventory: inventory,
+      skill_replaces: RunMemory.skill_replaces(ctx)
     }
 
     case Map.get(state, :gifts_by_id) do
