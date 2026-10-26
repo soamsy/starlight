@@ -2,8 +2,7 @@ defmodule StarlightBot.GiftPlans do
   alias StarlightBot.Conditions
   alias StarlightBot.GiftPlans.Routes
 
-  @version 4
-  @step_kinds ~w(if milestone refresh affinity_refresh skill_replace heal heal_all revive budget workflow bail leave)
+  @version 5
   @dispositions ~w(keep ignore sell)
   @skill_options ~w(s1_s3 s2_s3 s1_s2)
   @heal_cost 100
@@ -54,6 +53,14 @@ defmodule StarlightBot.GiftPlans do
     Enum.uniq(chosen ++ starting)
   end
 
+  @cabinet_choice_graces [3, 9]
+  @max_cabinet_picks 3
+
+  def cabinet_pick_count(data) do
+    extra = Enum.count(data["grace_picks"] || [], &(&1["index"] in @cabinet_choice_graces))
+    min(1 + extra, @max_cabinet_picks)
+  end
+
   def cabinet_slots(data) do
     starting = starting_gifts(data["affinity"])
 
@@ -63,7 +70,6 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
-  def step_kinds, do: @step_kinds
   def dispositions, do: @dispositions
   def skill_options, do: @skill_options
   def heal_cost, do: @heal_cost
@@ -92,7 +98,7 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def blank(affinity \\ nil) do
-    workflow = %{"id" => new_id("wf"), "name" => "Standard", "steps" => []}
+    milestone = new_milestone("Shop Done")
 
     %{
       "version" => @version,
@@ -100,10 +106,8 @@ defmodule StarlightBot.GiftPlans do
       "cabinet_gifts" => starting_gifts(affinity),
       "grace_picks" => Enum.map(@default_grace_indexes, &%{"index" => &1, "enhance" => 0}),
       "gift_search" => [],
-      "workflows" => [workflow],
-      "floor_schedule" => [%{"from_floor" => 1, "workflow" => workflow["id"]}],
       "mounting_trials" => default_mounting_trials(),
-      "milestones" => [new_milestone("Shop Done")]
+      "milestones" => [milestone]
     }
   end
 
@@ -114,17 +118,42 @@ defmodule StarlightBot.GiftPlans do
       "cabinet_gifts" => data["cabinet_gifts"] || [],
       "grace_picks" => data["grace_picks"] || [],
       "gift_search" => data["gift_search"] || [],
-      "workflows" => data["workflows"] || [],
-      "floor_schedule" => data["floor_schedule"] || [],
       "mounting_trials" => data["mounting_trials"] || default_mounting_trials(),
       "milestones" => Enum.map(data["milestones"] || [new_milestone("Shop Done")], &normalize_milestone/1)
     }
   end
 
+  def normalize(%{"version" => 4} = data) do
+    first = legacy_first_milestone(data)
+    {leading, rest} = Enum.split_with(data["milestones"] || [], &(&1["id"] == first))
+    data |> Map.put("version", @version) |> Map.put("milestones", leading ++ rest) |> normalize()
+  end
+
   def normalize(_data), do: blank()
 
+  defp legacy_first_milestone(data) do
+    first_workflow =
+      (data["floor_schedule"] || [])
+      |> Enum.min_by(& &1["from_floor"], fn -> nil end)
+      |> case do
+        nil -> nil
+        row -> Enum.find(data["workflows"] || [], &(&1["id"] == row["workflow"]))
+      end
+
+    first_workflow && legacy_milestone_step(first_workflow["steps"] || [])
+  end
+
+  defp legacy_milestone_step(steps) do
+    Enum.find_value(steps, fn
+      %{"kind" => "milestone", "milestone" => id} when is_binary(id) -> id
+      %{"kind" => "if"} = step -> legacy_milestone_step((step["then"] || []) ++ (step["else"] || []))
+      _ -> nil
+    end)
+  end
+
   defp normalize_milestone(milestone) do
-    %{"id" => milestone["id"], "name" => milestone["name"], "goals" => milestone["goals"] || [], "entries" => milestone["entries"] || [], "refresh" => milestone["refresh"] || []}
+    %{"id" => milestone["id"], "name" => milestone["name"], "goals" => milestone["goals"] || [], "entries" => milestone["entries"] || [], "refresh" => milestone["refresh"] || [],
+      "refresh_floors" => milestone["refresh_floors"] || [], "refresh_scheduled" => milestone["refresh_scheduled"] == true}
   end
 
   def new_id(prefix) do
@@ -323,6 +352,18 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
+  def add_loadout_keep(data, id, name, gifts_by_name) do
+    update_milestone(data, id, fn milestone ->
+      if is_nil(gifts_by_name[name]) or has_gift?(milestone, name) do
+        milestone
+      else
+        segment = %{default_segment() | "goal" => "optional", "buy" => false, "fuse" => false}
+        entry = %{"id" => new_id("me"), "subject" => gift_subject(name), "fusion" => nil, "floors" => [segment]}
+        Map.update(milestone, "entries", [], &(&1 ++ [entry]))
+      end
+    end)
+  end
+
   def add_pattern(data, id, subject) do
     update_milestone(data, id, fn milestone ->
       if Enum.any?(milestone["entries"] || [], &(&1["subject"] == subject)) do
@@ -350,26 +391,100 @@ defmodule StarlightBot.GiftPlans do
   def refresh_action_label("affinity_refresh"), do: "Keyword Refresh"
   def refresh_action_label("leave"), do: "Leave Shop"
 
-  def add_refresh_case(data, id) do
-    refresh_case = %{"id" => new_id("rc"), "condition" => nil, "action" => "refresh", "affinity" => nil}
-    update_milestone(data, id, fn milestone -> Map.update(milestone, "refresh", [refresh_case], &(&1 ++ [refresh_case])) end)
+  def add_refresh_case(data, id, from \\ 1) do
+    refresh_case = %{"id" => new_id("rc"), "condition" => nil, "action" => "refresh", "affinity" => nil, "max" => nil}
+    update_milestone(data, id, &update_refresh_cases(&1, from, fn cases -> cases ++ [refresh_case] end))
   end
 
   def update_refresh_case(data, id, case_id, fun) do
     update_milestone(data, id, fn milestone ->
-      Map.update(milestone, "refresh", [], fn cases -> Enum.map(cases, &if(&1["id"] == case_id, do: fun.(&1), else: &1)) end)
+      update_all_refresh_cases(milestone, fn cases -> Enum.map(cases, &if(&1["id"] == case_id, do: fun.(&1), else: &1)) end)
     end)
   end
 
   def remove_refresh_case(data, id, case_id) do
-    update_milestone(data, id, fn milestone -> Map.update(milestone, "refresh", [], &Enum.reject(&1, fn refresh_case -> refresh_case["id"] == case_id end)) end)
+    update_milestone(data, id, fn milestone ->
+      update_all_refresh_cases(milestone, fn cases -> Enum.reject(cases, fn refresh_case -> refresh_case["id"] == case_id end) end)
+    end)
   end
 
-  def reorder_refresh_cases(data, id, ids) do
-    update_milestone(data, id, fn milestone -> Map.update(milestone, "refresh", [], &reorder_by_keys(&1, ids, fn refresh_case -> refresh_case["id"] end)) end)
+  def reorder_refresh_cases(data, id, ids, from \\ 1) do
+    update_milestone(data, id, &update_refresh_cases(&1, from, fn cases -> reorder_by_keys(cases, ids, fn refresh_case -> refresh_case["id"] end) end))
   end
 
-  def matching_refresh_case(milestone, env), do: Enum.find(milestone["refresh"] || [], &eval_condition(&1["condition"], env))
+  def refresh_froms(milestone), do: [1 | Enum.map(milestone["refresh_floors"] || [], & &1["from"])]
+
+  def refresh_cases(milestone, 1), do: milestone["refresh"] || []
+
+  def refresh_cases(milestone, from) do
+    case Enum.find(milestone["refresh_floors"] || [], &(&1["from"] == from)) do
+      nil -> []
+      segment -> segment["cases"]
+    end
+  end
+
+  def refresh_cases_at(milestone, floor) do
+    from = milestone |> refresh_froms() |> Enum.filter(&(&1 <= floor)) |> Enum.max()
+    refresh_cases(milestone, from)
+  end
+
+  def any_refresh_cases?(milestone), do: Enum.any?(refresh_froms(milestone), &(refresh_cases(milestone, &1) != []))
+
+  def add_refresh_schedule(data, id), do: update_milestone(data, id, &Map.put(&1, "refresh_scheduled", true))
+
+  def remove_refresh_schedule(data, id), do: update_milestone(data, id, &Map.merge(&1, %{"refresh_scheduled" => false, "refresh_floors" => []}))
+
+  def split_refresh(data, id, floor) when floor in 2..@max_floor do
+    update_milestone(data, id, fn milestone ->
+      if floor in refresh_froms(milestone) do
+        milestone
+      else
+        copied = milestone |> refresh_cases_at(floor) |> Enum.map(&Map.put(&1, "id", new_id("rc")))
+        segment = %{"from" => floor, "cases" => copied}
+        milestone |> Map.put("refresh_scheduled", true) |> Map.update("refresh_floors", [segment], &Enum.sort_by(&1 ++ [segment], fn s -> s["from"] end))
+      end
+    end)
+  end
+
+  def split_refresh(data, _id, _floor), do: data
+
+  def move_refresh_segment(data, id, from, to) when from != 1 and to in 2..@max_floor do
+    update_milestone(data, id, fn milestone ->
+      if to in refresh_froms(milestone) do
+        milestone
+      else
+        Map.update(milestone, "refresh_floors", [], fn segments ->
+          segments |> Enum.map(&if(&1["from"] == from, do: %{&1 | "from" => to}, else: &1)) |> Enum.sort_by(& &1["from"])
+        end)
+      end
+    end)
+  end
+
+  def move_refresh_segment(data, _id, _from, _to), do: data
+
+  def remove_refresh_segment(data, _id, 1), do: data
+
+  def remove_refresh_segment(data, id, from) do
+    update_milestone(data, id, fn milestone -> Map.update(milestone, "refresh_floors", [], &Enum.reject(&1, fn segment -> segment["from"] == from end)) end)
+  end
+
+  defp update_refresh_cases(milestone, 1, fun), do: Map.update(milestone, "refresh", [], fun)
+
+  defp update_refresh_cases(milestone, from, fun) do
+    Map.update(milestone, "refresh_floors", [], fn segments -> Enum.map(segments, &if(&1["from"] == from, do: Map.update!(&1, "cases", fun), else: &1)) end)
+  end
+
+  defp update_all_refresh_cases(milestone, fun) do
+    Enum.reduce(refresh_froms(milestone), milestone, &update_refresh_cases(&2, &1, fun))
+  end
+
+  def matching_refresh_case(milestone, env) do
+    runs = Map.get(env, :case_runs, %{})
+    Enum.find(refresh_cases_at(milestone, Map.get(env, :floor) || 1), &(under_cap?(&1, runs) and eval_condition(&1["condition"], env)))
+  end
+
+  defp under_cap?(%{"max" => max, "id" => id}, runs) when is_integer(max), do: Map.get(runs, id, 0) < max
+  defp under_cap?(_refresh_case, _runs), do: true
 
   def find_entry(milestone, entry_id), do: Enum.find(milestone["entries"] || [], &(&1["id"] == entry_id))
 
@@ -391,7 +506,10 @@ defmodule StarlightBot.GiftPlans do
 
   def reorder_entries(data, id, ids) do
     update_milestone(data, id, fn milestone ->
-      Map.update(milestone, "entries", [], fn entries -> reorder_by_keys(entries, expand_entry_ids(entries, ids), & &1["id"]) end)
+      Map.update(milestone, "entries", [], fn entries ->
+        {actions, gifts} = entries |> reorder_by_keys(expand_entry_ids(entries, ids), & &1["id"]) |> Enum.split_with(&action_entry?/1)
+        actions ++ gifts
+      end)
     end)
   end
 
@@ -541,7 +659,7 @@ defmodule StarlightBot.GiftPlans do
   def progress(data, id, env) do
     milestone = find_milestone(data, id)
     entries = resolved_entries(milestone, env_floor(env))
-    covered = covered(entries, env)
+    covered = data["milestones"] |> Enum.flat_map(&resolved_entries(&1, env_floor(env))) |> covered(env)
     statuses = Map.new(entries, &{&1.id, entry_status(&1, env, covered)})
     %{milestone: milestone, entries: entries, statuses: statuses, pending: pending_ingredients(entries, env)}
   end
@@ -643,186 +761,22 @@ defmodule StarlightBot.GiftPlans do
 
   def milestone_reached?(data, id, env), do: data |> progress(id, env) |> reached?()
 
-  def new_step(kind, data) when kind in @step_kinds do
-    %{"id" => new_id("st"), "kind" => kind, "enabled" => true, "condition" => nil}
-    |> Map.merge(step_defaults(kind, data))
-  end
+  def goal_reached?(data, milestone_id, letter, env) do
+    progress = progress(data, milestone_id, env)
+    letter = letter || "required"
 
-  defp step_defaults("if", _data), do: %{"condition" => Conditions.add(nil, "", %{"op" => "cost_gte", "value" => 0}), "then" => [], "else" => []}
-
-  defp step_defaults("milestone", data) do
-    case data["milestones"] do
-      [%{"id" => id} | _] -> %{"milestone" => id}
-      _ -> %{"milestone" => nil}
+    cond do
+      progress.milestone == nil -> false
+      letter == "required" -> progress |> goal_members("required") |> Enum.all?(&(status(progress, &1) == :done))
+      is_binary(letter) -> goal_members(progress, letter) != [] and goal_done(progress, letter) >= goal_need(progress, letter)
+      true -> false
     end
   end
-
-  defp step_defaults("affinity_refresh", data), do: %{"affinity" => data["affinity"]}
-  defp step_defaults("skill_replace", _data), do: %{"sinner" => nil, "options" => @skill_options}
-  defp step_defaults(kind, _data) when kind in ["heal", "revive"], do: %{"sinner" => nil}
-  defp step_defaults("budget", _data), do: %{"amount" => 0}
-  defp step_defaults("workflow", _data), do: %{"workflow" => nil}
-  defp step_defaults(_kind, _data), do: %{}
-
-  def find_workflow(data, id), do: Enum.find(data["workflows"], &(&1["id"] == id))
-
-  def definition_for(data, %{"kind" => "workflow"} = step) do
-    case find_workflow(data, step["workflow"]) do
-      nil -> {:error, :missing_definition}
-      workflow -> {:ok, workflow}
-    end
-  end
-
-  def definition_for(data, %{"kind" => "milestone"} = step) do
-    case find_milestone(data, step["milestone"]) do
-      nil -> {:error, :missing_definition}
-      milestone -> {:ok, milestone}
-    end
-  end
-
-  def definition_for(_data, _step), do: {:ok, nil}
-
-  def called_workflows(workflow) do
-    steps = all_steps(workflow["steps"])
-    runs = for %{"kind" => "workflow", "workflow" => id} <- steps, is_binary(id), do: id
-    betweens = for %{"between" => id} <- steps, is_binary(id), do: id
-    Enum.uniq(runs ++ betweens)
-  end
-
-  def all_steps(steps), do: Enum.flat_map(steps || [], fn step -> [step | Enum.flat_map(branches(step), &all_steps(step[&1]))] end)
-
-  def branches(%{"kind" => "if"}), do: ["then", "else"]
-  def branches(_step), do: []
-
-  def find_step(steps, id), do: Enum.find(all_steps(steps), &(&1["id"] == id))
-
-  def update_step_in(steps, id, fun) do
-    Enum.map(steps, fn
-      %{"id" => ^id} = step -> fun.(step)
-      step -> update_branches(step, &update_step_in(&1, id, fun))
-    end)
-  end
-
-  def remove_step(steps, id), do: steps |> Enum.reject(&(&1["id"] == id)) |> Enum.map(&update_branches(&1, fn list -> remove_step(list, id) end))
-
-  def update_step_list(steps, "", fun), do: fun.(steps)
-
-  def update_step_list(steps, scope, fun) do
-    [id, branch] = String.split(scope, ":")
-    update_step_in(steps, id, &Map.put(&1, branch, fun.(&1[branch] || [])))
-  end
-
-  def update_containing_list(steps, id, fun) do
-    if Enum.any?(steps, &(&1["id"] == id)),
-      do: fun.(steps),
-      else: Enum.map(steps, &update_branches(&1, fn list -> update_containing_list(list, id, fun) end))
-  end
-
-  def move_step(steps, id, scope, ids) do
-    step = find_step(steps, id)
-    host = if scope == "", do: nil, else: scope |> String.split(":") |> hd()
-
-    if is_nil(step) or (host && (host == id or find_step(Enum.flat_map(branches(step), &(step[&1] || [])), host))) do
-      steps
-    else
-      steps |> remove_step(id) |> update_step_list(scope, &reorder_by_keys(&1 ++ [step], ids, fn s -> s["id"] end))
-    end
-  end
-
-  def fresh_step_ids(step), do: step |> Map.put("id", new_id("st")) |> update_branches(&Enum.map(&1, fn child -> fresh_step_ids(child) end))
-
-  defp update_branches(step, fun), do: Enum.reduce(branches(step), step, fn branch, step -> Map.put(step, branch, fun.(step[branch] || [])) end)
 
   defp reorder_by_keys(items, keys, key_fun) do
     by_key = Map.new(items, &{key_fun.(&1), &1})
     ordered = keys |> Enum.map(&by_key[&1]) |> Enum.reject(&is_nil/1)
     ordered ++ Enum.reject(items, &(&1 in ordered))
-  end
-
-  def reachable_workflows(data, id), do: reach(data, called_workflows(find_workflow(data, id) || %{}), MapSet.new())
-
-  defp reach(_data, [], seen), do: seen
-
-  defp reach(data, [id | rest], seen) do
-    if MapSet.member?(seen, id) do
-      reach(data, rest, seen)
-    else
-      next = called_workflows(find_workflow(data, id) || %{})
-      reach(data, next ++ rest, MapSet.put(seen, id))
-    end
-  end
-
-  def creates_cycle?(data, host_id, child_id), do: child_id == host_id or MapSet.member?(reachable_workflows(data, child_id), host_id)
-
-  def callers(data, id), do: Enum.filter(data["workflows"], &(id in called_workflows(&1)))
-
-  def import_workflows(data, source, workflow_ids, source_name) do
-    ids = Enum.uniq(Enum.flat_map(workflow_ids, &[&1 | MapSet.to_list(reachable_workflows(source, &1))]))
-    workflows = Enum.filter(source["workflows"], &(&1["id"] in ids))
-    wf_map = Map.new(workflows, &{&1["id"], new_id("wf")})
-    taken = MapSet.new(data["workflows"], & &1["name"])
-
-    imported =
-      Enum.map(workflows, fn workflow ->
-        name = if MapSet.member?(taken, workflow["name"]), do: "#{workflow["name"]} (#{source_name})", else: workflow["name"]
-        %{workflow | "id" => wf_map[workflow["id"]], "name" => name, "steps" => Enum.map(workflow["steps"], &remap_tree(&1, wf_map))}
-      end)
-
-    Map.update!(data, "workflows", &(&1 ++ imported))
-  end
-
-  defp remap_step(%{"kind" => "workflow"} = step, wf_map), do: %{step | "id" => new_id("st"), "workflow" => wf_map[step["workflow"]]}
-  defp remap_step(step, _wf_map), do: Map.put(step, "id", new_id("st"))
-
-  defp remap_tree(step, wf_map) do
-    step
-    |> remap_step(wf_map)
-    |> remap_between(wf_map)
-    |> update_branches(&Enum.map(&1, fn child -> remap_tree(child, wf_map) end))
-  end
-
-  defp remap_between(%{"between" => id} = step, wf_map) when is_binary(id), do: %{step | "between" => wf_map[id]}
-  defp remap_between(step, _wf_map), do: step
-
-  def expand_steps(data, workflow), do: expand_steps(data, workflow, [workflow["id"]])
-
-  defp expand_steps(data, workflow, stack), do: expand_list(data, workflow["steps"], stack)
-
-  defp expand_list(data, steps, stack) do
-    steps
-    |> Enum.filter(&(&1["enabled"] != false))
-    |> Enum.flat_map(fn
-      %{"kind" => "workflow", "workflow" => id} = step ->
-        case find_workflow(data, id) do
-          %{} = sub -> if id in stack, do: [], else: expand_steps(data, sub, [id | stack])
-          nil -> [step]
-        end
-
-      %{"kind" => "if"} = step ->
-        [step | Enum.flat_map(branches(step), &expand_list(data, step[&1] || [], stack))]
-
-      step ->
-        [step | expand_between(data, step, stack)]
-    end)
-  end
-
-  defp expand_between(data, %{"between" => id}, stack) when is_binary(id) do
-    case find_workflow(data, id) do
-      %{} = between -> if id in stack, do: [], else: expand_steps(data, between, [id | stack])
-      nil -> []
-    end
-  end
-
-  defp expand_between(_data, _step, _stack), do: []
-
-  def workflow_for_floor(data, floor) when is_integer(floor) do
-    data["floor_schedule"]
-    |> Enum.filter(&(&1["from_floor"] <= floor))
-    |> Enum.max_by(& &1["from_floor"], fn -> nil end)
-    |> case do
-      nil -> nil
-      %{"workflow" => id} -> find_workflow(data, id)
-    end
   end
 
   def uptie_cost(tier, from, to) do
@@ -910,6 +864,9 @@ defmodule StarlightBot.GiftPlans do
   defp eval_leaf(%{"op" => "milestone"} = leaf, %{plan: plan} = env), do: milestone_reached?(plan, leaf["milestone"], env)
   defp eval_leaf(%{"op" => "milestone_not"} = leaf, %{plan: plan} = env), do: not milestone_reached?(plan, leaf["milestone"], env)
 
+  defp eval_leaf(%{"op" => "goal"} = leaf, %{plan: plan} = env), do: goal_reached?(plan, leaf["milestone"], leaf["goal"], env)
+  defp eval_leaf(%{"op" => "goal_not"} = leaf, %{plan: plan} = env), do: not goal_reached?(plan, leaf["milestone"], leaf["goal"], env)
+
   def prune_condition(node), do: Conditions.prune(node)
 
   def condition_label(node, data \\ nil), do: Conditions.label(node, &leaf_label(&1, data))
@@ -923,6 +880,15 @@ defmodule StarlightBot.GiftPlans do
   defp leaf_label(%{"op" => "milestone"} = leaf, data), do: "milestone #{milestone_name(data, leaf["milestone"])} reached"
   defp leaf_label(%{"op" => "milestone_not"} = leaf, data), do: "milestone #{milestone_name(data, leaf["milestone"])} not reached"
 
+  defp leaf_label(%{"op" => "goal"} = leaf, data), do: "goal #{goal_name(data, leaf)} reached"
+  defp leaf_label(%{"op" => "goal_not"} = leaf, data), do: "goal #{goal_name(data, leaf)} not reached"
+
+  defp goal_display("required"), do: "Required"
+  defp goal_display(nil), do: "Required"
+  defp goal_display(letter), do: letter
+
+  defp goal_name(data, leaf), do: "#{goal_display(leaf["goal"])} of #{milestone_name(data, leaf["milestone"])}"
+
   defp milestone_name(_data, nil), do: "(none picked)"
   defp milestone_name(nil, id), do: id
 
@@ -932,47 +898,6 @@ defmodule StarlightBot.GiftPlans do
       milestone -> milestone["name"]
     end
   end
-
-  def kind_label("if"), do: "If"
-  def kind_label("milestone"), do: "Work on Milestone"
-  def kind_label("refresh"), do: "Refresh"
-  def kind_label("affinity_refresh"), do: "Affinity Refresh"
-  def kind_label("skill_replace"), do: "Skill Replace"
-  def kind_label("heal"), do: "Heal Sinner"
-  def kind_label("heal_all"), do: "Heal All"
-  def kind_label("revive"), do: "Revive"
-  def kind_label("budget"), do: "Budget"
-  def kind_label("workflow"), do: "Run Workflow"
-  def kind_label("bail"), do: "Exit Workflow"
-  def kind_label("leave"), do: "Leave Shop"
-
-  def step_label(data, %{"kind" => kind} = step) do
-    case step_subject(data, step) do
-      nil -> kind_label(kind)
-      subject -> "#{kind_label(kind)} · #{subject}"
-    end
-  end
-
-  defp step_subject(data, %{"kind" => "workflow"} = step) do
-    case definition_for(data, step) do
-      {:ok, workflow} -> workflow["name"]
-      _ -> if step["workflow"], do: "(missing workflow)", else: "(no workflow)"
-    end
-  end
-
-  defp step_subject(data, %{"kind" => "milestone"} = step) do
-    case definition_for(data, step) do
-      {:ok, milestone} -> milestone["name"]
-      _ -> if step["milestone"], do: "(missing milestone)", else: "(no milestone)"
-    end
-  end
-
-  defp step_subject(_data, %{"kind" => "affinity_refresh"} = step), do: step["affinity"] || "(no affinity)"
-  defp step_subject(_data, %{"kind" => "skill_replace"} = step), do: step["sinner"] || "(no sinner)"
-  defp step_subject(_data, %{"kind" => kind} = step) when kind in ["heal", "revive"], do: step["sinner"] || "(no sinner)"
-  defp step_subject(_data, %{"kind" => "budget", "amount" => amount}) when amount >= 0, do: "+#{amount}"
-  defp step_subject(_data, %{"kind" => "budget", "amount" => amount}), do: "#{amount}"
-  defp step_subject(_data, _step), do: nil
 
   def missing_ingredients(milestone, entry, gifts_by_name) do
     by_id = Map.new(gifts_by_name, fn {_name, gift} -> {gift.id, gift} end)
@@ -989,9 +914,7 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def issues(data, gifts_by_name \\ %{}) do
-    (schedule_issues(data) ++
-       gift_search_issues(data, gifts_by_name) ++
-       Enum.flat_map(data["workflows"], &workflow_issues(data, &1)) ++
+    (gift_search_issues(data, gifts_by_name) ++
        Enum.flat_map(data["milestones"] || [], &milestone_issues(&1, gifts_by_name)) ++
        keep_sell_issues(data))
     |> Enum.uniq()
@@ -1085,53 +1008,4 @@ defmodule StarlightBot.GiftPlans do
 
     too_many ++ unpickable
   end
-
-  defp schedule_issues(data) do
-    floor_one =
-      if Enum.any?(data["floor_schedule"], &(&1["from_floor"] == 1)),
-        do: [],
-        else: ["Floor 1 has no workflow; shops before the first scheduled floor do nothing."]
-
-    dangling =
-      data["floor_schedule"]
-      |> Enum.reject(&find_workflow(data, &1["workflow"]))
-      |> Enum.map(&"Floor #{&1["from_floor"]} points at a deleted workflow.")
-
-    floor_one ++ dangling
-  end
-
-  defp workflow_issues(data, workflow) do
-    workflow["steps"]
-    |> numbered_steps("")
-    |> Enum.flat_map(fn {step, i} ->
-      prefix = "#{workflow["name"]}: step #{i} (#{kind_label(step["kind"])})"
-
-      case {step["kind"], definition_for(data, step)} do
-        {"workflow", {:error, :missing_definition}} -> ["#{prefix} has no workflow selected, or it was deleted."]
-        {"workflow", {:ok, sub}} ->
-          if creates_cycle?(data, workflow["id"], sub["id"]), do: ["#{prefix} runs #{sub["name"]}, which leads back to #{workflow["name"]}."], else: []
-
-        {"milestone", {:error, :missing_definition}} -> ["#{prefix} has no milestone selected, or it was deleted."]
-        _ -> []
-      end ++ between_issues(data, workflow, step, prefix)
-    end)
-  end
-
-  defp numbered_steps(steps, prefix) do
-    steps
-    |> Enum.with_index(1)
-    |> Enum.flat_map(fn {step, i} ->
-      number = prefix <> to_string(i)
-      [{step, number} | Enum.flat_map(branches(step), &numbered_steps(step[&1] || [], "#{number} › #{&1} "))]
-    end)
-  end
-
-  defp between_issues(data, workflow, %{"between" => id}, prefix) when is_binary(id) do
-    case find_workflow(data, id) do
-      nil -> ["#{prefix} runs a deleted workflow between repeats."]
-      between -> if creates_cycle?(data, workflow["id"], id), do: ["#{prefix} runs #{between["name"]} between repeats, which leads back to #{workflow["name"]}."], else: []
-    end
-  end
-
-  defp between_issues(_data, _workflow, _step, _prefix), do: []
 end

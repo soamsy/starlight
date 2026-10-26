@@ -630,6 +630,47 @@ const SortableList = {
   }
 }
 
+const GIFT_DRAG_TYPE = "application/x-starlight-gift"
+
+const GiftDragSource = {
+  mounted() {
+    this.el.addEventListener("dragstart", (e) => {
+      const row = eventElement(e)?.closest("[data-drag-gift]")
+      if (!row) return e.preventDefault()
+      e.dataTransfer.setData(GIFT_DRAG_TYPE, row.dataset.dragGift)
+      e.dataTransfer.effectAllowed = "copy"
+    })
+    this.sync()
+  },
+  updated() {
+    this.sync()
+  },
+  sync() {
+    this.el.querySelectorAll("[data-drag-gift]").forEach(row => { row.draggable = true })
+  }
+}
+
+const GiftDropZone = {
+  mounted() {
+    const active = (e) => this.el.dataset.dropEvent && e.dataTransfer.types.includes(GIFT_DRAG_TYPE)
+    this.el.addEventListener("dragover", (e) => {
+      if (!active(e)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = "copy"
+      this.el.classList.add("bg-primary/15")
+    })
+    this.el.addEventListener("dragleave", (e) => {
+      if (!this.el.contains(e.relatedTarget)) this.el.classList.remove("bg-primary/15")
+    })
+    this.el.addEventListener("drop", (e) => {
+      if (!active(e)) return
+      e.preventDefault()
+      this.el.classList.remove("bg-primary/15")
+      this.pushEvent(this.el.dataset.dropEvent, { gift: e.dataTransfer.getData(GIFT_DRAG_TYPE) })
+    })
+  }
+}
+
 const LocalStorageForm = {
   mounted() {
     this.key = this.el.dataset.storageKey
@@ -745,7 +786,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, DblClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, DblClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
 })
 
 liveSocket.connect()

@@ -60,33 +60,6 @@ defmodule StarlightBot.GiftPlansTest do
     GiftPlans.update_segment(data, id, entry_for(data, id, name)["id"], from, &Map.merge(&1, changes))
   end
 
-  defp plan do
-    %{
-      "version" => 4,
-      "affinity" => "burn",
-      "grace_picks" => [],
-      "milestones" => [GiftPlans.new_milestone("Shop Done")],
-      "workflows" => [
-        %{"id" => "wf_1", "name" => "Opener", "steps" => []},
-        %{"id" => "wf_2", "name" => "Standard", "steps" => [%{"id" => "st_1", "kind" => "milestone", "milestone" => "ms_gone", "enabled" => true}]}
-      ],
-      "floor_schedule" => [%{"from_floor" => 1, "workflow" => "wf_1"}, %{"from_floor" => 2, "workflow" => "wf_2"}]
-    }
-  end
-
-  describe "workflow_for_floor/2" do
-    test "picks the last range starting at or before the floor" do
-      assert GiftPlans.workflow_for_floor(plan(), 1)["id"] == "wf_1"
-      assert GiftPlans.workflow_for_floor(plan(), 2)["id"] == "wf_2"
-      assert GiftPlans.workflow_for_floor(plan(), 9)["id"] == "wf_2"
-    end
-
-    test "returns nil before the first range" do
-      data = %{plan() | "floor_schedule" => [%{"from_floor" => 3, "workflow" => "wf_2"}]}
-      assert GiftPlans.workflow_for_floor(data, 2) == nil
-    end
-  end
-
   describe "adding gifts to a milestone" do
     test "a new entry keeps and buys it, and fuses a tier fusable T4 by default" do
       {data, id} = with_gifts(["Glimpse", "Drumstick", "Event Only"])
@@ -344,6 +317,20 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.condition_label(leaf, data) == "milestone Shop Done reached"
       assert GiftPlans.condition_label(%{"op" => "milestone", "milestone" => "ms_gone"}, data) == "milestone (deleted) reached"
     end
+
+    test "goal leaves check one goal of the milestone" do
+      {data, id} = with_gifts(["Glimpse", "Fiery Down"])
+      data = data |> GiftPlans.add_goal(id) |> set_segment(id, "Glimpse", %{"goal" => "A"})
+      leaf = %{"op" => "goal", "milestone" => id, "goal" => "A"}
+      not_leaf = %{"op" => "goal_not", "milestone" => id, "goal" => "A"}
+
+      refute GiftPlans.eval_condition(leaf, env(data, %{}))
+      assert GiftPlans.eval_condition(not_leaf, env(data, %{}))
+      assert GiftPlans.eval_condition(leaf, env(data, %{"Glimpse" => 0}))
+      refute GiftPlans.eval_condition(not_leaf, env(data, %{"Glimpse" => 0}))
+      assert GiftPlans.eval_condition(%{leaf | "goal" => nil}, env(data, %{"Glimpse" => 0}))
+      assert GiftPlans.condition_label(leaf, data) == "goal A of Shop Done reached"
+    end
   end
 
   test "refresh count conditions read the shop's refreshes, counting none when unknown" do
@@ -379,96 +366,36 @@ defmodule StarlightBot.GiftPlansTest do
     assert GiftPlans.condition_label(tree) == "cost >= 200 AND (missing A OR owns B)"
   end
 
-  test "issues/1 flags a deleted milestone and an unscheduled floor 1" do
-    data = %{plan() | "floor_schedule" => [%{"from_floor" => 2, "workflow" => "wf_2"}]}
-    issues = GiftPlans.issues(data)
+  test "a fused fixed fusion counts as having its ingredients for every milestone, not just its own" do
+    {data, first} = with_gifts(["Ing A"])
+    second = GiftPlans.new_milestone("Second")
+    data = Map.update!(data, "milestones", &(&1 ++ [second]))
+    data = GiftPlans.add_gift(data, second["id"], "Soothe", by_name(), fn tier -> routes_for(tier) end)
 
-    assert Enum.any?(issues, &String.starts_with?(&1, "Floor 1 has no workflow"))
-    assert "Standard: step 1 (Work on Milestone) has no milestone selected, or it was deleted." in issues
+    refute GiftPlans.milestone_reached?(data, first, env(data, %{}))
+    assert GiftPlans.milestone_reached?(data, first, env(data, %{"Ing A" => 0}))
+    assert GiftPlans.milestone_reached?(data, first, env(data, %{"Soothe" => 0}))
   end
 
-  test "step_label/2 names the milestone or workflow a step uses" do
-    [step] = GiftPlans.find_workflow(plan(), "wf_2")["steps"]
-    assert GiftPlans.step_label(plan(), step) == "Work on Milestone · (missing milestone)"
-    assert GiftPlans.step_label(plan(), %{"kind" => "workflow", "workflow" => "wf_1"}) == "Run Workflow · Opener"
+  test "cabinet_pick_count/1 is one pick plus one per starting-choice grace, up to three" do
+    pick = fn index -> %{"index" => index, "enhance" => 0} end
+
+    assert GiftPlans.cabinet_pick_count(%{"grace_picks" => []}) == 1
+    assert GiftPlans.cabinet_pick_count(%{"grace_picks" => [pick.(0), pick.(3)]}) == 2
+    assert GiftPlans.cabinet_pick_count(%{"grace_picks" => [pick.(3), pick.(9)]}) == 3
   end
 
-  describe "nested workflows" do
-    defp nested_plan do
-      run = fn id, target -> %{"id" => id, "kind" => "workflow", "workflow" => target, "enabled" => true} end
-      refresh = %{"id" => "st_r", "kind" => "refresh", "enabled" => true}
+  test "add_loadout_keep/4 adds an optional keep that isn't bought or fused, and skips gifts already listed" do
+    {data, id} = with_gifts(["Ing A"])
+    data = GiftPlans.add_loadout_keep(data, id, "Event Only", by_name())
+    data = GiftPlans.add_loadout_keep(data, id, "Event Only", by_name())
+    data = GiftPlans.add_loadout_keep(data, id, "Ing A", by_name())
+    data = GiftPlans.add_loadout_keep(data, id, "No Such Gift", by_name())
 
-      %{
-        plan()
-        | "workflows" => [
-            %{"id" => "wf_a", "name" => "A", "steps" => [run.("st_a", "wf_b")]},
-            %{"id" => "wf_b", "name" => "B", "steps" => [refresh, run.("st_b", "wf_c")]},
-            %{"id" => "wf_c", "name" => "C", "steps" => [%{"id" => "st_c", "kind" => "heal_all", "enabled" => true}]},
-            %{"id" => "wf_d", "name" => "D", "steps" => []}
-          ],
-          "floor_schedule" => [%{"from_floor" => 1, "workflow" => "wf_a"}]
-      }
-    end
-
-    test "an exit step needs no settings and labels itself" do
-      step = GiftPlans.new_step("bail", plan())
-      assert Map.take(step, ["kind", "enabled", "condition"]) == %{"kind" => "bail", "enabled" => true, "condition" => nil}
-      assert GiftPlans.step_label(plan(), step) == "Exit Workflow"
-
-      data = update_in(nested_plan()["workflows"], fn [a, b | rest] -> [a, Map.update!(b, "steps", &[step | &1]) | rest] end)
-      assert GiftPlans.issues(data) == GiftPlans.issues(nested_plan())
-    end
-
-    test "a workflow can't run itself or anything that leads back to it" do
-      data = nested_plan()
-
-      assert GiftPlans.creates_cycle?(data, "wf_a", "wf_a")
-      assert GiftPlans.creates_cycle?(data, "wf_c", "wf_a")
-      assert GiftPlans.creates_cycle?(data, "wf_b", "wf_a")
-      refute GiftPlans.creates_cycle?(data, "wf_c", "wf_d")
-      refute GiftPlans.creates_cycle?(data, "wf_d", "wf_a")
-    end
-
-    test "expand_steps inlines nested steps" do
-      data = nested_plan()
-      assert data |> GiftPlans.expand_steps(GiftPlans.find_workflow(data, "wf_a")) |> Enum.map(& &1["id"]) == ["st_r", "st_c"]
-    end
-
-    test "a between-repeats workflow counts as called: cycles, issues and imports see it" do
-      data =
-        update_in(nested_plan()["workflows"], fn [a, b, c, d] ->
-          [a, b, c, Map.put(d, "steps", [%{"id" => "st_d", "kind" => "refresh", "enabled" => true, "repeat" => 2, "between" => "wf_c"}])]
-        end)
-
-      d = GiftPlans.find_workflow(data, "wf_d")
-      assert GiftPlans.called_workflows(d) == ["wf_c"]
-      assert GiftPlans.creates_cycle?(data, "wf_c", "wf_d")
-      assert data |> GiftPlans.expand_steps(d) |> Enum.map(& &1["id"]) == ["st_d", "st_c"]
-
-      gone = put_in(data, ["workflows", Access.at(3), "steps", Access.at(0), "between"], "wf_gone")
-      assert Enum.any?(GiftPlans.issues(gone), &(&1 =~ "D: step 1 (Refresh) runs a deleted workflow between repeats."))
-
-      imported = GiftPlans.import_workflows(GiftPlans.blank(), data, ["wf_d"], "Src")
-      [copy_c] = Enum.filter(imported["workflows"], &(&1["name"] == "C"))
-      [copy_d] = Enum.filter(imported["workflows"], &(&1["name"] == "D"))
-      assert hd(copy_d["steps"])["between"] == copy_c["id"]
-    end
-
-    test "issues flag a cycle and a missing workflow" do
-      data = nested_plan()
-
-      looped =
-        update_in(data, ["workflows"], &Enum.map(&1, fn
-          %{"id" => "wf_c"} = wf -> Map.update!(wf, "steps", fn steps -> steps ++ [%{"id" => "st_x", "kind" => "workflow", "workflow" => "wf_a", "enabled" => true}] end)
-          %{"id" => "wf_d"} = wf -> Map.put(wf, "steps", [%{"id" => "st_y", "kind" => "workflow", "workflow" => "wf_gone", "enabled" => true}])
-          wf -> wf
-        end))
-
-      issues = GiftPlans.issues(looped)
-      assert Enum.any?(issues, &(&1 =~ "C: step 2 (Run Workflow) runs A, which leads back to C."))
-      assert Enum.any?(issues, &(&1 =~ "D: step 1 (Run Workflow) has no workflow selected"))
-      assert GiftPlans.expand_steps(looped, GiftPlans.find_workflow(looped, "wf_a")) |> Enum.map(& &1["id"]) == ["st_r", "st_c"]
-    end
+    milestone = GiftPlans.find_milestone(data, id)
+    assert length(milestone["entries"]) == 2
+    assert %{"floors" => [%{"disposition" => "keep", "goal" => "optional", "buy" => false, "fuse" => false}]} = entry_for(data, id, "Event Only")
+    assert %{"floors" => [%{"goal" => "required", "buy" => true}]} = entry_for(data, id, "Ing A")
   end
 
   describe "fodder and uptie planning" do
@@ -565,113 +492,31 @@ defmodule StarlightBot.GiftPlansTest do
     end
   end
 
-  test "blank/1 schedules its single workflow from floor 1 and starts with one empty milestone" do
+  test "blank/1 starts with one empty milestone" do
     data = GiftPlans.blank("burn")
-    [workflow] = data["workflows"]
 
-    assert data["version"] == 4
+    assert data["version"] == 5
     assert data["affinity"] == "burn"
-    assert GiftPlans.workflow_for_floor(data, 1) == workflow
     assert [%{"name" => "Shop Done", "goals" => [], "entries" => []}] = data["milestones"]
     assert GiftPlans.issues(data) == []
   end
 
+  test "normalize/1 turns a v4 plan into a v5 plan whose first milestone is the one its first workflow runs" do
+    data = %{
+      "version" => 4,
+      "milestones" => [GiftPlans.new_milestone("A"), %{GiftPlans.new_milestone("B") | "id" => "ms_b"}],
+      "workflows" => [%{"id" => "wf_1", "name" => "Standard", "steps" => [%{"kind" => "if", "then" => [%{"kind" => "milestone", "milestone" => "ms_b"}], "else" => []}]}],
+      "floor_schedule" => [%{"from_floor" => 1, "workflow" => "wf_1"}]
+    }
+
+    normalized = GiftPlans.normalize(data)
+    assert normalized["version"] == 5
+    assert Enum.map(normalized["milestones"], & &1["id"]) |> hd() == "ms_b"
+    refute Map.has_key?(normalized, "workflows")
+  end
+
   test "normalize/1 resets anything that isn't a v4 plan" do
     assert GiftPlans.normalize(%{"version" => 3, "library" => %{}})["milestones"] |> hd() |> Map.get("entries") == []
-  end
-
-  describe "if steps" do
-    defp if_steps do
-      [
-        %{"id" => "st_1", "kind" => "refresh", "enabled" => true},
-        %{"id" => "st_if", "kind" => "if", "enabled" => true, "condition" => %{"op" => "cost_gte", "value" => 150},
-          "then" => [%{"id" => "st_t", "kind" => "affinity_refresh", "enabled" => true, "affinity" => "poise"}],
-          "else" => [%{"id" => "st_e", "kind" => "milestone", "milestone" => "ms_gone", "enabled" => true}]},
-        %{"id" => "st_3", "kind" => "leave", "enabled" => true}
-      ]
-    end
-
-    test "new If steps start with a condition and empty branches" do
-      step = GiftPlans.new_step("if", plan())
-      assert %{"kind" => "if", "then" => [], "else" => [], "condition" => %{"op" => "and"}} = step
-      assert GiftPlans.step_label(plan(), step) == "If"
-    end
-
-    test "nested helpers find, update, remove and move steps at any depth" do
-      steps = if_steps()
-
-      assert Enum.map(GiftPlans.all_steps(steps), & &1["id"]) == ["st_1", "st_if", "st_t", "st_e", "st_3"]
-      assert GiftPlans.find_step(steps, "st_e")["kind"] == "milestone"
-      assert steps |> GiftPlans.update_step_in("st_t", &Map.put(&1, "affinity", "burn")) |> GiftPlans.find_step("st_t") |> Map.get("affinity") == "burn"
-      assert steps |> GiftPlans.remove_step("st_e") |> GiftPlans.find_step("st_if") |> Map.get("else") == []
-
-      moved = GiftPlans.move_step(steps, "st_1", "st_if:else", ["st_1", "st_e"])
-      assert Enum.map(moved, & &1["id"]) == ["st_if", "st_3"]
-      assert Enum.map(GiftPlans.find_step(moved, "st_if")["else"], & &1["id"]) == ["st_1", "st_e"]
-
-      out = GiftPlans.move_step(steps, "st_t", "", ["st_t", "st_1", "st_if", "st_3"])
-      assert Enum.map(out, & &1["id"]) == ["st_t", "st_1", "st_if", "st_3"]
-      assert GiftPlans.find_step(out, "st_if")["then"] == []
-
-      assert GiftPlans.move_step(steps, "st_if", "st_if:then", []) == steps
-
-      swapped = GiftPlans.update_containing_list(steps, "st_t", &Enum.reverse([%{"id" => "st_new"} | &1]))
-      assert Enum.map(GiftPlans.find_step(swapped, "st_if")["then"], & &1["id"]) == ["st_t", "st_new"]
-
-      copy = GiftPlans.fresh_step_ids(GiftPlans.find_step(steps, "st_if"))
-      assert copy["id"] != "st_if" and hd(copy["then"])["id"] != "st_t" and hd(copy["else"])["id"] != "st_e"
-    end
-
-    test "issues and imports look inside both branches" do
-      data = put_in(plan(), ["workflows", Access.at(1), "steps"], if_steps())
-      workflow = Enum.at(data["workflows"], 1)
-
-      assert data |> GiftPlans.expand_steps(workflow) |> Enum.map(& &1["id"]) == ["st_1", "st_if", "st_t", "st_e", "st_3"]
-      assert "Standard: step 2 › else 1 (Work on Milestone) has no milestone selected, or it was deleted." in GiftPlans.issues(data)
-
-      nested_run = put_in(data, ["workflows", Access.at(1), "steps", Access.at(1), "then"], [%{"id" => "st_r", "kind" => "workflow", "workflow" => "wf_1", "enabled" => true}])
-      assert GiftPlans.called_workflows(Enum.at(nested_run["workflows"], 1)) == ["wf_1"]
-      assert GiftPlans.creates_cycle?(nested_run, "wf_1", "wf_2")
-
-      imported = GiftPlans.import_workflows(GiftPlans.blank(), data, ["wf_2"], "Src")
-      copy = Enum.find(imported["workflows"], &(&1["name"] == "Standard (Src)"))
-      [_, copied_if, _] = copy["steps"]
-      [milestone] = copied_if["else"]
-      assert milestone["id"] != "st_e"
-    end
-  end
-
-  describe "import_workflows/4" do
-    defp source_plan do
-      %{
-        "workflows" => [
-          %{"id" => "wf_loop", "name" => "Repeat", "steps" => [%{"id" => "st_a", "kind" => "workflow", "workflow" => "wf_check"}]},
-          %{"id" => "wf_check", "name" => "ShopCheck", "steps" => [%{"id" => "st_b", "kind" => "refresh"}]},
-          %{"id" => "wf_other", "name" => "Unrelated", "steps" => []}
-        ]
-      }
-    end
-
-    test "copies a workflow and everything it runs" do
-      data = GiftPlans.import_workflows(plan(), source_plan(), ["wf_loop"], "SinkPoise")
-      names = Enum.map(data["workflows"], & &1["name"])
-
-      assert "Repeat" in names and "ShopCheck" in names
-      refute "Unrelated" in names
-
-      loop = Enum.find(data["workflows"], &(&1["name"] == "Repeat"))
-      check = Enum.find(data["workflows"], &(&1["name"] == "ShopCheck"))
-      assert [%{"kind" => "workflow", "workflow" => check_id}] = loop["steps"]
-      assert check_id == check["id"]
-      refute check_id == "wf_check"
-    end
-
-    test "a workflow name that already exists gets the source plan's name added" do
-      base = Map.put(plan(), "workflows", [%{"id" => "wf_x", "name" => "ShopCheck", "steps" => []}])
-      data = GiftPlans.import_workflows(base, source_plan(), ["wf_check"], "SinkPoise")
-
-      assert Enum.map(data["workflows"], & &1["name"]) == ["ShopCheck", "ShopCheck (SinkPoise)"]
-    end
   end
 
   describe "mounting trials schedule" do

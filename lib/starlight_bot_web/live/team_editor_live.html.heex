@@ -19,19 +19,6 @@
           <button phx-click="new_team" class="btn btn-primary btn-sm ml-auto">+ New Team</button>
         </div>
 
-        <%= if @countdown do %>
-          <div class="bg-warning/10 border border-warning/30 rounded-xl p-2 mb-2 shrink-0 flex items-center justify-between gap-2">
-            <div>
-              <div class="text-xs text-warning font-semibold">Focus the game window now</div>
-              <div class="font-mono text-xs text-base-content/70"><%= pending_action_label(@pending_action) %></div>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="font-mono text-xl font-bold text-warning"><%= @countdown %></span>
-              <button phx-click="cancel_pending" class="btn btn-ghost btn-xs text-base-content/40">✕</button>
-            </div>
-          </div>
-        <% end %>
-
         <%= if entry = List.first(@log) do %>
           <div class={"text-xs font-mono mb-2 leading-snug " <> log_kind_class(entry.kind)}><%= entry.text %></div>
         <% end %>
@@ -185,7 +172,6 @@
                       <div class="flex flex-col gap-1">
                         <div class="flex items-center text-xs">
                           <span class="font-medium">Team Selectors</span>
-                          <span class="ml-auto text-base-content/50">first is the default</span>
                         </div>
                         <div id="team-hooks" phx-hook="SortableList" data-sort-event="reorder_team_hooks" class="flex flex-col gap-1">
                           <%= for {hook, index} <- Enum.with_index(@hooks) do %>
@@ -193,9 +179,6 @@
                               <span data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to reorder">⠿</span>
                               <span class="text-xs text-base-content/50 w-5 text-right"><%= index + 1 %>.</span>
                               <span class="font-mono text-sm flex-1"><%= Teams.hook_label(hook) %></span>
-                              <button type="button" phx-click="select_team_on_screen" phx-value-hook={hook}
-                                      disabled={@phase != :idle or @countdown != nil}
-                                      class="btn btn-xs btn-outline">Select on Screen</button>
                               <button type="button" phx-click="remove_team_hook" phx-value-index={index}
                                       class="btn btn-ghost btn-xs text-error">✕</button>
                             </div>

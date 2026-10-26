@@ -16,7 +16,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
     details = details ++ [detail]
     outcomes = outcomes ++ [outcome]
 
-    case refresh_case(milestone, state, ctx) do
+    case if(reached?(milestone, state, ctx), do: nil, else: refresh_case(milestone, state, ctx)) do
       nil ->
         finish(milestone, details, outcomes, state, ctx)
 
@@ -31,6 +31,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
 
         case refresh(refresh_case, state, ctx) do
           {:done, refreshed, state} ->
+            state = Map.update(state, :case_runs, %{refresh_case["id"] => 1}, &Map.update(&1, refresh_case["id"], 1, fn runs -> runs + 1 end))
             Ops.detect_and_update_cost(ctx)
             run_rounds(milestone, state, ctx, round + 1, details ++ [refreshed], outcomes ++ [:partial])
 
@@ -51,20 +52,21 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
     {outcome, Enum.join(details, "; "), state}
   end
 
-  defp refresh_case(%{"refresh" => [_ | _]} = milestone, state, ctx), do: GiftPlans.matching_refresh_case(milestone, ShopRunner.condition_env(state, ctx))
-  defp refresh_case(_milestone, _state, _ctx), do: nil
+  defp refresh_case(milestone, state, ctx), do: GiftPlans.matching_refresh_case(milestone, ShopRunner.condition_env(state, ctx))
 
   defp refresh(%{"action" => "affinity_refresh"} = refresh_case, state, ctx), do: AffinityRefresh.run(%{"affinity" => refresh_case["affinity"]}, nil, state, ctx)
   defp refresh(_refresh_case, state, ctx), do: Refresh.run(%{}, nil, state, ctx)
 
-  defp refresh_preview(%{"refresh" => [_ | _]} = milestone, state, ctx) do
-    case refresh_case(milestone, state, ctx) do
-      nil -> ["no refresh case matches now"]
-      refresh_case -> ["then would #{refresh_label(refresh_case)}"]
+  defp refresh_preview(milestone, state, ctx) do
+    if GiftPlans.any_refresh_cases?(milestone) do
+      case refresh_case(milestone, state, ctx) do
+        nil -> ["no refresh case matches now"]
+        refresh_case -> ["then would #{refresh_label(refresh_case)}"]
+      end
+    else
+      []
     end
   end
-
-  defp refresh_preview(_milestone, _state, _ctx), do: []
 
   defp refresh_label(%{"action" => "affinity_refresh", "affinity" => affinity}) when is_binary(affinity), do: "keyword refresh for #{affinity}"
   defp refresh_label(%{"action" => action}), do: String.downcase(GiftPlans.refresh_action_label(action))
@@ -107,7 +109,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
     selling = selling ++ if(replaces == [], do: [], else: ["check skill replace for " <> Enum.join(Enum.uniq(replaces), ", ")])
 
     if reached?(milestone, state, ctx) do
-      {:would_run, Enum.join(selling ++ ["#{milestone["name"]} already reached"] ++ refresh_preview(milestone, state, ctx), "; "), state}
+      {:would_run, Enum.join(selling ++ ["#{milestone["name"]} already reached"], "; "), state}
     else
       progress = progress(milestone, state, ctx)
       needed = Enum.filter(progress.entries, &GiftPlans.needed?(progress, &1))

@@ -131,7 +131,6 @@
         <% plan = shop_plan(@run_memory) %>
         <%= if plan do %>
           <div class="flex gap-3 font-mono text-base-content/70 shrink-0">
-            <span>Workflow <%= plan.workflow %></span>
             <span>Floor <%= plan.floor %></span>
             <span><%= plan.shop_type %> shop</span>
             <span>Reserve <%= plan.reserve %></span>
@@ -152,7 +151,7 @@
           </div>
         <% else %>
           <div class="text-base-content/30 text-center py-4 select-none">
-            No workflow trace yet. Run a dry run or full run.
+            No milestone trace yet. Run a dry run or full run.
           </div>
         <% end %>
       </div>

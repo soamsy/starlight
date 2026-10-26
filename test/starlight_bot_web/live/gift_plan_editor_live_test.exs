@@ -36,7 +36,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
   defp saved(socket), do: Plans.get(:gift_plans, socket.assigns.editing_id).data
 
-  defp steps(socket), do: hd(saved(socket)["workflows"])["steps"]
 
   test "route selector only offers combos that work in the chosen shop, normal-usable first, then below the target tier, then fewer points" do
     keys = fn tier, shop -> Enum.map(Live.selector_combos(tier, shop), &StarlightBot.GiftPlans.Combos.combo_key(&1.combo)) end
@@ -61,14 +60,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
   defp entry(socket, name), do: Enum.find(milestone(socket)["entries"], &(GiftPlans.subject_gift(&1) == name))
   defp shop(socket), do: event(socket, "set_tab", %{"tab" => "shop"})
 
-  test "a new plan starts as a valid v4 plan with the shop pane on its milestone", %{socket: socket} do
-    assert saved(socket)["version"] == 4
+  test "a new plan starts as a valid v5 plan with the shop pane on its milestone", %{socket: socket} do
+    assert saved(socket)["version"] == 5
     assert GiftPlans.issues(saved(socket)) == []
-    assert render(socket) =~ "No steps yet"
     assert socket.assigns.selected_milestone_id == milestone(socket)["id"]
     assert render(shop(socket)) =~ "No entries yet"
 
-    for tab <- ~w(workflows shop loadout) do
+    for tab <- ~w(shop loadout) do
       assert is_binary(socket |> event("set_tab", %{"tab" => tab}) |> render())
     end
   end
@@ -132,13 +130,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
   test "Add Schedule shows floor tabs, new tabs start after the last one, and a tab's start floor can move to any free floor", %{socket: socket} do
     socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"})
     glimpse = entry(socket, "Glimpse of Flames")["id"]
-    assert render(socket) =~ "Add Schedule"
+    assert render(socket) =~ "ms_add_schedule"
 
     socket = event(socket, "ms_add_schedule", %{"entry" => glimpse})
     assert entry(socket, "Glimpse of Flames")["scheduled"] == true
     html = render(socket)
     assert html =~ "F1+" and html =~ "ms_remove_schedule"
-    refute html =~ "Add Schedule"
+    refute html =~ "ms_add_schedule"
 
     socket = socket |> event("ms_split", %{"entry" => glimpse, "floor" => "2"}) |> event("ms_split", %{"entry" => glimpse, "floor" => "3"})
     assert Enum.map(entry(socket, "Glimpse of Flames")["floors"], & &1["from"]) == [1, 2, 3]
@@ -156,7 +154,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert render(socket) =~ "ms_remove_schedule"
     socket = event(socket, "ms_remove_schedule", %{"entry" => glimpse})
     assert entry(socket, "Glimpse of Flames")["scheduled"] == false
-    assert render(socket) =~ "Add Schedule"
+    assert render(socket) =~ "ms_add_schedule"
   end
 
   test "Buy and Sell are exclusive, patterns show a cap for either, and a tab can abandon the gift from its floor", %{socket: socket} do
@@ -341,6 +339,49 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert id == first["id"]
   end
 
+  test "a refresh case with a max stops matching once it has run that many times", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_refresh_case", %{})
+    [refresh_case] = milestone(socket)["refresh"]
+    assert refresh_case["max"] == nil
+
+    socket = event(socket, "ms_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => "2"})
+    assert [%{"max" => 2}] = milestone(socket)["refresh"]
+
+    assert GiftPlans.matching_refresh_case(milestone(socket), %{case_runs: %{refresh_case["id"] => 1}})
+    refute GiftPlans.matching_refresh_case(milestone(socket), %{case_runs: %{refresh_case["id"] => 2}})
+
+    socket = event(socket, "ms_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => ""})
+    assert [%{"max" => nil}] = milestone(socket)["refresh"]
+    assert GiftPlans.matching_refresh_case(milestone(socket), %{case_runs: %{refresh_case["id"] => 99}})
+  end
+
+  test "refresh cases can be scheduled by floor and the matching case follows the shop floor", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_refresh_case", %{}) |> event("ms_refresh_add_schedule", %{})
+    [base] = milestone(socket)["refresh"]
+    assert milestone(socket)["refresh_scheduled"]
+
+    socket = socket |> event("ms_refresh_split", %{"floor" => "5"}) |> event("ms_add_refresh_case", %{})
+    [%{"from" => 5, "cases" => [copied, added]}] = milestone(socket)["refresh_floors"]
+    assert copied["id"] != base["id"]
+    assert [^base] = milestone(socket)["refresh"]
+
+    socket = event(socket, "ms_update_refresh_case", %{"case_id" => added["id"], "action" => "leave"})
+    assert render(socket) =~ "F1-4" and render(socket) =~ "F5+"
+
+    assert %{"action" => "refresh"} = GiftPlans.matching_refresh_case(milestone(socket), %{floor: 4})
+    assert %{"id" => id} = GiftPlans.matching_refresh_case(milestone(socket), %{floor: 5})
+    assert id == copied["id"]
+
+    socket = event(socket, "ms_refresh_move_segment", %{"from" => "5", "to" => "7"})
+    assert [%{"from" => 7}] = milestone(socket)["refresh_floors"]
+
+    socket = event(socket, "ms_refresh_remove_segment", %{"from" => "7"})
+    assert milestone(socket)["refresh_floors"] == []
+
+    socket = event(socket, "ms_refresh_remove_schedule", %{})
+    refute milestone(socket)["refresh_scheduled"]
+  end
+
   test "turning Fuse on for an entry without a fusion gives it the default one, and unfusable gifts can't", %{socket: socket} do
     socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Fixed Thing"})
     ing_a = entry(socket, "Ing A")["id"]
@@ -433,34 +474,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert html =~ "(not in this milestone)"
   end
 
-  test "steps can be edited, reordered, and given condition trees", %{socket: socket} do
-    socket = socket |> event("add_step", %{"kind" => "budget"}) |> event("add_step", %{"kind" => "refresh"})
-    [budget, refresh] = steps(socket)
-
-    socket =
-      socket
-      |> event("update_step", %{"step_id" => budget["id"], "step" => %{"amount" => "-150"}})
-      |> event("move_step", %{"id" => refresh["id"], "dir" => "up"})
-      |> event("cond_add", %{"step_id" => budget["id"], "path" => "", "node" => "leaf"})
-      |> event("cond_add", %{"step_id" => budget["id"], "path" => "", "node" => "group"})
-      |> event("cond_update", %{"step_id" => budget["id"], "path" => "0", "op" => "cost_gte", "value" => "200"})
-      |> event("cond_update", %{"step_id" => budget["id"], "path" => "1.0", "op" => "missing_gift", "gift" => "Glimpse of Flames"})
-      |> event("toggle_step", %{"id" => budget["id"]})
-
-    [_refresh, budget] = steps(socket)
-    assert budget["amount"] == -150
-    assert GiftPlans.condition_label(budget["condition"]) == "cost >= 200 AND missing Glimpse of Flames"
-    assert render(socket) =~ "if cost &gt;= 200 AND missing Glimpse of Flames"
-
-    socket =
-      socket
-      |> event("cond_remove", %{"step_id" => budget["id"], "path" => "1"})
-      |> event("cond_remove", %{"step_id" => budget["id"], "path" => "0"})
-
-    assert List.last(steps(socket))["condition"] == nil
-  end
-
-  test "milestones can be added, renamed, ordered, worked on by steps and deleted", %{socket: socket} do
+  test "milestones can be added, renamed, ordered and deleted", %{socket: socket} do
     %{"id" => shop_id} = milestone(socket)
     socket = socket |> event("add_milestone", %{}) |> event("move_milestone", %{"id" => shop_id, "dir" => "down"})
     [%{"id" => top_id}, %{"id" => ^shop_id}] = saved(socket)["milestones"]
@@ -468,19 +482,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
     socket = event(socket, "rename_milestone", %{"id" => top_id, "value" => " Early "})
     assert hd(saved(socket)["milestones"])["name"] == "Early"
-
-    socket = event(socket, "add_step", %{"kind" => "milestone", "ref" => shop_id})
-    [step] = steps(socket)
-    socket = event(socket, "update_step", %{"step_id" => step["id"], "step" => %{"milestone" => top_id}})
-    assert hd(steps(socket))["milestone"] == top_id
-    assert render(event(socket, "set_tab", %{"tab" => "workflows"})) =~ "Work on Milestone · Early"
-
-    socket =
-      socket
-      |> event("cond_add", %{"step_id" => step["id"], "path" => "", "node" => "leaf"})
-      |> event("cond_update", %{"step_id" => step["id"], "path" => "0", "op" => "milestone", "milestone" => shop_id})
-
-    assert GiftPlans.condition_label(hd(steps(socket))["condition"], saved(socket)) == "milestone Shop Done reached"
 
     socket = event(socket, "delete_milestone", %{"id" => top_id})
     assert [%{"id" => ^shop_id}] = saved(socket)["milestones"]
@@ -503,124 +504,4 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert saved(socket)["gift_search"] == ["Fiery Down", "Ing B"]
   end
 
-  test "a repeated step can run another workflow between repeats, but not one that leads back", %{socket: socket} do
-    socket = socket |> event("add_step", %{"kind" => "refresh"}) |> event("add_workflow", %{})
-    [standard, between] = saved(socket)["workflows"]
-    socket = event(socket, "select_workflow", %{"id" => standard["id"]})
-    [step] = steps(socket)
-
-    socket = event(socket, "update_step", %{"step_id" => step["id"], "step" => %{"repeat" => "2", "between" => between["id"]}})
-    assert %{"repeat" => 2, "between" => between_id} = hd(steps(socket))
-    assert between_id == between["id"]
-    html = render(event(socket, "toggle_step", %{"id" => step["id"]}))
-    assert html =~ "Between repeats run"
-    assert html =~ "↻ Workflow 2"
-
-    socket = socket |> event("select_workflow", %{"id" => between["id"]}) |> event("add_step", %{"kind" => "refresh"})
-    [inner] = Enum.at(saved(socket)["workflows"], 1)["steps"]
-    socket = event(socket, "update_step", %{"step_id" => inner["id"], "step" => %{"repeat" => "1", "between" => standard["id"]}})
-    refute Map.has_key?(hd(Enum.at(saved(socket)["workflows"], 1)["steps"]), "between")
-
-    socket = socket |> event("select_workflow", %{"id" => standard["id"]}) |> event("update_step", %{"step_id" => step["id"], "step" => %{"repeat" => "2", "between" => ""}})
-    refute Map.has_key?(hd(steps(socket)), "between")
-  end
-
-  test "If steps hold Then and Else steps that can be added, edited, dragged and copied", %{socket: socket} do
-    socket = event(socket, "add_step", %{"kind" => "if"})
-    [if_step] = steps(socket)
-    then_scope = "#{if_step["id"]}:then"
-    else_scope = "#{if_step["id"]}:else"
-
-    socket =
-      socket
-      |> event("set_add_target", %{"scope" => then_scope})
-      |> event("add_step", %{"kind" => "affinity_refresh"})
-      |> event("set_add_target", %{"scope" => else_scope})
-      |> event("add_step", %{"kind" => "refresh"})
-
-    assert render(socket) =~ "Adding into If cost &gt;= 0 › else"
-    socket = event(socket, "set_add_target", %{"scope" => else_scope})
-    socket = event(socket, "add_step", %{"kind" => "leave"})
-
-    [%{"kind" => "if", "then" => [affinity], "else" => [refresh]}, %{"kind" => "leave"}] = steps(socket)
-
-    socket =
-      socket
-      |> event("update_step", %{"step_id" => affinity["id"], "step" => %{"affinity" => "poise"}})
-      |> event("toggle_step_enabled", %{"id" => refresh["id"]})
-      |> event("cond_update", %{"step_id" => if_step["id"], "path" => "0", "op" => "cost_gte", "value" => "150"})
-
-    [%{"then" => [%{"affinity" => "poise"}], "else" => [%{"enabled" => false}]} = updated, _] = steps(socket)
-    assert GiftPlans.condition_label(updated["condition"]) == "cost >= 150"
-
-    socket = event(socket, "cond_update", %{"step_id" => if_step["id"], "path" => "0", "op" => "refreshes_lt", "value" => "2"})
-    assert GiftPlans.condition_label(hd(steps(socket))["condition"]) == "refreshes < 2"
-    assert render(event(socket, "toggle_step", %{"id" => if_step["id"]})) =~ "refreshes this shop under"
-    socket = event(socket, "cond_update", %{"step_id" => if_step["id"], "path" => "0", "op" => "cost_gte", "value" => "150"})
-
-    html = render(event(socket, "toggle_step", %{"id" => if_step["id"]}))
-    assert html =~ "Then" and html =~ "Else" and html =~ "Exactly one branch runs"
-
-    socket = event(socket, "move_step_to", %{"scope" => else_scope, "id" => affinity["id"], "ids" => [refresh["id"], affinity["id"]]})
-    [%{"then" => [], "else" => [_, %{"kind" => "affinity_refresh"}]}, _] = steps(socket)
-
-    socket = event(socket, "duplicate_step", %{"id" => if_step["id"]})
-    [first, copy, _leave] = steps(socket)
-    assert copy["id"] != first["id"] and hd(copy["else"])["id"] != hd(first["else"])["id"]
-
-    socket = socket |> event("delete_step", %{"id" => refresh["id"]}) |> event("move_step", %{"id" => affinity["id"], "dir" => "up"})
-    assert [%{"else" => [%{"kind" => "affinity_refresh"}]}, _, _] = steps(socket)
-  end
-
-  test "heal, heal all, and revive steps", %{socket: socket} do
-    socket = event(socket, "add_step", %{"kind" => "heal"})
-    [heal] = steps(socket)
-    sinner = hd(StarlightBot.Teams.all_sinners())
-
-    socket = event(socket, "update_step", %{"step_id" => heal["id"], "step" => %{"sinner" => sinner}})
-
-    assert [%{"kind" => "heal", "sinner" => ^sinner}] = steps(socket)
-    assert GiftPlans.step_label(saved(socket), hd(steps(socket))) == "Heal Sinner · #{sinner}"
-    assert render(socket) =~ "about 50% HP and 45 SP"
-
-    socket = event(socket, "add_step", %{"kind" => "heal_all"})
-    assert render(socket) =~ "about 15% HP and 15 SP"
-
-    socket = event(socket, "add_step", %{"kind" => "revive"})
-    [_heal, _heal_all, revive] = steps(socket)
-    socket = event(socket, "update_step", %{"step_id" => revive["id"], "step" => %{"sinner" => sinner}})
-    assert GiftPlans.step_label(saved(socket), List.last(steps(socket))) == "Revive · #{sinner}"
-    assert render(socket) =~ "Revives this sinner"
-  end
-
-  test "workflows can be added and scheduled, and scheduled workflows can't be deleted", %{socket: socket} do
-    [first] = saved(socket)["workflows"]
-
-    socket = event(socket, "add_workflow", %{})
-    second = socket.assigns.selected_workflow_id
-
-    socket =
-      socket
-      |> event("add_schedule_row", %{})
-      |> event("update_schedule", %{"rows" => %{"0" => %{"from_floor" => "1", "workflow" => first["id"]}, "1" => %{"from_floor" => "2", "workflow" => second}}})
-      |> event("delete_workflow", %{"id" => second})
-
-    data = saved(socket)
-    assert length(data["workflows"]) == 2
-    assert GiftPlans.workflow_for_floor(data, 1)["id"] == first["id"]
-    assert GiftPlans.workflow_for_floor(data, 5)["id"] == second
-  end
-
-  test "workflows can be copied in from another plan", %{socket: socket} do
-    {:ok, source_id} = Plans.save(:gift_plans, %{name: "Source", data: GiftPlans.blank("burn")})
-    source = Plans.get(:gift_plans, source_id)
-    [%{"id" => wf_id}] = source.data["workflows"]
-
-    socket =
-      socket
-      |> event("import_source", %{"plan_id" => Integer.to_string(source_id)})
-      |> event("import_workflows", %{"workflow" => wf_id})
-
-    assert Enum.map(saved(socket)["workflows"], & &1["name"]) == ["Standard", "Standard (Source)"]
-  end
 end

@@ -6,7 +6,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   alias StarlightBot.Navigation.Navigator
   import StarlightBotWeb.Components.PlanPicker, only: [pane_icon: 1]
 
-  @countdown_secs 2
   @panes %{"packs" => PackPlanEditorLive, "gifts" => GiftPlanEditorLive, "battle" => BattlePlanEditorLive}
 
   @impl true
@@ -30,8 +29,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:budget_inputs, blank_budget_inputs(nil))
      |> assign(:phase, nav.phase)
      |> assign(:log, nav.log)
-     |> assign(:pending_action, nil)
-     |> assign(:countdown, nil)
      |> assign(:pane, "battle")}
   end
 
@@ -177,33 +174,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
-  def handle_event("select_team_on_screen", %{"hook" => hook}, socket) do
-    {:noreply, start_countdown(socket, {:select_team_on_screen, socket.assigns.editing_id, hook, socket.assigns.form[:name].value})}
-  end
-
-  @impl true
-  def handle_event("cancel_pending", _, socket) do
-    {:noreply, socket |> assign(:pending_action, nil) |> assign(:countdown, nil)}
-  end
-
-  @impl true
-  def handle_info(:countdown_tick, %{assigns: %{pending_action: nil}} = socket) do
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_info(:countdown_tick, %{assigns: %{countdown: 1, pending_action: action}} = socket) do
-    run_pending_action(action)
-    {:noreply, socket |> assign(:pending_action, nil) |> assign(:countdown, nil)}
-  end
-
-  @impl true
-  def handle_info(:countdown_tick, socket) do
-    Process.send_after(self(), :countdown_tick, 1_000)
-    {:noreply, assign(socket, :countdown, socket.assigns.countdown - 1)}
-  end
-
-  @impl true
   def handle_info(:team_plans_changed, socket) do
     socket =
       socket
@@ -223,18 +193,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   # --- Private ---
-
-  defp start_countdown(socket, action) do
-    Process.send_after(self(), :countdown_tick, 1_000)
-
-    socket
-    |> assign(:pending_action, action)
-    |> assign(:countdown, @countdown_secs)
-  end
-
-  defp run_pending_action({:select_team_on_screen, id, hook, _name}), do: Navigator.select_team_on_screen(id, hook)
-
-  def pending_action_label({:select_team_on_screen, _id, hook, name}), do: "select on screen: #{name || "team"} (#{Teams.hook_label(hook)})"
 
   def log_kind_class(:ok), do: "text-success"
   def log_kind_class(:error), do: "text-error"

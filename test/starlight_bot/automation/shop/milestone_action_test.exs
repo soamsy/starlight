@@ -70,7 +70,7 @@ defmodule StarlightBot.Automation.Shop.Actions.MilestoneTest do
     assert {:would_run, "check heals: Greatly Heal yi_sang, faust; check skill replace for faust; would uptie Owned" <> _, _} = Milestone.preview(%{}, milestone, state, ctx)
   end
 
-  test "after working, the first matching refresh case runs: Leave Shop leaves, and no match just ends", %{ctx: ctx, state: state, milestone: milestone} do
+  test "a reached milestone never consults its refresh cases", %{ctx: ctx, state: state, milestone: milestone} do
     for {id, name} <- [{"g_fixed", "Fixed"}, {"g_3", "Three"}, {"g_4", "Four"}], do: RunMemory.add_ego_gift(ctx, id, name)
     state = Map.put(state, :refreshes, 0)
     late = %{"id" => "rc_late", "condition" => %{"op" => "refreshes_gte", "value" => 5}, "action" => "refresh"}
@@ -80,8 +80,9 @@ defmodule StarlightBot.Automation.Shop.Actions.MilestoneTest do
     refute Map.get(state_after, :left)
 
     milestone = Map.put(milestone, "refresh", [late, leave])
-    assert {:skipped, "Main already reached; leaving the shop", %{left: true}} = Milestone.run(%{}, milestone, state, ctx)
-    assert {:would_run, "Main already reached; then would leave shop", _} = Milestone.preview(%{}, milestone, state, ctx)
+    assert {:skipped, "Main already reached", state_after} = Milestone.run(%{}, milestone, state, ctx)
+    refute Map.get(state_after, :left)
+    assert {:would_run, "Main already reached", _} = Milestone.preview(%{}, milestone, state, ctx)
   end
 
   test "a partway uptie commits its goal, so the goal's other entries are dropped", %{ctx: ctx, state: state, milestone: milestone} do

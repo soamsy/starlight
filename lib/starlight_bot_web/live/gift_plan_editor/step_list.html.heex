@@ -1,6 +1,0 @@
-<div id={"steps-#{@workflow["id"]}-#{@scope}"} phx-hook="SortableList" data-sort-event="reorder_steps" data-sort-move-event="move_step_to"
-     data-sort-shared={"steps-#{@workflow["id"]}"} data-sort-scope={@scope}
-     class={"flex flex-col gap-1 " <> if(@scope == "", do: "", else: "min-h-6 rounded border border-dashed border-base-300 p-1")}>
-  <.step_card :for={{step, index} <- Enum.with_index(@steps, 1)} step={step} index={index} workflow={@workflow} plan_data={@plan_data}
-              expanded_step_id={@expanded_step_id} sinners={@sinners} add_target={@add_target} />
-</div>
