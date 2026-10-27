@@ -37,7 +37,7 @@
             <%= if @active_tab == :loadout do %>
               <button phx-click="set_tab" phx-value-tab="shop" class="btn btn-sm btn-accent w-32">Milestones</button>
             <% else %>
-              <button phx-click="set_tab" phx-value-tab="loadout" title="Loadout" class="btn btn-sm gap-1 px-2 w-32 overflow-hidden btn-accent btn-outline">
+              <button id="gift-loadout-btn" phx-click="set_tab" phx-value-tab="loadout" title="Loadout" class="btn btn-sm gap-1 px-2 w-32 overflow-hidden btn-accent btn-outline">
                 <img :for={name <- GiftPlans.cabinet_order(@plan_data)} :if={@gifts_by_name[name]} src={@gifts_by_name[name].image_path} class="w-4 h-4 rounded object-cover bg-slate-500/40 ring-1 ring-slate-400/40" />
                 Loadout
               </button>
@@ -209,7 +209,7 @@
                   <span :if={picks != []} class="badge badge-warning badge-sm ml-auto whitespace-nowrap">
                     <%= GiftPlans.gift_search_starlight_cost(length(picks)) %> Starlight
                   </span>
-                  <span class={"badge badge-primary badge-sm " <> if(picks == [], do: "ml-auto", else: "")}><%= length(picks) %> / <%= max %></span>
+                  <span class={"badge badge-primary badge-sm whitespace-nowrap shrink-0 " <> if(picks == [], do: "ml-auto", else: "")}><%= length(picks) %> / <%= max %></span>
                 </div>
                 <div class="grid grid-cols-3 gap-2">
                   <%= for slot <- 0..(max - 1) do %>
@@ -245,7 +245,7 @@
                   <span class="text-xs font-medium text-base-content/70">
                     Starter buffs to select at grace, on every run. Multi-select, pick an enhancement tier per grace.
                   </span>
-                  <span class="badge badge-primary badge-sm ml-auto"><%= grace_total_cost(@plan_data) %> Starlight total</span>
+                  <span class="badge badge-primary badge-sm ml-auto whitespace-nowrap shrink-0"><%= grace_total_cost(@plan_data) %> Starlight total</span>
                 </div>
                 <div class="grid grid-cols-5 grid-rows-2 gap-2">
                   <%= for grace <- graces() do %>
