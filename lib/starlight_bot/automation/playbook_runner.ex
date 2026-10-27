@@ -160,8 +160,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   def after_retry({:ok, _}, _frame, _ctx), do: {:error, :battle_left}
   def after_retry({:error, _} = error, _frame, _ctx), do: error
 
-  def dodge_column(tray, column, _frame, ctx) do
-    click_dodge(tray, column, ctx)
+  def dodge_column(action, tray, column, _frame, ctx) do
+    dodge(action["enemy"], tray, column, ctx)
     {:ok, nil}
   end
 
@@ -169,6 +169,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     with {:ok, point} <- slot_point(tray, column, ctx) do
       Ctx.log(ctx, :info, "playbook: #{action["grade"]} EGO#{if action["corrode"], do: " (corroded)"} on slot #{column + 1}")
       use_ego(point, action, ctx)
+      target_after_ego(point, action, ctx)
     end
 
     {:ok, nil}
@@ -289,7 +290,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp run_action(%{"type" => "dodge"} = action, turn, ctx) do
     with {:ok, frame, tray} <- turn.scan,
          {:ok, columns} <- action_columns(action, frame, tray, profiles(ctx), ctx) do
-      {:steps, Enum.map(columns, &DSL.call(__MODULE__, :dodge_column, [tray, &1]))}
+      {:steps, Enum.map(columns, &DSL.call(__MODULE__, :dodge_column, [action, tray, &1]))}
     else
       _ -> :pending
     end
@@ -328,7 +329,15 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp run_action(%{"type" => type}, _turn, ctx), do: log_pending(ctx, "unknown action #{inspect(type)}, skipping")
 
-  defp target_or_dodge(:dodge, _action, tray, column, ctx), do: click_dodge(tray, column, ctx)
+  defp target_or_dodge(:dodge, action, tray, column, ctx), do: dodge(action["enemy"], tray, column, ctx)
+
+  defp target_or_dodge(row, %{"enemy" => %{"pick" => "none"}}, tray, column, ctx) do
+    with {:ok, {sx, sy}} <- skill_point(tray, column, row, ctx) do
+      Ctx.log(ctx, :info, "playbook: choosing the #{row} skill on slot #{column + 1} without a target")
+      Mouse.click(sx, sy)
+      Process.sleep(@slot_click_settle_ms)
+    end
+  end
 
   defp target_or_dodge(row, action, tray, column, ctx) do
     with {:ok, grab} <- skill_point(tray, column, row, ctx) do
@@ -336,6 +345,15 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       drag_to_enemy(grab, action["enemy"], ctx)
     end
   end
+
+  defp dodge(%{"pick" => pick} = enemy, tray, column, ctx) when pick != "none" do
+    with {:ok, point} <- slot_point(tray, column, ctx) do
+      Ctx.log(ctx, :info, "playbook: dodging with slot #{column + 1} onto enemy #{pick_text(enemy)}")
+      drag_to_enemy(point, enemy, ctx)
+    end
+  end
+
+  defp dodge(_enemy, tray, column, ctx), do: click_dodge(tray, column, ctx)
 
   defp click_dodge(tray, column, ctx) do
     with {:ok, {sx, sy}} <- slot_point(tray, column, ctx) do
@@ -406,6 +424,13 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       :pending
     end
   end
+
+  defp target_after_ego(point, %{"enemy" => %{"pick" => pick} = enemy}, ctx) when pick != "none" do
+    Ctx.log(ctx, :info, "playbook: targeting enemy #{pick_text(enemy)} with the EGO")
+    drag_to_enemy(point, enemy, ctx)
+  end
+
+  defp target_after_ego(_point, _action, _ctx), do: :ok
 
   defp use_ego({sx, sy}, action, ctx) do
     Mouse.move_to(sx, sy)

@@ -82,7 +82,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "except", "sinners" => ["faust"], "add_sinner" => "ryoshu", "pick" => "all"})
     [_, _, block] = actions(socket, playbook_id)
     assert Map.take(Enum.at(block["then"], 1), ["who", "sinners"]) == %{"who" => "except", "sinners" => ["faust", "ryoshu"]}
-    assert render(socket) =~ "all but"
+    assert render(socket) =~ "All but"
 
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "everyone", "pick" => "all"})
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "only", "pick" => "all"})
@@ -168,6 +168,56 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     assert [%{"type" => "dodge"}, %{"type" => "if"} = block] = actions(socket, chain["id"])
     assert Enum.map(block["then"], & &1["type"]) == ["chain_a_res"]
     assert Enum.map(block["else"], & &1["type"]) == ["chain_fast"]
+  end
+
+  test "one action row switches between top, bottom, dodge and ego, and targets can be skipped", %{socket: socket, playbook_id: playbook_id} do
+    socket = event(socket, "add_action", %{"container" => "root", "type" => "target"})
+    [_, _, target] = actions(socket, playbook_id)
+
+    socket = event(socket, "update_action", %{"action" => target["id"], "kind" => "dodge", "pick" => "first"})
+    [_, _, dodge] = actions(socket, playbook_id)
+    assert dodge["type"] == "dodge"
+    assert dodge["enemy"] == %{"pick" => "none"}
+
+    socket = event(socket, "update_action", %{"action" => target["id"], "kind" => "ego", "pick" => "first", "grade" => "he", "corrode" => "true"})
+    [_, _, ego] = actions(socket, playbook_id)
+    assert Map.take(ego, ["type", "grade", "corrode"]) == %{"type" => "ego", "grade" => "he", "corrode" => true}
+    assert ego["enemy"] == %{"pick" => "none"}
+
+    socket = event(socket, "update_action", %{"action" => target["id"], "pick" => "first", "grade" => "he", "enemy_pick" => "last"})
+    [_, _, ego] = actions(socket, playbook_id)
+    assert ego["enemy"] == %{"pick" => "last"}
+
+    socket = event(socket, "update_action", %{"action" => target["id"], "kind" => "top", "pick" => "first", "enemy_pick" => "none"})
+    [_, _, top] = actions(socket, playbook_id)
+    assert Map.take(top, ["type", "row", "enemy"]) == %{"type" => "target", "row" => "top", "enemy" => %{"pick" => "none"}}
+    refute Map.has_key?(top, "grade")
+    assert render(socket) =~ "Top skill"
+  end
+
+  test "sinner pickers only offer sinners with a profile and + adds the first free one" do
+    {:ok, faust_profile} = StarlightBot.SinnerProfiles.save(%{name: "Faust test", sinner: "faust"})
+    {:ok, ryoshu_profile} = StarlightBot.SinnerProfiles.save(%{name: "Ryoshu test", sinner: "ryoshu"})
+    {:ok, socket} = Live.mount(%{}, %{}, %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, flash: %{}}})
+    socket = event(socket, "new_plan", %{})
+    focused = Enum.find(socket.assigns.data["playbooks"], &(&1["kind"] == "focused"))
+
+    socket =
+      socket
+      |> event("select_playbook", %{"id" => focused["id"]})
+      |> event("set_sinner_profile", %{"sinner" => "faust", "profile_id" => to_string(faust_profile)})
+      |> event("set_sinner_profile", %{"sinner" => "ryoshu", "profile_id" => to_string(ryoshu_profile)})
+      |> event("add_action", %{"container" => "root", "type" => "ego"})
+
+    [_, _, ego] = actions(socket, focused["id"])
+    socket = event(socket, "add_sinner", %{"action" => ego["id"]})
+    socket = event(socket, "add_sinner", %{"action" => ego["id"]})
+    socket = event(socket, "add_sinner", %{"action" => ego["id"]})
+    [_, _, ego] = actions(socket, focused["id"])
+    assert Enum.sort(ego["sinners"]) == ["faust", "ryoshu"]
+
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "only", "sinners" => ["faust", "gregor"], "pick" => "first"})
+    assert render(socket) =~ "no profile in this plan"
   end
 
   test "chain pins and focused targets can pick their row by a mixed priority list", %{socket: socket, playbook_id: playbook_id} do

@@ -259,7 +259,7 @@
                           class="btn btn-xs btn-ghost text-error">Delete</button>
                 </div>
 
-                <.action_list container="root" playbook={playbook} sinner_options={@sinner_options} editing_condition_id={@editing_condition_id}
+                <.action_list container="root" playbook={playbook} sinner_options={sinner_options(@data, @profiles_by_id)} editing_condition_id={@editing_condition_id}
                               schedule_tabs={@schedule_tabs} reorder_rev={@reorder_rev} />
               <% end %>
               <%= if is_nil(playbook) do %>

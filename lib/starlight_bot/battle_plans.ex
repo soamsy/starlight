@@ -43,7 +43,7 @@ defmodule StarlightBot.BattlePlans do
   def max_floor, do: @max_floor
   def max_turn, do: @max_turn
   def skill_picks, do: @skill_picks
-  def enemy_picks, do: @skill_picks ++ ["percent"]
+  def enemy_picks, do: ["none"] ++ @skill_picks ++ ["percent"]
 
   def percent_index(count, percent), do: round((count - 1) * percent / 100)
 
@@ -468,7 +468,7 @@ defmodule StarlightBot.BattlePlans do
   def new_action(type) when type in ~w(win_rate damage_rate commit clear retry), do: %{"id" => GiftPlans.new_id("ac"), "type" => type}
 
   def new_action("dodge"),
-    do: %{"id" => GiftPlans.new_id("ac"), "type" => "dodge", "who" => "only", "sinners" => [], "skill" => %{"pick" => "first"}}
+    do: %{"id" => GiftPlans.new_id("ac"), "type" => "dodge", "who" => "only", "sinners" => [], "skill" => %{"pick" => "first"}, "enemy" => %{"pick" => "none"}}
 
   def new_action("ego") do
     %{
@@ -478,7 +478,8 @@ defmodule StarlightBot.BattlePlans do
       "sinners" => [],
       "skill" => %{"pick" => "first"},
       "grade" => "zayin",
-      "corrode" => false
+      "corrode" => false,
+      "enemy" => %{"pick" => "none"}
     }
   end
 
@@ -499,6 +500,32 @@ defmodule StarlightBot.BattlePlans do
   end
 
   def new_action(type) when type in @chain_actions, do: %{"id" => GiftPlans.new_id("ac"), "type" => type, "pins" => []}
+
+  def convert_action(action, kind) when kind in ~w(top bottom priority) do
+    action
+    |> Map.drop(~w(grade corrode))
+    |> Map.put("type", "target")
+    |> Map.put_new("row", "bottom")
+    |> Map.put_new("enemy", %{"pick" => "first"})
+  end
+
+  def convert_action(action, "dodge") do
+    action
+    |> Map.drop(~w(grade corrode row priority))
+    |> Map.put("type", "dodge")
+    |> Map.put_new("enemy", %{"pick" => "none"})
+  end
+
+  def convert_action(action, "ego") do
+    action
+    |> Map.drop(~w(row priority))
+    |> Map.put("type", "ego")
+    |> Map.put_new("grade", "zayin")
+    |> Map.put_new("corrode", false)
+    |> Map.put_new("enemy", %{"pick" => "none"})
+  end
+
+  def convert_action(action, _kind), do: action
 
   def new_pin, do: %{"who" => "only", "sinners" => [], "skill" => %{"pick" => "first"}, "row" => "bottom"}
 
