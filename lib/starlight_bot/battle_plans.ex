@@ -11,8 +11,12 @@ defmodule StarlightBot.BattlePlans do
   @max_floor 15
   @default_max_retries 5
   @max_turn 20
+  @max_cap 99
+  @ignore_sides ~w(left right top bottom)
+  @enemy_picks ~w(none first last)
+  @enemy_steps ~w(left right)
   @chain_actions ~w(chain_fast chain_a_res)
-  @common_actions ~w(win_rate damage_rate commit clear dodge ego retry)
+  @common_actions ~w(win_rate damage_rate commit dodge ego retry)
   @focused_actions ~w(target)
   @block_actions ~w(if)
   @branches ~w(then else)
@@ -43,23 +47,80 @@ defmodule StarlightBot.BattlePlans do
   def max_floor, do: @max_floor
   def max_turn, do: @max_turn
   def skill_picks, do: @skill_picks
-  def enemy_picks, do: ["none"] ++ @skill_picks ++ ["percent"]
+  def enemy_picks, do: @enemy_picks
+  def enemy_steps, do: @enemy_steps
 
-  def percent_index(count, percent), do: round((count - 1) * percent / 100)
-
-  def filter_by_height(targets, %{"dir" => dir, "pct" => pct}) when dir in ["high", "low"] and targets != [] do
-    keep = max(ceil(length(targets) * pct / 100), 1)
-    order = if dir == "high", do: :asc, else: :desc
-    kept = targets |> Enum.sort_by(fn %{icon: {_x, y}} -> y end, order) |> Enum.take(keep)
-    Enum.filter(targets, &(&1 in kept))
+  def target_index(count, enemy) do
+    n = if enemy["pick"] == "percent", do: 1, else: max(enemy["n"] || 1, 1)
+    start = if enemy["pick"] == "last", do: count - n, else: n - 1
+    step = Map.get(%{"left" => -1, "right" => 1}, enemy["step"], 0)
+    (clamp(start, count) + step * (enemy["index"] || 0)) |> clamp(count)
   end
 
-  def filter_by_height(targets, _height), do: targets
+  defp clamp(index, count), do: index |> max(0) |> min(count - 1)
 
-  def height_label(%{"dir" => dir, "pct" => pct}) when dir in ["high", "low"],
-    do: " among the #{if dir == "high", do: "highest", else: "lowest"} #{pct}%"
+  def enemy_label(%{"pick" => "none"}), do: "none"
 
-  def height_label(_height), do: ""
+  def enemy_label(%{"pick" => pick} = enemy) do
+    step = if enemy["step"] in ~w(left right), do: ", then #{enemy["step"]}", else: ""
+    "#{enemy["n"] || 1} from #{if pick == "last", do: "last", else: "first"}#{step}#{ignore_label(enemy["ignore"])}"
+  end
+
+  def parse_enemy(pick, n, step) when pick in ~w(first last) do
+    %{"pick" => pick, "n" => max(parse_count(n) || 1, 1)}
+    |> then(&if(step in @enemy_steps, do: Map.put(&1, "step", step), else: &1))
+  end
+
+  def parse_enemy("none", _n, _step), do: %{"pick" => "none"}
+  def parse_enemy(_pick, n, step), do: parse_enemy("first", n, step)
+
+  def ignore_sides, do: @ignore_sides
+
+  def apply_ignores(targets, ignores) when is_list(ignores), do: Enum.reduce(ignores, targets, &ignore_targets(&2, &1))
+  def apply_ignores(targets, _ignores), do: targets
+
+  defp ignore_targets(targets, %{"side" => side, "n" => n}) when side in @ignore_sides and targets != [] do
+    cut =
+      targets
+      |> Enum.with_index()
+      |> Enum.sort_by(fn {%{icon: {x, y}}, _index} -> ignore_key(side, x, y) end)
+      |> Enum.take(min(n, length(targets) - 1))
+      |> MapSet.new(&elem(&1, 1))
+
+    targets |> Enum.with_index() |> Enum.reject(fn {_target, index} -> index in cut end) |> Enum.map(&elem(&1, 0))
+  end
+
+  defp ignore_targets(targets, _ignore), do: targets
+
+  defp ignore_key("left", x, _y), do: x
+  defp ignore_key("right", x, _y), do: -x
+  defp ignore_key("top", _x, y), do: y
+  defp ignore_key("bottom", _x, y), do: -y
+
+  def ignore_label(ignores) when is_list(ignores) and ignores != [],
+    do: ", ignoring " <> Enum.map_join(ignores, ", ", fn %{"side" => side, "n" => n} -> "#{side} #{n}" end)
+
+  def ignore_label(_ignores), do: ""
+
+  def put_ignores(enemy, entries, add) do
+    kept =
+      (entries || %{})
+      |> Enum.sort_by(fn {index, _entry} -> parse_count(index) || 0 end)
+      |> Enum.flat_map(fn
+        {_index, %{"side" => side} = entry} when side in @ignore_sides -> [%{"side" => side, "n" => (parse_count(entry["n"]) || 1) |> max(1) |> min(99)}]
+        _ -> []
+      end)
+
+    ignores = if add in @ignore_sides, do: kept ++ [%{"side" => add, "n" => 1}], else: kept
+    if ignores == [], do: Map.delete(enemy, "ignore"), else: Map.put(enemy, "ignore", ignores)
+  end
+
+  def remove_ignore(enemy, index) do
+    case List.delete_at(enemy["ignore"] || [], index) do
+      [] -> Map.delete(enemy, "ignore")
+      ignores -> Map.put(enemy, "ignore", ignores)
+    end
+  end
   def grades, do: @grades
   def rows, do: @rows
   def tiers, do: @tiers
@@ -79,20 +140,46 @@ defmodule StarlightBot.BattlePlans do
     holder |> Map.put("row", if(row == "top", do: "top", else: "bottom")) |> Map.delete("priority")
   end
 
-  def put_keep(%{"row" => "priority"} = holder, min, max) do
-    min = parse_count(min)
-    max = parse_count(max)
-    min = if min && max && min > max, do: max, else: min
-
-    Map.update!(holder, "priority", fn priority ->
-      priority
-      |> Map.drop(["min", "max"])
-      |> then(&if(min, do: Map.put(&1, "min", min), else: &1))
-      |> then(&if(max, do: Map.put(&1, "max", max), else: &1))
-    end)
+  def put_cap(holder, value) do
+    case parse_count(value) do
+      n when is_integer(n) and n >= 1 -> holder |> Map.put("cap", min(n, @max_cap)) |> Map.put_new("rest", new_rest())
+      _ -> Map.drop(holder, ~w(cap rest))
+    end
   end
 
-  def put_keep(holder, _min, _max), do: holder
+  def new_rest, do: put_row(%{"type" => "target", "enemy" => %{"pick" => "first"}}, "priority", nil)
+
+  def holders(%{"rest" => rest} = holder), do: [holder | holders(rest)]
+  def holders(holder), do: [holder]
+
+  def uses_priority?(holder), do: Enum.any?(holders(holder), &(&1["row"] == "priority"))
+
+  def assign_slots(holder, columns, cells_of) do
+    holder |> distribute(columns, cells_of) |> Enum.reject(fn {_holder, taken} -> taken == [] end)
+  end
+
+  defp distribute(%{"cap" => cap, "rest" => rest} = holder, columns, cells_of) do
+    {taken, left} = take_ranked(holder, columns, cells_of, cap)
+    [{holder, taken} | distribute(rest, left, cells_of)]
+  end
+
+  defp distribute(holder, columns, _cells_of), do: [{holder, columns}]
+
+  defp take_ranked(%{"row" => "priority", "priority" => %{"order" => order}}, columns, cells_of, cap) do
+    taken =
+      columns
+      |> Enum.sort_by(fn column ->
+        {top, bottom} = cells_of.(column)
+        {rank, _row} = best_match(order, top, bottom)
+        {rank, column}
+      end)
+      |> Enum.take(cap)
+      |> Enum.sort()
+
+    {taken, columns -- taken}
+  end
+
+  defp take_ranked(_holder, columns, _cells_of, cap), do: Enum.split(columns, cap)
 
   defp parse_count(value) when is_binary(value) do
     case Integer.parse(value) do
@@ -121,25 +208,6 @@ defmodule StarlightBot.BattlePlans do
 
   def pick_row(_holder, _top, _bottom), do: :bottom
 
-  def allocate_rows(%{"priority" => %{"order" => order} = priority}, cells) do
-    dodge_rank = Enum.find_index(order, &(&1 == "dodge"))
-
-    ranked =
-      cells
-      |> Enum.map(fn {column, top, bottom} ->
-        {rank, row} = best_match(order, top, bottom)
-        %{column: column, rank: rank, row: row, kept?: is_nil(dodge_rank) or rank < dodge_rank}
-      end)
-      |> Enum.sort_by(&{&1.rank, &1.column})
-
-    kept = ranked |> Enum.filter(& &1.kept?) |> Enum.map(& &1.column)
-    kept = if priority["max"], do: Enum.take(kept, priority["max"]), else: kept
-    shortfall = (priority["min"] || 0) - length(kept)
-    rescued = ranked |> Enum.reject(&(&1.column in kept)) |> Enum.take(max(shortfall, 0)) |> Enum.map(& &1.column)
-
-    Map.new(ranked, fn %{column: column, row: row} -> {column, if(column in kept or column in rescued, do: row, else: :dodge)} end)
-  end
-
   defp best_match(order, top, bottom) do
     order
     |> Enum.with_index()
@@ -164,15 +232,8 @@ defmodule StarlightBot.BattlePlans do
   defp tier_name(tier), do: tier |> Atom.to_string() |> String.replace_prefix("skill", "s")
 
   def row_label(%{"row" => "priority", "priority" => %{"order" => []}}), do: "priority (empty)"
-  def row_label(%{"row" => "priority", "priority" => %{"order" => order} = priority}),
-    do: "priority #{Enum.join(order, " > ")}#{keep_label(priority["min"], priority["max"])}"
+  def row_label(%{"row" => "priority", "priority" => %{"order" => order}}), do: "priority #{Enum.join(order, " > ")}"
   def row_label(%{"row" => row}), do: row
-
-  defp keep_label(nil, nil), do: ""
-  defp keep_label(min, nil), do: ", keep at least #{min}"
-  defp keep_label(nil, max), do: ", keep at most #{max}"
-  defp keep_label(n, n), do: ", keep #{n}"
-  defp keep_label(min, max), do: ", keep #{min}-#{max}"
 
   def max_retries(%{"max_retries" => n}) when is_integer(n) and n >= 0, do: n
   def max_retries(_data), do: @default_max_retries
@@ -220,7 +281,7 @@ defmodule StarlightBot.BattlePlans do
 
   def action_types(kind), do: branch_action_types(kind) ++ @block_actions
 
-  def branch_action_types("chain"), do: @common_actions ++ @chain_actions
+  def branch_action_types("chain"), do: (@common_actions -- ~w(dodge)) ++ @chain_actions
   def branch_action_types("focused"), do: @common_actions ++ @focused_actions
 
   def branches, do: @branches
@@ -465,7 +526,7 @@ defmodule StarlightBot.BattlePlans do
   defp default_actions("chain"), do: [new_action("chain_fast")]
   defp default_actions("focused"), do: [new_action("win_rate"), new_action("commit")]
 
-  def new_action(type) when type in ~w(win_rate damage_rate commit clear retry), do: %{"id" => GiftPlans.new_id("ac"), "type" => type}
+  def new_action(type) when type in ~w(win_rate damage_rate commit retry), do: %{"id" => GiftPlans.new_id("ac"), "type" => type}
 
   def new_action("dodge"),
     do: %{"id" => GiftPlans.new_id("ac"), "type" => "dodge", "who" => "only", "sinners" => [], "skill" => %{"pick" => "first"}, "enemy" => %{"pick" => "none"}}
@@ -484,15 +545,18 @@ defmodule StarlightBot.BattlePlans do
   end
 
   def new_action("target") do
-    %{
-      "id" => GiftPlans.new_id("ac"),
-      "type" => "target",
-      "who" => "only",
-      "sinners" => [],
-      "skill" => %{"pick" => "first"},
-      "row" => "bottom",
-      "enemy" => %{"pick" => "first"}
-    }
+    put_row(
+      %{
+        "id" => GiftPlans.new_id("ac"),
+        "type" => "target",
+        "who" => "only",
+        "sinners" => [],
+        "skill" => %{"pick" => "first"},
+        "enemy" => %{"pick" => "first"}
+      },
+      "priority",
+      nil
+    )
   end
 
   def new_action("if") do
@@ -527,7 +591,7 @@ defmodule StarlightBot.BattlePlans do
 
   def convert_action(action, _kind), do: action
 
-  def new_pin, do: %{"who" => "only", "sinners" => [], "skill" => %{"pick" => "first"}, "row" => "bottom"}
+  def new_pin, do: put_row(%{"type" => "target", "who" => "only", "sinners" => [], "skill" => %{"pick" => "first"}}, "priority", nil)
 
   def paint(entries, floor, id, key \\ "playbook") do
     entries
@@ -755,6 +819,23 @@ defmodule StarlightBot.BattlePlans do
       ordered = for id <- ids, Map.has_key?(by_id, id), do: by_id[id]
       if length(ordered) == length(list), do: ordered, else: list
     end)
+  end
+
+  def reorder_playbooks(playbooks, kind, ids) do
+    by_id = Map.new(playbooks, &{&1["id"], &1})
+    ordered = for id <- ids, pb = by_id[id], pb["kind"] == kind, do: pb
+
+    if length(ordered) == Enum.count(playbooks, &(&1["kind"] == kind)) do
+      {result, _queue} =
+        Enum.map_reduce(playbooks, ordered, fn
+          %{"kind" => ^kind}, [next | queue] -> {next, queue}
+          playbook, queue -> {playbook, queue}
+        end)
+
+      result
+    else
+      playbooks
+    end
   end
 
   def move_to_container(items, from, to, id, ids) do

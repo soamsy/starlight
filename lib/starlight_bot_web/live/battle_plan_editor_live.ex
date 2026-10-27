@@ -322,6 +322,12 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_event("reorder_playbooks", %{"scope" => kind, "ids" => ids}, socket) do
+    socket = assign(socket, :data, Map.update!(socket.assigns.data, "playbooks", &BattlePlans.reorder_playbooks(&1, kind, ids)))
+    {:noreply, socket |> persist() |> update(:reorder_rev, &(&1 + 1))}
+  end
+
+  @impl true
   def handle_event("reorder_actions", %{"scope" => scope, "ids" => ids}, socket) do
     {:noreply, socket |> update_items(&BattlePlans.reorder_container(&1, scope, ids)) |> update(:reorder_rev, &(&1 + 1))}
   end
@@ -440,6 +446,12 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_event("remove_ignore", %{"action" => action_id, "path" => path, "index" => index}, socket) do
+    index = String.to_integer(index)
+    {:noreply, update_action(socket, action_id, &update_at_path(&1, String.split(path, ["[", "]"], trim: true), fn holder -> Map.update!(holder, "enemy", fn enemy -> BattlePlans.remove_ignore(enemy, index) end) end))}
+  end
+
+  @impl true
   def handle_event("remove_sinner", %{"action" => action_id, "sinner" => sinner} = params, socket) do
     drop = fn holder -> Map.update(holder, "sinners", [], &List.delete(&1, sinner)) end
 
@@ -542,7 +554,6 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   def action_label("win_rate"), do: "Win rate (p)"
   def action_label("damage_rate"), do: "Damage rate (p p)"
   def action_label("commit"), do: "Commit (enter)"
-  def action_label("clear"), do: "Unchoose all"
   def action_label("dodge"), do: "Dodge"
   def action_label("ego"), do: "EGO"
   def action_label("target"), do: "Target enemy"
@@ -556,7 +567,6 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     do: "Press p until battle_combat_ready, then p again so Limbus assigns every choice for the most damage. If that clears the choices, cycles back around to damage."
 
   def action_tooltip("commit"), do: "Press enter to start the turn once every skill is chosen."
-  def action_tooltip("clear"), do: "Press p until battle_combat_ready stops matching."
   def action_tooltip("dodge"), do: "Click below the chosen skill slot to swap it to dodge. With a target, drags the slot onto an enemy instead."
   def action_tooltip("ego"), do: "Hold below the chosen skill slot to open the EGO menu, then pick the grade's card. With a target, then drags the slot onto an enemy."
   def action_tooltip("target"),
@@ -772,7 +782,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <div class="flex flex-col gap-1 pl-3 border-l-2 border-base-300">
             <span class="text-[11px] font-medium text-base-content/70"><%= branch_label(branch) %></span>
             <div id={"branch-#{@playbook_id}-#{@action["id"]}-#{branch}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_actions" data-sort-move-event="move_action_to"
-                 data-sort-shared={@playbook_id} data-sort-scope={@action["id"] <> "~" <> branch} data-sort-highlight class="flex flex-col gap-1 min-h-6 rounded">
+                 data-sort-shared={@playbook_id} data-sort-scope={@action["id"] <> "~" <> branch} data-sort-highlight
+                 class={"flex flex-col gap-1 rounded " <> if(@action[branch] == [], do: "min-h-10 border border-dashed border-base-300", else: "min-h-6")}>
               <div :for={{child, child_index} <- Enum.with_index(@action[branch], 1)} data-sort-id={child["id"]}>
                 <.action_row action={child} index={child_index} sinner_options={@sinner_options} kind={@kind} scope_actions={@scope_actions} container={@container} editing_condition_id={@editing_condition_id}
                              handle?={true} playbook_id={@playbook_id} reorder_rev={@reorder_rev} />
@@ -826,58 +837,9 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
               </div>
             </div>
 
-            <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5">
-              <span class="font-semibold cursor-help" title={action_tooltip(@action["type"])}>Action</span>
-              <.radio_group name="kind" value={action_kind(@action)} options={[{"top", "Top skill"}, {"bottom", "Bottom skill"}, {"priority", "Priority"}, {"dodge", "Dodge"}, {"ego", "EGO"}]} />
-              <%= if @action["row"] == "priority" do %>
-                <div class="flex flex-wrap items-center gap-1">
-                  <.row_picker holder={@action} prefix="" select?={false} />
-                </div>
-              <% end %>
-              <%= if @action["type"] == "ego" do %>
-                <div class="flex flex-wrap items-center gap-2">
-                  <.radio_group name="grade" value={@action["grade"]} options={Enum.map(BattlePlans.grades(), &{&1, String.upcase(&1)})} />
-                  <label class="flex items-center gap-1 cursor-pointer">
-                    <input type="hidden" name="corrode" value="false" />
-                    <input type="checkbox" name="corrode" value="true" checked={@action["corrode"]} class="checkbox checkbox-xs" />
-                    corrode
-                  </label>
-                </div>
-              <% end %>
-            </div>
-
-            <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5">
-              <span class="font-semibold cursor-help" title={action_tooltip("target")}>Target</span>
-              <%= if @action["type"] in ~w(target ego dodge) do %>
-                <% enemy = @action["enemy"] || %{"pick" => "none"} %>
-                <.radio_group name="enemy_pick" value={enemy["pick"]} options={Enum.map(BattlePlans.enemy_picks(), &{&1, pick_label(&1)})} />
-                <%= cond do %>
-                  <% enemy["pick"] == "percent" -> %>
-                    <div class="flex items-center gap-1">
-                      <input type="number" name="enemy_n" min="0" max="100" value={enemy["n"]} class="input input-bordered input-xs w-16" phx-debounce="300"
-                             title="0 is the leftmost enemy, 100 the rightmost, rounded to the nearest" />
-                      <span class="text-base-content/60">%</span>
-                    </div>
-                  <% numbered_pick?(enemy) -> %>
-                    <input type="number" name="enemy_n" min="1" value={enemy["n"]} class="input input-bordered input-xs w-14" phx-debounce="300" />
-                  <% true -> %>
-                <% end %>
-                <%= if enemy["pick"] != "none" do %>
-                  <div class="flex flex-wrap items-center gap-1" title="Narrow the enemies by how high their icon is on screen before picking">
-                    <span class="text-base-content/60">among</span>
-                    <.radio_group name="enemy_height_dir" value={enemy["height"]["dir"] || ""} options={[{"", "all"}, {"high", "highest"}, {"low", "lowest"}]} />
-                    <%= if enemy["height"] do %>
-                      <input type="number" name="enemy_height_pct" min="1" max="100" value={enemy["height"]["pct"]} class="input input-bordered input-xs w-16" phx-debounce="300"
-                             title="Share of detected enemies to keep, rounded up, at least one" />
-                      <span class="text-base-content/60">% by height</span>
-                    <% end %>
-                  </div>
-                <% end %>
-              <% else %>
-                <span class="text-base-content/50">none</span>
-              <% end %>
-            </div>
+            <.rule_boxes holder={@action} prefix="" enemy?={@kind != "chain" or @action["type"] != "ego"} ego_only?={@kind == "chain" and @action["type"] == "ego"} owner={@action["id"]} />
           </div>
+          <.rest_stack :if={not (@kind == "chain" and @action["type"] == "ego")} holder={@action} prefix="" enemy?={true} owner={@action["id"]} />
         <% else %>
           <span class="font-semibold whitespace-nowrap cursor-help" title={action_tooltip(@action["type"])}><%= action_label(@action["type"]) %></span>
         <% end %>
@@ -887,31 +849,29 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                data-sort-scope={@action["id"]} class="flex flex-col gap-1"
                title="When pins cover the same slot, the first pin wins. Drag ⠿ to reorder.">
           <%= for {pin, pin_index} <- Enum.with_index(@action["pins"]) do %>
-            <div data-sort-id={pin_index} class="flex items-stretch gap-2 pl-4">
-              <span data-sort-handle class="cursor-grab text-base-content/40 select-none self-center">⠿</span>
-              <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5">
-                <.sinner_picker holder={pin} prefix={"pins[#{pin_index}]"} sinner_options={@sinner_options} action_id={@action["id"]} pin={pin_index} />
-                <div class="flex flex-wrap items-center gap-1">
-                  <span class="text-base-content/60">slot</span>
-                  <select name={"pins[#{pin_index}][pick]"} class="select select-bordered select-xs w-auto">
-                    <%= for pick <- skill_picks() do %>
-                      <option value={pick} selected={pin["skill"]["pick"] == pick}><%= pick_label(pick) %></option>
+            <div data-sort-id={pin_index} class="flex flex-col gap-1 pl-4">
+              <div class="flex flex-wrap items-stretch gap-2">
+                <span data-sort-handle class="cursor-grab text-base-content/40 select-none self-center">⠿</span>
+                <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5">
+                  <.sinner_picker holder={pin} prefix={"pins[#{pin_index}]"} sinner_options={@sinner_options} action_id={@action["id"]} pin={pin_index} />
+                  <div class="flex flex-wrap items-center gap-1">
+                    <span class="text-base-content/60">slot</span>
+                    <select name={"pins[#{pin_index}][pick]"} class="select select-bordered select-xs w-auto">
+                      <%= for pick <- skill_picks() do %>
+                        <option value={pick} selected={pin["skill"]["pick"] == pick}><%= pick_label(pick) %></option>
+                      <% end %>
+                    </select>
+                    <%= if numbered_pick?(pin["skill"]) do %>
+                      <input type="number" name={"pins[#{pin_index}][n]"} min="1" value={pin["skill"]["n"]} class="input input-bordered input-xs w-14" phx-debounce="300" />
                     <% end %>
-                  </select>
-                  <%= if numbered_pick?(pin["skill"]) do %>
-                    <input type="number" name={"pins[#{pin_index}][n]"} min="1" value={pin["skill"]["n"]} class="input input-bordered input-xs w-14" phx-debounce="300" />
-                  <% end %>
-                  <.match_picker :if={pin["skill"]["pick"] == "first_with"} name={"pins[#{pin_index}][match]"} value={pin["skill"]["match"]} />
+                    <.match_picker :if={pin["skill"]["pick"] == "first_with"} name={"pins[#{pin_index}][match]"} value={pin["skill"]["match"]} />
+                  </div>
                 </div>
+                <.rule_boxes holder={pin} prefix={"pins[#{pin_index}]"} enemy?={false} owner={@action["id"]} />
+                <button type="button" phx-click="remove_pin" phx-value-action={@action["id"]} phx-value-index={pin_index}
+                        class="btn btn-xs btn-ghost text-error self-center">✕</button>
               </div>
-              <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5">
-                <span class="font-semibold">Row</span>
-                <div class="flex flex-wrap items-center gap-1">
-                  <.row_picker holder={pin} prefix={"pins[#{pin_index}]"} keep?={true} />
-                </div>
-              </div>
-              <button type="button" phx-click="remove_pin" phx-value-action={@action["id"]} phx-value-index={pin_index}
-                      class="btn btn-xs btn-ghost text-error self-center">✕</button>
+              <.rest_stack holder={pin} prefix={"pins[#{pin_index}]"} enemy?={false} owner={@action["id"]} />
             </div>
           <% end %>
           </div>
@@ -931,6 +891,96 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     """
   end
 
+  attr :holder, :map, required: true
+  attr :prefix, :string, required: true
+  attr :enemy?, :boolean, required: true
+  attr :owner, :string, required: true
+
+  def rest_stack(assigns) do
+    ~H"""
+    <%= if @holder["rest"] do %>
+      <div class="flex flex-wrap items-stretch gap-2">
+        <div class="flex items-center rounded bg-base-100 p-1.5 font-semibold italic text-base-content/60 cursor-help"
+             title="The slots left over after the cap above takes its share">rest</div>
+        <.rule_boxes holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} enemy?={@enemy?} owner={@owner} />
+      </div>
+      <.rest_stack holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} enemy?={@enemy?} owner={@owner} />
+    <% end %>
+    """
+  end
+
+  attr :holder, :map, required: true
+  attr :prefix, :string, required: true
+  attr :enemy?, :boolean, required: true
+  attr :owner, :string, required: true
+  attr :ego_only?, :boolean, default: false
+
+  def rule_boxes(assigns) do
+    assigns = assign(assigns, enemy: assigns.holder["enemy"] || %{"pick" => "none"}, type: assigns.holder["type"] || "target")
+
+    ~H"""
+    <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5">
+      <span class="font-semibold cursor-help" title={action_tooltip(@type)}>Action</span>
+      <.radio_group :if={not @ego_only?} name={field_name(@prefix, "kind")} value={action_kind(@holder)} options={[{"priority", "Priority"}, {"dodge", "Dodge"}, {"ego", "EGO"}]} />
+      <%= if @holder["row"] == "priority" do %>
+        <div class="flex flex-wrap items-center gap-1">
+          <.row_picker holder={@holder} prefix={@prefix} select?={false} owner={@owner} />
+        </div>
+      <% end %>
+      <%= if @type == "ego" do %>
+        <div class="flex flex-wrap items-center gap-2">
+          <.radio_group name={field_name(@prefix, "grade")} value={@holder["grade"]} options={Enum.map(BattlePlans.grades(), &{&1, String.upcase(&1)})} />
+          <label class="flex items-center gap-1 cursor-pointer">
+            <input type="hidden" name={field_name(@prefix, "corrode")} value="false" />
+            <input type="checkbox" name={field_name(@prefix, "corrode")} value="true" checked={@holder["corrode"]} class="checkbox checkbox-xs" />
+            corrode
+          </label>
+        </div>
+      <% end %>
+      <label :if={not @ego_only?} class="flex items-center gap-1" title="Optional. Limit this action to this many of the chosen slots (best ranked first for priority); the rest get their own action below.">
+        <span class="text-base-content/60">cap</span>
+        <input type="number" name={field_name(@prefix, "cap")} min="1" max="99" value={@holder["cap"]} placeholder="all"
+               phx-debounce="300" class="input input-bordered input-xs w-16" />
+      </label>
+    </div>
+
+    <div :if={@enemy?} class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5">
+      <span class="font-semibold cursor-help" title={action_tooltip("target")}>Target</span>
+      <%= if @type in ~w(target ego dodge) do %>
+        <.radio_group name={field_name(@prefix, "enemy_pick")} value={enemy_pick_value(@enemy)} options={[{"none", "none"}, {"first", "from first"}, {"last", "from last"}]} />
+        <%= if enemy_pick_value(@enemy) != "none" do %>
+          <div class="flex items-center gap-1" title="The target slot the first sinner slot goes to, counted from that end. Past the last target, it uses the last target.">
+            <span class="text-base-content/60">slot</span>
+            <input type="number" name={field_name(@prefix, "enemy_n")} min="1" value={@enemy["n"] || 1} class="input input-bordered input-xs w-14" phx-debounce="300" />
+          </div>
+          <div class="flex items-center gap-1" title="With several sinner slots, each next one goes one target further this way. Once the targets run out, the rest all use the last one.">
+            <span class="text-base-content/60">then</span>
+            <.radio_group name={field_name(@prefix, "enemy_step")} value={@enemy["step"] || "same"} options={[{"left", "← left"}, {"same", "same"}, {"right", "right →"}]} />
+          </div>
+          <div class="flex flex-col gap-1" title="Applied in order before picking. Each step cuts that many enemies from one side, but always leaves at least one.">
+            <div :for={{ignore, index} <- Enum.with_index(@enemy["ignore"] || [])} class="flex items-center gap-1">
+              <span class="text-base-content/60">ignore</span>
+              <select name={field_name(@prefix, "enemy_ignore") <> "[#{index}][side]"} class="select select-bordered select-xs w-auto">
+                <option :for={side <- BattlePlans.ignore_sides()} value={side} selected={ignore["side"] == side}><%= side %></option>
+              </select>
+              <input type="number" name={field_name(@prefix, "enemy_ignore") <> "[#{index}][n]"} min="1" max="99" value={ignore["n"]} class="input input-bordered input-xs w-14" phx-debounce="300" />
+              <span class="text-base-content/60">slots</span>
+              <button type="button" phx-click="remove_ignore" phx-value-action={@owner} phx-value-path={@prefix} phx-value-index={index}
+                      class="btn btn-ghost text-error h-6 min-h-6 px-1">✕</button>
+            </div>
+            <select id={"ignore-add-#{@owner}-#{@prefix}-#{length(@enemy["ignore"] || [])}"} name={field_name(@prefix, "enemy_ignore_add")} class="select select-bordered select-xs w-auto self-start">
+              <option value="" selected>+ ignore</option>
+              <option :for={side <- BattlePlans.ignore_sides()} value={side}><%= side %></option>
+            </select>
+          </div>
+        <% end %>
+      <% else %>
+        <span class="text-base-content/50">none</span>
+      <% end %>
+    </div>
+    """
+  end
+
   attr :name, :string, required: true
   attr :value, :string, default: nil
   attr :options, :list, required: true
@@ -944,8 +994,12 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     """
   end
 
+  def enemy_pick_value(%{"pick" => pick}) when pick in ~w(none first last), do: pick
+  def enemy_pick_value(_enemy), do: "first"
+
   def action_kind(%{"type" => "target", "row" => row}), do: row
   def action_kind(%{"type" => type}), do: type
+  def action_kind(%{"row" => row}), do: row
 
   attr :name, :string, required: true
   attr :value, :string, default: nil
@@ -1007,12 +1061,20 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   attr :holder, :map, required: true
   attr :prefix, :string, required: true
-  attr :keep?, :boolean, default: false
   attr :select?, :boolean, default: true
+  attr :owner, :string, default: nil
 
   def row_picker(assigns) do
     priority = assigns.holder["priority"]
-    assigns = assign(assigns, priority: priority, order: priority && priority["order"], values: BattlePlans.priority_values())
+    order = priority && priority["order"]
+
+    assigns =
+      assign(assigns,
+        order: order,
+        unused: BattlePlans.priority_values() -- (order || []),
+        input_name: field_name(assigns.prefix, "priority_order") <> "[]",
+        chips_id: "chips-#{assigns.owner}-#{assigns.prefix}"
+      )
 
     ~H"""
     <select :if={@select?} name={field_name(@prefix, "row")} class="select select-bordered select-xs">
@@ -1021,34 +1083,55 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <% end %>
     </select>
     <%= if @holder["row"] == "priority" do %>
-      <%= for {chosen, rank} <- Enum.with_index(@order ++ [nil]), rank < length(@values) do %>
-        <span :if={rank > 0} class="text-base-content/40">&gt;</span>
-        <select name={field_name(@prefix, "priority_order") <> "[]"} class="select select-bordered select-xs">
-          <option value="" selected={is_nil(chosen)}>(else bottom)</option>
-          <%= for {group, values} <- priority_options(@order, chosen) do %>
-            <optgroup label={group}>
-              <option :for={value <- values} value={value} selected={value == chosen}><%= value %></option>
-            </optgroup>
-          <% end %>
-        </select>
-      <% end %>
-      <%= if @keep? do %>
-        <span class="text-base-content/60 cursor-help" title="Rank every slot of this pin by the priority list, then keep the best ones in play and dodge the rest. At least pulls slots back from dodge; at most dodges the lowest ranked. Blank means no limit.">keep</span>
-        <input type="number" name={field_name(@prefix, "keep_min")} min="0" value={@priority["min"]} placeholder="min"
-               phx-debounce="300" class="input input-bordered input-xs w-14" />
-        <span class="text-base-content/40">to</span>
-        <input type="number" name={field_name(@prefix, "keep_max")} min="0" value={@priority["max"]} placeholder="max"
-               phx-debounce="300" class="input input-bordered input-xs w-14" />
-      <% end %>
+      <div id={@chips_id} phx-hook="PriorityChips" class="flex flex-col gap-1">
+        <input type="hidden" name={field_name(@prefix, "priority_edit")} value="1" data-chip-anchor />
+        <div class="flex items-center gap-1.5">
+          <div data-chip-strip class="flex flex-wrap items-center gap-1 min-h-7 min-w-10 rounded border border-dashed border-base-content/25 p-0.5">
+            <.priority_chip :for={value <- @order} value={value} name={@input_name} />
+          </div>
+          <span class="text-[11px] text-base-content/40 cursor-help" title="Slots matching nothing in the list use the bottom skill">else bottom</span>
+        </div>
+        <div data-chip-palette class="flex flex-wrap items-center gap-1 opacity-60 hover:opacity-100">
+          <.priority_chip :for={value <- @unused} value={value} name={@input_name} disabled />
+        </div>
+      </div>
     <% end %>
     """
   end
 
-  defp priority_options(order, chosen) do
-    [{"skill", BattlePlans.tiers()}, {"sin", BattlePlans.sins()}, {"other", ["dodge"]}]
-    |> Enum.map(fn {group, values} -> {group, Enum.filter(values, &(&1 == chosen or &1 not in order))} end)
-    |> Enum.reject(fn {_group, values} -> values == [] end)
+  attr :value, :string, required: true
+  attr :name, :string, required: true
+  attr :disabled, :boolean, default: false
+
+  def priority_chip(assigns) do
+    assigns = assign(assigns, canon: Enum.find_index(BattlePlans.priority_values(), &(&1 == assigns.value)), kind: chip_kind(assigns.value))
+
+    ~H"""
+    <span data-chip data-canon={@canon} draggable="true" title={@value}
+          class={"inline-flex items-center justify-center h-6 min-w-6 px-1 rounded border cursor-grab select-none text-[11px] font-semibold " <> chip_class(@kind, @value)}>
+      <input type="hidden" name={@name} value={@value} disabled={@disabled} />
+      <%= if @kind == :sin do %>
+        <img src={"/images/sin/#{@value}.webp"} alt={@value} class="size-4 pointer-events-none" draggable="false" />
+      <% else %>
+        <%= @value %>
+      <% end %>
+    </span>
+    """
   end
+
+  defp chip_kind(value) do
+    cond do
+      value in BattlePlans.sins() -> :sin
+      value in BattlePlans.tiers() -> :tier
+      true -> :other
+    end
+  end
+
+  defp chip_class(:sin, _value), do: "border-base-content/20 bg-base-200"
+  defp chip_class(:tier, "s3"), do: "border-primary/60 bg-primary/30"
+  defp chip_class(:tier, "s2"), do: "border-primary/50 bg-primary/20"
+  defp chip_class(:tier, _value), do: "border-primary/40 bg-primary/10"
+  defp chip_class(:other, _value), do: "border-dashed border-base-content/40 bg-base-100"
 
   defp field_name("", field), do: field
   defp field_name(prefix, field), do: "#{prefix}[#{field}]"
@@ -1229,28 +1312,11 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     end)
   end
 
-  defp apply_action_params(%{"type" => "target"} = action, params) do
+  defp apply_action_params(%{"type" => type} = action, params) when type in ~w(target ego dodge) do
     action
     |> put_sinners(params)
     |> Map.put("skill", parse_skill(params["pick"], params["n"], params["match"]))
-    |> BattlePlans.put_row(params["kind"] || params["row"], params["priority_order"])
-    |> Map.put("enemy", params["enemy_pick"] |> parse_skill(params["enemy_n"]) |> put_height(params["enemy_height_dir"], params["enemy_height_pct"]))
-  end
-
-  defp apply_action_params(%{"type" => "ego"} = action, params) do
-    action
-    |> put_sinners(params)
-    |> Map.put("skill", parse_skill(params["pick"], params["n"], params["match"]))
-    |> Map.put("grade", if(params["grade"] in BattlePlans.grades(), do: params["grade"], else: "zayin"))
-    |> Map.put("corrode", params["corrode"] == "true")
-    |> Map.put("enemy", (params["enemy_pick"] || "none") |> parse_skill(params["enemy_n"]) |> put_height(params["enemy_height_dir"], params["enemy_height_pct"]))
-  end
-
-  defp apply_action_params(%{"type" => "dodge"} = action, params) do
-    action
-    |> put_sinners(params)
-    |> Map.put("skill", parse_skill(params["pick"], params["n"], params["match"]))
-    |> Map.put("enemy", (params["enemy_pick"] || "none") |> parse_skill(params["enemy_n"]) |> put_height(params["enemy_height_dir"], params["enemy_height_pct"]))
+    |> apply_rule(params, true)
   end
 
   defp apply_action_params(%{"pins" => _} = action, params) do
@@ -1262,14 +1328,53 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         pin
         |> put_sinners(params)
         |> Map.put("skill", parse_skill(params["pick"], params["n"], params["match"]))
-        |> BattlePlans.put_row(params["row"], params["priority_order"])
-        |> BattlePlans.put_keep(params["keep_min"], params["keep_max"])
+        |> apply_rule(params, false)
       end)
 
     Map.put(action, "pins", pins)
   end
 
   defp apply_action_params(action, _params), do: action
+
+  defp update_at_path(holder, [], fun), do: fun.(holder)
+
+  defp update_at_path(holder, ["pins", index | tail], fun),
+    do: Map.update!(holder, "pins", fn pins -> List.update_at(pins, String.to_integer(index), &update_at_path(&1, tail, fun)) end)
+
+  defp update_at_path(holder, ["rest" | tail], fun), do: Map.update!(holder, "rest", &update_at_path(&1, tail, fun))
+
+  defp apply_rule(holder, params, enemy?) do
+    holder
+    |> Map.put_new("type", "target")
+    |> BattlePlans.convert_action(params["kind"])
+    |> apply_rule_fields(params, enemy?)
+    |> BattlePlans.put_cap(params["cap"])
+    |> apply_rest(params, enemy?)
+  end
+
+  defp apply_rule_fields(%{"type" => "target"} = holder, params, enemy?) do
+    holder
+    |> BattlePlans.put_row(params["kind"] || params["row"], params["priority_order"])
+    |> put_enemy(params, enemy?, "first")
+  end
+
+  defp apply_rule_fields(%{"type" => "ego"} = holder, params, enemy?) do
+    holder
+    |> Map.put("grade", if(params["grade"] in BattlePlans.grades(), do: params["grade"], else: "zayin"))
+    |> Map.put("corrode", params["corrode"] == "true")
+    |> put_enemy(params, enemy?, "none")
+  end
+
+  defp apply_rule_fields(%{"type" => "dodge"} = holder, params, enemy?), do: put_enemy(holder, params, enemy?, "none")
+
+  defp put_enemy(holder, _params, false, _default), do: holder
+
+  defp put_enemy(holder, params, true, default) do
+    Map.put(holder, "enemy", (params["enemy_pick"] || default) |> BattlePlans.parse_enemy(params["enemy_n"], params["enemy_step"]) |> BattlePlans.put_ignores(params["enemy_ignore"], params["enemy_ignore_add"]))
+  end
+
+  defp apply_rest(%{"rest" => rest} = holder, %{"rest" => rest_params}, enemy?), do: Map.put(holder, "rest", apply_rule(rest, rest_params, enemy?))
+  defp apply_rest(holder, _params, _enemy?), do: holder
 
   defp put_sinners(holder, %{"who" => "everyone"}), do: Map.put(holder, "who", "everyone")
 
@@ -1296,15 +1401,9 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   defp parse_skill(pick, n, _match), do: parse_skill(pick, n)
 
-  defp parse_skill("percent", n), do: %{"pick" => "percent", "n" => (parse_id(n) || 50) |> max(0) |> min(100)}
   defp parse_skill(pick, n) when pick in ~w(exact up_to), do: %{"pick" => pick, "n" => max(parse_id(n) || 1, 1)}
   defp parse_skill(pick, _n) when pick in ~w(first last all none), do: %{"pick" => pick}
   defp parse_skill(_pick, _n), do: %{"pick" => "first"}
-
-  defp put_height(enemy, dir, pct) when dir in ["high", "low"],
-    do: Map.put(enemy, "height", %{"dir" => dir, "pct" => (parse_id(pct) || 30) |> max(1) |> min(100)})
-
-  defp put_height(enemy, _dir, _pct), do: enemy
 
   defp parse_id(nil), do: nil
   defp parse_id(""), do: nil

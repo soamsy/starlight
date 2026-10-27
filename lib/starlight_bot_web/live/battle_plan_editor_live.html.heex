@@ -232,15 +232,20 @@
                     <%= String.capitalize(kind) %> playbooks
                     <button phx-click="new_playbook" phx-value-kind={kind} class="btn btn-2xs btn-ghost ml-auto">+ <%= kind %></button>
                   </div>
-                  <%= for pb <- Enum.filter(@data["playbooks"], &(&1["kind"] == kind)) do %>
-                    <% used = StarlightBot.BattlePlans.tracks_using(@data, pb["id"]) %>
-                    <button phx-click="select_playbook" phx-value-id={pb["id"]}
-                            class={"flex items-center gap-1.5 text-left text-xs rounded px-1.5 py-1 hover:bg-base-200 " <> if(@playbook_id == pb["id"], do: "bg-primary/10 border-l-2 border-primary", else: "")}>
-                      <span class="inline-block w-5 text-center rounded text-[10px] font-semibold text-white" style={playbook_color(@data, pb["id"], 0.9)}><%= playbook_tag(pb) %></span>
-                      <span class="flex-1 truncate"><%= pb["name"] %></span>
-                      <span class="text-[10px] text-base-content/40" title={Enum.map_join(used, ", ", &track_label/1)}><%= length(used) %> tr</span>
-                    </button>
-                  <% end %>
+                  <div id={"playbooks-#{kind}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_playbooks" data-sort-scope={kind} class="flex flex-col gap-0.5">
+                    <%= for pb <- Enum.filter(@data["playbooks"], &(&1["kind"] == kind)) do %>
+                      <% used = StarlightBot.BattlePlans.tracks_using(@data, pb["id"]) %>
+                      <div data-sort-id={pb["id"]} class="flex items-center">
+                        <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-0.5">⠿</span>
+                        <button phx-click="select_playbook" phx-value-id={pb["id"]}
+                                class={"flex flex-1 min-w-0 items-center gap-1.5 text-left text-xs rounded px-1.5 py-1 hover:bg-base-200 " <> if(@playbook_id == pb["id"], do: "bg-primary/10 border-l-2 border-primary", else: "")}>
+                          <span class="inline-block w-5 text-center rounded text-[10px] font-semibold text-white" style={playbook_color(@data, pb["id"], 0.9)}><%= playbook_tag(pb) %></span>
+                          <span class="flex-1 truncate"><%= pb["name"] %></span>
+                          <span class="text-[10px] text-base-content/40" title={Enum.map_join(used, ", ", &track_label/1)}><%= length(used) %> tr</span>
+                        </button>
+                      </div>
+                    <% end %>
+                  </div>
                 </div>
               <% end %>
             </div>

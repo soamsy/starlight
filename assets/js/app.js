@@ -524,6 +524,77 @@ const PriorityClipboard = {
   }
 }
 
+const PriorityChips = {
+  mounted() {
+    const strip = () => this.el.querySelector("[data-chip-strip]")
+    const palette = () => this.el.querySelector("[data-chip-palette]")
+    const order = () => Array.from(strip().querySelectorAll("[data-chip]")).map(c => c.dataset.canon).join(",")
+    let dragged = null
+    let before = null
+
+    const place = (chip, container, ref) => {
+      if (container === palette()) {
+        const next = Array.from(container.children).find(c => Number(c.dataset.canon) > Number(chip.dataset.canon))
+        container.insertBefore(chip, next || null)
+      } else {
+        container.insertBefore(chip, ref || null)
+      }
+      chip.querySelector("input").disabled = container !== strip()
+    }
+
+    const commit = (previous) => {
+      if (order() === previous) return
+      this.el.querySelector("[data-chip-anchor]").dispatchEvent(new Event("input", { bubbles: true }))
+    }
+
+    this.el.addEventListener("click", (e) => {
+      const chip = eventElement(e)?.closest("[data-chip]")
+      if (!chip) return
+      const previous = order()
+      place(chip, chip.parentElement === strip() ? palette() : strip())
+      commit(previous)
+    })
+
+    this.el.addEventListener("dragstart", (e) => {
+      const chip = eventElement(e)?.closest("[data-chip]")
+      if (!chip) return
+      e.stopPropagation()
+      dragged = chip
+      before = order()
+      e.dataTransfer.effectAllowed = "move"
+      e.dataTransfer.setData("text/plain", chip.dataset.canon)
+      chip.classList.add("opacity-40")
+    })
+
+    this.el.addEventListener("dragover", (e) => {
+      if (!dragged) return
+      const container = eventElement(e)?.closest("[data-chip-strip], [data-chip-palette]")
+      if (!container) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (container === palette()) {
+        if (dragged.parentElement !== container) place(dragged, container)
+        return
+      }
+      const over = eventElement(e)?.closest("[data-chip]")
+      if (!over || over === dragged || over.parentElement !== container) {
+        if (dragged.parentElement !== container) place(dragged, container)
+        return
+      }
+      const rect = over.getBoundingClientRect()
+      place(dragged, container, e.clientX > rect.left + rect.width / 2 ? over.nextSibling : over)
+    })
+
+    this.el.addEventListener("dragend", (e) => {
+      if (!dragged) return
+      e.stopPropagation()
+      dragged.classList.remove("opacity-40")
+      dragged = null
+      commit(before)
+    })
+  }
+}
+
 const DragScroll = {
   mounted() {
     this.syncPannable()
@@ -565,6 +636,7 @@ const DragScroll = {
 }
 
 let sortDrag = null
+const SORT_EDGE_PX = 16
 
 const eventElement = (e) => (e.target instanceof Element ? e.target : e.target.parentElement)
 
@@ -585,6 +657,20 @@ const SortableList = {
       e.dataTransfer.effectAllowed = "move"
     })
 
+    const place = (parent, ref) => {
+      const drag = sortDrag
+      if (drag.item.parentElement === drag.source && parent !== drag.source && !drag.spacer) {
+        drag.spacer = document.createElement("div")
+        drag.spacer.style.height = `${drag.item.offsetHeight}px`
+        drag.source.insertBefore(drag.spacer, drag.item)
+      }
+      parent.insertBefore(drag.item, ref)
+      if (parent === drag.source && drag.spacer) {
+        drag.spacer.remove()
+        drag.spacer = null
+      }
+    }
+
     this.el.addEventListener("dragover", (e) => {
       if (!sortDrag || !this.accepts(sortDrag)) return
       e.preventDefault()
@@ -595,22 +681,25 @@ const SortableList = {
         highlight?.classList.add("bg-primary/15")
         sortDrag.highlight = highlight
       }
-      const over = eventElement(e)?.closest("[data-sort-id]")
+      const closest = eventElement(e)?.closest("[data-sort-id]")
+      const over = closest?.parentElement === this.el ? closest : null
       if (!over && !Array.from(this.el.children).some(c => c.dataset.sortId)) {
-        this.el.appendChild(sortDrag.item)
+        if (sortDrag.item.parentElement !== this.el) place(this.el, null)
         return
       }
-      if (!over || over === sortDrag.item || over.parentElement !== this.el) return
+      if (!over || over === sortDrag.item) return
       const rect = over.getBoundingClientRect()
+      if (over.querySelector("[data-sort-move-event]") && e.clientY > rect.top + SORT_EDGE_PX && e.clientY < rect.bottom - SORT_EDGE_PX) return
       const after = this.el.dataset.sortAxis === "x"
         ? e.clientX > rect.left + rect.width / 2
         : e.clientY > rect.top + rect.height / 2
-      this.el.insertBefore(sortDrag.item, after ? over.nextSibling : over)
+      place(this.el, after ? over.nextSibling : over)
     })
 
     this.el.addEventListener("dragend", () => {
       if (!sortDrag || sortDrag.item.parentElement !== this.el) return
-      const { item, source, highlight } = sortDrag
+      const { item, source, highlight, spacer } = sortDrag
+      spacer?.remove()
       highlight?.classList.remove("bg-primary/15")
       sortDrag = null
       item.classList.remove("opacity-40")
@@ -795,7 +884,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
 })
 
 liveSocket.connect()

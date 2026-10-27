@@ -13,8 +13,6 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @mode_cycle_settle_ms 300
   @mode_cleared_timeout_ms 500
   @focused_key_tries 3
-  @clear_max_presses 4
-  @clear_settle_ms 500
   @slot_click_settle_ms 150
   @ego_menu_timeout_ms 2_000
   @ego_menu_settle_ms 300
@@ -285,30 +283,20 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     if await(@turn_started, @turn_start_timeout_ms), do: :started, else: log_pending(ctx, "enter didn't start the turn")
   end
 
-  defp run_action(%{"type" => "clear"}, _turn, ctx), do: clear(ctx, @clear_max_presses)
-
-  defp run_action(%{"type" => "dodge"} = action, turn, ctx) do
+  defp run_action(%{"type" => type} = action, turn, ctx) when type in ~w(dodge ego target) do
     with {:ok, frame, tray} <- turn.scan,
          {:ok, columns} <- action_columns(action, frame, tray, profiles(ctx), ctx) do
-      {:steps, Enum.map(columns, &DSL.call(__MODULE__, :dodge_column, [action, tray, &1]))}
-    else
-      _ -> :pending
-    end
-  end
+      classified = if BattlePlans.uses_priority?(action), do: SinColor.classify_tray(frame.mat, tray)
 
-  defp run_action(%{"type" => "ego"} = action, turn, ctx) do
-    with {:ok, frame, tray} <- turn.scan,
-         {:ok, columns} <- action_columns(action, frame, tray, profiles(ctx), ctx) do
-      {:steps, Enum.map(columns, &DSL.call(__MODULE__, :ego_column, [action, tray, &1]))}
-    else
-      _ -> :pending
-    end
-  end
+      steps =
+        action
+        |> BattlePlans.assign_slots(columns, cells_of(classified))
+        |> Enum.flat_map(fn {holder, taken} ->
+          log_share(holder, taken, ctx)
+          taken |> Enum.with_index() |> Enum.map(fn {column, index} -> slot_step(holder, frame, tray, column, index) end)
+        end)
 
-  defp run_action(%{"type" => "target"} = action, turn, ctx) do
-    with {:ok, frame, tray} <- turn.scan,
-         {:ok, columns} <- action_columns(action, frame, tray, profiles(ctx), ctx) do
-      {:steps, Enum.map(columns, &DSL.call(__MODULE__, :target_column, [action, frame, tray, &1]))}
+      {:steps, steps}
     else
       _ -> :pending
     end
@@ -318,7 +306,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     with {:ok, frame, tray} <- turn.scan,
          {:ok, gear_rect} <- find_gear(frame, ctx),
          forced = forced_rows(action["pins"] || [], frame, tray, ctx),
-         forced = dodge_forced(forced, tray, ctx),
+         forced = apply_forced(forced, tray, ctx),
          :ok <- BattleChain.drag(frame, tray, gear_rect, chain_type, forced, ctx) do
       if await(@turn_started, @turn_start_timeout_ms), do: :started, else: log_pending(ctx, "chain drag didn't start the turn")
     else
@@ -328,6 +316,22 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp run_action(%{"type" => type}, _turn, ctx), do: log_pending(ctx, "unknown action #{inspect(type)}, skipping")
+
+  defp slot_step(holder, frame, tray, column, index) do
+    holder = if is_map(holder["enemy"]), do: put_in(holder, ["enemy", "index"], index), else: holder
+
+    case holder["type"] do
+      "dodge" -> DSL.call(__MODULE__, :dodge_column, [holder, tray, column])
+      "ego" -> DSL.call(__MODULE__, :ego_column, [holder, tray, column])
+      _target -> DSL.call(__MODULE__, :target_column, [holder, frame, tray, column])
+    end
+  end
+
+  defp cells_of(nil), do: nil
+  defp cells_of({top, bottom}), do: fn column -> {Enum.at(top, column), Enum.at(bottom, column)} end
+
+  defp log_share(%{"cap" => cap}, taken, ctx), do: Ctx.log(ctx, :info, "playbook: cap #{cap} takes slot(s) #{Enum.map_join(taken, ", ", &(&1 + 1))}")
+  defp log_share(_holder, _taken, _ctx), do: :ok
 
   defp target_or_dodge(:dodge, action, tray, column, ctx), do: dodge(action["enemy"], tray, column, ctx)
 
@@ -411,18 +415,6 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     |> Enum.map(&DSL.key/1)
     |> Enum.intersperse(DSL.sleep(@key_gap_ms))
     |> Runner.run_steps(ctx)
-  end
-
-  defp clear(_ctx, 0), do: :pending
-
-  defp clear(ctx, presses_left) do
-    if await(:battle_combat_ready, 0) do
-      press([:p], ctx)
-      Process.sleep(@clear_settle_ms)
-      clear(ctx, presses_left - 1)
-    else
-      :pending
-    end
   end
 
   defp target_after_ego(point, %{"enemy" => %{"pick" => pick} = enemy}, ctx) when pick != "none" do
@@ -646,7 +638,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
          {:ok, frame} <- Capture.grab_frame() do
       targets = EnemyTargets.find(frame)
 
-      case pick_enemy(BattlePlans.filter_by_height(targets, enemy["height"]), enemy, attempt, ctx) do
+      case pick_enemy(BattlePlans.apply_ignores(targets, enemy["ignore"]), enemy, attempt, ctx) do
         {:ok, target} ->
           attempts = [%{frame: frame, targets: targets, chosen: target} | attempts]
           move_held(target.point)
@@ -730,25 +722,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     :skip
   end
 
-  defp pick_enemy(targets, %{"pick" => "first"}, _attempt, _ctx), do: {:ok, List.first(targets)}
-  defp pick_enemy(targets, %{"pick" => "last"}, _attempt, _ctx), do: {:ok, List.last(targets)}
-
-  defp pick_enemy(targets, %{"pick" => "percent", "n" => n}, _attempt, _ctx),
-    do: {:ok, Enum.at(targets, BattlePlans.percent_index(length(targets), n))}
-
-  defp pick_enemy(targets, %{"pick" => "up_to", "n" => n}, _attempt, _ctx),
-    do: {:ok, Enum.at(targets, min(n, length(targets)) - 1)}
-
-  defp pick_enemy(targets, %{"pick" => "exact", "n" => n}, attempt, ctx) do
-    case Enum.at(targets, n - 1) do
-      nil ->
-        Ctx.log(ctx, :info, "playbook: only #{length(targets)} enemy target(s) detected, wanted ##{n} (try #{attempt})")
-        :skip
-
-      target ->
-        {:ok, target}
-    end
-  end
+  defp pick_enemy(targets, enemy, _attempt, _ctx), do: {:ok, Enum.at(targets, BattlePlans.target_index(length(targets), enemy))}
 
   defp who_text(%{"who" => who} = action) do
     names = sinner_names()
@@ -763,9 +737,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp skill_text(%{} = skill), do: base_pick_text(skill)
   defp skill_text(_skill), do: "any"
 
-  defp pick_text(enemy), do: base_pick_text(enemy) <> BattlePlans.height_label(enemy["height"])
+  defp pick_text(enemy), do: BattlePlans.enemy_label(enemy)
 
-  defp base_pick_text(%{"pick" => "percent", "n" => n}), do: "at #{n}%"
   defp base_pick_text(%{"pick" => pick, "n" => n}), do: "#{pick} #{n}"
   defp base_pick_text(%{"pick" => pick}), do: pick
 
@@ -857,12 +830,21 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp forced_rows(pins, frame, tray, ctx) do
     profiles = profiles(ctx)
-    classified = if Enum.any?(pins, &(&1["row"] == "priority")), do: SinColor.classify_tray(frame.mat, tray)
+    classified = if Enum.any?(pins, &BattlePlans.uses_priority?/1), do: SinColor.classify_tray(frame.mat, tray)
 
     Enum.reduce(pins, %{}, fn pin, acc ->
       case action_columns(pin, frame, tray, profiles, ctx) do
         {:ok, columns} ->
-          Map.merge(pin_rows(pin, columns, classified, ctx), acc)
+          rows =
+            pin
+            |> BattlePlans.assign_slots(columns, cells_of(classified))
+            |> Enum.map(fn {holder, taken} ->
+              log_share(holder, taken, ctx)
+              pin_rows(holder, taken, classified, ctx)
+            end)
+            |> Enum.reduce(%{}, &Map.merge/2)
+
+          Map.merge(rows, acc)
 
         :skip ->
           acc
@@ -870,10 +852,14 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end)
   end
 
-  defp dodge_forced(forced, tray, ctx) do
+  defp apply_forced(forced, tray, ctx) do
     Map.new(forced, fn
       {column, :dodge} ->
         click_dodge(tray, column, ctx)
+        {column, :bottom}
+
+      {column, {:ego, holder}} ->
+        ego_column(holder, tray, column, nil, ctx)
         {column, :bottom}
 
       entry ->
@@ -881,18 +867,23 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end)
   end
 
-  defp pin_rows(%{"row" => "priority"} = pin, columns, {top, bottom}, ctx) do
-    rows = BattlePlans.allocate_rows(pin, Enum.map(columns, &{&1, Enum.at(top, &1), Enum.at(bottom, &1)}))
+  defp pin_rows(%{"type" => "dodge"}, columns, _classified, _ctx), do: Map.new(columns, &{&1, :dodge})
+  defp pin_rows(%{"type" => "ego"} = holder, columns, _classified, _ctx), do: Map.new(columns, &{&1, {:ego, holder}})
 
-    Enum.each(columns, fn column ->
+  defp pin_rows(%{"row" => "priority"} = pin, columns, {top, bottom}, ctx) do
+    Map.new(columns, fn column ->
+      top_cell = Enum.at(top, column)
+      bottom_cell = Enum.at(bottom, column)
+      row = BattlePlans.pick_row(pin, top_cell, bottom_cell)
+
       Ctx.log(
         ctx,
         :info,
-        "playbook: slot #{column + 1} #{BattlePlans.row_label(pin)}: top #{BattlePlans.cell_label(Enum.at(top, column))}, bottom #{BattlePlans.cell_label(Enum.at(bottom, column))} -> #{rows[column]}"
+        "playbook: slot #{column + 1} #{BattlePlans.row_label(pin)}: top #{BattlePlans.cell_label(top_cell)}, bottom #{BattlePlans.cell_label(bottom_cell)} -> #{row}"
       )
-    end)
 
-    rows
+      {column, row}
+    end)
   end
 
   defp pin_rows(%{"row" => "top"}, columns, _classified, _ctx), do: Map.new(columns, &{&1, :top})

@@ -119,7 +119,7 @@ defmodule StarlightBot.BattlePlansTest do
     end
 
     test "split_segment gives branch actions fresh ids" do
-      block = BattlePlans.new_action("if") |> Map.put("then", [BattlePlans.new_action("clear")])
+      block = BattlePlans.new_action("if") |> Map.put("then", [BattlePlans.new_action("retry")])
       schedule = BattlePlans.new_schedule(block)
 
       [first, second] = BattlePlans.split_segment(schedule, 3)["segments"]
@@ -130,13 +130,13 @@ defmodule StarlightBot.BattlePlansTest do
     end
 
     test "labels cover single turns, ranges and the open tail" do
-      schedule = BattlePlans.new_schedule(BattlePlans.new_action("clear")) |> BattlePlans.split_segment(2) |> BattlePlans.split_segment(4)
+      schedule = BattlePlans.new_schedule(BattlePlans.new_action("retry")) |> BattlePlans.split_segment(2) |> BattlePlans.split_segment(4)
 
       assert Enum.map(BattlePlans.segment_froms(schedule), &BattlePlans.segment_label(schedule, &1)) == ["Turn 1", "Turns 2-3", "Turns 4+"]
     end
 
     test "tab 1 cannot be moved or removed, others can" do
-      schedule = BattlePlans.new_schedule(BattlePlans.new_action("clear")) |> BattlePlans.split_segment(3)
+      schedule = BattlePlans.new_schedule(BattlePlans.new_action("retry")) |> BattlePlans.split_segment(3)
 
       assert BattlePlans.move_segment(schedule, 1, 2) == schedule
       assert BattlePlans.remove_segment(schedule, 1) == schedule
@@ -267,53 +267,80 @@ defmodule StarlightBot.BattlePlansTest do
     end
   end
 
-  describe "allocate_rows/2" do
-    defp tray(cells), do: cells |> Enum.with_index() |> Enum.map(fn {{top, bottom}, column} -> {column, top, bottom} end)
-    defp keep(order, min, max), do: %{"row" => "priority", "priority" => %{"order" => order, "min" => min, "max" => max}}
+  describe "assign_slots/3" do
+    defp cells_of(cells), do: fn column -> Enum.at(cells, column) end
 
-    defp saikai_tray do
-      tray([
+    defp saikai_cells do
+      [
         {cell(:pride, :skill1), cell(:gloom, :skill2)},
         {cell(:envy, :skill1), cell(:wrath, :skill1)},
         {cell(:lust, :skill1), cell(:sloth, :skill3)},
         {cell(:pride, :skill2), cell(:envy, :skill1)},
         {cell(:gloom, :skill1), cell(:lust, :skill1)}
-      ])
+      ]
     end
 
-    test "without limits it agrees with pick_row slot by slot" do
-      assert BattlePlans.allocate_rows(priority(["wrath", "dodge", "s3"]), saikai_tray()) ==
-               %{0 => :dodge, 1 => :bottom, 2 => :dodge, 3 => :dodge, 4 => :dodge}
+    defp rest(extra \\ %{}), do: Map.merge(%{"type" => "dodge"}, extra)
+
+    test "an uncapped rule takes every slot" do
+      holder = %{"type" => "target", "row" => "top"}
+      assert BattlePlans.assign_slots(holder, [0, 1, 2], nil) == [{holder, [0, 1, 2]}]
     end
 
-    test "max keeps the best ranked slots and dodges the rest, leftmost first on ties" do
-      assert BattlePlans.allocate_rows(keep(["wrath", "s3", "s2", "s1"], nil, 3), saikai_tray()) ==
-               %{0 => :bottom, 1 => :bottom, 2 => :bottom, 3 => :dodge, 4 => :dodge}
+    test "a cap takes the leftmost slots and the rest rule gets what is left" do
+      holder = %{"type" => "target", "row" => "top", "cap" => 2, "rest" => rest()}
+      assert [{^holder, [0, 1]}, {%{"type" => "dodge"}, [2, 3, 4]}] = BattlePlans.assign_slots(holder, [0, 1, 2, 3, 4], nil)
     end
 
-    test "min pulls the best ranked slots back from dodge with their best row" do
-      assert BattlePlans.allocate_rows(keep(["wrath", "dodge", "s2", "pride"], 3, nil), saikai_tray()) ==
-               %{0 => :bottom, 1 => :bottom, 2 => :dodge, 3 => :top, 4 => :dodge}
+    test "a priority cap takes the best ranked slots, leftmost first on ties" do
+      holder = %{"type" => "target", "row" => "priority", "priority" => %{"order" => ["wrath", "s3", "s2"]}, "cap" => 3, "rest" => rest()}
+      assert [{^holder, [0, 1, 2]}, {%{"type" => "dodge"}, [3, 4]}] = BattlePlans.assign_slots(holder, [0, 1, 2, 3, 4], cells_of(saikai_cells()))
     end
 
-    test "min never dodges slots the list already keeps" do
-      assert BattlePlans.allocate_rows(keep(["s1"], 1, nil), saikai_tray()) |> Map.values() |> Enum.count(&(&1 == :dodge)) == 0
+    test "rest rules chain their own caps" do
+      third = rest(%{"type" => "ego"})
+      second = %{"type" => "target", "row" => "bottom", "cap" => 1, "rest" => third}
+      first = %{"type" => "target", "row" => "top", "cap" => 2, "rest" => second}
+      assert [{^first, [0, 1]}, {^second, [2]}, {^third, [3, 4]}] = BattlePlans.assign_slots(first, [0, 1, 2, 3, 4], nil)
+    end
+
+    test "a cap past the slot count leaves nothing for the rest rule" do
+      holder = %{"type" => "target", "row" => "top", "cap" => 9, "rest" => rest()}
+      assert [{^holder, [0, 1]}] = BattlePlans.assign_slots(holder, [0, 1], nil)
     end
   end
 
-  describe "put_keep/3" do
-    test "parses limits, drops blanks, and caps min at max" do
-      holder = BattlePlans.put_row(%{"row" => "bottom"}, "priority", nil)
-      assert BattlePlans.put_keep(holder, "2", "")["priority"] == %{"order" => ["s3", "s2", "s1"], "min" => 2}
-      assert BattlePlans.put_keep(holder, "5", "3")["priority"]["min"] == 3
-      assert BattlePlans.put_keep(holder, "x", "-1")["priority"] == %{"order" => ["s3", "s2", "s1"]}
-      assert BattlePlans.put_keep(%{"row" => "top"}, "1", "2") == %{"row" => "top"}
+  describe "reorder_playbooks/3" do
+    test "reorders one kind in place and leaves the other kind's slots alone" do
+      pbs = [%{"id" => "a", "kind" => "chain"}, %{"id" => "x", "kind" => "focused"}, %{"id" => "b", "kind" => "chain"}, %{"id" => "c", "kind" => "chain"}]
+      assert pbs |> BattlePlans.reorder_playbooks("chain", ["c", "a", "b"]) |> Enum.map(& &1["id"]) == ["c", "x", "a", "b"]
     end
 
-    test "labels the limits" do
-      assert BattlePlans.row_label(keep(["wrath"], 1, 4)) == "priority wrath, keep 1-4"
-      assert BattlePlans.row_label(keep(["wrath"], nil, 4)) == "priority wrath, keep at most 4"
-      assert BattlePlans.row_label(keep(["wrath"], 2, 2)) == "priority wrath, keep 2"
+    test "ignores an incomplete or foreign id list" do
+      pbs = [%{"id" => "a", "kind" => "chain"}, %{"id" => "b", "kind" => "chain"}, %{"id" => "x", "kind" => "focused"}]
+      assert BattlePlans.reorder_playbooks(pbs, "chain", ["b"]) == pbs
+      assert BattlePlans.reorder_playbooks(pbs, "chain", ["b", "x"]) == pbs
+    end
+  end
+
+  describe "put_cap/2" do
+    test "parses 1 to 99, clamps, and creates the rest rule" do
+      assert %{"cap" => 3, "rest" => %{"type" => "target", "row" => "priority"}} = BattlePlans.put_cap(%{"type" => "target"}, "3")
+      assert BattlePlans.put_cap(%{}, "250")["cap"] == 99
+    end
+
+    test "keeps an existing rest rule" do
+      holder = %{"cap" => 2, "rest" => %{"type" => "ego"}}
+      assert BattlePlans.put_cap(holder, "4")["rest"] == %{"type" => "ego"}
+    end
+
+    test "blank, zero, or junk removes the cap and its rest rules" do
+      holder = %{"type" => "target", "cap" => 2, "rest" => %{"type" => "ego"}}
+      for value <- ["", "0", "x", nil], do: assert(BattlePlans.put_cap(holder, value) == %{"type" => "target"})
+    end
+
+    test "row_label no longer mentions limits" do
+      assert BattlePlans.row_label(%{"row" => "priority", "priority" => %{"order" => ["wrath"]}}) == "priority wrath"
     end
   end
 
@@ -400,35 +427,94 @@ defmodule StarlightBot.BattlePlansTest do
     end
   end
 
-  describe "percent_index/2" do
-    test "picks the enemy at that point left to right, rounded" do
-      assert BattlePlans.percent_index(3, 50) == 1
-      assert BattlePlans.percent_index(4, 50) == 2
-      assert BattlePlans.percent_index(5, 0) == 0
-      assert BattlePlans.percent_index(5, 100) == 4
-      assert BattlePlans.percent_index(5, 30) == 1
-      assert BattlePlans.percent_index(1, 50) == 0
+  describe "target_index/2" do
+    defp enemy(pick, n, step \\ nil, index \\ 0), do: %{"pick" => pick, "n" => n, "step" => step, "index" => index}
+
+    test "counts the starting slot from either end" do
+      assert BattlePlans.target_index(6, enemy("first", 1)) == 0
+      assert BattlePlans.target_index(6, enemy("first", 3)) == 2
+      assert BattlePlans.target_index(6, enemy("last", 1)) == 5
+      assert BattlePlans.target_index(6, enemy("last", 2)) == 4
+    end
+
+    test "a start past the far end lands on the far end" do
+      assert BattlePlans.target_index(4, enemy("first", 9)) == 3
+      assert BattlePlans.target_index(4, enemy("last", 9)) == 0
+    end
+
+    test "each next sinner slot steps one target and then piles onto the end" do
+      indexes = fn pick, n, step -> for i <- 0..5, do: BattlePlans.target_index(5, enemy(pick, n, step, i)) end
+      assert indexes.("first", 1, "right") == [0, 1, 2, 3, 4, 4]
+      assert indexes.("first", 3, "right") == [2, 3, 4, 4, 4, 4]
+      assert indexes.("first", 5, "left") == [4, 3, 2, 1, 0, 0]
+      assert indexes.("last", 1, "left") == [4, 3, 2, 1, 0, 0]
+      assert indexes.("first", 2, nil) == [1, 1, 1, 1, 1, 1]
+      assert indexes.("first", 99, "left") == [4, 3, 2, 1, 0, 0]
+    end
+
+    test "saved exact, up_to and percent picks read as from first" do
+      assert BattlePlans.target_index(5, %{"pick" => "exact", "n" => 3}) == 2
+      assert BattlePlans.target_index(5, %{"pick" => "up_to", "n" => 9}) == 4
+      assert BattlePlans.target_index(5, %{"pick" => "percent", "n" => 80}) == 0
+    end
+
+    test "labels and parsing" do
+      assert BattlePlans.enemy_label(%{"pick" => "last", "n" => 2, "step" => "left", "ignore" => [%{"side" => "top", "n" => 1}]}) == "2 from last, then left, ignoring top 1"
+      assert BattlePlans.enemy_label(%{"pick" => "none"}) == "none"
+      assert BattlePlans.parse_enemy("last", "0", "up") == %{"pick" => "last", "n" => 1}
+      assert BattlePlans.parse_enemy("first", "4", "right") == %{"pick" => "first", "n" => 4, "step" => "right"}
+      assert BattlePlans.parse_enemy("exact", "2", nil) == %{"pick" => "first", "n" => 2}
+      assert BattlePlans.parse_enemy("none", "2", "left") == %{"pick" => "none"}
     end
   end
 
-  describe "filter_by_height/2" do
+  describe "apply_ignores/2" do
     defp at(x, y), do: %{icon: {x, y}, point: {x, y + 100}}
+    defp ignore(side, n), do: %{"side" => side, "n" => n}
 
-    test "keeps the highest or lowest share by icon height, rounded up, in left to right order" do
-      targets = [at(100, 300), at(200, 150), at(300, 400), at(400, 200)]
-
-      assert BattlePlans.filter_by_height(targets, %{"dir" => "high", "pct" => 25}) == [at(200, 150)]
-      assert BattlePlans.filter_by_height(targets, %{"dir" => "high", "pct" => 30}) == [at(200, 150), at(400, 200)]
-      assert BattlePlans.filter_by_height(targets, %{"dir" => "low", "pct" => 30}) == [at(100, 300), at(300, 400)]
+    setup do
+      %{targets: [at(100, 300), at(200, 150), at(300, 400), at(400, 200)]}
     end
 
-    test "always keeps at least one, and passes through without a filter" do
-      targets = [at(100, 300), at(200, 150)]
+    test "cuts slots from one side, keeping left to right order", %{targets: targets} do
+      assert BattlePlans.apply_ignores(targets, [ignore("left", 1)]) == [at(200, 150), at(300, 400), at(400, 200)]
+      assert BattlePlans.apply_ignores(targets, [ignore("right", 2)]) == [at(100, 300), at(200, 150)]
+      assert BattlePlans.apply_ignores(targets, [ignore("top", 2)]) == [at(100, 300), at(300, 400)]
+      assert BattlePlans.apply_ignores(targets, [ignore("bottom", 1)]) == [at(100, 300), at(200, 150), at(400, 200)]
+    end
 
-      assert BattlePlans.filter_by_height(targets, %{"dir" => "high", "pct" => 1}) == [at(200, 150)]
-      assert BattlePlans.filter_by_height(targets, nil) == targets
-      assert BattlePlans.filter_by_height([], %{"dir" => "high", "pct" => 30}) == []
-      assert BattlePlans.height_label(%{"dir" => "low", "pct" => 30}) == " among the lowest 30%"
+    test "ignores apply in order to what is left", %{targets: targets} do
+      assert BattlePlans.apply_ignores(targets, [ignore("left", 1), ignore("top", 1)]) == [at(300, 400), at(400, 200)]
+    end
+
+    test "an ignore that would cut everything leaves the target furthest from that side", %{targets: targets} do
+      assert BattlePlans.apply_ignores(targets, [ignore("left", 99)]) == [at(400, 200)]
+      assert BattlePlans.apply_ignores(targets, [ignore("top", 99)]) == [at(300, 400)]
+    end
+
+    test "later ignores can never remove the last target", %{targets: targets} do
+      assert BattlePlans.apply_ignores(targets, [ignore("left", 99), ignore("right", 5), ignore("top", 1)]) == [at(400, 200)]
+    end
+
+    test "passes through without ignores and handles no targets", %{targets: targets} do
+      assert BattlePlans.apply_ignores(targets, nil) == targets
+      assert BattlePlans.apply_ignores(targets, []) == targets
+      assert BattlePlans.apply_ignores([], [ignore("left", 1)]) == []
+      assert BattlePlans.ignore_label([ignore("left", 3), ignore("top", 2)]) == ", ignoring left 3, top 2"
+    end
+  end
+
+  describe "put_ignores/3" do
+    test "reads indexed entries in order, clamps n, drops junk, and appends an added side" do
+      entries = %{"1" => %{"side" => "top", "n" => "500"}, "0" => %{"side" => "left", "n" => "3"}, "2" => %{"side" => "diagonal", "n" => "1"}}
+      assert BattlePlans.put_ignores(%{"pick" => "first"}, entries, "right")["ignore"] == [ignore("left", 3), ignore("top", 99), ignore("right", 1)]
+    end
+
+    test "no entries removes the key, and remove_ignore drops by index" do
+      assert BattlePlans.put_ignores(%{"pick" => "first", "ignore" => [ignore("left", 1)]}, nil, "") == %{"pick" => "first"}
+      enemy = %{"pick" => "first", "ignore" => [ignore("left", 1), ignore("top", 2)]}
+      assert BattlePlans.remove_ignore(enemy, 0)["ignore"] == [ignore("top", 2)]
+      assert BattlePlans.remove_ignore(BattlePlans.remove_ignore(enemy, 0), 0) == %{"pick" => "first"}
     end
   end
 end
