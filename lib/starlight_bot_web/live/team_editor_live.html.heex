@@ -31,8 +31,6 @@
                 <th>Team</th>
                 <th></th>
                 <th></th>
-                <th></th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -43,10 +41,10 @@
                   <td class="font-mono text-xs">
                     <%= team.name %>
                   </td>
-                  <td class="text-xs text-base-content/60"><%= if team.hooks == [], do: "—", else: Enum.map_join(team.hooks, ", ", &Teams.hook_label/1) %></td>
+                  <td class="text-xs text-base-content/60"><%= if team.hooks == [], do: "—", else: Enum.map_join(team.hooks, " ", &Teams.hook_label/1) %></td>
                   <td>
                     <div class="join">
-                      <button :for={{pane, label} <- [{"battle", "Battle"}, {"packs", "Packs"}, {"gifts", "Gifts"}]}
+                      <button :for={{pane, label} <- [{"battle", "Battle"}, {"packs", "Packs"}, {"gifts", "Gifts"}, {"stats", "Stats"}]}
                               type="button" phx-click={JS.patch(~p"/teams?team=#{team.id}&pane=#{pane}")} title={label}
                               class={"btn btn-xs btn-square join-item " <> if(selected? and @pane == pane, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
                         <.pane_icon pane={pane} class="h-3.5 w-3.5" />
@@ -60,21 +58,10 @@
                       </div>
                     <% end %>
                   </td>
-                  <td>
-                    <button phx-click="duplicate_team" phx-value-id={team.id}
-                            title="Copy this team, keeping its hook and plans"
-                            class="btn btn-xs btn-ghost">Dup</button>
-                  </td>
-                  <td>
-                    <button phx-click="delete_team" phx-value-id={team.id}
-                            data-confirm={"Delete '#{team.name}'?"}
-                            class="btn btn-xs btn-ghost text-error">Del</button>
-                  </td>
                 </tr>
                 <tr :if={selected? and @expanded?} class="bg-base-200/40 border-l-2 border-primary">
-                  <td colspan="6" class="p-2">
+                  <td colspan="4" class="p-2">
                     <div class="flex flex-col gap-2">
-                      <% budget = starlight_budget(@gift_plans, @pack_plans, @theme_packs, @selected_ids, @budget_inputs) %>
                       <div class="flex items-start gap-2">
                         <.form for={@form} class="w-1/2" phx-change="validate_team" phx-submit="validate_team">
                           <input type="text" name="team[name]" value={@form[:name].value} placeholder="Team name"
@@ -83,91 +70,14 @@
                             <span class="text-xs text-error"><%= elem(err, 0) %></span>
                           <% end %>
                         </.form>
-                        <button type="button" phx-click="toggle_budget" title="Starlight per run, floors 1 to 5. Click for the breakdown."
-                                class={"btn btn-sm gap-1 ml-auto " <> if(budget.net >= 0, do: "btn-success btn-outline", else: "btn-error btn-outline")}>
-                          <img src={~p"/images/icons/starlight.webp"} alt="Starlight" class="h-5 w-5" />
-                          <span class="font-mono font-bold"><%= if budget.net >= 0, do: "+" %><%= budget.net %></span>
-                          <span class="text-base-content/50"><%= if @budget_open?, do: "▾", else: "▸" %></span>
-                        </button>
+                        <button type="button" phx-click="duplicate_team" phx-value-id={team.id}
+                                title="Copy this team, keeping its hook and plans"
+                                class="btn btn-sm btn-ghost ml-auto">Dup</button>
+                        <button type="button" phx-click="delete_team" phx-value-id={team.id}
+                                data-confirm={"Delete '#{team.name}'?"}
+                                class="btn btn-sm btn-ghost text-error">Del</button>
                       </div>
 
-                      <%= if @budget_open? do %>
-                        <form phx-change="budget_change" class="flex flex-wrap items-stretch gap-1.5 font-mono">
-                          <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="Every run starts with this">
-                            <span class="text-[10px] font-sans text-base-content/50">Base</span>
-                            <span class="text-sm text-success">+<%= budget.income.base %></span>
-                          </div>
-                          <span class="self-center text-base-content/40">+</span>
-                          <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
-                               title="1 per rest charge, up to 5 per sinner. Also sets the multiplier.">
-                            <span class="text-[10px] font-sans text-base-content/50">Rest bonus</span>
-                            <span class="text-sm text-success">+<%= budget.income.sinner_bonus %></span>
-                            <input type="range" name="sinner_bonus" min="0" max={StarlightBudget.max_sinner_bonus()} step="5" value={budget.income.sinner_bonus}
-                                   class="range range-success range-xs" />
-                          </div>
-                          <span class="self-center text-base-content/40">+ ⌊(</span>
-                          <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title={floor_breakdown(budget.floors)}>
-                            <span class="text-[10px] font-sans text-base-content/50">
-                              Floor clears<%= if not budget.has_pack_plan?, do: " (no plan, all normal)" %>
-                            </span>
-                            <span class="text-sm"><%= budget.floor_total %></span>
-                          </div>
-                          <span class="self-center text-base-content/40">+</span>
-                          <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
-                               title={"#{StarlightBudget.railway_bonus()} per cleared Line theme pack. Max counts floors where the plan doesn't ban every eligible Line pack."}>
-                            <span class="text-[10px] font-sans text-base-content/50">
-                              Railway (<%= budget.railway_packs %>/<%= budget.max_railway_packs %>)
-                            </span>
-                            <span class="text-sm"><%= budget.railway_packs * StarlightBudget.railway_bonus() %></span>
-                            <input type="range" name="railway_packs" min="0" max={budget.max_railway_packs} value={budget.railway_packs}
-                                   disabled={budget.max_railway_packs == 0} class="range range-xs" />
-                          </div>
-                          <span class="self-center text-base-content/40">) ×</span>
-                          <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="min(2, 1 + 0.017 × rest bonus), rounded down after multiplying">
-                            <span class="text-[10px] font-sans text-base-content/50">Rest mult</span>
-                            <span class="text-sm"><%= :erlang.float_to_binary(budget.rest_multiplier, decimals: 3) %></span>
-                          </div>
-                          <span class="self-center text-base-content/40">⌋</span>
-                          <div class="rounded-lg bg-base-200 px-2 py-1 flex flex-col justify-center">
-                            <span class="text-[10px] font-sans text-base-content/50">Exploration</span>
-                            <span class="text-sm text-success">+<%= budget.income.exploration %></span>
-                          </div>
-                          <span class="self-center text-base-content/40">+</span>
-                          <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32">
-                            <span class="text-[10px] font-sans text-base-content/50">Encounter Reward Cards (<%= budget.reward_cards %>)</span>
-                            <span class="text-sm text-success">+<%= budget.income.cards %></span>
-                            <input type="range" name="reward_cards" min="0" max={StarlightBudget.max_reward_cards()} value={budget.reward_cards}
-                                   class="range range-success range-xs" />
-                          </div>
-                          <span class="self-center text-base-content/40">−</span>
-                          <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center">
-                            <span class="text-[10px] font-sans text-base-content/50">Graces</span>
-                            <span class="text-sm text-error"><%= if budget.has_gift_plan?, do: budget.costs.grace, else: "—" %></span>
-                          </div>
-                          <span class="self-center text-base-content/40">−</span>
-                          <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center">
-                            <span class="text-[10px] font-sans text-base-content/50">Gift search (<%= budget.gift_searches %>)</span>
-                            <span class="text-sm text-error"><%= if budget.has_gift_plan?, do: budget.costs.gift_search, else: "—" %></span>
-                          </div>
-                          <span class="self-center text-base-content/40">−</span>
-                          <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
-                               title="20 for the first search in the run, 10 more for each one after">
-                            <span class="text-[10px] font-sans text-base-content/50">
-                              Pack search (<%= budget.pack_searches %>/<%= budget.max_pack_searches %>)
-                            </span>
-                            <span class="text-sm text-error"><%= budget.costs.pack_search %></span>
-                            <input type="range" name="pack_searches" min="0" max={budget.max_pack_searches} value={budget.pack_searches}
-                                   disabled={budget.max_pack_searches == 0} class="range range-error range-xs" />
-                          </div>
-                          <span class="self-center text-base-content/40">=</span>
-                          <div class={"rounded-lg border-2 px-3 py-1 flex flex-col justify-center " <> if(budget.net >= 0, do: "border-success", else: "border-error")}>
-                            <span class="text-[10px] font-sans text-base-content/50">Net</span>
-                            <span class={"text-lg font-bold " <> if(budget.net >= 0, do: "text-success", else: "text-error")}>
-                              <%= if budget.net >= 0, do: "+" %><%= budget.net %>
-                            </span>
-                          </div>
-                        </form>
-                      <% end %>
                       <div class="flex flex-col gap-1">
                         <div class="flex items-center text-xs">
                           <span class="font-medium">Team Selectors</span>
@@ -202,7 +112,7 @@
               <% end %>
               <%= if @teams == [] do %>
                 <tr>
-                  <td colspan="6" class="text-center text-base-content/40 py-4">No teams yet. Create one.</td>
+                  <td colspan="4" class="text-center text-base-content/40 py-4">No teams yet. Create one.</td>
                 </tr>
               <% end %>
             </tbody>
@@ -216,6 +126,96 @@
     <%= live_render(@socket, StarlightBotWeb.Live.SinnerProfilesLive, id: "sinner-profiles", container: {:div, class: "flex flex-col min-h-0 min-w-0"}) %>
     <% @editing_id -> %>
     <div class="flex flex-col min-h-0 min-w-0">
+      <div :if={@pane == "stats"} class="card bg-base-100 shadow-lg flex-1 min-h-0 overflow-y-auto">
+        <div class="card-body p-3 gap-3">
+          <.pane_tabs team_id={@editing_id} pane="stats" />
+          <% budget = starlight_budget(@gift_plans, @pack_plans, @theme_packs, @selected_ids, @budget_inputs) %>
+          <h3 class="font-medium text-sm">Expected Starlight</h3>
+          <form phx-change="budget_change" class="flex flex-wrap items-stretch gap-1.5 font-mono">
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="Every run starts with this">
+              <span class="text-[10px] font-sans text-base-content/50">Base</span>
+              <span class="text-sm text-success">+<%= budget.income.base %></span>
+            </div>
+            <span class="self-center text-base-content/40">+</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
+                 title="1 per rest charge, up to 5 per sinner. Also sets the multiplier.">
+              <span class="text-[10px] font-sans text-base-content/50">Rest bonus</span>
+              <span class="text-sm text-success">+<%= budget.income.sinner_bonus %></span>
+              <input type="range" name="sinner_bonus" min="0" max={StarlightBudget.max_sinner_bonus()} step="5" value={budget.income.sinner_bonus}
+                     class="range range-success range-xs" />
+            </div>
+            <span class="self-center text-base-content/40">+ ⌊(</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title={floor_breakdown(budget.floors)}>
+              <span class="text-[10px] font-sans text-base-content/50">
+                Floor clears<%= if not budget.has_pack_plan?, do: " (no plan, all normal)" %>
+              </span>
+              <span class="text-sm"><%= budget.floor_total %></span>
+            </div>
+            <span class="self-center text-base-content/40">+</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
+                 title={"#{StarlightBudget.railway_bonus()} per cleared Line theme pack. Max counts floors where the plan doesn't ban every eligible Line pack."}>
+              <span class="text-[10px] font-sans text-base-content/50">
+                Railway (<%= budget.railway_packs %>/<%= budget.max_railway_packs %>)
+              </span>
+              <span class="text-sm"><%= budget.railway_packs * StarlightBudget.railway_bonus() %></span>
+              <input type="range" name="railway_packs" min="0" max={budget.max_railway_packs} value={budget.railway_packs}
+                     disabled={budget.max_railway_packs == 0} class="range range-xs" />
+            </div>
+            <span class="self-center text-base-content/40">) ×</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="min(2, 1 + 0.017 × rest bonus), rounded down after multiplying">
+              <span class="text-[10px] font-sans text-base-content/50">Rest mult</span>
+              <span class="text-sm"><%= :erlang.float_to_binary(budget.rest_multiplier, decimals: 3) %></span>
+            </div>
+            <span class="self-center text-base-content/40">⌋</span>
+            <div class="rounded-lg bg-base-200 px-2 py-1 flex flex-col justify-center">
+              <span class="text-[10px] font-sans text-base-content/50">Exploration</span>
+              <span class="text-sm text-success">+<%= budget.income.exploration %></span>
+            </div>
+            <span class="self-center text-base-content/40">+</span>
+            <div class="basis-full h-0"></div>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32">
+              <span class="text-[10px] font-sans text-base-content/50">Encounter Reward Cards (<%= budget.reward_cards %>)</span>
+              <span class="text-sm text-success">+<%= budget.income.cards %></span>
+              <input type="range" name="reward_cards" min="0" max={StarlightBudget.max_reward_cards()} value={budget.reward_cards}
+                     class="range range-success range-xs" />
+            </div>
+            <span class="self-center text-base-content/40">−</span>
+            <div phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=gifts") |> JS.dispatch("click", to: "#gift-loadout-btn")} title="Open the gift loadout"
+                 class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center cursor-pointer hover:bg-base-200">
+              <span class="text-[10px] font-sans text-base-content/50">Graces</span>
+              <span class="text-sm text-error"><%= if budget.has_gift_plan?, do: budget.costs.grace, else: "—" %></span>
+            </div>
+            <span class="self-center text-base-content/40">−</span>
+            <div phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=gifts") |> JS.dispatch("click", to: "#gift-loadout-btn")} title="Open the gift loadout"
+                 class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center cursor-pointer hover:bg-base-200">
+              <span class="text-[10px] font-sans text-base-content/50">Gift search (<%= budget.gift_searches %>)</span>
+              <span class="flex items-center gap-1.5">
+                <span class="text-sm text-error"><%= if budget.has_gift_plan?, do: budget.costs.gift_search, else: "—" %></span>
+                <img :for={name <- budget.gift_search_names} :if={@gifts_by_name[name]} src={@gifts_by_name[name].image_path} title={name}
+                     class="w-4 h-4 rounded object-cover bg-slate-500/40 ring-1 ring-slate-400/40" />
+              </span>
+            </div>
+            <span class="self-center text-base-content/40">−</span>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
+                 title="20 for the first search in the run, 10 more for each one after">
+              <span class="text-[10px] font-sans text-base-content/50">
+                Pack search (<%= budget.pack_searches %>/<%= budget.max_pack_searches %>)
+              </span>
+              <span class="text-sm text-error"><%= budget.costs.pack_search %></span>
+              <input type="range" name="pack_searches" min="0" max={budget.max_pack_searches} value={budget.pack_searches}
+                     disabled={budget.max_pack_searches == 0} class="range range-error range-xs" />
+            </div>
+            <span class="self-center text-base-content/40">=</span>
+            <div class={"rounded-lg border-2 px-3 py-1 flex flex-col justify-center " <> if(budget.net >= 0, do: "border-success", else: "border-error")}>
+              <span class="text-[10px] font-sans text-base-content/50">Net</span>
+              <span class={"flex items-center gap-1 text-lg font-bold " <> if(budget.net >= 0, do: "text-success", else: "text-error")}>
+                <img src={~p"/images/icons/starlight.webp"} alt="Starlight" class="h-5 w-5" />
+                <%= if budget.net >= 0, do: "+" %><%= budget.net %>
+              </span>
+            </div>
+          </form>
+        </div>
+      </div>
       <div :for={pane <- ~w(battle packs gifts)} class={"flex-1 min-h-0 min-w-0 flex-col " <> if(pane == @pane, do: "flex", else: "hidden")}>
         <%= live_render(@socket, pane_view(pane), id: "pane-#{pane}-#{@editing_id}", session: %{"team_id" => @editing_id}, container: {:div, class: "flex flex-col flex-1 min-h-0 min-w-0"}) %>
       </div>

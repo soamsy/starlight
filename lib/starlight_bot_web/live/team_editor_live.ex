@@ -1,10 +1,10 @@
 defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{BattlePlans, GiftPlans, Plans, StarlightBudget, Teams, ThemePacks}
+  alias StarlightBot.{BattlePlans, EgoGifts, GiftPlans, Plans, StarlightBudget, Teams, ThemePacks}
   alias StarlightBotWeb.Live.{BattlePlanEditorLive, GiftPlanEditorLive, PackPlanEditorLive}
   alias StarlightBot.Navigation.Navigator
-  import StarlightBotWeb.Components.PlanPicker, only: [pane_icon: 1]
+  import StarlightBotWeb.Components.PlanPicker, only: [pane_icon: 1, pane_tabs: 1]
 
   @panes %{"packs" => PackPlanEditorLive, "gifts" => GiftPlanEditorLive, "battle" => BattlePlanEditorLive}
 
@@ -17,6 +17,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      socket
      |> assign(:teams, Teams.list_teams())
      |> assign(:gift_plans, Plans.list(:gift_plans))
+     |> assign(:gifts_by_name, Map.new(EgoGifts.list_gifts(), &{&1.name, &1}))
      |> assign(:pack_plans, Plans.list(:pack_plans))
      |> assign(:team_hooks, Teams.team_hooks())
      |> assign(:theme_packs, ThemePacks.list_theme_packs())
@@ -24,7 +25,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:editing_id, nil)
      |> assign(:hooks, [])
      |> assign(:expanded?, false)
-     |> assign(:budget_open?, false)
      |> assign(:selected_ids, blank_selected_ids())
      |> assign(:budget_inputs, blank_budget_inputs(nil))
      |> assign(:phase, nav.phase)
@@ -38,7 +38,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
     socket =
       socket
-      |> assign(:pane, if(Map.has_key?(@panes, params["pane"]) or params["pane"] == "profiles", do: params["pane"], else: socket.assigns.pane))
+      |> assign(:pane, if(Map.has_key?(@panes, params["pane"]) or params["pane"] in ["profiles", "stats"], do: params["pane"], else: socket.assigns.pane))
 
     cond do
       team_id && team_id != socket.assigns.editing_id -> {:noreply, socket |> load_team(team_id) |> assign(:expanded?, true)}
@@ -95,11 +95,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       id when id == socket.assigns.editing_id -> {:noreply, update(socket, :expanded?, &(not &1))}
       id -> {:noreply, push_patch(socket, to: ~p"/teams?team=#{id}&pane=#{plan_pane(socket.assigns.pane)}")}
     end
-  end
-
-  @impl true
-  def handle_event("toggle_budget", _, socket) do
-    {:noreply, update(socket, :budget_open?, &(not &1))}
   end
 
   @impl true
@@ -233,7 +228,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         |> assign(:form, build_form(%{"name" => team.name}))
         |> assign(:editing_id, team.id)
         |> assign(:hooks, team.hooks)
-        |> assign(:budget_open?, false)
         |> assign(:selected_ids, selected_ids(team))
         |> assign(:budget_inputs, blank_budget_inputs(team.battle_plan_id))
     end
@@ -318,6 +312,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       rest_multiplier: StarlightBudget.rest_multiplier_milli(inputs.sinner_bonus) / 1000,
       reward_cards: inputs.reward_cards,
       gift_searches: gift_searches,
+      gift_search_names: gift_data["gift_search"] || [],
       pack_searches: pack_searches,
       max_pack_searches: max_pack_searches,
       has_gift_plan?: gift_data != %{},

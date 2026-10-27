@@ -58,10 +58,11 @@ defmodule StarlightBotWeb.Components.PlanPicker do
   def pane_tabs(assigns) do
     ~H"""
     <div :if={@team_id} class="join shrink-0">
-      <.link :for={{pane, label} <- [{"battle", "Battle"}, {"packs", "Packs"}, {"gifts", "Gifts"}]}
+      <.link :for={{pane, label} <- [{"battle", "Battle"}, {"packs", "Packs"}, {"gifts", "Gifts"}, {"stats", "Stats"}]}
              patch={~p"/teams?team=#{@team_id}&pane=#{pane}"}
+             title={label}
              class={"btn btn-sm join-item " <> if(@pane == pane, do: "btn-primary", else: "btn-outline")}>
-        <.pane_icon pane={pane} class="h-4 w-4" /><%= label %>
+        <.pane_icon pane={pane} class="h-4 w-4" /><%= if pane != "stats", do: label %>
       </.link>
     </div>
     """
@@ -87,6 +88,11 @@ defmodule StarlightBotWeb.Components.PlanPicker do
           <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
           <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" />
           <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
+        <% "stats" -> %>
+          <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+          <path d="M18 17V9" />
+          <path d="M13 17V5" />
+          <path d="M8 17v-3" />
         <% "gifts" -> %>
           <rect x="3" y="8" width="18" height="4" rx="1" />
           <path d="M12 8v13" />
