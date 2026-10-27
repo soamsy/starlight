@@ -230,7 +230,7 @@ defmodule StarlightBot.Navigation.Navigator do
       add_log(
         state,
         :info,
-        "Running luxcavation: team=#{team.id} hook=#{team.hook} exp=#{exp_repeats}x#{exp_consecutive} thread=#{thread_repeats}x#{thread_consecutive} " <>
+        "Running luxcavation: exp_team=#{team_label(team.exp)} thread_team=#{team_label(team.thread)} exp=#{exp_repeats}x#{exp_consecutive} thread=#{thread_repeats}x#{thread_consecutive} " <>
           "collect_xp=#{collect_xp?} collect_enkephalin=#{collect_enkephalin?} enkephalin_convert_count=#{enkephalin_convert_count}"
       )
 
@@ -578,6 +578,9 @@ defmodule StarlightBot.Navigation.Navigator do
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
     {:noreply, state}
   end
+
+  defp team_label(nil), do: "none"
+  defp team_label(%{id: id, hook: hook}), do: "#{id}/#{hook}"
 
   defp nav_ctx(fields \\ []), do: Ctx.new([log_to: {self(), :nav_log}] ++ fields)
 

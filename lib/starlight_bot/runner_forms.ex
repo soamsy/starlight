@@ -1,6 +1,6 @@
 defmodule StarlightBot.RunnerForms do
   import Ecto.Query
-  alias StarlightBot.{Repo, Teams}
+  alias StarlightBot.{LuxSchedule, Repo, Teams}
   alias StarlightBot.Automation.EnkephalinCharger
 
   @topic "runner_forms"
@@ -29,6 +29,13 @@ defmodule StarlightBot.RunnerForms do
 
     Phoenix.PubSub.broadcast(StarlightBot.PubSub, @topic, {:runner_form, runner})
     :ok
+  end
+
+  def luxcavation_then_mirror_dungeon? do
+    case get("luxcavation") do
+      %{"then" => "mirror_dungeon"} -> true
+      _ -> false
+    end
   end
 
   def schedulable_teams, do: Teams.list_teams() |> Enum.reject(&(&1.hooks == []))
@@ -83,8 +90,9 @@ defmodule StarlightBot.RunnerForms do
     end
   end
 
-  def luxcavation_action(params) do
-    with {team_id, ""} <- Integer.parse(to_string(params["team_id"])),
+  def luxcavation_action(params, day \\ LuxSchedule.today()) do
+    with {:ok, exp_picks} <- parse_slot_picks(params["exp_team_ids"], params["exp_team_hooks"], LuxSchedule.exp_slot_count()),
+         {:ok, thread_picks} <- parse_slot_picks(params["thread_team_ids"], params["thread_team_hooks"], LuxSchedule.thread_slot_count()),
          {exp_consecutive, ""} <- Integer.parse(to_string(params["exp_consecutive"])),
          {exp_repeats, ""} <- Integer.parse(to_string(params["exp_repeats"])),
          {thread_consecutive, ""} <- Integer.parse(to_string(params["thread_consecutive"])),
@@ -92,12 +100,42 @@ defmodule StarlightBot.RunnerForms do
          {enkephalin_convert_count, ""} <- Integer.parse(to_string(params["enkephalin_convert_count"] || "0")),
          true <- exp_consecutive in 0..@max_lux_consecutive and thread_consecutive in 0..@max_lux_consecutive,
          true <- exp_repeats >= 0 and thread_repeats >= 0,
-         true <- enkephalin_convert_count in 0..4 do
+         true <- enkephalin_convert_count in 0..4,
+         exp_team = Enum.at(exp_picks, parse_pin(params["exp_pin"], LuxSchedule.exp_slot_count()) || LuxSchedule.exp_slot(day)),
+         thread_team = Enum.at(thread_picks, parse_pin(params["thread_pin"], LuxSchedule.thread_slot_count()) || day),
+         true <- exp_team != nil or exp_consecutive * exp_repeats == 0,
+         true <- thread_team != nil or thread_consecutive * thread_repeats == 0 do
       {:ok,
-       {:run_luxcavation, %{id: team_id, hook: blank_to_nil(params["team_hook"])}, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats,
+       {:run_luxcavation, %{exp: exp_team, thread: thread_team}, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats,
         Map.get(params, "collect_xp") == "true", Map.get(params, "collect_enkephalin") == "true", enkephalin_convert_count}}
     else
       _ -> :error
+    end
+  end
+
+  def parse_pin(value, count) do
+    case Integer.parse(to_string(value)) do
+      {n, ""} when n >= 0 and n < count -> n
+      _ -> nil
+    end
+  end
+
+  def parse_slot_picks(ids, hooks, count) do
+    ids = List.wrap(ids)
+    hooks = List.wrap(hooks) ++ List.duplicate(nil, count)
+
+    if length(ids) == count do
+      {:ok,
+       ids
+       |> Enum.zip(hooks)
+       |> Enum.map(fn {value, hook} ->
+         case Integer.parse(to_string(value)) do
+           {id, ""} -> %{id: id, hook: blank_to_nil(hook)}
+           _ -> nil
+         end
+       end)}
+    else
+      :error
     end
   end
 

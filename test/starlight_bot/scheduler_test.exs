@@ -66,7 +66,7 @@ defmodule StarlightBot.SchedulerTest do
       launch_timeout_s: 900
     }
 
-    @lux_form %{"team_id" => "7", "exp_consecutive" => "1", "exp_repeats" => "2", "thread_consecutive" => "3", "thread_repeats" => "1", "collect_xp" => "true", "collect_enkephalin" => "false", "enkephalin_convert_count" => "0"}
+    @lux_form %{"exp_team_ids" => List.duplicate("7", 4), "thread_team_ids" => List.duplicate("7", 7), "exp_consecutive" => "1", "exp_repeats" => "2", "thread_consecutive" => "3", "thread_repeats" => "1", "collect_xp" => "true", "collect_enkephalin" => "false", "enkephalin_convert_count" => "0"}
     @md_form %{"team_ids" => ["5"], "start_index" => "0", "run_count" => "2", "rewards" => "weekly", "collect_xp" => "true"}
 
     test "save_settings stores the schedule and get_settings reads it back" do
@@ -91,16 +91,18 @@ defmodule StarlightBot.SchedulerTest do
     end
 
     test "scheduled runs use the runner pages' current forms" do
-      chained = %{@attrs | runner: "luxcavation_then_mirror_dungeon"}
-      assert {:error, "the luxcavation and mirror dungeon runner pages aren't set up to run"} = Scheduler.save_settings(chained)
+      RunnerForms.put("luxcavation", Map.put(@lux_form, "then", "mirror_dungeon"))
+      assert {:error, "the mirror dungeon runner page isn't set up to run"} = Scheduler.save_settings(@attrs)
 
-      RunnerForms.put("luxcavation", @lux_form)
       RunnerForms.put("mirror_dungeon", @md_form)
-      assert {:ok, settings} = Scheduler.save_settings(chained)
-      assert {:luxcavation_then_mirror_dungeon, {:run_luxcavation, %{id: 7, hook: nil}, 1, 2, 3, 1, true, false, 0}, {:run_mirror_dungeon, [%{id: 5, hook: "team_burn"}], 2, _}} = Scheduler.runner_action(settings)
+      assert {:ok, settings} = Scheduler.save_settings(@attrs)
+      assert {:luxcavation_then_mirror_dungeon, {:run_luxcavation, %{exp: %{id: 7, hook: nil}, thread: %{id: 7, hook: nil}}, 1, 2, 3, 1, true, false, 0}, {:run_mirror_dungeon, [%{id: 5, hook: "team_burn"}], 2, _}} = Scheduler.runner_action(settings)
 
       RunnerForms.put("mirror_dungeon", %{@md_form | "run_count" => "5"})
       assert {_, _, {:run_mirror_dungeon, [%{id: 5, hook: "team_burn"}], 5, _}} = Scheduler.runner_action(settings)
+
+      RunnerForms.put("luxcavation", @lux_form)
+      assert {:run_luxcavation, _, 1, 2, 3, 1, true, false, 0} = Scheduler.runner_action(settings)
     end
   end
 end

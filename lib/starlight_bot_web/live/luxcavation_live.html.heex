@@ -27,7 +27,7 @@
   <div class="flex gap-2 flex-1 min-h-0 overflow-hidden">
 
     <%!-- Left: form --%>
-    <div class="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto">
+    <div class="w-[22rem] shrink-0 flex flex-col gap-3 overflow-y-auto">
 
       <%= if @teams == [] do %>
         <div class="text-xs text-base-content/40 bg-base-200 rounded-xl p-3">
@@ -36,70 +36,83 @@
         </div>
       <% end %>
 
-      <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 text-xs text-warning">
-        Keep the Limbus Company window focused during a run — losing focus
-        (alt-tab, clicking elsewhere) pauses it. Click Resume once you're
-        back on the game window to continue.
-      </div>
-
       <form
         id="lux-runner-form"
         phx-submit="run"
         phx-change="update_form"
         class="flex flex-col gap-3">
-        <div class="flex gap-2">
-          <label class="flex flex-col gap-1 flex-1 min-w-0">
-            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Team</span>
-            <select name="team_id" class="select select-sm select-bordered" disabled={@teams == []}>
-              <%= for team <- @teams do %>
-                <option value={team.id} selected={team.id == @team_id}><%= team.name %></option>
-              <% end %>
-            </select>
-          </label>
-          <label class="flex flex-col gap-1 flex-1 min-w-0">
-            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Selector</span>
-            <select name="team_hook" class="select select-sm select-bordered" disabled={@teams == []}>
-              <%= for hook <- team_hooks(@teams, @team_id) do %>
-                <option value={hook} selected={hook == @team_hook}><%= Teams.hook_label(hook) %></option>
-              <% end %>
-            </select>
-          </label>
-        </div>
-
         <div class="flex flex-col gap-1">
-          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lux Exp</span>
-          <div class="flex items-end gap-2">
-            <label class="flex flex-col gap-1 flex-1">
-              <span class="text-xs text-base-content/40">Consecutive battles</span>
-              <input type="number" name="exp_consecutive" min="0" max={max_consecutive()} value={@exp_consecutive}
-                     class="input input-sm input-bordered" />
-            </label>
-            <label class="flex flex-col gap-1 flex-1">
+          <div class="flex items-center gap-2">
+            <span class="w-12 shrink-0 text-xs font-semibold text-base-content/50 uppercase tracking-wide">Exp</span>
+            <div class="flex items-center justify-end gap-1 flex-1 min-w-0">
+              <label class="flex items-center gap-1 min-w-0">
+                <span class="text-xs text-base-content/40 truncate">Waves</span>
+                <input type="number" name="exp_consecutive" min="0" max={max_consecutive()} value={@exp_consecutive}
+                       class="input input-sm input-bordered w-14 shrink-0" />
+              </label>
+            </div>
+            <label class="flex items-center gap-1">
               <span class="text-xs text-base-content/40">Repeats</span>
-              <input type="number" name="exp_repeats" min="0" value={@exp_repeats} class="input input-sm input-bordered" />
+              <input type="number" name="exp_repeats" min="0" value={@exp_repeats} class="input input-sm input-bordered w-14 shrink-0" />
             </label>
+              <button type="button" phx-click="toggle_pin" phx-value-kind="exp" title={pin_title(@exp_pin)}
+                    class={"btn btn-xs h-5 min-h-0 px-1 " <> if(@exp_pin == nil, do: "btn-info text-black", else: "btn-ghost")}>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5">
+                <path :if={@exp_pin == nil} stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                <path :if={@exp_pin != nil} stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+            </button>
           </div>
           <span class="text-xs text-base-content/50">
             <%= @exp_consecutive %> x <%= @exp_repeats %> = <%= total_runs(@exp_consecutive, @exp_repeats) %> run(s)
           </span>
+          <.pick_list id="lux-exp-teams" kind="exp" event="reorder_exp" picks={@exp_picks} teams={@teams}
+                      labels={Enum.map(0..3, &exp_slot_label/1)} current={active_slot("exp", @exp_pin, @today)} pinned?={@exp_pin != nil}>
+            <:icon :let={index}>
+              <%= if length(exp_slot_types(index)) == 1 do %>
+                <img :for={type <- exp_slot_types(index)} src={type_icon(type)} title={type} class="size-4" />
+              <% else %>
+                <span class="relative size-6 shrink-0" title="slash, pierce, blunt">
+                  <img src={type_icon(:slash)} class="absolute top-0 left-1/2 -translate-x-1/2 size-3.5 object-contain" />
+                  <img src={type_icon(:pierce)} class="absolute bottom-0 left-0 size-3.5 object-contain" />
+                  <img src={type_icon(:blunt)} class="absolute bottom-0 right-0 size-3.5 object-contain" />
+                </span>
+              <% end %>
+            </:icon>
+          </.pick_list>
         </div>
 
         <div class="flex flex-col gap-1">
-          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lux Thread</span>
-          <div class="flex items-end gap-2">
-            <label class="flex flex-col gap-1 flex-1">
-              <span class="text-xs text-base-content/40">Consecutive battles</span>
-              <input type="number" name="thread_consecutive" min="0" max={max_consecutive()} value={@thread_consecutive}
-                     class="input input-sm input-bordered" />
-            </label>
-            <label class="flex flex-col gap-1 flex-1">
+          <div class="flex items-center gap-2">
+            <span class="w-12 shrink-0 text-xs font-semibold text-base-content/50 uppercase tracking-wide">Thread</span>
+            <div class="flex items-center justify-end gap-1 flex-1 min-w-0">
+              <label class="flex items-center gap-1 min-w-0">
+                <span class="text-xs text-base-content/40 truncate">Waves</span>
+                <input type="number" name="thread_consecutive" min="0" max={max_consecutive()} value={@thread_consecutive}
+                       class="input input-sm input-bordered w-14 shrink-0" />
+              </label>
+            </div>
+            <label class="flex items-center gap-1">
               <span class="text-xs text-base-content/40">Repeats</span>
-              <input type="number" name="thread_repeats" min="0" value={@thread_repeats} class="input input-sm input-bordered" />
+              <input type="number" name="thread_repeats" min="0" value={@thread_repeats} class="input input-sm input-bordered w-14 shrink-0" />
             </label>
+              <button type="button" phx-click="toggle_pin" phx-value-kind="thread" title={pin_title(@thread_pin)}
+                    class={"btn btn-xs h-5 min-h-0 px-1 " <> if(@thread_pin == nil, do: "btn-info text-black", else: "btn-ghost")}>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5">
+                <path :if={@thread_pin == nil} stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                <path :if={@thread_pin != nil} stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+            </button>
           </div>
           <span class="text-xs text-base-content/50">
             <%= @thread_consecutive %> x <%= @thread_repeats %> = <%= total_runs(@thread_consecutive, @thread_repeats) %> run(s)
           </span>
+          <.pick_list id="lux-thread-teams" kind="thread" event="reorder_thread" picks={@thread_picks} teams={@teams}
+                      labels={Enum.map(0..6, &thread_slot_label/1)} current={active_slot("thread", @thread_pin, @today)} pinned?={@thread_pin != nil}>
+            <:icon :let={index}>
+              <img src={sin_icon(thread_slot_sin(index))} title={thread_slot_sin(index)} class="size-5" />
+            </:icon>
+          </.pick_list>
         </div>
 
         <label class="flex items-center gap-2">
@@ -117,13 +130,18 @@
         <%= if @collect_enkephalin do %>
           <label class="flex flex-col gap-1">
             <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lunacy → enkephalin conversions</span>
-            <select name="enkephalin_convert_count" class="select select-sm select-bordered">
-              <%= for n <- 0..4 do %>
-                <option value={n} selected={to_string(n) == to_string(@enkephalin_convert_count)}>
-                  <%= n %>x (<%= enkephalin_cumulative_cost(n) %> lunacy, <%= enkephalin_cumulative_cost(n) * 7 %>/week)
-                </option>
-              <% end %>
-            </select>
+            <div class="flex items-center gap-2">
+              <img src="/images/icons/lunacy.webp" title="Lunacy" class="size-6 shrink-0" />
+              <span class="text-base-content/50">→</span>
+              <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-6 shrink-0" />
+              <select name="enkephalin_convert_count" class="select select-sm select-bordered flex-1 min-w-0">
+                <%= for n <- 0..4 do %>
+                  <option value={n} selected={to_string(n) == to_string(@enkephalin_convert_count)}>
+                    <%= n %>x (<%= enkephalin_cumulative_cost(n) %> lunacy, <%= enkephalin_cumulative_cost(n) * 7 %>/week)
+                  </option>
+                <% end %>
+              </select>
+            </div>
           </label>
         <% end %>
 
@@ -140,33 +158,31 @@
             Resume
           </button>
         <% else %>
-          <button
-            type="submit"
-            disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
-            class="btn btn-primary btn-sm">
-            Run
-          </button>
-          <button
-            type="submit"
-            name="then"
-            value="mirror_dungeon"
-            disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running? or is_nil(@md_next)}
-            title={if @md_next, do: "After luxcavation finishes, start " <> MirrorDungeonLive.pending_action_label(@md_next), else: "Set up a mirror dungeon run on its page first"}
-            class="btn btn-secondary btn-sm">
-            Run, then mirror dungeon
-          </button>
+          <div class="join w-full">
+            <button
+              type="submit"
+              disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
+              class={"btn btn-sm join-item flex-1 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary", else: "btn-primary")}>
+              <%= if then_md?(@then_md, @md_next), do: "Run, then mirror dungeon", else: "Run" %>
+            </button>
+            <div class="dropdown dropdown-end">
+              <div tabindex="0" role="button"
+                   class={"btn btn-sm join-item w-12 px-0 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary", else: "btn-primary")}>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="size-3.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </div>
+              <div tabindex="0" class="dropdown-content z-10 mt-1 w-64 rounded-box bg-base-100 p-3 shadow flex flex-col gap-1">
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" name="then" value="mirror_dungeon" checked={@then_md} disabled={is_nil(@md_next)}
+                         class="checkbox checkbox-sm" />
+                  <span class="text-sm">Run mirror dungeon after</span>
+                </label>
+                <span :if={is_nil(@md_next)} class="text-xs text-base-content/50">Set up a mirror dungeon run on its page first.</span>
+              </div>
+            </div>
+          </div>
         <% end %>
-
-        <div id="lux-md-setup" class="text-xs text-base-content/60">
-          <%= cond do %>
-            <% @queued_next -> %>
-              Queued next: <%= MirrorDungeonLive.pending_action_label(@queued_next) %>
-            <% @md_next -> %>
-              Mirror dungeon setup: <%= MirrorDungeonLive.pending_action_label(@md_next) %>
-            <% true -> %>
-              No mirror dungeon setup found. Set one up on the Mirror Dungeon page.
-          <% end %>
-        </div>
 
         <%= if @phase == :running and not @other_running? do %>
           <button

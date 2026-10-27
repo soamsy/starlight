@@ -287,7 +287,6 @@ defmodule StarlightBot.Scheduler.Server do
 
   defp ms_until(end_at), do: NaiveDateTime.diff(end_at, Scheduler.local_now(), :millisecond)
 
-  def runner_label("luxcavation_then_mirror_dungeon"), do: "luxcavation then mirror dungeon"
   def runner_label("mirror_dungeon"), do: "mirror dungeon"
   def runner_label("luxcavation"), do: "luxcavation"
 

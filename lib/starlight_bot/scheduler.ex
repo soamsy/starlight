@@ -3,7 +3,7 @@ defmodule StarlightBot.Scheduler do
   alias StarlightBot.{Repo, RunnerForms}
 
   @topic "scheduler"
-  @runners ~w(luxcavation_then_mirror_dungeon mirror_dungeon luxcavation)
+  @runners ~w(luxcavation mirror_dungeon)
   @launch_modes ~w(none steam exe)
   @fields [
     :enabled,
@@ -89,16 +89,18 @@ defmodule StarlightBot.Scheduler do
   def missing_message([one]), do: "the #{one} runner page isn't set up to run"
   def missing_message(missing), do: "the #{Enum.join(missing, " and ")} runner pages aren't set up to run"
 
-  defp runner_parts("luxcavation_then_mirror_dungeon"), do: ["luxcavation", "mirror_dungeon"]
+  defp runner_parts("luxcavation"), do: if(RunnerForms.luxcavation_then_mirror_dungeon?(), do: ["luxcavation", "mirror_dungeon"], else: ["luxcavation"])
   defp runner_parts(runner), do: [runner]
 
   def runner_action(%{runner: "mirror_dungeon"}), do: RunnerForms.mirror_dungeon_action()
-  def runner_action(%{runner: "luxcavation"}), do: RunnerForms.luxcavation_action()
 
-  def runner_action(%{runner: "luxcavation_then_mirror_dungeon"}) do
-    with lux when lux != nil <- RunnerForms.luxcavation_action(),
-         md when md != nil <- RunnerForms.mirror_dungeon_action() do
-      {:luxcavation_then_mirror_dungeon, lux, md}
+  def runner_action(%{runner: "luxcavation"}) do
+    with lux when lux != nil <- RunnerForms.luxcavation_action() do
+      if RunnerForms.luxcavation_then_mirror_dungeon?() do
+        with md when md != nil <- RunnerForms.mirror_dungeon_action(), do: {:luxcavation_then_mirror_dungeon, lux, md}
+      else
+        lux
+      end
     end
   end
 

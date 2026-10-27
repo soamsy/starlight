@@ -16,7 +16,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   end
 
   def start(
-        %{id: team_id} = team,
+        %{exp: _, thread: _} = teams,
         exp_consecutive,
         exp_repeats,
         thread_consecutive,
@@ -33,11 +33,10 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
              is_integer(thread_repeats) and thread_repeats >= 0 and
              is_boolean(collect_xp?) and is_boolean(collect_enkephalin?) and
              is_integer(enkephalin_convert_count) and enkephalin_convert_count in 0..4 do
-    RunMemory.put_team(ctx, team)
     RunMemory.put_context(ctx, :luxcavation)
     Ctx.log(ctx, :info, "Localizing…")
 
-    lux = %{team_id: team_id, collect_xp?: collect_xp?, collect_enkephalin?: collect_enkephalin?, convert_count: enkephalin_convert_count}
+    lux = %{teams: teams, collect_xp?: collect_xp?, collect_enkephalin?: collect_enkephalin?, convert_count: enkephalin_convert_count}
     queue = kind_queue(:exp, exp_consecutive, exp_repeats) ++ kind_queue(:thread, thread_consecutive, thread_repeats)
     {:steps, Recovery.steps(no_keep(), {__MODULE__, :started, [lux, queue]})}
   end
@@ -86,6 +85,8 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   def next(lux, [{:batch, kind, size} | queue], screen, frame, ctx), do: batch(lux, kind, size, queue, screen, 0, frame, ctx)
 
   def batch(lux, kind, size, queue, screen, errors, _frame, ctx) do
+    RunMemory.put_team(ctx, Map.fetch!(lux.teams, kind))
+
     cond do
       RunMemory.give_up?(ctx) and not Engine.in_battle?(screen) ->
         gave_up(ctx)
@@ -109,7 +110,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   def at_lux_tab(lux, kind, size, queue, errors, error, frame, ctx), do: battle_done(lux, kind, size, queue, errors, error, frame, ctx)
 
   def at_team_select(lux, kind, size, queue, errors, {:ok, screen}, _frame, _ctx) do
-    select = invoke(SelectTeamOnScreen, :run, [lux.team_id, "lux", 1])
+    select = invoke(SelectTeamOnScreen, :run, [Map.fetch!(lux.teams, kind).id, "lux", 1])
     {:steps, [capture([select, goto(screen, :battle)], then: {__MODULE__, :at_battle, [lux, kind, size, queue, errors]})]}
   end
 
