@@ -1,7 +1,9 @@
 defmodule StarlightBot.Navigation.Screens.Event do
   use StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.{Engine, EventAdvantage}
+  alias StarlightBot.Automation.{Engine, EventAdvantage, RunMemory}
   alias StarlightBot.Ctx
+  alias StarlightBot.EgoGifts
+  alias StarlightBot.GiftPlans
   alias StarlightBot.Input.Mouse
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.Vision.{Capture, HookRegistry, Matcher}
@@ -109,13 +111,15 @@ defmodule StarlightBot.Navigation.Screens.Event do
     first_choice = if Matcher.check(frame, :event_choice_0_disabled), do: 1, else: 0
     battle_ys = frame |> Matcher.find_all(:event_text_battle) |> Enum.map(&center/1)
 
-    gift =
+    gifts =
       frame
       |> Matcher.find_all(:event_text_ego_gift)
       |> Enum.map(fn rect -> {rect, center(rect)} end)
       |> Enum.sort_by(fn {_rect, {_x, y}} -> y end)
       |> Enum.reject(fn {_rect, {_x, y}} -> nearest_choice(y) < first_choice end)
-      |> Enum.find(fn {_rect, {_x, y}} -> Enum.all?(battle_ys, fn {_bx, by} -> abs(y - by) >= @gift_battle_min_gap end) end)
+      |> Enum.filter(fn {_rect, {_x, y}} -> Enum.all?(battle_ys, fn {_bx, by} -> abs(y - by) >= @gift_battle_min_gap end) end)
+
+    gift = gifts |> prefer_no_advantage(frame, ctx) |> List.first()
 
     case gift do
       {_rect, {x, y}} ->
@@ -131,6 +135,36 @@ defmodule StarlightBot.Navigation.Screens.Event do
         choice = Enum.find(first_choice..2, first_choice, &(&1 not in battle_choices))
         Ctx.log(ctx, :info, "event choice: battle on #{inspect(Enum.sort(battle_choices))}, picking event_choice_#{choice}")
         click_choice_hook(:"event_choice_#{choice}", ctx)
+    end
+  end
+
+  defp prefer_no_advantage(gifts, frame, ctx) do
+    if milestones_reached?(ctx) do
+      {advantage, plain} = Enum.split_with(gifts, fn {_rect, {_x, y}} -> advantage_choice?(frame, y) end)
+      plain ++ advantage
+    else
+      gifts
+    end
+  end
+
+  defp milestones_reached?(ctx) do
+    case RunMemory.gift_plan(ctx) do
+      %{} = data ->
+        plan = GiftPlans.normalize(data)
+        gifts = EgoGifts.list_gifts()
+
+        env = %{
+          floor: RunMemory.floor(ctx),
+          gifts: Map.new(gifts, &{&1.name, &1}),
+          gifts_by_id: Map.new(gifts, &{&1.id, &1}),
+          inventory: RunMemory.ego_gifts(ctx),
+          skill_replaces: RunMemory.skill_replaces(ctx)
+        }
+
+        Enum.all?(plan["milestones"], &GiftPlans.milestone_reached?(plan, &1["id"], env))
+
+      _ ->
+        false
     end
   end
 
