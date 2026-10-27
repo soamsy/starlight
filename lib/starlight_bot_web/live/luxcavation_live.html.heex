@@ -167,7 +167,7 @@
             </button>
             <div class="dropdown dropdown-end">
               <div tabindex="0" role="button"
-                   class={"btn btn-sm join-item w-12 px-0 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary", else: "btn-primary")}>
+                   class={"btn btn-sm join-item w-12 px-0 border-l-2 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary border-l-[hsla(320,20%,80%,50%)]", else: "btn-primary border-l-[hsla(0,0%,20%,50%)]")}>
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="size-3.5">
                   <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                 </svg>
