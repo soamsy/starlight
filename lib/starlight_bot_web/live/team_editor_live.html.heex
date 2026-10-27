@@ -24,7 +24,7 @@
         <% end %>
 
         <div class="overflow-y-auto flex-1 min-h-0">
-          <table class="table table-xs table-pin-rows">
+          <table id="team-list" phx-hook="SortableList" data-sort-event="reorder_teams" class="table table-xs table-pin-rows">
             <thead>
               <tr>
                 <th>Name</th>
@@ -33,13 +33,13 @@
                 <th></th>
               </tr>
             </thead>
-            <tbody>
-              <%= for team <- @teams do %>
+            <%= for team <- @teams do %>
+              <tbody id={"team-row-#{team.id}"} data-sort-id={team.id}>
                 <% selected? = @editing_id == team.id %>
                 <tr phx-click="click_team" phx-value-id={team.id}
                     class={"cursor-pointer hover:bg-base-200 " <> if(selected?, do: "bg-primary/10 border-l-2 border-primary", else: "")}>
                   <td class="font-mono text-xs">
-                    <%= team.name %>
+                    <span data-sort-handle class="cursor-grab text-base-content/40 pr-1" title="Drag to reorder">⠿</span><%= team.name %>
                   </td>
                   <td class="text-xs text-base-content/60"><%= if team.hooks == [], do: "—", else: Enum.map_join(team.hooks, " ", &Teams.hook_label/1) %></td>
                   <td>
@@ -109,12 +109,12 @@
                     </div>
                   </td>
                 </tr>
-              <% end %>
-              <%= if @teams == [] do %>
-                <tr>
-                  <td colspan="4" class="text-center text-base-content/40 py-4">No teams yet. Create one.</td>
-                </tr>
-              <% end %>
+              </tbody>
+            <% end %>
+            <tbody :if={@teams == []}>
+              <tr>
+                <td colspan="4" class="text-center text-base-content/40 py-4">No teams yet. Create one.</td>
+              </tr>
             </tbody>
           </table>
         </div>

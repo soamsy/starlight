@@ -139,6 +139,12 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
+  def handle_event("reorder_teams", %{"ids" => ids}, socket) do
+    Teams.reorder_teams(Enum.map(ids, &String.to_integer/1))
+    {:noreply, assign(socket, :teams, Teams.list_teams())}
+  end
+
+  @impl true
   def handle_event("delete_team", %{"id" => id}, socket) do
     id = String.to_integer(id)
 

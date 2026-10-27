@@ -31,7 +31,7 @@ defmodule StarlightBot.Teams do
         on: b.id == t.battle_plan_id,
         left_join: p in "pack_plans",
         on: p.id == t.pack_plan_id,
-        order_by: [asc: t.name],
+        order_by: [asc: t.position, asc: t.id],
         select: %{
           id: t.id,
           name: t.name,
@@ -90,7 +90,8 @@ defmodule StarlightBot.Teams do
         if n > 0, do: {:ok, id}, else: {:error, :not_found}
 
       _ ->
-        row = Map.merge(row, %{inserted_at: now, updated_at: now})
+        next_position = (Repo.one(from t in "teams", select: max(t.position)) || -1) + 1
+        row = Map.merge(row, %{position: next_position, inserted_at: now, updated_at: now})
 
         case Repo.insert_all("teams", [row], returning: [:id]) do
           {1, [%{id: id}]} -> {:ok, id}
@@ -115,6 +116,14 @@ defmodule StarlightBot.Teams do
       nil -> {:error, :not_found}
       team -> team |> Map.take([:hooks, :gift_plan_id, :battle_plan_id, :pack_plan_id]) |> Map.put(:name, unique_name("#{team.name} (copy)")) |> save_team()
     end
+  end
+
+  def reorder_teams(ids) when is_list(ids) do
+    Repo.transaction(fn ->
+      ids
+      |> Enum.with_index()
+      |> Enum.each(fn {id, position} -> Repo.update_all(from(t in "teams", where: t.id == ^id), set: [position: position]) end)
+    end)
   end
 
   def set_plan(team_id, field, plan_id) when is_integer(team_id) and field in [:gift_plan_id, :battle_plan_id, :pack_plan_id] do
