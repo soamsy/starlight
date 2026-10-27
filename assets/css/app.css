@@ -30,3 +30,8 @@
   height: 100%;
   display: block;
 }
+
+select.select {
+  padding-inline-end: 1.25rem;
+  background-position: calc(100% - 12px) calc(1px + 50%), calc(100% - 8.1px) calc(1px + 50%);
+}

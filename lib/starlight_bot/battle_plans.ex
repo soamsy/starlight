@@ -603,6 +603,23 @@ defmodule StarlightBot.BattlePlans do
   def update_container(items, "root", fun), do: fun.(items)
 
   def update_container(items, container, fun) do
+    if branch_container?(container), do: update_branch(items, container, fun), else: update_segment(items, container, fun)
+  end
+
+  def branch_container?(container), do: String.contains?(container, "~")
+
+  defp update_branch(items, container, fun) do
+    [block_id, branch] = String.split(container, "~")
+
+    update_list_containing(items, block_id, fn list ->
+      Enum.map(list, fn
+        %{"id" => ^block_id} = block -> Map.update!(block, branch, fun)
+        item -> item
+      end)
+    end)
+  end
+
+  defp update_segment(items, container, fun) do
     [schedule_id, from] = String.split(container, "|")
     from = String.to_integer(from)
 
@@ -622,6 +639,15 @@ defmodule StarlightBot.BattlePlans do
   def container_actions(items, "root"), do: items
 
   def container_actions(items, container) do
+    if branch_container?(container) do
+      [block_id, branch] = String.split(container, "~")
+      (find_item(items, block_id) || %{})[branch] || []
+    else
+      segment_actions(items, container)
+    end
+  end
+
+  defp segment_actions(items, container) do
     [schedule_id, from] = String.split(container, "|")
     from = String.to_integer(from)
 
@@ -636,9 +662,26 @@ defmodule StarlightBot.BattlePlans do
   def scope_actions(items, container) do
     plain = Enum.reject(items, &schedule?/1)
 
-    case container do
+    case owner_container(items, container) do
       "root" -> plain ++ Enum.flat_map(Enum.filter(items, &schedule?/1), fn schedule -> Enum.flat_map(schedule["segments"], & &1["actions"]) end)
-      _ -> plain ++ container_actions(items, container)
+      owner -> plain ++ container_actions(items, owner)
+    end
+  end
+
+  defp owner_container(items, container) do
+    if branch_container?(container) do
+      [block_id, _branch] = String.split(container, "~")
+
+      segment =
+        items
+        |> Enum.filter(&schedule?/1)
+        |> Enum.find_value(fn schedule ->
+          Enum.find_value(schedule["segments"], &if(find_item(&1["actions"], block_id), do: "#{schedule["id"]}|#{&1["from_turn"]}"))
+        end)
+
+      segment || "root"
+    else
+      container
     end
   end
 
@@ -720,6 +763,7 @@ defmodule StarlightBot.BattlePlans do
     cond do
       is_nil(moved) or from == to -> items
       schedule?(moved) -> items
+      into_itself?(moved, to) -> items
       true ->
         removed = update_container(items, from, fn list -> Enum.reject(list, &(&1["id"] == id)) end)
 
@@ -732,6 +776,10 @@ defmodule StarlightBot.BattlePlans do
 
         if terminal_conflict?(placed, to), do: items, else: placed
     end
+  end
+
+  defp into_itself?(moved, to) do
+    branch_container?(to) and not is_nil(find_item([moved], hd(String.split(to, "~"))))
   end
 
   def terminal_conflict?(items, container), do: Enum.count(scope_actions(items, container), &terminal?/1) > 1
