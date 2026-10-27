@@ -225,6 +225,17 @@ pub fn locate(query: &str) -> Result<Located, NativeError> {
     Ok(located)
 }
 
+pub fn forget() {
+    if let Ok(mut last) = LAST.lock() {
+        *last = None;
+    }
+    if let Some(displays) = DISPLAYS.get() {
+        if let Ok(mut cache) = displays.lock() {
+            cache.clear();
+        }
+    }
+}
+
 pub fn located_display_name() -> Option<String> {
     TARGET.lock().ok()?.clone()
 }

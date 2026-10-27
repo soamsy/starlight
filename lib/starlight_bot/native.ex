@@ -31,6 +31,8 @@ defmodule StarlightBot.Native do
   """
   def get_window_rect(_class_name), do: nif_err()
 
+  def forget_window(), do: nif_err()
+
   @doc """
   Whether the window currently has OS input focus (reads _NET_ACTIVE_WINDOW).
   Deliberately uncached — call this right before injecting input, not on a

@@ -73,8 +73,12 @@ defmodule StarlightBot.GameWindow do
 
       case rect() do
         {:ok, {_, _, @target_w, @target_h} = after_rect} -> {:ok, %{before: before, after: after_rect, buses: buses}}
-        {:ok, _after_rect} when attempts_left > 1 -> fix_aspect(steam_app_id, before, attempts_left - 1)
-        {:ok, after_rect} -> {:error, {:resize_ignored, %{before: before, after: after_rect, buses: buses}}}
+        {:ok, _after_rect} when attempts_left > 1 ->
+          Native.forget_window()
+          fix_aspect(steam_app_id, before, attempts_left - 1)
+        {:ok, after_rect} ->
+          Native.forget_window()
+          {:error, {:resize_ignored, %{before: before, after: after_rect, buses: buses}}}
         error -> error
       end
     end
@@ -138,6 +142,7 @@ defmodule StarlightBot.GameWindow do
     for (const w of workspace.stackingOrder) {
       const cls = (w.resourceClass || "").toLowerCase();
       if (w.caption !== #{Jason.encode!(window_title())} && cls !== #{Jason.encode!(String.downcase(window_class()))} && cls !== #{Jason.encode!("steam_app_#{steam_app_id}")}) continue;
+      print("starlight-resize matched caption=" + w.caption + " class=" + w.resourceClass + " geometry=" + JSON.stringify(w.frameGeometry));
       if (w.fullScreen) w.fullScreen = false;
       w.setMaximize(false, false);
       const f = w.frameGeometry;

@@ -65,6 +65,12 @@ fn save_png(bgr: Binary, width: u32, height: u32, path: String) -> rustler::Atom
     }
 }
 
+#[rustler::nif]
+fn forget_window() -> rustler::Atom {
+    capture::forget_window();
+    ok()
+}
+
 #[rustler::nif(schedule = "DirtyIo")]
 fn get_window_rect<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
     match capture::get_window_rect(&class_name) {
