@@ -106,6 +106,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
   end
 
   def pick_choice(frame, ctx) do
+    first_choice = if Matcher.check(frame, :event_choice_0_disabled), do: 1, else: 0
     battle_ys = frame |> Matcher.find_all(:event_text_battle) |> Enum.map(&center/1)
 
     gift =
@@ -113,6 +114,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
       |> Matcher.find_all(:event_text_ego_gift)
       |> Enum.map(fn rect -> {rect, center(rect)} end)
       |> Enum.sort_by(fn {_rect, {_x, y}} -> y end)
+      |> Enum.reject(fn {_rect, {_x, y}} -> nearest_choice(y) < first_choice end)
       |> Enum.find(fn {_rect, {_x, y}} -> Enum.all?(battle_ys, fn {_bx, by} -> abs(y - by) >= @gift_battle_min_gap end) end)
 
     case gift do
@@ -126,7 +128,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
 
       nil ->
         battle_choices = MapSet.new(battle_ys, fn {_x, y} -> nearest_choice(y) end)
-        choice = Enum.find(0..2, 0, &(&1 not in battle_choices))
+        choice = Enum.find(first_choice..2, first_choice, &(&1 not in battle_choices))
         Ctx.log(ctx, :info, "event choice: battle on #{inspect(Enum.sort(battle_choices))}, picking event_choice_#{choice}")
         click_choice_hook(:"event_choice_#{choice}", ctx)
     end
