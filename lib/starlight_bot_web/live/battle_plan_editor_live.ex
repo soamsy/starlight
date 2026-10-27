@@ -884,13 +884,13 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
               <span class="text-base-content/60">row</span>
               <.row_picker holder={pin} prefix={"pins[#{pin_index}]"} keep?={true} />
               <button type="button" phx-click="remove_pin" phx-value-action={@action["id"]} phx-value-index={pin_index}
-                      class="btn btn-2xs btn-ghost text-error">✕</button>
+                      class="btn btn-xs btn-ghost text-error">✕</button>
             </div>
           <% end %>
           </div>
           <span :if={length(@action["pins"]) > 1} class="text-[11px] text-base-content/50 pl-4">When pins cover the same slot, the first pin wins.</span>
           <button type="button" phx-click="add_pin" phx-value-action={@action["id"]}
-                  class="btn btn-2xs btn-ghost self-start ml-4">+ pin</button>
+                  class="btn btn-xs btn-ghost self-start ml-4">+ pin</button>
         <% end %>
       </form>
       <div class="flex gap-0.5">
