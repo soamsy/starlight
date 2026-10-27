@@ -41,7 +41,6 @@
                 <tr phx-click="click_team" phx-value-id={team.id}
                     class={"cursor-pointer hover:bg-base-200 " <> if(selected?, do: "bg-primary/10 border-l-2 border-primary", else: "")}>
                   <td class="font-mono text-xs">
-                    <span class="text-base-content/40"><%= if selected? and @expanded?, do: "▾", else: "▸" %></span>
                     <%= team.name %>
                   </td>
                   <td class="text-xs text-base-content/60"><%= if team.hooks == [], do: "—", else: Enum.map_join(team.hooks, ", ", &Teams.hook_label/1) %></td>
