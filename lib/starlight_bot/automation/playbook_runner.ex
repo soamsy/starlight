@@ -35,6 +35,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @creep_step_ms 30
   @redetect_drop_px 120
   @redetect_settle_ms 400
+  @chosen_settle_ms 400
   @target_release_settle_ms 300
   @target_found_hold_ms 150
   @preview_alt_tab_ms 2_000
@@ -969,8 +970,11 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp selected_groups(action, frame, tray, profiles, ctx), do: sinner_groups(action["who"], action["sinners"] || [], frame, tray, profiles, ctx)
 
+  defp settle(ms), do: Process.sleep(ms)
+
   defp bottom_chosen_columns(tray, ctx) do
     with {:ok, _hook} <- HookRegistry.find(@bottom_chosen),
+         :ok <- settle(@chosen_settle_ms),
          {:ok, fresh} <- Capture.grab_frame() do
       {:ok, SkillTray.columns_under(tray, Matcher.find_all(fresh, @bottom_chosen))}
     else
