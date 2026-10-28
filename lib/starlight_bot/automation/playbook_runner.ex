@@ -918,22 +918,19 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp action_columns(%{"skill" => skill} = action, frame, tray, profiles, ctx, available) do
     with {:ok, groups} <- selected_groups(action, frame, tray, profiles, ctx) do
-      groups
-      |> Enum.map(fn {columns, who} -> {Enum.filter(columns, &(&1 in available)), who} end)
-      |> Enum.reject(fn {columns, _who} -> columns == [] end)
-      |> Enum.map(fn {columns, who} -> pick_skill(columns, skill, who, ctx) end)
-      |> Enum.flat_map(fn
-        {:ok, columns} -> columns
-        :skip -> []
-      end)
-      |> case do
-        [] ->
-          :skip
+      pooled =
+        groups
+        |> Enum.flat_map(fn {columns, _who} -> Enum.filter(columns, &(&1 in available)) end)
+        |> Enum.sort()
 
-        columns ->
-          names = groups |> Enum.map(&elem(&1, 1).name) |> Enum.uniq() |> Enum.join(", ")
-          Ctx.log(ctx, :info, "playbook: #{names} -> slot(s) #{Enum.map_join(columns, ", ", &(&1 + 1))}")
-          {:ok, columns}
+      who = %{name: groups |> Enum.map(&elem(&1, 1).name) |> Enum.uniq() |> Enum.join(", ")}
+
+      with false <- pooled == [],
+           {:ok, columns} <- pick_skill(pooled, skill, who, ctx) do
+        Ctx.log(ctx, :info, "playbook: #{who.name} -> slot(s) #{Enum.map_join(columns, ", ", &(&1 + 1))}")
+        {:ok, columns}
+      else
+        _ -> :skip
       end
     end
   end
