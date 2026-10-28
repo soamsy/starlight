@@ -496,6 +496,14 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_event("reorder_rows", %{"scope" => scope, "ids" => ids}, socket) do
+    [action_id, path] = String.split(scope, "|", parts: 2)
+    order = Enum.map(ids, &String.to_integer/1)
+    reorder = &update_at_path(&1, String.split(path, ["[", "]"], trim: true), fn holder -> BattlePlans.reorder_rows(holder, order) end)
+    {:noreply, socket |> update_action(action_id, reorder) |> update(:reorder_rev, &(&1 + 1))}
+  end
+
+  @impl true
   def handle_event("remove_pin", %{"action" => action_id, "index" => index}, socket) do
     index = String.to_integer(index)
     {:noreply, update_action(socket, action_id, &Map.update!(&1, "pins", fn pins -> List.delete_at(pins, index) end))}
@@ -834,12 +842,15 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <form phx-change="update_action" class="flex flex-col gap-1 flex-1 min-w-0">
         <input type="hidden" name="action" value={@action["id"]} />
         <%= if @action["type"] in ~w(dodge ego target) do %>
-          <div class="flex flex-wrap items-stretch gap-2">
-            <.slot_selector holder={@action} prefix="" sinner_options={@sinner_options} action_id={@action["id"]} rest?={not (@kind == "chain" and @action["type"] == "ego")} />
-            <.rule_boxes holder={@action} prefix="" ego_only?={@kind == "chain" and @action["type"] == "ego"} owner={@action["id"]} />
-            <.target_box :if={@kind != "chain" or @action["type"] != "ego"} holder={@action} prefix="" owner={@action["id"]} />
+          <div id={"rows-#{@action["id"]}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_rows" data-sort-scope={"#{@action["id"]}|"} class="flex flex-col gap-1">
+            <div data-sort-id="0" class="flex flex-wrap items-stretch gap-2">
+              <span :if={is_map(@action["rest"])} data-sort-handle class="cursor-grab text-base-content/40 select-none self-center">⠿</span>
+              <.slot_selector holder={@action} prefix="" sinner_options={@sinner_options} action_id={@action["id"]} rest?={not (@kind == "chain" and @action["type"] == "ego")} />
+              <.rule_boxes holder={@action} prefix="" ego_only?={@kind == "chain" and @action["type"] == "ego"} owner={@action["id"]} />
+              <.target_box :if={@kind != "chain" or @action["type"] != "ego"} holder={@action} prefix="" owner={@action["id"]} />
+            </div>
+            <.rest_stack :if={not (@kind == "chain" and @action["type"] == "ego")} holder={@action} prefix="" enemy?={true} owner={@action["id"]} sinner_options={@sinner_options} />
           </div>
-          <.rest_stack :if={not (@kind == "chain" and @action["type"] == "ego")} holder={@action} prefix="" enemy?={true} owner={@action["id"]} sinner_options={@sinner_options} />
         <% else %>
           <span class="font-semibold whitespace-nowrap cursor-help" title={action_tooltip(@action["type"])}><%= action_label(@action["type"]) %></span>
         <% end %>
@@ -849,15 +860,19 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                data-sort-scope={@action["id"]} class="flex flex-col gap-1"
                title="When pins cover the same slot, the first pin wins. Drag ⠿ to reorder.">
           <%= for {pin, pin_index} <- Enum.with_index(@action["pins"]) do %>
-            <div data-sort-id={pin_index} class="flex flex-col gap-1 pl-4">
-              <div class="flex flex-wrap items-stretch gap-2">
-                <span data-sort-handle class="cursor-grab text-base-content/40 select-none self-center">⠿</span>
-                <.slot_selector holder={pin} prefix={"pins[#{pin_index}]"} sinner_options={@sinner_options} action_id={@action["id"]} />
-                <.rule_boxes holder={pin} prefix={"pins[#{pin_index}]"} owner={@action["id"]} />
-                <button type="button" phx-click="remove_pin" phx-value-action={@action["id"]} phx-value-index={pin_index}
-                        class="btn btn-xs btn-ghost text-error self-center">✕</button>
+            <div data-sort-id={pin_index} class="flex items-start gap-2 pl-4">
+              <span data-sort-handle class="cursor-grab text-base-content/40 select-none self-center">⠿</span>
+              <div id={"rows-#{@action["id"]}-pin-#{pin_index}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_rows"
+                   data-sort-scope={"#{@action["id"]}|pins[#{pin_index}]"} class="flex flex-col gap-1 flex-1 min-w-0">
+                <div data-sort-id="0" class="flex flex-wrap items-stretch gap-2">
+                  <span :if={is_map(pin["rest"])} data-sort-handle class="cursor-grab text-base-content/40 select-none self-center">⠿</span>
+                  <.slot_selector holder={pin} prefix={"pins[#{pin_index}]"} sinner_options={@sinner_options} action_id={@action["id"]} />
+                  <.rule_boxes holder={pin} prefix={"pins[#{pin_index}]"} owner={@action["id"]} />
+                  <button type="button" phx-click="remove_pin" phx-value-action={@action["id"]} phx-value-index={pin_index}
+                          class="btn btn-xs btn-ghost text-error self-center">✕</button>
+                </div>
+                <.rest_stack holder={pin} prefix={"pins[#{pin_index}]"} enemy?={false} owner={@action["id"]} sinner_options={@sinner_options} />
               </div>
-              <.rest_stack holder={pin} prefix={"pins[#{pin_index}]"} enemy?={false} owner={@action["id"]} sinner_options={@sinner_options} />
             </div>
           <% end %>
           </div>
@@ -880,11 +895,13 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   attr :enemy?, :boolean, required: true
   attr :owner, :string, required: true
   attr :sinner_options, :list, required: true
+  attr :index, :integer, default: 1
 
   def rest_stack(assigns) do
     ~H"""
     <%= if @holder["rest"] do %>
-      <div class="flex flex-wrap items-stretch gap-2">
+      <div data-sort-id={@index} class="flex flex-wrap items-stretch gap-2">
+        <span data-sort-handle class="cursor-grab text-base-content/40 select-none self-center">⠿</span>
         <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5">
           <span class="font-semibold italic text-base-content/60 cursor-help" title="Rules for every slot the actions above didn't capture">rest</span>
           <.slot_selector holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} sinner_options={@sinner_options} action_id={@owner} />
@@ -892,7 +909,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         <.rule_boxes holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} owner={@owner} />
         <.target_box :if={@enemy?} holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} owner={@owner} continue?={true} />
       </div>
-      <.rest_stack holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} enemy?={@enemy?} owner={@owner} sinner_options={@sinner_options} />
+      <.rest_stack holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} enemy?={@enemy?} owner={@owner} sinner_options={@sinner_options} index={@index + 1} />
     <% end %>
     """
   end
@@ -912,7 +929,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5">
       <.sinner_picker holder={@holder} prefix={@prefix} sinner_options={@sinner_options} action_id={@action_id} />
       <div class="flex flex-wrap items-center gap-1">
-        <span class="text-base-content/60 cursor-help" title="Which of the selected slots to act on, counted within each sinner's slots">slots</span>
+        <span class="text-base-content/60 cursor-help" title="Which of the selected slots to act on, counted across all of them together (everyone's slots in tray order, not per sinner)">slots</span>
         <select name={field_name(@prefix, "pick")} class="select select-bordered select-xs w-auto">
           <option :for={pick <- skill_picks()} value={pick} selected={@skill["pick"] == pick}><%= pick_label(pick) %></option>
         </select>

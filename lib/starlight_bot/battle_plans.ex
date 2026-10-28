@@ -153,6 +153,8 @@ defmodule StarlightBot.BattlePlans do
     holder |> Map.put("row", if(row == "top", do: "top", else: "bottom")) |> Map.delete("priority")
   end
 
+  @row_keys ~w(type who sinners slots chosen skill row priority grade corrode enemy)
+
   def put_rest(holder, "true"), do: Map.put_new(holder, "rest", new_rest())
   def put_rest(holder, "false"), do: Map.delete(holder, "rest")
   def put_rest(holder, _automate_rest), do: holder
@@ -160,6 +162,30 @@ defmodule StarlightBot.BattlePlans do
   def new_rest do
     put_row(%{"type" => "target", "who" => "everyone", "sinners" => [], "skill" => %{"pick" => "all"}, "enemy" => %{"pick" => "continue"}}, "priority", nil)
   end
+
+  def reorder_rows(holder, order) do
+    holders = holders(holder)
+
+    if Enum.sort(order) == Enum.to_list(0..(length(holders) - 1)//1) do
+      rows = Enum.map(holders, &Map.take(&1, @row_keys))
+
+      order
+      |> Enum.map(&Enum.at(rows, &1))
+      |> Enum.zip(holders)
+      |> Enum.with_index()
+      |> Enum.map(fn {{row, original}, index} -> original |> Map.drop(@row_keys) |> Map.merge(row) |> fix_head_enemy(index) end)
+      |> chain_rows()
+    else
+      holder
+    end
+  end
+
+  defp fix_head_enemy(%{"enemy" => %{"pick" => "continue"}} = row, 0),
+    do: Map.put(row, "enemy", if(row["type"] == "target", do: parse_enemy("first", 1, nil), else: %{"pick" => "none"}))
+
+  defp fix_head_enemy(row, _index), do: row
+
+  defp chain_rows(rows), do: rows |> Enum.map(&Map.delete(&1, "rest")) |> Enum.reverse() |> Enum.reduce(nil, fn row, rest -> if rest, do: Map.put(row, "rest", rest), else: row end)
 
   def holders(%{"rest" => rest} = holder), do: [holder | holders(rest)]
   def holders(holder), do: [holder]
