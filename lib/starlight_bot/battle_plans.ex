@@ -692,6 +692,12 @@ defmodule StarlightBot.BattlePlans do
     |> Map.put_new("enemy", %{"pick" => "none"})
   end
 
+  def convert_action(action, "nothing") do
+    action
+    |> Map.drop(~w(grade corrode row priority enemy))
+    |> Map.put("type", "nothing")
+  end
+
   def convert_action(action, _kind), do: action
 
   def new_pin, do: put_row(%{"type" => "target", "who" => "everyone", "sinners" => [], "skill" => first_slot()}, "priority", nil)

@@ -322,6 +322,27 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     refute Map.has_key?(moved["rest"], "rest")
   end
 
+  test "a focused action and its rest rows can do nothing", %{socket: socket, playbook_id: playbook_id} do
+    socket = event(socket, "add_action", %{"container" => "root", "type" => "target"})
+    [_, _, target] = actions(socket, playbook_id)
+
+    base = %{"action" => target["id"], "pick" => "first", "enemy_pick" => "first"}
+    socket = event(socket, "update_action", Map.merge(base, %{"kind" => "nothing", "automate_rest" => "true"}))
+    [_, _, target] = actions(socket, playbook_id)
+    assert target["type"] == "nothing"
+    refute Map.has_key?(target, "enemy")
+    assert render(socket) =~ ~s(value="nothing")
+
+    socket = event(socket, "update_action", Map.merge(base, %{"kind" => "nothing", "rest" => %{"kind" => "nothing", "pick" => "all"}}))
+    [_, _, target] = actions(socket, playbook_id)
+    assert target["rest"]["type"] == "nothing"
+
+    socket = event(socket, "update_action", Map.merge(base, %{"kind" => "priority"}))
+    [_, _, target] = actions(socket, playbook_id)
+    assert target["type"] == "target"
+    assert target["enemy"] == %{"pick" => "first", "n" => 1}
+  end
+
   test "playbooks can be reordered within their kind", %{socket: socket} do
     socket = event(socket, "new_playbook", %{"kind" => "chain"})
     chains = fn socket -> for %{"kind" => "chain"} = pb <- socket.assigns.data["playbooks"], do: pb["id"] end

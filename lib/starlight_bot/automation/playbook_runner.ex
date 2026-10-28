@@ -194,7 +194,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp needs_tray?(%{"type" => "if", "condition" => tree}), do: Enum.any?(Conditions.leaves(tree), &(BattlePlans.sinner_leaf?(&1) or BattlePlans.tray_leaf?(&1) or BattlePlans.position_leaf?(&1)))
-  defp needs_tray?(%{"type" => type}), do: type in ~w(dodge ego target chain_fast chain_a_res)
+  defp needs_tray?(%{"type" => type}), do: type in ~w(dodge ego target nothing chain_fast chain_a_res)
 
   defp order_actions(actions) do
     {terminal, rest} = Enum.split_with(actions, &BattlePlans.terminal?/1)
@@ -285,16 +285,21 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     if await(@turn_started, @turn_start_timeout_ms), do: :started, else: log_pending(ctx, "enter didn't start the turn")
   end
 
-  defp run_action(%{"type" => type} = action, turn, ctx) when type in ~w(dodge ego target) do
+  defp run_action(%{"type" => type} = action, turn, ctx) when type in ~w(dodge ego target nothing) do
     with {:ok, frame, tray} <- turn.scan,
          [_ | _] = assigned <- holder_slots(action, frame, tray, profiles(ctx), ctx) do
       {steps, _carried} =
-        Enum.flat_map_reduce(assigned, {0, nil}, fn {holder, taken}, {offset, previous} ->
-          {enemy, continued?} = resolve_enemy(holder["enemy"], previous)
-          start = if continued?, do: offset, else: 0
-          holder = Map.put(holder, "enemy", enemy)
-          steps = taken |> Enum.with_index(start) |> Enum.map(fn {column, index} -> slot_step(holder, frame, tray, column, index) end)
-          {steps, {start + length(taken), enemy}}
+        Enum.flat_map_reduce(assigned, {0, nil}, fn
+          {%{"type" => "nothing"}, taken}, carried ->
+            Ctx.log(ctx, :info, "playbook: leaving slot(s) #{Enum.map_join(taken, ", ", &(&1 + 1))} alone")
+            {[], carried}
+
+          {holder, taken}, {offset, previous} ->
+            {enemy, continued?} = resolve_enemy(holder["enemy"], previous)
+            start = if continued?, do: offset, else: 0
+            holder = Map.put(holder, "enemy", enemy)
+            steps = taken |> Enum.with_index(start) |> Enum.map(fn {column, index} -> slot_step(holder, frame, tray, column, index) end)
+            {steps, {start + length(taken), enemy}}
         end)
 
       {:steps, steps}

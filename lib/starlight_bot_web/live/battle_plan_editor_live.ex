@@ -574,6 +574,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   def action_tooltip("commit"), do: "Press enter to start the turn once every skill is chosen."
   def action_tooltip("dodge"), do: "Click below the chosen skill slot to swap it to dodge. With a target, drags the slot onto an enemy instead."
   def action_tooltip("ego"), do: "Hold below the chosen skill slot to open the EGO menu, then pick the grade's card. With a target, then drags the slot onto an enemy."
+  def action_tooltip("nothing"), do: "Leave the chosen slots exactly as they are. They still count as handled, so later rows and rest don't touch them."
   def action_tooltip("target"),
     do: "Drag the chosen skill onto an enemy target, found by the white icon above a yellow number. Gives up after 3 tries."
 
@@ -841,15 +842,15 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <span class="text-base-content/50 w-4 pt-1"><%= @index %>.</span>
       <form phx-change="update_action" class="flex flex-col gap-1 flex-1 min-w-0">
         <input type="hidden" name="action" value={@action["id"]} />
-        <%= if @action["type"] in ~w(dodge ego target) do %>
+        <%= if @action["type"] in ~w(dodge ego target nothing) do %>
           <div id={"rows-#{@action["id"]}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_rows" data-sort-scope={"#{@action["id"]}|"} class="flex flex-col gap-1">
             <div data-sort-id="0" class="flex flex-wrap items-stretch gap-2">
               <span :if={is_map(@action["rest"])} data-sort-handle class="cursor-grab text-base-content/40 select-none self-center">⠿</span>
               <.slot_selector holder={@action} prefix="" sinner_options={@sinner_options} action_id={@action["id"]} rest?={not (@kind == "chain" and @action["type"] == "ego")} />
-              <.rule_boxes holder={@action} prefix="" ego_only?={@kind == "chain" and @action["type"] == "ego"} owner={@action["id"]} />
+              <.rule_boxes holder={@action} prefix="" ego_only?={@kind == "chain" and @action["type"] == "ego"} nothing?={@kind != "chain"} owner={@action["id"]} />
               <.target_box :if={@kind != "chain" or @action["type"] != "ego"} holder={@action} prefix="" owner={@action["id"]} />
             </div>
-            <.rest_stack :if={not (@kind == "chain" and @action["type"] == "ego")} holder={@action} prefix="" enemy?={true} owner={@action["id"]} sinner_options={@sinner_options} />
+            <.rest_stack :if={not (@kind == "chain" and @action["type"] == "ego")} holder={@action} prefix="" enemy?={true} nothing?={@kind != "chain"} owner={@action["id"]} sinner_options={@sinner_options} />
           </div>
         <% else %>
           <span class="font-semibold whitespace-nowrap cursor-help" title={action_tooltip(@action["type"])}><%= action_label(@action["type"]) %></span>
@@ -893,6 +894,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   attr :holder, :map, required: true
   attr :prefix, :string, required: true
   attr :enemy?, :boolean, required: true
+  attr :nothing?, :boolean, default: false
   attr :owner, :string, required: true
   attr :sinner_options, :list, required: true
   attr :index, :integer, default: 1
@@ -906,10 +908,10 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <span class="font-semibold italic text-base-content/60 cursor-help" title="Rules for every slot the actions above didn't capture">rest</span>
           <.slot_selector holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} sinner_options={@sinner_options} action_id={@owner} />
         </div>
-        <.rule_boxes holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} owner={@owner} />
+        <.rule_boxes holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} nothing?={@nothing?} owner={@owner} />
         <.target_box :if={@enemy?} holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} owner={@owner} continue?={true} />
       </div>
-      <.rest_stack holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} enemy?={@enemy?} owner={@owner} sinner_options={@sinner_options} index={@index + 1} />
+      <.rest_stack holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} enemy?={@enemy?} nothing?={@nothing?} owner={@owner} sinner_options={@sinner_options} index={@index + 1} />
     <% end %>
     """
   end
@@ -952,6 +954,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   attr :prefix, :string, required: true
   attr :owner, :string, required: true
   attr :ego_only?, :boolean, default: false
+  attr :nothing?, :boolean, default: false
 
   def rule_boxes(assigns) do
     assigns = assign(assigns, type: assigns.holder["type"] || "target")
@@ -959,7 +962,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     ~H"""
     <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5 flex-1">
       <span class="font-semibold cursor-help" title={action_tooltip(@type)}>Action</span>
-      <.radio_group :if={not @ego_only?} name={field_name(@prefix, "kind")} value={action_kind(@holder)} options={[{"priority", "Priority"}, {"dodge", "Dodge"}, {"ego", "EGO"}]} />
+      <.radio_group :if={not @ego_only?} name={field_name(@prefix, "kind")} value={action_kind(@holder)} options={[{"priority", "Priority"}, {"dodge", "Dodge"}, {"ego", "EGO"}] ++ if(@nothing?, do: [{"nothing", "Nothing"}], else: [])} />
       <%= if @holder["row"] == "priority" do %>
         <div class="flex flex-wrap items-center gap-1">
           <.row_picker holder={@holder} prefix={@prefix} select?={false} owner={@owner} />
@@ -1421,7 +1424,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     end)
   end
 
-  defp apply_action_params(%{"type" => type} = action, params) when type in ~w(target ego dodge), do: apply_holder(action, params, true)
+  defp apply_action_params(%{"type" => type} = action, params) when type in ~w(target ego dodge nothing), do: apply_holder(action, params, true)
 
   defp apply_action_params(%{"pins" => _} = action, params) do
     pins =
@@ -1472,6 +1475,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     |> Map.put("corrode", params["corrode"] == "true")
     |> put_enemy(params, enemy?, "none")
   end
+
+  defp apply_rule_fields(%{"type" => "nothing"} = holder, _params, _enemy?), do: holder
 
   defp apply_rule_fields(%{"type" => "dodge"} = holder, params, enemy?), do: put_enemy(holder, params, enemy?, "none")
 
