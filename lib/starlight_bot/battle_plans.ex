@@ -361,6 +361,17 @@ defmodule StarlightBot.BattlePlans do
 
   def refresh_ids(action), do: Map.put(action, "id", GiftPlans.new_id("ac"))
 
+  def import_playbook(data, source) do
+    taken = MapSet.new(data["playbooks"], & &1["name"])
+    name = Stream.iterate(source["name"], &(&1 <> " copy")) |> Enum.find(&(not MapSet.member?(taken, &1)))
+    playbook = %{source | "id" => GiftPlans.new_id("pb"), "name" => name, "actions" => Enum.map(source["actions"], &refresh_ids/1)}
+    {Map.update!(data, "playbooks", &(&1 ++ [playbook])), playbook}
+  end
+
+  def hook_names(playbook) do
+    for action <- flatten_actions(playbook["actions"]), leaf <- Conditions.leaves(action["condition"]), is_binary(leaf["hook"]), leaf["hook"] != "", uniq: true, do: leaf["hook"]
+  end
+
   def condition_label(tree, profile_names \\ %{})
   def condition_label(nil, _profile_names), do: "always"
   def condition_label(tree, profile_names), do: Conditions.label(tree, &leaf_label(&1, profile_names))

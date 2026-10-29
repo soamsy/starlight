@@ -4,7 +4,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   import StarlightBotWeb.Components.PlanPicker
   import StarlightBotWeb.Components.PlanTemplates
 
-  alias StarlightBot.{PlanCounts, BattlePlans, Conditions, Hooks, Plans, SinnerProfiles, Teams}
+  alias StarlightBot.{PlanClipboard, PlanCounts, BattlePlans, Conditions, Hooks, Plans, SinnerProfiles, Teams}
   alias StarlightBot.BattlePlans.Resolver
 
   @collapsed_floors 5
@@ -231,6 +231,27 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     case find_playbook(socket.assigns.data, id) do
       nil -> {:noreply, socket}
       source -> {:noreply, add_playbook(socket, copy_playbook(source))}
+    end
+  end
+
+  @impl true
+  def handle_event("copy_playbook", %{"id" => id}, socket) do
+    case find_playbook(socket.assigns.data, id) do
+      nil -> {:noreply, socket}
+      playbook -> {:noreply, socket |> push_event("copy_json", %{text: PlanClipboard.encode_playbook(playbook)}) |> put_flash(:info, "Playbook '#{playbook["name"]}' copied to the clipboard.")}
+    end
+  end
+
+  @impl true
+  def handle_event("paste_playbook", %{"text" => text, "kind" => kind}, socket) when kind in ~w(chain focused) do
+    case PlanClipboard.decode_playbook(text, kind) do
+      {:ok, source} ->
+        {data, playbook} = BattlePlans.import_playbook(socket.assigns.data, source)
+        socket = socket |> assign(:data, data) |> assign(:playbook_id, playbook["id"]) |> assign(:paint, playbook["id"]) |> persist() |> put_flash(:info, "Pasted playbook '#{playbook["name"]}'.")
+        {:noreply, warn_unknown_hooks(socket, playbook)}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
     end
   end
 
@@ -1407,6 +1428,13 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     |> assign(:playbook_id, playbook["id"])
     |> assign(:paint, playbook["id"])
     |> persist()
+  end
+
+  defp warn_unknown_hooks(socket, playbook) do
+    case Enum.reject(BattlePlans.hook_names(playbook), &(&1 in socket.assigns.hook_names)) do
+      [] -> socket
+      unknown -> put_flash(socket, :error, "Unknown hooks in this playbook's conditions: #{Enum.join(unknown, ", ")}.")
+    end
   end
 
   defp copy_playbook(source) do

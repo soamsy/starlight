@@ -359,6 +359,26 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     assert target["enemy"] == %{"pick" => "first", "n" => 1}
   end
 
+  test "a playbook copied to the clipboard pastes as a new playbook of its kind with fresh ids", %{socket: socket, playbook_id: playbook_id} do
+    socket = event(socket, "add_action", %{"type" => "if", "container" => "root"})
+    source = Enum.find(socket.assigns.data["playbooks"], &(&1["id"] == playbook_id))
+    text = StarlightBot.PlanClipboard.encode_playbook(source)
+
+    socket = event(socket, "paste_playbook", %{"text" => text, "kind" => "focused"})
+    pasted = List.last(socket.assigns.data["playbooks"])
+    assert pasted["kind"] == "focused"
+    assert pasted["name"] == source["name"] <> " copy"
+    assert socket.assigns.playbook_id == pasted["id"]
+    ids = fn playbook -> playbook["actions"] |> BattlePlans.flatten_actions() |> Enum.map(& &1["id"]) end
+    assert length(ids.(pasted)) == length(ids.(source))
+    assert MapSet.disjoint?(MapSet.new(ids.(pasted)), MapSet.new(ids.(source)))
+    assert Enum.map(Plans.get(:battle_plans, socket.assigns.editing_id).data["playbooks"], & &1["id"]) == Enum.map(socket.assigns.data["playbooks"], & &1["id"])
+
+    socket = event(socket, "paste_playbook", %{"text" => text, "kind" => "chain"})
+    assert socket.assigns.flash["error"] =~ "focused playbook, not a chain playbook"
+    assert length(socket.assigns.data["playbooks"]) == 4
+  end
+
   test "playbooks can be reordered within their kind", %{socket: socket} do
     socket = event(socket, "new_playbook", %{"kind" => "chain"})
     chains = fn socket -> for %{"kind" => "chain"} = pb <- socket.assigns.data["playbooks"], do: pb["id"] end

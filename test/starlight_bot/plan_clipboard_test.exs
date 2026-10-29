@@ -29,4 +29,16 @@ defmodule StarlightBot.PlanClipboardTest do
     assert {:error, _} = PlanClipboard.decode_milestone(~s({"starlight_milestone": {"id": "a", "name": "b", "entries": "x"}}))
     assert {:error, _} = PlanClipboard.decode_milestone(~s({"starlight_milestone": {"id": "a", "name": "b", "entries": [{"id": "e"}]}}))
   end
+
+  test "round trips a playbook of the matching kind and rejects the rest" do
+    playbook = BattlePlans.new_playbook("chain", "Chain fast")
+    text = PlanClipboard.encode_playbook(playbook)
+    assert {:ok, ^playbook} = PlanClipboard.decode_playbook(text, "chain")
+    assert {:error, "That clipboard holds a chain playbook, not a focused playbook."} = PlanClipboard.decode_playbook(text, "focused")
+    assert {:error, "That clipboard holds a whole battle plan, not a playbook."} = :battle_plans |> PlanClipboard.encode("T", BattlePlans.blank()) |> PlanClipboard.decode_playbook("chain")
+    assert {:error, _} = PlanClipboard.decode_playbook("hello", "chain")
+
+    broken = %{playbook | "actions" => [%{"type" => "if", "then" => [%{"id" => "x"}], "else" => []}]}
+    assert {:error, "That playbook is malformed and can't be pasted."} = broken |> PlanClipboard.encode_playbook() |> PlanClipboard.decode_playbook("chain")
+  end
 end

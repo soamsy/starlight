@@ -27,6 +27,24 @@ defmodule StarlightBot.PlanClipboard do
     end
   end
 
+  def encode_playbook(playbook), do: Jason.encode!(%{"starlight_playbook" => playbook})
+
+  def decode_playbook(text, kind) do
+    case Jason.decode(text) do
+      {:ok, %{"starlight_playbook" => %{"id" => id, "name" => name, "kind" => ^kind, "actions" => actions} = playbook}} when is_binary(id) and is_binary(name) ->
+        if valid_actions?(actions), do: {:ok, playbook}, else: {:error, "That playbook is malformed and can't be pasted."}
+
+      {:ok, %{"starlight_playbook" => %{"kind" => other}}} when is_binary(other) ->
+        {:error, "That clipboard holds a #{other} playbook, not a #{kind} playbook."}
+
+      {:ok, %{"starlight_plan" => plan_kind}} when is_binary(plan_kind) ->
+        {:error, "That clipboard holds a whole #{plan_kind} plan, not a playbook."}
+
+      _ ->
+        {:error, "The clipboard doesn't hold a Starlight playbook."}
+    end
+  end
+
   def warnings(:battle_plans, data) do
     by_id = Map.new(SinnerProfiles.list(), &{&1.id, &1})
 
@@ -51,6 +69,14 @@ defmodule StarlightBot.PlanClipboard do
       do: {:ok, milestone},
       else: {:error, "That milestone is malformed and can't be pasted."}
   end
+
+  defp valid_actions?(actions) when is_list(actions), do: Enum.all?(actions, &valid_action?/1)
+  defp valid_actions?(_actions), do: false
+
+  defp valid_action?(%{"type" => "if", "then" => then_actions, "else" => else_actions}), do: valid_actions?(then_actions) and valid_actions?(else_actions)
+  defp valid_action?(%{"type" => "schedule", "segments" => segments}) when is_list(segments), do: Enum.all?(segments, &(is_map(&1) and valid_actions?(&1["actions"])))
+  defp valid_action?(%{"type" => type}) when type not in ["if", "schedule"], do: is_binary(type)
+  defp valid_action?(_action), do: false
 
   defp usable?(%{locator_hook: hook}) when is_binary(hook) and hook != "", do: true
   defp usable?(_profile), do: false
