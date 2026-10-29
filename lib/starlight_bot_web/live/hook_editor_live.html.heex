@@ -67,30 +67,6 @@
             </button>
           </div>
 
-          <%!-- Selection info --%>
-          <div class="flex items-center gap-2 min-h-5">
-            <%= if @region do %>
-              <span class="badge badge-error badge-xs">R</span>
-              <span class="text-xs font-mono text-base-content/70">
-                <%= @region.x %>,<%= @region.y %> <%= @region.w %>×<%= @region.h %>
-              </span>
-              <button phx-click="clear_region" class="btn btn-xs btn-ghost text-error">✕</button>
-            <% end %>
-            <%= if @click_region do %>
-              <span class="badge badge-info badge-xs">C</span>
-              <span class="text-xs font-mono text-info/80">
-                <%= @click_region.x %>,<%= @click_region.y %> <%= @click_region.w %>×<%= @click_region.h %>
-              </span>
-              <button phx-click="clear_click_region" class="btn btn-xs btn-ghost text-info">✕</button>
-            <% end %>
-            <%= if @scan_region do %>
-              <span class="badge badge-warning badge-xs">S</span>
-              <span class="text-xs font-mono text-warning/80">
-                <%= @scan_region.x %>,<%= @scan_region.y %> <%= @scan_region.w %>×<%= @scan_region.h %>
-              </span>
-              <button phx-click="clear_scan_region" class="btn btn-xs btn-ghost text-warning">✕</button>
-            <% end %>
-          </div>
         </div>
 
         <%!-- Canvas wrapper: fills remaining flex space, canvas fits 16:9 within it --%>
@@ -116,6 +92,31 @@
               style="display: block;"
             ></canvas>
           </div>
+        </div>
+
+        <%!-- Selection info --%>
+        <div class="flex items-center justify-end gap-2 min-h-5 mt-2">
+          <%= if @region do %>
+            <span class="badge badge-error badge-xs">R</span>
+            <span class="text-xs font-mono text-base-content/70">
+              <%= @region.x %>,<%= @region.y %> <%= @region.w %>×<%= @region.h %>
+            </span>
+            <button phx-click="clear_region" class="btn btn-xs btn-ghost text-error">✕</button>
+          <% end %>
+          <%= if @click_region do %>
+            <span class="badge badge-info badge-xs">C</span>
+            <span class="text-xs font-mono text-info/80">
+              <%= @click_region.x %>,<%= @click_region.y %> <%= @click_region.w %>×<%= @click_region.h %>
+            </span>
+            <button phx-click="clear_click_region" class="btn btn-xs btn-ghost text-info">✕</button>
+          <% end %>
+          <%= if @scan_region do %>
+            <span class="badge badge-warning badge-xs">S</span>
+            <span class="text-xs font-mono text-warning/80">
+              <%= @scan_region.x %>,<%= @scan_region.y %> <%= @scan_region.w %>×<%= @scan_region.h %>
+            </span>
+            <button phx-click="clear_scan_region" class="btn btn-xs btn-ghost text-warning">✕</button>
+          <% end %>
         </div>
       </div>
     </div>
