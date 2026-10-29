@@ -46,7 +46,9 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @ego_menu :battle_ego_resistances
   @ego_warning :battle_ego_warning
   @overclocked DSL.any_of([@ego_warning, :battle_ego_overclock])
+  @bottom_chosen :battle_skill_tray_bottom_white_while_ready
   @hover_label :enemy_target_hovering_label
+  @hover_corner :enemy_target_hovering_corner
 
   def play_chain_turn(_last_frame, ctx), do: start_turn("chain", ctx)
 
@@ -167,7 +169,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     with {:ok, point} <- slot_point(tray, column, ctx) do
       Ctx.log(ctx, :info, "playbook: #{action["grade"]} EGO#{if action["corrode"], do: " (corroded)"} on slot #{column + 1}")
       use_ego(point, action, ctx)
-      target_after_ego(point, action, ctx)
+      target_after_ego(tray, column, action, ctx)
     end
 
     {:ok, nil}
@@ -285,15 +287,14 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp run_action(%{"type" => type} = action, turn, ctx) when type in ~w(dodge ego target) do
     with {:ok, frame, tray} <- turn.scan,
-         {:ok, columns} <- action_columns(action, frame, tray, profiles(ctx), ctx) do
-      classified = if BattlePlans.uses_priority?(action), do: SinColor.classify_tray(frame.mat, tray)
-
-      steps =
-        action
-        |> BattlePlans.assign_slots(columns, cells_of(classified))
-        |> Enum.flat_map(fn {holder, taken} ->
-          log_share(holder, taken, ctx)
-          taken |> Enum.with_index() |> Enum.map(fn {column, index} -> slot_step(holder, frame, tray, column, index) end)
+         [_ | _] = assigned <- holder_slots(action, frame, tray, profiles(ctx), ctx) do
+      {steps, _carried} =
+        Enum.flat_map_reduce(assigned, {0, nil}, fn {holder, taken}, {offset, previous} ->
+          {enemy, continued?} = resolve_enemy(holder["enemy"], previous)
+          start = if continued?, do: offset, else: 0
+          holder = Map.put(holder, "enemy", enemy)
+          steps = taken |> Enum.with_index(start) |> Enum.map(fn {column, index} -> slot_step(holder, frame, tray, column, index) end)
+          {steps, {start + length(taken), enemy}}
         end)
 
       {:steps, steps}
@@ -317,6 +318,14 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp run_action(%{"type" => type}, _turn, ctx), do: log_pending(ctx, "unknown action #{inspect(type)}, skipping")
 
+  defp resolve_enemy(own, previous) do
+    cond do
+      is_map(own) and own["pick"] != "continue" -> {own, false}
+      is_map(previous) -> {previous, true}
+      true -> {%{"pick" => "none"}, false}
+    end
+  end
+
   defp slot_step(holder, frame, tray, column, index) do
     holder = if is_map(holder["enemy"]), do: put_in(holder, ["enemy", "index"], index), else: holder
 
@@ -326,12 +335,6 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       _target -> DSL.call(__MODULE__, :target_column, [holder, frame, tray, column])
     end
   end
-
-  defp cells_of(nil), do: nil
-  defp cells_of({top, bottom}), do: fn column -> {Enum.at(top, column), Enum.at(bottom, column)} end
-
-  defp log_share(%{"cap" => cap}, taken, ctx), do: Ctx.log(ctx, :info, "playbook: cap #{cap} takes slot(s) #{Enum.map_join(taken, ", ", &(&1 + 1))}")
-  defp log_share(_holder, _taken, _ctx), do: :ok
 
   defp target_or_dodge(:dodge, action, tray, column, ctx), do: dodge(action["enemy"], tray, column, ctx)
 
@@ -351,9 +354,11 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp dodge(%{"pick" => pick} = enemy, tray, column, ctx) when pick != "none" do
-    with {:ok, point} <- slot_point(tray, column, ctx) do
-      Ctx.log(ctx, :info, "playbook: dodging with slot #{column + 1} onto enemy #{pick_text(enemy)}")
-      drag_to_enemy(point, enemy, ctx)
+    click_dodge(tray, column, ctx)
+
+    with {:ok, grab} <- skill_point(tray, column, :bottom, ctx) do
+      Ctx.log(ctx, :info, "playbook: dragging the dodge on slot #{column + 1} onto enemy #{pick_text(enemy)}")
+      drag_to_enemy(grab, enemy, ctx)
     end
   end
 
@@ -417,12 +422,14 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     |> Runner.run_steps(ctx)
   end
 
-  defp target_after_ego(point, %{"enemy" => %{"pick" => pick} = enemy}, ctx) when pick != "none" do
-    Ctx.log(ctx, :info, "playbook: targeting enemy #{pick_text(enemy)} with the EGO")
-    drag_to_enemy(point, enemy, ctx)
+  defp target_after_ego(tray, column, %{"enemy" => %{"pick" => pick} = enemy}, ctx) when pick != "none" do
+    with {:ok, grab} <- skill_point(tray, column, :bottom, ctx) do
+      Ctx.log(ctx, :info, "playbook: targeting enemy #{pick_text(enemy)} with the EGO")
+      drag_to_enemy(grab, enemy, ctx)
+    end
   end
 
-  defp target_after_ego(_point, _action, _ctx), do: :ok
+  defp target_after_ego(_tray, _column, _action, _ctx), do: :ok
 
   defp use_ego({sx, sy}, action, ctx) do
     Mouse.move_to(sx, sy)
@@ -551,7 +558,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
           :all
 
         sinner ->
-          case action_columns(%{"who" => "only", "sinners" => [sinner], "skill" => %{"pick" => "all"}}, frame, tray, profiles(ctx), ctx) do
+          case action_columns(%{"who" => "only", "sinners" => [sinner], "skill" => %{"pick" => "all"}}, frame, tray, profiles(ctx), ctx, all_columns(tray)) do
             {:ok, columns} -> columns
             :skip -> []
           end
@@ -684,15 +691,26 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp hovering?(point, timeout_ms, ctx), do: poll_hover(point, System.monotonic_time(:millisecond) + timeout_ms, ctx)
 
   defp poll_hover(point, deadline, ctx) do
-    label =
+    hover =
       case Capture.grab_frame() do
-        {:ok, frame} -> frame |> Matcher.find_all(@hover_label) |> Enum.find(&hover_label_for?(&1, point))
-        {:error, _} -> nil
+        {:ok, frame} ->
+          if Matcher.check(frame, @hover_corner) do
+            :corner
+          else
+            frame |> Matcher.find_all(@hover_label) |> Enum.find(&hover_label_for?(&1, point))
+          end
+
+        {:error, _} ->
+          nil
       end
 
     cond do
-      label ->
-        Ctx.log(ctx, :info, "playbook: hover label #{inspect(label)} under cursor #{inspect(point)}")
+      hover == :corner ->
+        Ctx.log(ctx, :info, "playbook: hover corner on under cursor #{inspect(point)}")
+        true
+
+      hover ->
+        Ctx.log(ctx, :info, "playbook: hover label #{inspect(hover)} under cursor #{inspect(point)}")
         true
 
       System.monotonic_time(:millisecond) >= deadline ->
@@ -733,14 +751,11 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp skill_text(%{"pick" => "first_with", "match" => match, "n" => n}), do: "first #{n} with #{match}"
-  defp skill_text(%{} = skill), do: base_pick_text(skill)
+  defp skill_text(%{} = skill), do: BattlePlans.skill_label(skill)
   defp skill_text(_skill), do: "any"
 
   defp pick_text(enemy), do: BattlePlans.enemy_label(enemy)
 
-  defp base_pick_text(%{"pick" => pick, "n" => n}), do: "#{pick} #{n}"
-  defp base_pick_text(%{"pick" => pick}), do: pick
 
   defp resolve_row(%{"row" => "priority"} = holder, column, frame, tray, ctx) do
     {top, bottom} = SinColor.classify_tray(frame.mat, tray)
@@ -833,22 +848,13 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     classified = if Enum.any?(pins, &BattlePlans.uses_priority?/1), do: SinColor.classify_tray(frame.mat, tray)
 
     Enum.reduce(pins, %{}, fn pin, acc ->
-      case action_columns(pin, frame, tray, profiles, ctx) do
-        {:ok, columns} ->
-          rows =
-            pin
-            |> BattlePlans.assign_slots(columns, cells_of(classified))
-            |> Enum.map(fn {holder, taken} ->
-              log_share(holder, taken, ctx)
-              pin_rows(holder, taken, classified, ctx)
-            end)
-            |> Enum.reduce(%{}, &Map.merge/2)
+      rows =
+        pin
+        |> holder_slots(frame, tray, profiles, ctx)
+        |> Enum.map(fn {holder, taken} -> pin_rows(holder, taken, classified, ctx) end)
+        |> Enum.reduce(%{}, &Map.merge/2)
 
-          Map.merge(rows, acc)
-
-        :skip ->
-          acc
-      end
+      Map.merge(rows, acc)
     end)
   end
 
@@ -859,7 +865,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
         {column, :bottom}
 
       {column, {:ego, holder}} ->
-        ego_column(holder, tray, column, nil, ctx)
+        ego_column(Map.delete(holder, "enemy"), tray, column, nil, ctx)
         {column, :bottom}
 
       entry ->
@@ -889,10 +895,33 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp pin_rows(%{"row" => "top"}, columns, _classified, _ctx), do: Map.new(columns, &{&1, :top})
   defp pin_rows(_pin, columns, _classified, _ctx), do: Map.new(columns, &{&1, :bottom})
 
-  defp action_columns(%{"skill" => skill} = action, frame, tray, profiles, ctx) do
-    with {:ok, groups} <- sinner_groups(action["who"], action["sinners"] || [], frame, tray, profiles, ctx) do
+  defp holder_slots(holder, frame, tray, profiles, ctx) do
+    slot_chain(holder, all_columns(tray), frame, tray, profiles, ctx, "action")
+  end
+
+  defp all_columns(tray), do: Enum.to_list(0..(length(tray.sinner_of_slot) - 1)//1)
+
+  defp slot_chain(nil, _available, _frame, _tray, _profiles, _ctx, _label), do: []
+
+  defp slot_chain(holder, available, frame, tray, profiles, ctx, label) do
+    taken =
+      case action_columns(holder, frame, tray, profiles, ctx, available) do
+        {:ok, columns} -> columns
+        :skip -> []
+      end
+
+    if label == "rest" and taken != [], do: Ctx.log(ctx, :info, "playbook: rest takes slot(s) #{Enum.map_join(taken, ", ", &(&1 + 1))}")
+
+    rest = slot_chain(holder["rest"], available -- taken, frame, tray, profiles, ctx, "rest")
+    if taken == [], do: rest, else: [{holder, taken} | rest]
+  end
+
+  defp action_columns(%{"skill" => skill} = action, frame, tray, profiles, ctx, available) do
+    with {:ok, groups} <- selected_groups(action, frame, tray, profiles, ctx) do
       groups
-      |> Enum.map(fn {columns, who} -> pick_skill(columns, skill, frame, tray, who, ctx) end)
+      |> Enum.map(fn {columns, who} -> {Enum.filter(columns, &(&1 in available)), who} end)
+      |> Enum.reject(fn {columns, _who} -> columns == [] end)
+      |> Enum.map(fn {columns, who} -> pick_skill(columns, skill, who, ctx) end)
       |> Enum.flat_map(fn
         {:ok, columns} -> columns
         :skip -> []
@@ -906,6 +935,46 @@ defmodule StarlightBot.Automation.PlaybookRunner do
           Ctx.log(ctx, :info, "playbook: #{names} -> slot(s) #{Enum.map_join(columns, ", ", &(&1 + 1))}")
           {:ok, columns}
       end
+    end
+  end
+
+  defp selected_groups(%{"who" => "slots", "slots" => filter}, frame, tray, _profiles, ctx) do
+    columns = BattlePlans.slot_columns(filter, SinColor.classify_tray(frame.mat, tray), length(tray.sinner_of_slot))
+    label = BattlePlans.slot_filter_label(filter)
+
+    if columns == [] do
+      Ctx.log(ctx, :info, "playbook: no #{label}, skipping")
+      :skip
+    else
+      {:ok, [{columns, %{name: label}}]}
+    end
+  end
+
+  defp selected_groups(%{"who" => "chosen", "chosen" => filter}, frame, tray, _profiles, ctx) do
+    with {:ok, bottom_columns} <- bottom_chosen_columns(tray, ctx) do
+      columns = BattlePlans.chosen_columns(filter, bottom_columns, length(tray.sinner_of_slot), SinColor.classify_tray(frame.mat, tray))
+      label = BattlePlans.chosen_filter_label(filter)
+      Ctx.log(ctx, :info, "playbook: bottom skill chosen in slot(s) [#{Enum.map_join(bottom_columns, " ", &(&1 + 1))}]")
+
+      if columns == [] do
+        Ctx.log(ctx, :info, "playbook: no #{label}, skipping")
+        :skip
+      else
+        {:ok, [{columns, %{name: label}}]}
+      end
+    end
+  end
+
+  defp selected_groups(action, frame, tray, profiles, ctx), do: sinner_groups(action["who"], action["sinners"] || [], frame, tray, profiles, ctx)
+
+  defp bottom_chosen_columns(tray, ctx) do
+    with {:ok, _hook} <- HookRegistry.find(@bottom_chosen),
+         {:ok, fresh} <- Capture.grab_frame() do
+      {:ok, SkillTray.columns_under(tray, Matcher.find_all(fresh, @bottom_chosen))}
+    else
+      error ->
+        Ctx.log(ctx, :error, "playbook: can't read which slots use a bottom skill (#{inspect(error)}), skipping")
+        :skip
     end
   end
 
@@ -989,19 +1058,13 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     |> Enum.map(&elem(&1, 1))
   end
 
-  defp pick_skill(columns, %{"pick" => "first_with", "match" => match, "n" => n}, frame, tray, who, ctx),
-    do: first_with(columns, match, n, frame, tray, who, ctx)
-
-  defp pick_skill(columns, skill, _frame, _tray, who, ctx), do: pick_columns(columns, skill, who, ctx)
-
-  defp first_with(columns, match, n, frame, tray, profile, ctx) do
-    case BattlePlans.first_with(columns, match, n, SinColor.classify_tray(frame.mat, tray)) do
+  defp pick_skill(columns, skill, who, ctx) do
+    case BattlePlans.pick_columns(columns, skill) do
       [] ->
-        Ctx.log(ctx, :info, "playbook: #{profile.name} has no #{match} skill in the tray, skipping")
+        Ctx.log(ctx, :info, "playbook: #{who.name} has #{length(columns)} slot(s), none in #{skill_text(skill)}, skipping")
         :skip
 
       picked ->
-        Ctx.log(ctx, :info, "playbook: #{profile.name} first #{n} #{match} skill(s) -> slot(s) #{Enum.map_join(picked, ", ", &(&1 + 1))}")
         {:ok, picked}
     end
   end
@@ -1048,24 +1111,6 @@ defmodule StarlightBot.Automation.PlaybookRunner do
           else: Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) found at slot #{column + 1}")
 
         {:ok, column}
-    end
-  end
-
-  defp pick_columns(columns, %{"pick" => "first"}, _profile, _ctx), do: {:ok, [List.first(columns)]}
-  defp pick_columns(columns, %{"pick" => "last"}, _profile, _ctx), do: {:ok, [List.last(columns)]}
-  defp pick_columns(columns, %{"pick" => "all"}, _profile, _ctx), do: {:ok, columns}
-
-  defp pick_columns(columns, %{"pick" => "up_to", "n" => n}, _profile, _ctx),
-    do: {:ok, [Enum.at(columns, min(n, length(columns)) - 1)]}
-
-  defp pick_columns(columns, %{"pick" => "exact", "n" => n}, profile, ctx) do
-    case Enum.at(columns, n - 1) do
-      nil ->
-        Ctx.log(ctx, :info, "playbook: #{profile.name} has #{length(columns)} skill(s), skill #{n} doesn't exist, skipping")
-        :skip
-
-      column ->
-        {:ok, [column]}
     end
   end
 

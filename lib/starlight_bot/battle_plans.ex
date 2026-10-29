@@ -11,7 +11,6 @@ defmodule StarlightBot.BattlePlans do
   @max_floor 15
   @default_max_retries 5
   @max_turn 20
-  @max_cap 99
   @ignore_sides ~w(left right top bottom)
   @enemy_picks ~w(none first last)
   @enemy_steps ~w(left right)
@@ -28,9 +27,22 @@ defmodule StarlightBot.BattlePlans do
   @positions ~w(first last exact)
   @position_cmps ~w(is is_not gt lt)
   @count_cmps ~w(eq gte lte)
-  @skill_picks ~w(first last exact up_to)
   @grades ~w(zayin teth he waw)
   @rows ~w(top bottom priority)
+  @slot_rows ~w(bottom top available)
+  @chosen_value_kinds ~w(using not_using bottom_is bottom_is_not top_is top_is_not has has_no)
+  @chosen_kinds [
+    {"top", "using a top skill"},
+    {"bottom", "using a bottom skill"},
+    {"using", "using"},
+    {"not_using", "not using"},
+    {"bottom_is", "bottom is"},
+    {"bottom_is_not", "bottom is not"},
+    {"top_is", "top is"},
+    {"top_is_not", "top is not"},
+    {"has", "has"},
+    {"has_no", "has no"}
+  ]
   @sins ~w(wrath lust sloth gluttony gloom pride envy)
   @tiers ~w(s3 s2 s1)
   @priority_values @tiers ++ @sins ++ ["dodge"]
@@ -46,7 +58,6 @@ defmodule StarlightBot.BattlePlans do
   end
   def max_floor, do: @max_floor
   def max_turn, do: @max_turn
-  def skill_picks, do: @skill_picks
   def enemy_picks, do: @enemy_picks
   def enemy_steps, do: @enemy_steps
 
@@ -72,6 +83,7 @@ defmodule StarlightBot.BattlePlans do
   end
 
   def parse_enemy("none", _n, _step), do: %{"pick" => "none"}
+  def parse_enemy("continue", _n, _step), do: %{"pick" => "continue"}
   def parse_enemy(_pick, n, step), do: parse_enemy("first", n, step)
 
   def ignore_sides, do: @ignore_sides
@@ -123,6 +135,7 @@ defmodule StarlightBot.BattlePlans do
   end
   def grades, do: @grades
   def rows, do: @rows
+  def slot_rows, do: @slot_rows
   def tiers, do: @tiers
   def priority_values, do: @priority_values
   def count_cmps, do: @count_cmps
@@ -140,46 +153,45 @@ defmodule StarlightBot.BattlePlans do
     holder |> Map.put("row", if(row == "top", do: "top", else: "bottom")) |> Map.delete("priority")
   end
 
-  def put_cap(holder, value) do
-    case parse_count(value) do
-      n when is_integer(n) and n >= 1 -> holder |> Map.put("cap", min(n, @max_cap)) |> Map.put_new("rest", new_rest())
-      _ -> Map.drop(holder, ~w(cap rest))
-    end
-  end
+  def put_rest(holder, "true"), do: Map.put_new(holder, "rest", new_rest())
+  def put_rest(holder, "false"), do: Map.delete(holder, "rest")
+  def put_rest(holder, _automate_rest), do: holder
 
-  def new_rest, do: put_row(%{"type" => "target", "enemy" => %{"pick" => "first"}}, "priority", nil)
+  def new_rest do
+    put_row(%{"type" => "target", "who" => "everyone", "sinners" => [], "skill" => %{"pick" => "all"}, "enemy" => %{"pick" => "continue"}}, "priority", nil)
+  end
 
   def holders(%{"rest" => rest} = holder), do: [holder | holders(rest)]
   def holders(holder), do: [holder]
 
   def uses_priority?(holder), do: Enum.any?(holders(holder), &(&1["row"] == "priority"))
 
-  def assign_slots(holder, columns, cells_of) do
-    holder |> distribute(columns, cells_of) |> Enum.reject(fn {_holder, taken} -> taken == [] end)
+  def first_slot, do: %{"pick" => "first", "start" => 1, "end" => 1}
+
+  def parse_skill("all", _from, _to), do: %{"pick" => "all"}
+
+  def parse_skill(pick, from, to) when pick in ~w(first last) do
+    start = max(parse_count(from) || 1, 1)
+    %{"pick" => pick, "start" => start, "end" => max(parse_count(to) || start, start)}
   end
 
-  defp distribute(%{"cap" => cap, "rest" => rest} = holder, columns, cells_of) do
-    {taken, left} = take_ranked(holder, columns, cells_of, cap)
-    [{holder, taken} | distribute(rest, left, cells_of)]
+  def parse_skill(_pick, _from, _to), do: first_slot()
+
+  def pick_columns(columns, %{"pick" => "all"}), do: columns
+
+  def pick_columns(columns, %{"pick" => pick} = skill) do
+    start = skill["start"] || 1
+    ordered = if pick == "last", do: Enum.reverse(columns), else: columns
+    ordered |> Enum.slice((start - 1)..((skill["end"] || start) - 1)//1) |> Enum.sort()
   end
 
-  defp distribute(holder, columns, _cells_of), do: [{holder, columns}]
+  def skill_label(%{"pick" => "all"}), do: "all"
 
-  defp take_ranked(%{"row" => "priority", "priority" => %{"order" => order}}, columns, cells_of, cap) do
-    taken =
-      columns
-      |> Enum.sort_by(fn column ->
-        {top, bottom} = cells_of.(column)
-        {rank, _row} = best_match(order, top, bottom)
-        {rank, column}
-      end)
-      |> Enum.take(cap)
-      |> Enum.sort()
-
-    {taken, columns -- taken}
+  def skill_label(%{"pick" => pick} = skill) do
+    start = skill["start"] || 1
+    stop = skill["end"] || start
+    "slots #{if start == stop, do: start, else: "#{start}-#{stop}"} from #{pick}"
   end
-
-  defp take_ranked(_holder, columns, _cells_of, cap), do: Enum.split(columns, cap)
 
   defp parse_count(value) when is_binary(value) do
     case Integer.parse(value) do
@@ -207,22 +219,6 @@ defmodule StarlightBot.BattlePlans do
   end
 
   def pick_row(_holder, _top, _bottom), do: :bottom
-
-  defp best_match(order, top, bottom) do
-    order
-    |> Enum.with_index()
-    |> Enum.find_value({length(order), :bottom}, fn
-      {"dodge", _rank} ->
-        nil
-
-      {value, rank} ->
-        cond do
-          priority_match?(value, bottom) -> {rank, :bottom}
-          priority_match?(value, top) -> {rank, :top}
-          true -> nil
-        end
-    end)
-  end
 
   def cell_label(%{sin: sin, tier: tier}), do: "#{sin}/#{tier_name(tier)}"
 
@@ -385,9 +381,90 @@ defmodule StarlightBot.BattlePlans do
     end)
   end
 
-  def first_with(columns, match, n, {top, bottom}) do
-    columns |> Enum.filter(&slot_matches?(match, Enum.at(top, &1), Enum.at(bottom, &1))) |> Enum.take(n)
+  def new_slot_filter, do: %{"row" => "bottom", "is" => true, "match" => "envy"}
+
+  def parse_slot_filter(params) do
+    %{
+      "row" => if(params["slot_row"] in @slot_rows, do: params["slot_row"], else: "bottom"),
+      "is" => params["slot_is"] != "false",
+      "match" => if(params["slot_match"] in @tiers ++ @sins, do: params["slot_match"], else: "envy")
+    }
   end
+
+  def new_chosen_filter, do: %{"join" => "and", "conditions" => [new_chosen_condition()]}
+
+  def new_chosen_condition, do: %{"kind" => "top"}
+
+  def chosen_kinds, do: @chosen_kinds
+
+  def chosen_value_kinds, do: @chosen_value_kinds
+
+  def chip_values, do: @tiers ++ @sins
+
+  def parse_chosen_filter(%{"chosen_c" => conditions} = params) when is_map(conditions) do
+    parsed =
+      conditions
+      |> Enum.sort_by(fn {index, _} -> parse_count(index) || 0 end)
+      |> Enum.map(fn {_index, condition} -> parse_chosen_condition(condition) end)
+
+    %{"join" => if(params["chosen_join"] == "or", do: "or", else: "and"), "conditions" => parsed}
+  end
+
+  def parse_chosen_filter(_params), do: new_chosen_filter()
+
+  defp parse_chosen_condition(%{"kind" => kind} = condition) when kind in @chosen_value_kinds,
+    do: %{"kind" => kind, "values" => condition["values"] |> List.wrap() |> Enum.filter(&(&1 in @tiers ++ @sins)) |> Enum.uniq()}
+
+  defp parse_chosen_condition(%{"kind" => kind}) when kind in ~w(top bottom), do: %{"kind" => kind}
+  defp parse_chosen_condition(_condition), do: new_chosen_condition()
+
+  def chosen_columns(%{"join" => join, "conditions" => conditions}, bottom_columns, column_count, {top, bottom}) do
+    combine = if join == "or", do: &Enum.any?/2, else: &Enum.all?/2
+
+    Enum.filter(0..(column_count - 1)//1, fn column ->
+      cells = %{top: Enum.at(top, column), bottom: Enum.at(bottom, column), bottom?: column in bottom_columns}
+      combine.(conditions, &chosen_condition_met?(&1, cells))
+    end)
+  end
+
+  defp chosen_condition_met?(%{"kind" => "bottom"}, cells), do: cells.bottom?
+  defp chosen_condition_met?(%{"kind" => "top"}, cells), do: not cells.bottom?
+  defp chosen_condition_met?(%{"kind" => "using", "values" => values}, cells), do: any_match?(values, [used_cell(cells)])
+  defp chosen_condition_met?(%{"kind" => "not_using", "values" => values}, cells), do: not any_match?(values, [used_cell(cells)])
+  defp chosen_condition_met?(%{"kind" => "bottom_is", "values" => values}, cells), do: any_match?(values, [cells.bottom])
+  defp chosen_condition_met?(%{"kind" => "bottom_is_not", "values" => values}, cells), do: not any_match?(values, [cells.bottom])
+  defp chosen_condition_met?(%{"kind" => "top_is", "values" => values}, cells), do: any_match?(values, [cells.top])
+  defp chosen_condition_met?(%{"kind" => "top_is_not", "values" => values}, cells), do: not any_match?(values, [cells.top])
+  defp chosen_condition_met?(%{"kind" => "has", "values" => values}, cells), do: any_match?(values, [cells.top, cells.bottom])
+  defp chosen_condition_met?(%{"kind" => "has_no", "values" => values}, cells), do: not any_match?(values, [cells.top, cells.bottom])
+
+  defp used_cell(cells), do: if(cells.bottom?, do: cells.bottom, else: cells.top)
+
+  defp any_match?(values, cells), do: Enum.any?(values, fn value -> Enum.any?(cells, &cell_matches?(value, &1)) end)
+
+  def chosen_filter_label(%{"join" => join, "conditions" => conditions}),
+    do: "slots " <> Enum.map_join(conditions, " #{join} ", &chosen_condition_label/1)
+
+  defp chosen_condition_label(%{"kind" => "top"}), do: "using a top skill"
+  defp chosen_condition_label(%{"kind" => "bottom"}), do: "using a bottom skill"
+  defp chosen_condition_label(%{"kind" => kind, "values" => values}) do
+    {_kind, label} = List.keyfind(@chosen_kinds, kind, 0)
+    "#{label} #{Enum.join(values, "/")}"
+  end
+
+  def slot_columns(%{"row" => row, "is" => is?, "match" => match}, {top, bottom}, column_count) do
+    Enum.filter(0..(column_count - 1)//1, &(row_matches?(row, match, Enum.at(top, &1), Enum.at(bottom, &1)) == is?))
+  end
+
+  def slot_filter_label(%{"row" => "available", "is" => is?, "match" => match}), do: "slots where available #{if is?, do: "has", else: "has no"} #{match}"
+  def slot_filter_label(%{"row" => row, "is" => is?, "match" => match}), do: "slots where #{row} #{if is?, do: "is", else: "isn't"} #{match}"
+
+  defp row_matches?("top", match, top, _bottom), do: cell_matches?(match, top)
+  defp row_matches?("available", match, top, bottom), do: cell_matches?(match, top) or cell_matches?(match, bottom)
+  defp row_matches?(_bottom, match, _top, bottom), do: cell_matches?(match, bottom)
+
+  defp cell_matches?(match, %{sin: _sin, tier: _tier} = cell), do: priority_match?(match, cell)
+  defp cell_matches?(_match, _cell), do: false
 
   defp slot_matches?(match, top_cell, bottom_cell), do: priority_match?(match, top_cell) or priority_match?(match, bottom_cell)
 
@@ -529,15 +606,15 @@ defmodule StarlightBot.BattlePlans do
   def new_action(type) when type in ~w(win_rate damage_rate commit retry), do: %{"id" => GiftPlans.new_id("ac"), "type" => type}
 
   def new_action("dodge"),
-    do: %{"id" => GiftPlans.new_id("ac"), "type" => "dodge", "who" => "only", "sinners" => [], "skill" => %{"pick" => "first"}, "enemy" => %{"pick" => "none"}}
+    do: %{"id" => GiftPlans.new_id("ac"), "type" => "dodge", "who" => "everyone", "sinners" => [], "skill" => first_slot(), "enemy" => %{"pick" => "none"}}
 
   def new_action("ego") do
     %{
       "id" => GiftPlans.new_id("ac"),
       "type" => "ego",
-      "who" => "only",
+      "who" => "everyone",
       "sinners" => [],
-      "skill" => %{"pick" => "first"},
+      "skill" => first_slot(),
       "grade" => "zayin",
       "corrode" => false,
       "enemy" => %{"pick" => "none"}
@@ -549,9 +626,9 @@ defmodule StarlightBot.BattlePlans do
       %{
         "id" => GiftPlans.new_id("ac"),
         "type" => "target",
-        "who" => "only",
+        "who" => "everyone",
         "sinners" => [],
-        "skill" => %{"pick" => "first"},
+        "skill" => first_slot(),
         "enemy" => %{"pick" => "first"}
       },
       "priority",
@@ -591,7 +668,7 @@ defmodule StarlightBot.BattlePlans do
 
   def convert_action(action, _kind), do: action
 
-  def new_pin, do: put_row(%{"type" => "target", "who" => "only", "sinners" => [], "skill" => %{"pick" => "first"}}, "priority", nil)
+  def new_pin, do: put_row(%{"type" => "target", "who" => "everyone", "sinners" => [], "skill" => first_slot()}, "priority", nil)
 
   def paint(entries, floor, id, key \\ "playbook") do
     entries
@@ -620,7 +697,25 @@ defmodule StarlightBot.BattlePlans do
 
   def segment_froms(schedule), do: Enum.map(schedule["segments"], & &1["from_turn"])
 
+  def loop_from(schedule), do: schedule["loop_from"]
+
+  def looping?(schedule), do: is_integer(schedule["loop_from"])
+
+  def loop_segment?(schedule, from), do: looping?(schedule) and from >= schedule["loop_from"]
+
   def segment_label(schedule, from) do
+    if loop_segment?(schedule, from), do: "Loop T#{from - schedule["loop_from"] + 1}", else: range_label(schedule, from)
+  end
+
+  def loop_turns_label(schedule, from) do
+    start = schedule["loop_from"]
+    length = Enum.count(schedule["segments"], &(&1["from_turn"] >= start))
+    first = start + rem(from - start, length)
+    turns = Enum.map(0..3, &"T#{first + &1 * length}")
+    Enum.join(turns, ", ") <> ", ..."
+  end
+
+  defp range_label(schedule, from) do
     next = schedule |> segment_froms() |> Enum.filter(&(&1 > from)) |> Enum.min(fn -> nil end)
 
     cond do
@@ -631,6 +726,15 @@ defmodule StarlightBot.BattlePlans do
   end
 
   def segment_at(schedule, turn) do
+    if loop_segment?(schedule, turn), do: loop_segment_at(schedule, turn), else: plain_segment_at(schedule, turn)
+  end
+
+  defp loop_segment_at(schedule, turn) do
+    body = Enum.filter(schedule["segments"], &(&1["from_turn"] >= schedule["loop_from"]))
+    Enum.at(body, rem(turn - schedule["loop_from"], length(body)))
+  end
+
+  defp plain_segment_at(schedule, turn) do
     schedule["segments"]
     |> Enum.filter(&(&1["from_turn"] <= turn))
     |> Enum.max_by(& &1["from_turn"], fn -> nil end)
@@ -784,19 +888,28 @@ defmodule StarlightBot.BattlePlans do
   end
 
   def split_segment(schedule, turn) when turn in 2..@max_turn do
-    if turn in segment_froms(schedule) do
-      schedule
-    else
-      copied = schedule |> segment_at(turn) |> Map.fetch!("actions") |> Enum.map(&refresh_ids/1)
-      segment = %{"from_turn" => turn, "actions" => copied}
-      Map.update!(schedule, "segments", &Enum.sort_by(&1 ++ [segment], fn s -> s["from_turn"] end))
+    cond do
+      turn in segment_froms(schedule) -> schedule
+      loop_segment?(schedule, turn) -> append_loop_segment(schedule)
+      true -> add_segment(schedule, turn, plain_segment_at(schedule, turn))
     end
   end
 
   def split_segment(schedule, _turn), do: schedule
 
+  defp add_segment(schedule, turn, source) do
+    segment = %{"from_turn" => turn, "actions" => Enum.map(source["actions"], &refresh_ids/1)}
+    Map.update!(schedule, "segments", &Enum.sort_by(&1 ++ [segment], fn s -> s["from_turn"] end))
+  end
+
+  defp append_loop_segment(schedule) do
+    last = List.last(schedule["segments"])
+
+    if last["from_turn"] >= @max_turn, do: schedule, else: add_segment(schedule, last["from_turn"] + 1, last)
+  end
+
   def move_segment(schedule, from, to) when from != 1 and to in 2..@max_turn do
-    if to in segment_froms(schedule) do
+    if to in segment_froms(schedule) or loop_segment?(schedule, from) or loop_segment?(schedule, to) do
       schedule
     else
       Map.update!(schedule, "segments", fn segments ->
@@ -810,8 +923,38 @@ defmodule StarlightBot.BattlePlans do
   def remove_segment(schedule, 1), do: schedule
 
   def remove_segment(schedule, from) do
-    Map.update!(schedule, "segments", &Enum.reject(&1, fn segment -> segment["from_turn"] == from end))
+    if loop_segment?(schedule, from) and (from == schedule["loop_from"] or from != List.last(segment_froms(schedule))) do
+      schedule
+    else
+      Map.update!(schedule, "segments", &Enum.reject(&1, fn segment -> segment["from_turn"] == from end))
+    end
   end
+
+  def add_intro_segment(%{"loop_from" => start} = schedule) when is_integer(start) do
+    last = List.last(schedule["segments"])
+
+    if last["from_turn"] >= @max_turn do
+      schedule
+    else
+      source = plain_segment_at(schedule, max(start - 1, 1)) || hd(schedule["segments"])
+      shifted = Enum.map(schedule["segments"], &if(&1["from_turn"] >= start, do: %{&1 | "from_turn" => &1["from_turn"] + 1}, else: &1))
+      intro = %{"from_turn" => start, "actions" => Enum.map(source["actions"], &refresh_ids/1)}
+      %{schedule | "segments" => Enum.sort_by([intro | shifted], & &1["from_turn"])} |> Map.put("loop_from", start + 1)
+    end
+  end
+
+  def add_intro_segment(schedule), do: schedule
+
+  def set_loop(schedule, nil), do: Map.delete(schedule, "loop_from")
+
+  def set_loop(schedule, start) when start in 1..@max_turn do
+    schedule = if start in segment_froms(schedule), do: schedule, else: split_segment(Map.delete(schedule, "loop_from"), start)
+    {head, body} = Enum.split_with(schedule["segments"], &(&1["from_turn"] < start))
+    body = body |> Enum.with_index() |> Enum.map(fn {segment, index} -> %{segment | "from_turn" => start + index} end)
+    %{schedule | "segments" => head ++ body} |> Map.put("loop_from", start)
+  end
+
+  def set_loop(schedule, _start), do: schedule
 
   def reorder_container(items, container, ids) do
     update_container(items, container, fn list ->

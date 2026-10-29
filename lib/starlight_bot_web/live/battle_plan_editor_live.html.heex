@@ -90,14 +90,14 @@
                       <% end %>
                     </div>
                   <% end %>
-                  <div class="flex items-center gap-2 text-xs">
-                    <button type="button" phx-click="clear_lineup" class="btn btn-xs btn-ghost">Clear</button>
+                  <div class="flex items-center justify-between gap-2 max-w-2xl text-xs">
                     <span class="text-base-content/50">
                       <%= length(lineup["sinners"]) %> picked
                       <%= if length(lineup["sinners"]) > StarlightBot.BattlePlans.front_line_size() do %>
                         (<%= length(lineup["sinners"]) - StarlightBot.BattlePlans.front_line_size() %> backup)
                       <% end %>
                     </span>
+                    <button type="button" phx-click="clear_lineup" class="btn btn-xs btn-ghost">Clear</button>
                   </div>
                 </div>
                 <div class="flex flex-col gap-1">

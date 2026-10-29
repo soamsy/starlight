@@ -220,6 +220,14 @@ defmodule StarlightBot.Vision.SkillTray do
   def slot_x(%__MODULE__{tray_start_x: tray_start_x, bin_width: bin_width}, column),
     do: tray_start_x + bin_width * (column + 0.5)
 
+  @spec columns_under(t(), [{integer, integer, integer, integer}]) :: [non_neg_integer]
+  def columns_under(%__MODULE__{skill_num: skill_num} = tray, rects) do
+    Enum.filter(0..(skill_num - 1)//1, fn column ->
+      center = slot_x(tray, column)
+      Enum.any?(rects, fn {x, _y, w, _h} -> x <= center and center <= x + w end)
+    end)
+  end
+
   @spec column_at(t(), number) :: non_neg_integer
   def column_at(%__MODULE__{} = tray, x) do
     ((x - tray.tray_start_x) / tray.bin_width) |> floor() |> max(0) |> min(tray.skill_num - 1)

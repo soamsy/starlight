@@ -70,28 +70,54 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
 
     socket =
       socket
-      |> event("move_action", %{"action" => target["id"], "dir" => "up"})
       |> event("update_action", %{"action" => ego["id"], "grade" => "he", "pick" => "last"})
       |> event("remove_action", %{"action" => hd(block["else"])["id"]})
 
     [_, _, block] = actions(socket, playbook_id)
-    assert Enum.map(block["then"], & &1["type"]) == ["target", "ego"]
-    assert Enum.at(block["then"], 1)["grade"] == "he"
+    assert Enum.map(block["then"], & &1["type"]) == ["ego", "target"]
+    assert Enum.at(block["then"], 0)["grade"] == "he"
 
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "except", "add_sinner" => "faust", "pick" => "all"})
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "except", "sinners" => ["faust"], "add_sinner" => "ryoshu", "pick" => "all"})
     [_, _, block] = actions(socket, playbook_id)
-    assert Map.take(Enum.at(block["then"], 1), ["who", "sinners"]) == %{"who" => "except", "sinners" => ["faust", "ryoshu"]}
-    assert render(socket) =~ "All but"
+    assert Map.take(Enum.at(block["then"], 0), ["who", "sinners"]) == %{"who" => "except", "sinners" => ["faust", "ryoshu"]}
+    assert render(socket) =~ "all but"
 
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "everyone", "pick" => "all"})
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "only", "pick" => "all"})
     [_, _, block] = actions(socket, playbook_id)
-    assert Map.take(Enum.at(block["then"], 1), ["who", "sinners"]) == %{"who" => "only", "sinners" => ["faust", "ryoshu"]}
+    assert Map.take(Enum.at(block["then"], 0), ["who", "sinners"]) == %{"who" => "only", "sinners" => ["faust", "ryoshu"]}
+
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "slots", "pick" => "first"})
+    [_, _, block] = actions(socket, playbook_id)
+    assert Map.take(Enum.at(block["then"], 0), ["who", "slots", "skill"]) == %{"who" => "slots", "slots" => %{"row" => "bottom", "is" => true, "match" => "envy"}, "skill" => %{"pick" => "all"}}
+
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "slots", "pick" => "first", "slot_is" => "false"})
+    [_, _, block] = actions(socket, playbook_id)
+    assert Enum.at(block["then"], 0)["skill"] == %{"pick" => "first", "start" => 1, "end" => 1}
+
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "chosen", "pick" => "first"})
+    [_, _, block] = actions(socket, playbook_id)
+    assert Map.take(Enum.at(block["then"], 0), ["who", "chosen", "skill"]) == %{"who" => "chosen", "chosen" => %{"join" => "and", "conditions" => [%{"kind" => "top"}]}, "skill" => %{"pick" => "all"}}
+    refute Map.has_key?(Enum.at(block["then"], 0), "slots")
+
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "chosen", "pick" => "all", "chosen_join" => "or", "chosen_c" => %{"0" => %{"kind" => "using", "values" => ["pride"]}, "1" => %{"kind" => "bottom"}}})
+    [_, _, block] = actions(socket, playbook_id)
+    assert Enum.at(block["then"], 0)["chosen"] == %{"join" => "or", "conditions" => [%{"kind" => "using", "values" => ["pride"]}, %{"kind" => "bottom"}]}
+
+    socket = event(socket, "add_chosen", %{"action" => ego["id"]})
+    [_, _, block] = actions(socket, playbook_id)
+    assert length(Enum.at(block["then"], 0)["chosen"]["conditions"]) == 3
+
+    socket = event(socket, "remove_chosen", %{"action" => ego["id"], "index" => "0"})
+    [_, _, block] = actions(socket, playbook_id)
+    assert Enum.map(Enum.at(block["then"], 0)["chosen"]["conditions"], & &1["kind"]) == ["bottom", "top"]
+
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "only", "pick" => "all"})
 
     socket = event(socket, "remove_sinner", %{"action" => ego["id"], "sinner" => "faust"})
     [_, _, block] = actions(socket, playbook_id)
-    assert Enum.at(block["then"], 1)["sinners"] == ["ryoshu"]
+    assert Enum.at(block["then"], 0)["sinners"] == ["ryoshu"]
     assert block["else"] == []
     socket = event(socket, "close_action_condition", %{})
     assert render(socket) =~ "battle_combat_ready off AND battle_chain on AND sinners = 1"
@@ -125,6 +151,48 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
 
     socket = event(socket, "remove_schedule", %{"schedule" => schedule["id"]})
     assert Enum.map(actions(socket, playbook_id), & &1["type"]) == ["win_rate", "commit"]
+  end
+
+  test "a schedule can loop from a turn and the loop can be cleared", %{socket: socket, playbook_id: playbook_id} do
+    [win_rate, _commit] = actions(socket, playbook_id)
+    socket = event(socket, "add_schedule", %{"action" => win_rate["id"]})
+    [schedule, _commit] = actions(socket, playbook_id)
+
+    socket = event(socket, "set_schedule_loop", %{"schedule" => schedule["id"], "turn" => "2"})
+    [schedule, _commit] = actions(socket, playbook_id)
+    assert BattlePlans.loop_from(schedule) == 2
+    assert BattlePlans.segment_froms(schedule) == [1, 2]
+    assert render(socket) =~ "Loop T1"
+
+    socket = event(socket, "set_schedule_loop", %{"schedule" => schedule["id"], "turn" => ""})
+    [schedule, _commit] = actions(socket, playbook_id)
+    refute BattlePlans.looping?(schedule)
+  end
+
+  test "a loop can get intro tabs and loop tabs, shrink, and be removed", %{socket: socket, playbook_id: playbook_id} do
+    [win_rate, _commit] = actions(socket, playbook_id)
+    socket = event(socket, "add_schedule", %{"action" => win_rate["id"]})
+    [schedule, _commit] = actions(socket, playbook_id)
+    id = schedule["id"]
+
+    socket = event(socket, "set_schedule_loop", %{"schedule" => id, "turn" => "1"})
+    socket = event(socket, "add_intro_tab", %{"schedule" => id, "turn" => "1"})
+    socket = event(socket, "add_intro_tab", %{"schedule" => id, "turn" => "2"})
+    socket = event(socket, "split_schedule", %{"schedule" => id, "turn" => "4"})
+    [schedule, _commit] = actions(socket, playbook_id)
+    assert BattlePlans.loop_from(schedule) == 3
+    assert BattlePlans.segment_froms(schedule) == [1, 2, 3, 4]
+    html = render(socket)
+    assert html =~ "Loop T1" and html =~ "Loop T2"
+
+    socket = event(socket, "remove_schedule_segment", %{"schedule" => id, "from" => "4"})
+    [schedule, _commit] = actions(socket, playbook_id)
+    assert BattlePlans.segment_froms(schedule) == [1, 2, 3]
+
+    socket = event(socket, "set_schedule_loop", %{"schedule" => id, "turn" => ""})
+    [schedule, _commit] = actions(socket, playbook_id)
+    refute BattlePlans.looping?(schedule)
+    assert BattlePlans.segment_froms(schedule) == [1, 2, 3]
   end
 
   test "dragging an action into a schedule tab and back", %{socket: socket, playbook_id: playbook_id} do
@@ -220,10 +288,18 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [_, _, target] = actions(socket, playbook_id)
     assert target["enemy"]["ignore"] == [%{"side" => "top", "n" => 1}]
 
-    socket = event(socket, "update_action", Map.merge(base, %{"cap" => "1", "rest" => %{"kind" => "priority", "enemy_pick" => "first", "enemy_ignore_add" => "right"}}))
-    socket = event(socket, "remove_ignore", %{"action" => target["id"], "path" => "rest", "index" => "0"})
+    socket = event(socket, "update_action", Map.merge(base, %{"automate_rest" => "true"}))
     [_, _, target] = actions(socket, playbook_id)
-    refute Map.has_key?(target["rest"]["enemy"], "ignore")
+    assert target["rest"]["enemy"] == %{"pick" => "continue"}
+    assert render(socket) =~ ~s(name="rest[enemy_pick]")
+
+    socket = event(socket, "update_action", Map.merge(base, %{"rest" => %{"kind" => "priority", "pick" => "all", "enemy_pick" => "last", "enemy_n" => "2"}}))
+    [_, _, target] = actions(socket, playbook_id)
+    assert target["rest"]["enemy"] == %{"pick" => "last", "n" => 2}
+
+    socket = event(socket, "update_action", Map.merge(base, %{"rest" => %{"kind" => "priority", "pick" => "all", "enemy_pick" => "continue"}}))
+    [_, _, target] = actions(socket, playbook_id)
+    assert target["rest"]["enemy"] == %{"pick" => "continue"}
   end
 
   test "playbooks can be reordered within their kind", %{socket: socket} do
@@ -257,6 +333,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [_, _, ego] = actions(socket, focused["id"])
     assert Enum.sort(ego["sinners"]) == ["faust", "ryoshu"]
 
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "only", "pick" => "first"})
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "only", "sinners" => ["faust", "gregor"], "pick" => "first"})
     assert render(socket) =~ "no profile in this plan"
   end
@@ -273,9 +350,9 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [_, _, target] = actions(socket, playbook_id)
     assert target["priority"] == %{"order" => ["s3", "wrath", "dodge"]}
 
-    socket = event(socket, "update_action", %{"action" => target["id"], "pick" => "first_with", "n" => "3", "match" => "gloom", "enemy_pick" => "first_with", "row" => "top"})
+    socket = event(socket, "update_action", %{"action" => target["id"], "pick" => "last", "slot_from" => "2", "slot_to" => "3", "enemy_pick" => "first_with", "row" => "top"})
     [_, _, target] = actions(socket, playbook_id)
-    assert target["skill"] == %{"pick" => "first_with", "n" => 3, "match" => "gloom"}
+    assert target["skill"] == %{"pick" => "last", "start" => 2, "end" => 3}
     assert target["enemy"] == %{"pick" => "first", "n" => 1}
     socket = event(socket, "update_action", %{"action" => target["id"], "pick" => "first", "enemy_pick" => "last", "row" => "priority", "priority_order" => ["s3", "wrath", "dodge"]})
     html = render(socket)
@@ -300,22 +377,23 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [chain_action] = actions(socket, chain["id"])
     assert hd(chain_action["pins"])["priority"] == %{"order" => ["pride", "s2"]}
 
-    pin_params = %{"pick" => "all", "kind" => "priority", "priority_order" => ["wrath", "s2"], "cap" => "2"}
+    pin_params = %{"pick" => "all", "kind" => "priority", "priority_order" => ["wrath", "s2"], "automate_rest" => "true"}
     socket = event(socket, "update_action", %{"action" => chain_action["id"], "pins" => %{"0" => pin_params}})
     [chain_action] = actions(socket, chain["id"])
     [pin] = chain_action["pins"]
     assert pin["priority"] == %{"order" => ["wrath", "s2"]}
-    assert pin["cap"] == 2
-    assert %{"type" => "target", "row" => "priority"} = pin["rest"]
+    assert %{"type" => "target", "row" => "priority", "who" => "everyone", "skill" => %{"pick" => "all"}} = pin["rest"]
     assert render(socket) =~ ~s(name="pins[0][rest][kind]")
 
-    rest_params = %{"kind" => "dodge", "cap" => "1"}
+    rest_params = %{"kind" => "dodge", "pick" => "last", "slot_from" => "1", "slot_to" => "2", "who" => "everyone", "automate_rest" => "true"}
     socket = event(socket, "update_action", %{"action" => chain_action["id"], "pins" => %{"0" => Map.put(pin_params, "rest", rest_params)}})
     [chain_action] = actions(socket, chain["id"])
-    assert %{"type" => "dodge", "cap" => 1, "rest" => %{"type" => "target"}} = hd(chain_action["pins"])["rest"]
+    assert %{"type" => "dodge", "skill" => %{"pick" => "last", "start" => 1, "end" => 2}, "rest" => %{"type" => "target"}} = hd(chain_action["pins"])["rest"]
     assert render(socket) =~ ~s(name="pins[0][rest][rest][kind]")
+    assert render(socket) =~ ~s(name="pins[0][rest][automate_rest]")
+    refute render(socket) =~ ~s(name="pins[0][rest][rest][automate_rest]")
 
-    pin_params = Map.delete(pin_params, "cap")
+    pin_params = Map.put(pin_params, "automate_rest", "false")
     socket = event(socket, "update_action", %{"action" => chain_action["id"], "pins" => %{"0" => pin_params}})
     [chain_action] = actions(socket, chain["id"])
     refute Map.has_key?(hd(chain_action["pins"]), "rest")

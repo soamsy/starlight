@@ -144,6 +144,67 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.segment_froms(BattlePlans.remove_segment(schedule, 3)) == [1]
     end
 
+    test "a loop repeats its one-turn tabs from the start turn" do
+      schedule =
+        BattlePlans.new_schedule(BattlePlans.new_action("retry"))
+        |> BattlePlans.split_segment(3)
+        |> BattlePlans.set_loop(3)
+        |> BattlePlans.split_segment(4)
+        |> BattlePlans.split_segment(5)
+
+      assert BattlePlans.segment_froms(schedule) == [1, 3, 4, 5]
+      assert Enum.map(BattlePlans.segment_froms(schedule), &BattlePlans.segment_label(schedule, &1)) == ["Turns 1-2", "Loop T1", "Loop T2", "Loop T3"]
+
+      froms = Enum.map(1..10, &BattlePlans.segment_at(schedule, &1)["from_turn"])
+      assert froms == [1, 1, 3, 4, 5, 3, 4, 5, 3, 4]
+    end
+
+    test "a loop tab lists the turns it plays on" do
+      schedule = BattlePlans.new_schedule(BattlePlans.new_action("retry")) |> BattlePlans.set_loop(5)
+      assert BattlePlans.loop_turns_label(schedule, 5) == "T5, T6, T7, T8, ..."
+
+      schedule = schedule |> BattlePlans.split_segment(6) |> BattlePlans.split_segment(7)
+      assert BattlePlans.loop_turns_label(schedule, 5) == "T5, T8, T11, T14, ..."
+      assert BattlePlans.loop_turns_label(schedule, 7) == "T7, T10, T13, T16, ..."
+    end
+
+    test "loop tabs stay consecutive: only the last can close and none can move" do
+      schedule = BattlePlans.new_schedule(BattlePlans.new_action("retry")) |> BattlePlans.set_loop(2) |> BattlePlans.split_segment(9) |> BattlePlans.split_segment(9)
+
+      assert BattlePlans.segment_froms(schedule) == [1, 2, 3, 4]
+      assert BattlePlans.move_segment(schedule, 3, 8) == schedule
+      assert BattlePlans.remove_segment(schedule, 3) == schedule
+      assert BattlePlans.remove_segment(schedule, 2) == schedule
+      assert BattlePlans.segment_froms(BattlePlans.remove_segment(schedule, 4)) == [1, 2, 3]
+    end
+
+    test "intro tabs can be added ahead of the loop, pushing it later" do
+      schedule = BattlePlans.new_schedule(BattlePlans.new_action("retry")) |> BattlePlans.set_loop(1) |> BattlePlans.split_segment(2)
+
+      one = BattlePlans.add_intro_segment(schedule)
+      assert BattlePlans.segment_froms(one) == [1, 2, 3]
+      assert BattlePlans.loop_from(one) == 2
+      assert Enum.map(BattlePlans.segment_froms(one), &BattlePlans.segment_label(one, &1)) == ["Turn 1", "Loop T1", "Loop T2"]
+
+      two = BattlePlans.add_intro_segment(one)
+      assert BattlePlans.segment_froms(two) == [1, 2, 3, 4]
+      assert Enum.map(BattlePlans.segment_froms(two), &BattlePlans.segment_label(two, &1)) == ["Turn 1", "Turn 2", "Loop T1", "Loop T2"]
+      assert Enum.map(1..7, &BattlePlans.segment_at(two, &1)["from_turn"]) == [1, 2, 3, 4, 3, 4, 3]
+    end
+
+    test "moving the loop start renumbers the body and clearing it leaves plain tabs" do
+      schedule = BattlePlans.new_schedule(BattlePlans.new_action("retry")) |> BattlePlans.set_loop(1) |> BattlePlans.split_segment(2) |> BattlePlans.split_segment(3)
+
+      moved = BattlePlans.set_loop(schedule, 6)
+      assert BattlePlans.segment_froms(moved) == [1, 2, 3, 6]
+      assert BattlePlans.loop_from(moved) == 6
+      assert BattlePlans.segment_at(moved, 9)["from_turn"] == 6
+
+      cleared = BattlePlans.set_loop(moved, nil)
+      refute BattlePlans.looping?(cleared)
+      assert BattlePlans.segment_at(cleared, 9)["from_turn"] == 6
+    end
+
     test "unwrapping splices tab 1's actions back in place" do
       playbook = scheduled()
       [schedule | _] = playbook["actions"]
@@ -267,80 +328,50 @@ defmodule StarlightBot.BattlePlansTest do
     end
   end
 
-  describe "assign_slots/3" do
-    defp cells_of(cells), do: fn column -> Enum.at(cells, column) end
-
-    defp saikai_cells do
-      [
-        {cell(:pride, :skill1), cell(:gloom, :skill2)},
-        {cell(:envy, :skill1), cell(:wrath, :skill1)},
-        {cell(:lust, :skill1), cell(:sloth, :skill3)},
-        {cell(:pride, :skill2), cell(:envy, :skill1)},
-        {cell(:gloom, :skill1), cell(:lust, :skill1)}
-      ]
+  describe "slot ranges" do
+    test "all keeps every slot" do
+      assert BattlePlans.pick_columns([2, 3, 4], %{"pick" => "all"}) == [2, 3, 4]
     end
 
-    defp rest(extra \\ %{}), do: Map.merge(%{"type" => "dodge"}, extra)
-
-    test "an uncapped rule takes every slot" do
-      holder = %{"type" => "target", "row" => "top"}
-      assert BattlePlans.assign_slots(holder, [0, 1, 2], nil) == [{holder, [0, 1, 2]}]
+    test "from first counts from the left and a bare first is slot 1" do
+      assert BattlePlans.pick_columns([2, 3, 4], %{"pick" => "first"}) == [2]
+      assert BattlePlans.pick_columns([2, 3, 4], %{"pick" => "first", "start" => 2, "end" => 3}) == [3, 4]
     end
 
-    test "a cap takes the leftmost slots and the rest rule gets what is left" do
-      holder = %{"type" => "target", "row" => "top", "cap" => 2, "rest" => rest()}
-      assert [{^holder, [0, 1]}, {%{"type" => "dodge"}, [2, 3, 4]}] = BattlePlans.assign_slots(holder, [0, 1, 2, 3, 4], nil)
+    test "from last counts from the right and returns slots left to right" do
+      assert BattlePlans.pick_columns([2, 3, 4], %{"pick" => "last"}) == [4]
+      assert BattlePlans.pick_columns([2, 3, 4], %{"pick" => "last", "start" => 1, "end" => 2}) == [3, 4]
     end
 
-    test "a priority cap takes the best ranked slots, leftmost first on ties" do
-      holder = %{"type" => "target", "row" => "priority", "priority" => %{"order" => ["wrath", "s3", "s2"]}, "cap" => 3, "rest" => rest()}
-      assert [{^holder, [0, 1, 2]}, {%{"type" => "dodge"}, [3, 4]}] = BattlePlans.assign_slots(holder, [0, 1, 2, 3, 4], cells_of(saikai_cells()))
+    test "a range past the slot count takes what exists, and nothing when it starts past the end" do
+      assert BattlePlans.pick_columns([2, 3], %{"pick" => "first", "start" => 2, "end" => 9}) == [3]
+      assert BattlePlans.pick_columns([2, 3], %{"pick" => "first", "start" => 3, "end" => 4}) == []
     end
 
-    test "rest rules chain their own caps" do
-      third = rest(%{"type" => "ego"})
-      second = %{"type" => "target", "row" => "bottom", "cap" => 1, "rest" => third}
-      first = %{"type" => "target", "row" => "top", "cap" => 2, "rest" => second}
-      assert [{^first, [0, 1]}, {^second, [2]}, {^third, [3, 4]}] = BattlePlans.assign_slots(first, [0, 1, 2, 3, 4], nil)
+    test "parse_skill reads the range, keeps end at or past start, and falls back to the first slot" do
+      assert BattlePlans.parse_skill("all", nil, nil) == %{"pick" => "all"}
+      assert BattlePlans.parse_skill("first", "2", "4") == %{"pick" => "first", "start" => 2, "end" => 4}
+      assert BattlePlans.parse_skill("last", "3", "1") == %{"pick" => "last", "start" => 3, "end" => 3}
+      assert BattlePlans.parse_skill("first", nil, nil) == %{"pick" => "first", "start" => 1, "end" => 1}
+      assert BattlePlans.parse_skill("exact", "2", "2") == %{"pick" => "first", "start" => 1, "end" => 1}
     end
 
-    test "a cap past the slot count leaves nothing for the rest rule" do
-      holder = %{"type" => "target", "row" => "top", "cap" => 9, "rest" => rest()}
-      assert [{^holder, [0, 1]}] = BattlePlans.assign_slots(holder, [0, 1], nil)
+    test "skill_label spells the range" do
+      assert BattlePlans.skill_label(%{"pick" => "all"}) == "all"
+      assert BattlePlans.skill_label(%{"pick" => "first"}) == "slots 1 from first"
+      assert BattlePlans.skill_label(%{"pick" => "last", "start" => 2, "end" => 3}) == "slots 2-3 from last"
     end
   end
 
-  describe "reorder_playbooks/3" do
-    test "reorders one kind in place and leaves the other kind's slots alone" do
-      pbs = [%{"id" => "a", "kind" => "chain"}, %{"id" => "x", "kind" => "focused"}, %{"id" => "b", "kind" => "chain"}, %{"id" => "c", "kind" => "chain"}]
-      assert pbs |> BattlePlans.reorder_playbooks("chain", ["c", "a", "b"]) |> Enum.map(& &1["id"]) == ["c", "x", "a", "b"]
+  describe "put_rest/2" do
+    test "automating creates a rest rule with its own selector, keeping an existing one" do
+      assert %{"rest" => %{"type" => "target", "row" => "priority", "who" => "everyone", "skill" => %{"pick" => "all"}}} = BattlePlans.put_rest(%{"type" => "target"}, "true")
+      assert BattlePlans.put_rest(%{"rest" => %{"type" => "ego"}}, "true")["rest"] == %{"type" => "ego"}
     end
 
-    test "ignores an incomplete or foreign id list" do
-      pbs = [%{"id" => "a", "kind" => "chain"}, %{"id" => "b", "kind" => "chain"}, %{"id" => "x", "kind" => "focused"}]
-      assert BattlePlans.reorder_playbooks(pbs, "chain", ["b"]) == pbs
-      assert BattlePlans.reorder_playbooks(pbs, "chain", ["b", "x"]) == pbs
-    end
-  end
-
-  describe "put_cap/2" do
-    test "parses 1 to 99, clamps, and creates the rest rule" do
-      assert %{"cap" => 3, "rest" => %{"type" => "target", "row" => "priority"}} = BattlePlans.put_cap(%{"type" => "target"}, "3")
-      assert BattlePlans.put_cap(%{}, "250")["cap"] == 99
-    end
-
-    test "keeps an existing rest rule" do
-      holder = %{"cap" => 2, "rest" => %{"type" => "ego"}}
-      assert BattlePlans.put_cap(holder, "4")["rest"] == %{"type" => "ego"}
-    end
-
-    test "blank, zero, or junk removes the cap and its rest rules" do
-      holder = %{"type" => "target", "cap" => 2, "rest" => %{"type" => "ego"}}
-      for value <- ["", "0", "x", nil], do: assert(BattlePlans.put_cap(holder, value) == %{"type" => "target"})
-    end
-
-    test "row_label no longer mentions limits" do
-      assert BattlePlans.row_label(%{"row" => "priority", "priority" => %{"order" => ["wrath"]}}) == "priority wrath"
+    test "turning it off drops the rest rule and nil leaves it alone" do
+      refute Map.has_key?(BattlePlans.put_rest(%{"rest" => %{"type" => "ego"}}, "false"), "rest")
+      assert BattlePlans.put_rest(%{"rest" => %{"type" => "ego"}}, nil)["rest"] == %{"type" => "ego"}
     end
   end
 
@@ -367,13 +398,38 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.tray_count(%{"match" => "s3"}, classified, [0, 2]) == 0
     end
 
-    test "first_with takes up to n owned slots with a match in either row, left to right" do
-      classified = {[cell(:envy, :skill1), cell(:wrath, :skill2), cell(:pride, :skill1)], [cell(:pride, :skill3), cell(:gloom, :skill1), cell(:wrath, :skill1)]}
-      assert BattlePlans.first_with([0, 1, 2], "wrath", 1, classified) == [1]
-      assert BattlePlans.first_with([0, 1, 2], "wrath", 3, classified) == [1, 2]
-      assert BattlePlans.first_with([2], "wrath", 3, classified) == [2]
-      assert BattlePlans.first_with([0, 1], "s3", 1, classified) == [0]
-      assert BattlePlans.first_with([0, 1, 2], "lust", 2, classified) == []
+    test "slot_columns filters slots on one row being or not being a sin" do
+      classified = {[cell(:envy, :skill1), cell(:wrath, :skill2), cell(:pride, :skill1)], [cell(:pride, :skill3), cell(:envy, :skill1), cell(:envy, :skill1)]}
+      assert BattlePlans.slot_columns(%{"row" => "bottom", "is" => true, "match" => "envy"}, classified, 3) == [1, 2]
+      assert BattlePlans.slot_columns(%{"row" => "bottom", "is" => false, "match" => "envy"}, classified, 3) == [0]
+      assert BattlePlans.slot_columns(%{"row" => "top", "is" => true, "match" => "s1"}, classified, 3) == [0, 2]
+      assert BattlePlans.slot_columns(%{"row" => "available", "is" => true, "match" => "envy"}, classified, 3) == [0, 1, 2]
+      assert BattlePlans.slot_columns(%{"row" => "available", "is" => false, "match" => "envy"}, classified, 3) == []
+      assert BattlePlans.slot_columns(%{"row" => "available", "is" => false, "match" => "wrath"}, classified, 3) == [0, 2]
+    end
+
+    test "chosen_columns combines row and used-skill conditions with and/or" do
+      classified = {[cell(:envy, :skill1), cell(:wrath, :skill2), cell(:pride, :skill1), cell(:envy, :skill3), cell(:lust, :skill1)], [cell(:wrath, :skill1), cell(:envy, :skill1), cell(:envy, :skill2), cell(:pride, :skill1), cell(:wrath, :skill3)]}
+      filter = fn join, conditions -> %{"join" => join, "conditions" => conditions} end
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "bottom"}]), [1, 3], 5, classified) == [1, 3]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "top"}]), [1, 3], 5, classified) == [0, 2, 4]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "using", "values" => ["envy", "lust"]}]), [1, 3], 5, classified) == [0, 1, 4]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "not_using", "values" => ["envy"]}]), [1, 3], 5, classified) == [2, 3, 4]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "top"}, %{"kind" => "not_using", "values" => ["envy"]}]), [1, 3], 5, classified) == [2, 4]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "bottom_is", "values" => ["wrath"]}]), [], 5, classified) == [0, 4]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "bottom_is_not", "values" => ["wrath", "envy"]}]), [], 5, classified) == [3]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "top_is", "values" => ["envy", "s1"]}]), [], 5, classified) == [0, 2, 3, 4]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "top_is_not", "values" => ["envy"]}]), [], 5, classified) == [1, 2, 4]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "has", "values" => ["lust"]}]), [], 5, classified) == [4]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "has_no", "values" => ["pride"]}]), [], 5, classified) == [0, 1, 4]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "has_no", "values" => ["envy", "wrath"]}]), [], 5, classified) == []
+      assert BattlePlans.chosen_columns(filter.("or", [%{"kind" => "bottom"}, %{"kind" => "using", "values" => ["lust"]}]), [1, 3], 5, classified) == [1, 3, 4]
+    end
+
+    test "parse_chosen_filter reads indexed conditions and drops unknown chips" do
+      params = %{"chosen_join" => "or", "chosen_c" => %{"1" => %{"kind" => "bottom"}, "0" => %{"kind" => "not_using", "values" => ["envy", "bogus", "envy", "s3"]}}}
+      assert BattlePlans.parse_chosen_filter(params) == %{"join" => "or", "conditions" => [%{"kind" => "not_using", "values" => ["envy", "s3"]}, %{"kind" => "bottom"}]}
+      assert BattlePlans.parse_chosen_filter(%{}) == BattlePlans.new_chosen_filter()
     end
 
     test "compares the count" do

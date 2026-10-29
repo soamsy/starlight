@@ -197,6 +197,17 @@ defmodule StarlightBot.Vision.SkillTrayTest do
       assert SkillTray.owned_columns(tray, 5) == [5]
     end
 
+    test "columns_under names every slot whose center falls inside a cluster, so merged clusters cover each slot" do
+      tray = %{SkillTray.geometry(400) | skill_num: 6}
+      center = &SkillTray.slot_x(tray, &1)
+      one = {round(center.(1)) - 20, 886, 40, 17}
+      merged = {round(center.(3)) - 20, 886, round(center.(5) - center.(3)) + 40, 17}
+
+      assert SkillTray.columns_under(tray, [one]) == [1]
+      assert SkillTray.columns_under(tray, [one, merged]) == [1, 3, 4, 5]
+      assert SkillTray.columns_under(tray, []) == []
+    end
+
     test "sinner action y sits below the bottom skill row" do
       tray = SkillTray.geometry(400)
       assert tray.sinner_action_y > tray.bottom_row.y + tray.bottom_row.h
