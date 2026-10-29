@@ -531,6 +531,24 @@ defmodule StarlightBot.GiftPlansTest do
     end
   end
 
+  describe "encounter reward schedule" do
+    test "defaults to the shipped order and the latest row at or below the floor wins" do
+      default = ~w(gain_cost random_gift starlight cost_plus_gift resources)
+      assert GiftPlans.blank()["encounter_rewards"] == [%{"from_floor" => 1, "order" => default}]
+      assert GiftPlans.normalize(Map.delete(GiftPlans.blank(), "encounter_rewards"))["encounter_rewards"] == [%{"from_floor" => 1, "order" => default}]
+
+      data = %{"encounter_rewards" => [%{"from_floor" => 1, "order" => default}, %{"from_floor" => 6, "order" => ["starlight"]}]}
+      assert GiftPlans.encounter_reward_order(data, 5) == default
+      assert GiftPlans.encounter_reward_order(data, 6) == ["starlight"]
+      assert GiftPlans.encounter_reward_order(%{"encounter_rewards" => []}, 3) == default
+    end
+
+    test "hooks end with the tiers, highest first" do
+      assert GiftPlans.encounter_reward_hooks(["starlight"]) ==
+               [:encounter_reward_starlight, :encounter_reward_tier_7, :encounter_reward_tier_5, :encounter_reward_tier_4, :encounter_reward_tier_3]
+    end
+  end
+
   describe "import_milestone/2" do
     defp source do
       leaf = fn id -> %{"op" => "milestone", "milestone" => id} end

@@ -278,6 +278,46 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("add_encounter_row", _, socket) do
+    rows = socket.assigns.plan_data["encounter_rewards"]
+    next_floor = (rows |> Enum.map(& &1["from_floor"]) |> Enum.max(fn -> 0 end)) |> Kernel.+(1) |> min(15)
+    order = if rows == [], do: GiftPlans.encounter_reward_default_order(), else: List.last(rows)["order"]
+
+    {:noreply, update_plan(socket, &Map.put(&1, "encounter_rewards", sort_schedule(rows ++ [%{"from_floor" => next_floor, "order" => order}])))}
+  end
+
+  @impl true
+  def handle_event("set_encounter_floor", %{"index" => index, "from_floor" => floor}, socket) do
+    floor = parse_int(floor, 1) |> max(1) |> min(15)
+
+    {:noreply, update_plan(socket, &update_encounter_rows(&1, fn rows -> rows |> List.update_at(String.to_integer(index), fn row -> %{row | "from_floor" => floor} end) |> sort_schedule() end))}
+  end
+
+  @impl true
+  def handle_event("remove_encounter_row", %{"index" => index}, socket) do
+    {:noreply, update_plan(socket, &update_encounter_rows(&1, fn rows -> rows |> List.delete_at(String.to_integer(index)) |> sort_schedule() end))}
+  end
+
+  @impl true
+  def handle_event("encounter_add", %{"index" => index, "key" => key}, socket) do
+    if key in GiftPlans.encounter_reward_options() do
+      {:noreply, update_plan(socket, &update_encounter_order(&1, index, fn order -> if key in order, do: order, else: order ++ [key] end))}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("encounter_remove", %{"index" => index, "key" => key}, socket) do
+    {:noreply, update_plan(socket, &update_encounter_order(&1, index, fn order -> List.delete(order, key) end))}
+  end
+
+  @impl true
+  def handle_event("reorder_encounter", %{"scope" => index, "ids" => ids}, socket) do
+    {:noreply, update_plan(socket, &update_encounter_order(&1, index, fn order -> if Enum.sort(ids) == Enum.sort(order), do: ids, else: order end))}
+  end
+
+  @impl true
   def handle_event("open_case_condition", %{"case_id" => id}, socket) do
     {:noreply, assign(socket, :editing_condition_case_id, id)}
   end
@@ -1111,6 +1151,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp fusion_entry(socket, entry_id) do
     entry = socket.assigns |> selected_milestone() |> GiftPlans.find_entry(entry_id)
     {entry, socket.assigns.gifts_by_name[GiftPlans.subject_gift(entry)]}
+  end
+
+  defp update_encounter_rows(data, fun), do: Map.update!(data, "encounter_rewards", fun)
+
+  defp update_encounter_order(data, index, fun) do
+    update_encounter_rows(data, fn rows -> List.update_at(rows, String.to_integer(index), fn row -> %{row | "order" => fun.(row["order"])} end) end)
   end
 
   defp sort_schedule(rows) do

@@ -1,7 +1,8 @@
 defmodule StarlightBot.Navigation.Screens.EncounterReward do
   use StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.RewardHelpers
-  alias StarlightBot.Ctx
+  alias StarlightBot.Automation.RunMemory
+  alias StarlightBot.{Ctx, GiftPlans}
 
   @default_location_timeout 1_000
   @ready_wait_ms 2_000
@@ -10,17 +11,12 @@ defmodule StarlightBot.Navigation.Screens.EncounterReward do
   @gift_popup_grace_ms 300
   @select_timeout_ms 2_000
   @select_every_ms 400
-  @priority_hooks [
-    :encounter_reward_gain_cost,
-    :encounter_reward_random_gift,
-    :encounter_reward_starlight,
-    :encounter_reward_resources
-  ]
+  @ready_hooks GiftPlans.encounter_reward_hooks(GiftPlans.encounter_reward_options())
 
   screen :encounter_reward, identity: :encounter_reward do
     transition to: :encounter_reward_over do
       [
-        branch([{any_of(@priority_hooks), [sleep(@ready_settle_ms)]}], wait: @ready_wait_ms),
+        branch([{any_of(@ready_hooks), [sleep(@ready_settle_ms)]}], wait: @ready_wait_ms),
         retry_until(:encounter_reward_1_of_1, [call(__MODULE__, :select_priority_gift)], timeout: @select_timeout_ms, every: @select_every_ms),
         click(:encounter_reward_confirm),
         await_reward_closed()
@@ -50,8 +46,18 @@ defmodule StarlightBot.Navigation.Screens.EncounterReward do
     ]
   end
 
+  defp priority_hooks(ctx) do
+    order =
+      case RunMemory.gift_plan(ctx) do
+        %{} = data -> data |> GiftPlans.normalize() |> GiftPlans.encounter_reward_order(RunMemory.floor(ctx))
+        _ -> GiftPlans.encounter_reward_default_order()
+      end
+
+    GiftPlans.encounter_reward_hooks(order)
+  end
+
   def select_priority_gift(_frame, ctx) do
-    case RewardHelpers.find_and_click_first(@priority_hooks, ctx) do
+    case RewardHelpers.find_and_click_first(priority_hooks(ctx), ctx) do
       {:ok, {:clicked, _rect}} ->
         {:ok, nil}
 

@@ -26,6 +26,23 @@ defmodule StarlightBot.GiftPlans do
   @tier_fusable_tiers 1..4
   @max_floor 15
   @mounting_trials_modes ~w(avoid_hp best_gift)
+  @encounter_reward_hooks %{
+    "gain_cost" => :encounter_reward_gain_cost,
+    "random_gift" => :encounter_reward_random_gift,
+    "starlight" => :encounter_reward_starlight,
+    "resources" => :encounter_reward_resources,
+    "cost_plus_gift" => :encounter_reward_cost_plus_gift
+  }
+  @encounter_reward_options Map.keys(@encounter_reward_hooks)
+  @encounter_reward_labels %{
+    "gain_cost" => "Gain cost",
+    "random_gift" => "Random gift",
+    "starlight" => "Starlight",
+    "resources" => "Resources",
+    "cost_plus_gift" => "Cost + % chance of gift"
+  }
+  @encounter_reward_default_order ~w(gain_cost random_gift starlight cost_plus_gift resources)
+  @encounter_reward_tier_hooks [:encounter_reward_tier_7, :encounter_reward_tier_5, :encounter_reward_tier_4, :encounter_reward_tier_3]
   @fragment_slot "gift_0"
   @sin_fragments [
     "Fragment of Allurement",
@@ -170,6 +187,22 @@ defmodule StarlightBot.GiftPlans do
     |> Map.fetch!("mode")
   end
 
+  def encounter_reward_options, do: @encounter_reward_options
+  def encounter_reward_label(key), do: Map.fetch!(@encounter_reward_labels, key)
+  def encounter_reward_tier_hooks, do: @encounter_reward_tier_hooks
+
+  def default_encounter_rewards, do: [%{"from_floor" => 1, "order" => @encounter_reward_default_order}]
+
+  def encounter_reward_order(data, floor) when is_integer(floor) do
+    (data["encounter_rewards"] || default_encounter_rewards())
+    |> Enum.filter(&(&1["from_floor"] <= floor))
+    |> Enum.max_by(& &1["from_floor"], fn -> %{"order" => @encounter_reward_default_order} end)
+    |> Map.fetch!("order")
+  end
+
+  def encounter_reward_hooks(order), do: Enum.map(order, &Map.fetch!(@encounter_reward_hooks, &1)) ++ @encounter_reward_tier_hooks
+  def encounter_reward_default_order, do: @encounter_reward_default_order
+
   def blank(affinity \\ nil) do
     milestone = new_milestone("Shop Done")
 
@@ -180,6 +213,7 @@ defmodule StarlightBot.GiftPlans do
       "grace_picks" => Enum.map(@default_grace_indexes, &%{"index" => &1, "enhance" => 0}),
       "gift_search" => [],
       "mounting_trials" => default_mounting_trials(),
+      "encounter_rewards" => default_encounter_rewards(),
       "milestones" => [milestone]
     }
   end
@@ -192,6 +226,7 @@ defmodule StarlightBot.GiftPlans do
       "grace_picks" => data["grace_picks"] || [],
       "gift_search" => data["gift_search"] || [],
       "mounting_trials" => data["mounting_trials"] || default_mounting_trials(),
+      "encounter_rewards" => data["encounter_rewards"] || default_encounter_rewards(),
       "milestones" => Enum.map(data["milestones"] || [new_milestone("Shop Done")], &normalize_milestone/1)
     }
   end

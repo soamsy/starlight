@@ -296,6 +296,49 @@
                 </form>
                 <span :if={rows == []} class="text-[11px] text-base-content/50 italic">No floors set; every floor uses best gift.</span>
               </div>
+
+              <div class="divider my-0"></div>
+
+              <% encounter_rows = @plan_data["encounter_rewards"] %>
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-semibold text-base-content/70">Encounter Reward</span>
+                  <button type="button" phx-click="add_encounter_row" disabled={Enum.any?(encounter_rows, &(&1["from_floor"] >= 15))}
+                          class="btn btn-ghost btn-xs ml-auto">Add Schedule</button>
+                </div>
+                <div :for={{row, index} <- Enum.with_index(encounter_rows)} class="flex flex-col gap-1 rounded border border-base-300 bg-base-200 px-1 py-1">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[11px] font-semibold text-base-content/70 w-12 shrink-0 px-1">from</span>
+                    <span :if={index == 0} class="text-[11px] font-semibold w-12 px-1">F1</span>
+                    <form :if={index > 0} phx-change="set_encounter_floor">
+                      <input type="hidden" name="index" value={index} />
+                      <select name="from_floor" class="select select-bordered select-xs w-16">
+                        <option :for={floor <- 1..15} value={floor} selected={row["from_floor"] == floor}>F<%= floor %></option>
+                      </select>
+                    </form>
+                    <span class="text-[11px] text-base-content/50">first visible, top to bottom</span>
+                    <button :if={index > 0} type="button" phx-click="remove_encounter_row" phx-value-index={index} class="btn btn-ghost btn-xs px-1 text-error ml-auto">✕</button>
+                  </div>
+                  <div class="flex flex-col gap-1 pl-1">
+                    <div id={"encounter-order-#{index}"} phx-hook="SortableList" data-sort-event="reorder_encounter" data-sort-scope={index} class="flex flex-col gap-1">
+                      <div :for={{key, position} <- Enum.with_index(row["order"])} data-sort-id={key} class="flex items-center gap-1 rounded border border-base-300 bg-base-100 px-2 py-0.5">
+                        <span data-sort-handle class="cursor-grab text-base-content/40 select-none">⠿</span>
+                        <span class="text-[11px] text-base-content/50 w-4"><%= position + 1 %></span>
+                        <span class="text-[11px] font-semibold"><%= GiftPlans.encounter_reward_label(key) %></span>
+                        <button type="button" phx-click="encounter_remove" phx-value-index={index} phx-value-key={key} class="btn btn-ghost btn-xs px-1 text-error ml-auto">✕</button>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-1 rounded border border-dashed border-base-300 px-2 py-0.5">
+                      <span class="text-[11px] text-base-content/50 w-4"><%= length(row["order"]) + 1 %></span>
+                      <span class="text-[11px] italic text-base-content/60">Highest tier available</span>
+                    </div>
+                    <div :if={GiftPlans.encounter_reward_options() -- row["order"] != []} class="flex items-center gap-1 flex-wrap">
+                      <button :for={key <- GiftPlans.encounter_reward_options() -- row["order"]} type="button" phx-click="encounter_add" phx-value-index={index} phx-value-key={key}
+                              class="btn btn-ghost btn-xs">+ <%= GiftPlans.encounter_reward_label(key) %></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
                   <% else %>
                   <%= if milestone do %>
                     <div class="flex items-start gap-2">
