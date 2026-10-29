@@ -4,18 +4,18 @@
   <div class="grid grid-cols-1 lg:grid-cols-[30fr_28fr] lg:grid-rows-1 gap-2 flex-none lg:flex-1 lg:min-h-0">
 
     <%!-- Left: Screenshot Panel --%>
-    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden min-h-96 lg:min-h-0">
+    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
       <div class="card-body p-3 flex flex-col flex-1 min-h-0">
 
         <div class="flex items-center gap-3 mb-2">
           <h2 class="card-title text-lg">Hook Editor</h2>
           <button phx-click="take_screenshot"
                   disabled={@screenshot_status in [:loading, :waiting]}
-                  class="btn btn-primary btn-sm">
+                  class="btn btn-primary btn-sm" title="Screenshot">
             <%= if @screenshot_status == :loading do %>
-              <span class="loading loading-spinner loading-xs"></span> Capturing…
+              <span class="loading loading-spinner loading-xs"></span><span class="hidden lg:inline"> Capturing…</span>
             <% else %>
-              📷 Screenshot
+              📷<span class="hidden lg:inline"> Screenshot</span>
             <% end %>
           </button>
           <button phx-click="take_screenshot_delayed"
@@ -27,9 +27,6 @@
               ⏱ 2s
             <% end %>
           </button>
-          <%= if @screenshot_status == :done do %>
-            <span class="badge badge-success badge-sm">Ready</span>
-          <% end %>
           <div class="tooltip tooltip-bottom" data-tip="Click and drag on the screenshot to select a region. Hold Shift for precision mode.">
             <span class="flex items-center justify-center w-5 h-5 rounded-full border border-base-content/30 text-base-content/40 text-xs cursor-default select-none">?</span>
           </div>
@@ -51,14 +48,14 @@
             <button phx-click="set_canvas_mode" phx-value-mode="color"
                     class={"btn btn-xs join-item #{if @canvas_mode == :color, do: "btn-accent", else: "btn-ghost"}"}
                     title="Click the screenshot to sample a color for an hsv_range hook">
-              🎨 Color
+              🎨<span class="hidden lg:inline"> Color</span>
             </button>
           </div>
 
         </div>
 
         <%!-- Canvas wrapper: fills remaining flex space, canvas fits 16:9 within it --%>
-        <div class="flex-1 min-h-0 overflow-hidden" style="container-type: size;">
+        <div class="w-full aspect-video flex-none lg:aspect-auto lg:flex-1 lg:min-h-0 overflow-hidden" style="container-type: size;">
           <%= if @screenshot_status == :idle do %>
             <div class="h-full flex flex-col items-center justify-center text-base-content/40">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
