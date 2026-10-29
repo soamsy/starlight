@@ -6,10 +6,10 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
   alias StarlightBotWeb.Live.MirrorDungeonLive, as: Live
 
   @teams [%{id: 5, name: "Burn", hooks: ["team_burn"]}, %{id: 10, name: "Saikai", hooks: ["team_slash", "team_pierce"]}]
-  @burn %{id: 5, hook: "team_burn"}
-  @saikai %{id: 10, hook: "team_slash"}
-  @saikai_pierce %{id: 10, hook: "team_pierce"}
-  @bleed %{id: 7, hook: "team_bleed"}
+  @burn %{id: 5, hook: "team_burn", mode: "default", search: "default"}
+  @saikai %{id: 10, hook: "team_slash", mode: "default", search: "default"}
+  @saikai_pierce %{id: 10, hook: "team_pierce", mode: "default", search: "default"}
+  @bleed %{id: 7, hook: "team_bleed", mode: "default", search: "default"}
 
   defp socket(picks) do
     %Phoenix.LiveView.Socket{
@@ -27,16 +27,30 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
   end
 
   test "parse_team_picks keeps known teams in order, repeats included, and falls back when none are valid" do
-    assert RunnerForms.parse_team_picks(["10", "5", "10"], nil, @teams) == [@saikai, @burn, @saikai]
-    assert RunnerForms.parse_team_picks(["10", "99", "x"], nil, @teams) == [@saikai]
-    assert RunnerForms.parse_team_picks(["99"], nil, @teams, [@burn]) == [@burn]
-    assert RunnerForms.parse_team_picks(nil, nil, @teams, [@burn]) == [@burn]
+    assert RunnerForms.parse_team_picks(["10", "5", "10"], nil, nil, nil, @teams) == [@saikai, @burn, @saikai]
+    assert RunnerForms.parse_team_picks(["10", "99", "x"], nil, nil, nil, @teams) == [@saikai]
+    assert RunnerForms.parse_team_picks(["99"], nil, nil, nil, @teams, [@burn]) == [@burn]
+    assert RunnerForms.parse_team_picks(nil, nil, nil, nil, @teams, [@burn]) == [@burn]
   end
 
   test "parse_team_picks keeps each row's hook and falls back to the team's first hook" do
-    assert RunnerForms.parse_team_picks(["10", "10"], ["team_pierce", "team_slash"], @teams) == [@saikai_pierce, @saikai]
-    assert RunnerForms.parse_team_picks(["10", "5"], ["team_burn", "team_pierce"], @teams) == [@saikai, @burn]
-    assert RunnerForms.parse_team_picks(["5", "10"], ["team_burn"], @teams) == [@burn, @saikai]
+    assert RunnerForms.parse_team_picks(["10", "10"], ["team_pierce", "team_slash"], nil, nil, @teams) == [@saikai_pierce, @saikai]
+    assert RunnerForms.parse_team_picks(["10", "5"], ["team_burn", "team_pierce"], nil, nil, @teams) == [@saikai, @burn]
+    assert RunnerForms.parse_team_picks(["5", "10"], ["team_burn"], nil, nil, @teams) == [@burn, @saikai]
+  end
+
+  test "parse_team_picks keeps each row's mode override and falls back to default for unknown values" do
+    assert RunnerForms.parse_team_picks(["10", "10", "5"], nil, ["hard_3", "extreme", "bogus"], nil, @teams) ==
+             [%{@saikai | mode: "hard_3"}, %{@saikai | mode: "extreme"}, @burn]
+  end
+
+  test "set_pick_option changes one entry's mode or search and ignores unknown values" do
+    socket = socket([@burn, @burn]) |> event("set_pick_option", %{"index" => "1", "key" => "mode", "option" => "hard_4"})
+    socket = event(socket, "set_pick_option", %{"index" => "0", "key" => "search", "option" => "none"})
+    assert socket.assigns.picks == [%{@burn | search: "none"}, %{@burn | mode: "hard_4"}]
+
+    socket = event(socket, "set_pick_option", %{"index" => "1", "key" => "mode", "option" => "bogus"})
+    assert Enum.at(socket.assigns.picks, 1).mode == "default"
   end
 
   test "the cycle grows by repeating the last team and never shrinks below one" do

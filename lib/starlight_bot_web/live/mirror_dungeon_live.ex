@@ -4,6 +4,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   alias StarlightBot.Automation.{EnkephalinCharger, RunMemory}
   alias StarlightBot.Navigation.{Navigator, RunSplits, ScreenTimes}
   alias StarlightBot.{RunHistory, RunnerForms, Teams}
+  alias StarlightBot.PackPlans.Resolver
   alias StarlightBotWeb.Live.LuxcavationLive
 
   @countdown_secs 2
@@ -70,7 +71,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
       if cycle_locked?(socket.assigns.phase, socket.assigns.other_running?) do
         socket
       else
-        picks = RunnerForms.parse_team_picks(params["team_ids"], params["team_hooks"], socket.assigns.teams, socket.assigns.picks)
+        picks = RunnerForms.parse_team_picks(params["team_ids"], params["team_hooks"], params["team_modes"], params["team_searches"], socket.assigns.teams, socket.assigns.picks)
         socket |> assign(:picks, picks) |> assign(:start_index, RunnerForms.parse_start_index(params["start_index"], picks))
       end
 
@@ -86,9 +87,23 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   @impl true
   def handle_event(event, _params, socket)
-      when event in ~w(add_cycle_team remove_cycle_team set_cycle_start reorder_cycle) and
+      when event in ~w(add_cycle_team remove_cycle_team set_cycle_start reorder_cycle set_pick_option) and
              socket.assigns.phase != :idle and not socket.assigns.other_running? do
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("set_pick_option", %{"index" => index, "key" => key, "option" => option}, socket) when key in ~w(mode search) do
+    index = String.to_integer(index)
+    key = String.to_existing_atom(key)
+
+    picks =
+      List.update_at(socket.assigns.picks, index, fn pick ->
+        parse = if key == :mode, do: &Resolver.parse_mode_override/1, else: &Resolver.parse_search_override/1
+        Map.put(pick, key, parse.(option))
+      end)
+
+    {:noreply, socket |> assign(:picks, picks) |> save_form()}
   end
 
   @impl true
@@ -475,14 +490,40 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   def current_mode(run_memory), do: Map.get(run_memory, :mode) || RunMemory.mode_for(Map.get(run_memory, :team), current_floor(run_memory))
 
   defp default_picks([]), do: []
-  defp default_picks([team | _]), do: [%{id: team.id, hook: Teams.pick_hook(team, nil)}]
+  defp default_picks([team | _]), do: [%{id: team.id, hook: Teams.pick_hook(team, nil), mode: "default", search: "default"}]
+
+  def search_override_label("default"), do: "Default"
+  def search_override_label("all"), do: "Search All"
+  def search_override_label("none"), do: "Search None"
+
+  def mode_badge_label("extreme"), do: "Ex"
+  def mode_badge_label("hard_" <> floor), do: "F#{floor}"
+
+  attr :search, :string, required: true
+
+  def search_badge(assigns) do
+    ~H"""
+    <span title={search_override_label(@search)} class="badge badge-sm badge-secondary px-1">
+      <svg viewBox="0 0 16 16" class="size-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <circle cx="6.5" cy="6.5" r="4.5" />
+        <path d="M10 10 14.5 14.5" />
+        <path :if={@search == "all"} d="M4.5 6.5h4M6.5 4.5v4" />
+        <path :if={@search == "none"} d="M2 2 11 11" stroke-width="2" />
+      </svg>
+    </span>
+    """
+  end
+
+  def mode_override_label("default"), do: "Default"
+  def mode_override_label("extreme"), do: "Extreme"
+  def mode_override_label("hard_" <> floor), do: "F#{floor} Hard"
 
   def team_hooks(teams, team_id), do: Enum.find_value(teams, [], &(&1.id == team_id && &1.hooks))
 
   def restore_form(socket, nil), do: socket
 
   def restore_form(socket, params) do
-    picks = RunnerForms.parse_team_picks(params["team_ids"], params["team_hooks"], socket.assigns.teams, socket.assigns.picks)
+    picks = RunnerForms.parse_team_picks(params["team_ids"], params["team_hooks"], params["team_modes"], params["team_searches"], socket.assigns.teams, socket.assigns.picks)
 
     socket
     |> assign(:picks, picks)
@@ -500,6 +541,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     RunnerForms.put("mirror_dungeon", %{
       "team_ids" => Enum.map(a.picks, &to_string(&1.id)),
       "team_hooks" => Enum.map(a.picks, & &1.hook),
+      "team_modes" => Enum.map(a.picks, & &1.mode),
+      "team_searches" => Enum.map(a.picks, & &1.search),
       "start_index" => to_string(a.start_index),
       "run_count" => a.run_count,
       "rewards" => a.rewards,

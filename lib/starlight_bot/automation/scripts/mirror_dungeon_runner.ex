@@ -7,6 +7,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   alias StarlightBot.Ctx
   alias StarlightBot.{GiftPlans, RunnerForms, Teams}
   alias StarlightBot.Navigation.{Catalog, Runner, Screen}
+  alias StarlightBot.PackPlans.Resolver
   alias StarlightBot.Navigation.Screens.Shop
   alias StarlightBot.Vision.Capture
 
@@ -330,7 +331,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   def handled_screen?(screen), do: screen in @recovery_kept_screens or Engine.in_battle?(screen)
 
   defp prepare_teams(picks, ctx) do
-    Enum.reduce_while(picks, {:ok, []}, fn %{id: team_id, hook: hook}, {:ok, acc} ->
+    Enum.reduce_while(picks, {:ok, []}, fn %{id: team_id, hook: hook} = pick, {:ok, acc} ->
       with {:ok, team} <- fetch_team(team_id, ctx),
            hook = Teams.pick_hook(team, hook),
            {:ok, team_type} <- resolve_team_type(hook, ctx) do
@@ -338,6 +339,8 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
           id: team_id,
           name: team.name,
           hook: hook,
+          mode_override: Resolver.parse_mode_override(Map.get(pick, :mode)),
+          search_override: Resolver.parse_search_override(Map.get(pick, :search)),
           type: team_type,
           affinity: resolve_affinity(team),
           grace_picks: resolve_grace_picks(team)
@@ -358,7 +361,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   defp next_team(%{teams: teams, index: index} = cycle, ctx), do: activate(%{cycle | index: rem(index + 1, length(teams))}, ctx)
 
-  defp team_memory(team), do: %{id: team.id, name: team.name, hook: team.hook, type: team.type, affinity: Atom.to_string(team.affinity)}
+  defp team_memory(team), do: %{id: team.id, name: team.name, hook: team.hook, type: team.type, affinity: Atom.to_string(team.affinity), mode_override: team.mode_override, search_override: team.search_override}
 
   defp fetch_team(team_id, ctx) do
     case Teams.get_team(team_id) do
@@ -456,11 +459,11 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       else: []
   end
 
-  defp dispatch(screen, %{run_state: run_state, cycle: %{team: %{id: team_id, affinity: affinity, grace_picks: grace_picks}}, config: config} = run, ctx) do
+  defp dispatch(screen, %{run_state: run_state, cycle: %{team: %{id: team_id, affinity: affinity, grace_picks: grace_picks} = team}, config: config} = run, ctx) do
     unless Engine.in_battle?(screen), do: RunMemory.reset_battle_retries(ctx)
 
     cond do
-      screen == :dungeon_graph_superposition_popup and RunMemory.extreme?(team_id) ->
+      screen == :dungeon_graph_superposition_popup and RunMemory.extreme?(team) ->
         [log(:info, "extreme mode is on, entering the next floors"), goto(screen, :dungeon_graph_superposition_entered, then: {__MODULE__, :superposition_entered, [run, run_state]})]
 
       screen == :dungeon_graph_superposition_popup ->
@@ -489,7 +492,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         [goto(screen, :md_door, then: resume_at(run, run_state))]
 
       screen in [:md_door, :md_door_unknown] ->
-        superposition_steps(RunMemory.extreme?(team_id)) ++ [goto(screen, :md_door_enter, then: resume_at(run, run_state))]
+        superposition_steps(RunMemory.extreme?(team)) ++ [goto(screen, :md_door_enter, then: resume_at(run, run_state))]
 
       screen == :md_door_enter_popup ->
         [goto(:md_door_enter_popup, :team_select, then: resume_at(run, run_state))]

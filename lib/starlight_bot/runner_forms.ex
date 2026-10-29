@@ -1,6 +1,7 @@
 defmodule StarlightBot.RunnerForms do
   import Ecto.Query
   alias StarlightBot.{LuxSchedule, Repo, Teams}
+  alias StarlightBot.PackPlans.Resolver
   alias StarlightBot.Automation.EnkephalinCharger
 
   @topic "runner_forms"
@@ -59,7 +60,7 @@ defmodule StarlightBot.RunnerForms do
   end
 
   def mirror_dungeon_action(params, teams) do
-    picks = parse_team_picks(params["team_ids"], params["team_hooks"], teams)
+    picks = parse_team_picks(params["team_ids"], params["team_hooks"], params["team_modes"], params["team_searches"], teams)
     start = parse_start_index(params["start_index"], picks)
     picks = Enum.drop(picks, start) ++ Enum.take(picks, start)
 
@@ -145,16 +146,18 @@ defmodule StarlightBot.RunnerForms do
     end
   end
 
-  def parse_team_picks(ids, hooks, teams, fallback \\ []) do
+  def parse_team_picks(ids, hooks, modes, searches, teams, fallback \\ []) do
     ids = List.wrap(ids)
     hooks = List.wrap(hooks) ++ List.duplicate(nil, length(ids))
+    modes = List.wrap(modes) ++ List.duplicate(nil, length(ids))
+    searches = List.wrap(searches) ++ List.duplicate(nil, length(ids))
 
     ids
-    |> Enum.zip(hooks)
-    |> Enum.flat_map(fn {value, hook} ->
+    |> Enum.zip(Enum.zip([hooks, modes, searches]))
+    |> Enum.flat_map(fn {value, {hook, mode, search}} ->
       with {id, ""} <- Integer.parse(to_string(value)),
            %{} = team <- Enum.find(teams, &(&1.id == id)) do
-        [%{id: id, hook: Teams.pick_hook(team, hook)}]
+        [%{id: id, hook: Teams.pick_hook(team, hook), mode: Resolver.parse_mode_override(mode), search: Resolver.parse_search_override(search)}]
       else
         _ -> []
       end

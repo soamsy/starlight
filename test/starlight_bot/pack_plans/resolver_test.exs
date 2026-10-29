@@ -7,6 +7,42 @@ defmodule StarlightBot.PackPlans.ResolverTest do
     %{id: id, normal_floors: Jason.encode!(normal_floors), hard_floors: Jason.encode!(hard_floors)}
   end
 
+  describe "mode override" do
+    @plan %{"mode_schedule" => [%{"from_floor" => 4, "mode" => "hard"}], "extreme" => false, "packs" => %{}}
+
+    test "default and unknown values leave the plan's schedule alone" do
+      assert Resolver.with_mode_override(@plan, "default") == @plan
+      assert Resolver.with_mode_override(@plan, nil) == @plan
+      assert Resolver.parse_mode_override("bogus") == "default"
+    end
+
+    test "hard_N switches to hard at floor N and drops extreme" do
+      plan = Resolver.with_mode_override(Map.put(@plan, "extreme", true), "hard_2")
+      assert Enum.map(1..3, &Resolver.mode_for_floor(plan["mode_schedule"], &1)) == ["normal", "hard", "hard"]
+      refute Resolver.extreme?(plan)
+    end
+
+    test "extreme is hard from floor 1 with extreme on" do
+      plan = Resolver.with_mode_override(@plan, "extreme")
+      assert Resolver.mode_for_floor(plan["mode_schedule"], 1) == "hard"
+      assert Resolver.extreme?(plan)
+    end
+  end
+
+  describe "search override" do
+    @searching %{"search_floors" => [2, 4]}
+
+    test "default and unknown values keep the plan's search floors" do
+      assert Resolver.with_search_override(@searching, "default") == @searching
+      assert Resolver.parse_search_override("bogus") == "default"
+    end
+
+    test "all searches every searchable floor and none searches nothing" do
+      assert Resolver.with_search_override(@searching, "all")["search_floors"] == Enum.to_list(1..10)
+      assert Resolver.with_search_override(@searching, "none")["search_floors"] == []
+    end
+  end
+
   describe "extreme mode" do
     @all_hard [%{"from_floor" => 1, "mode" => "hard"}]
 

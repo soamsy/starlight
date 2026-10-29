@@ -15,6 +15,35 @@ defmodule StarlightBot.PackPlans.Resolver do
 
   @last_searchable_floor 10
 
+  @mode_overrides ~w(default hard_1 hard_2 hard_3 hard_4 hard_5 extreme)
+
+  def mode_overrides, do: @mode_overrides
+
+  def parse_mode_override(value) when value in @mode_overrides, do: value
+  def parse_mode_override(_value), do: "default"
+
+  def with_mode_override(plan_data, "extreme") do
+    plan_data |> Map.put("mode_schedule", [%{"from_floor" => 1, "mode" => "hard"}]) |> Map.put("extreme", true)
+  end
+
+  def with_mode_override(plan_data, "hard_" <> floor) when floor in ~w(1 2 3 4 5) do
+    plan_data |> Map.put("mode_schedule", [%{"from_floor" => String.to_integer(floor), "mode" => "hard"}]) |> Map.put("extreme", false)
+  end
+
+  def with_mode_override(plan_data, _override), do: plan_data
+
+  @search_overrides ~w(default all none)
+
+  def search_overrides, do: @search_overrides
+
+  def parse_search_override(value) when value in @search_overrides, do: value
+  def parse_search_override(_value), do: "default"
+
+  def with_search_override(plan_data, "all"), do: Map.put(plan_data, "search_floors", Enum.to_list(1..@last_searchable_floor))
+  def with_search_override(plan_data, "none"), do: Map.put(plan_data, "search_floors", [])
+  def with_search_override(plan_data, _override), do: plan_data
+
+
   def extreme_allowed?(plan_data), do: plan_data["mode_schedule"] == [%{"from_floor" => 1, "mode" => "hard"}]
 
   def extreme?(plan_data), do: plan_data["extreme"] == true and extreme_allowed?(plan_data)

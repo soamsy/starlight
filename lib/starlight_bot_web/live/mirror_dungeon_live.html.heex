@@ -46,7 +46,7 @@
   <div class="flex gap-2 flex-1 min-h-0 overflow-hidden">
 
     <%!-- Left: form --%>
-    <div class="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto">
+    <div class="w-[28rem] shrink-0 flex flex-col gap-3 overflow-y-auto">
 
       <%= if @teams == [] do %>
         <div class="text-xs text-base-content/40 bg-base-200 rounded-xl p-3">
@@ -100,6 +100,37 @@
                 <% end %>
               </select>
               <.hook_select name="team_hooks[]" hooks={team_hooks(@teams, pick.id)} selected={pick.hook} disabled={@teams == [] or cycle_locked?(@phase, @other_running?)} />
+              <input type="hidden" name="team_modes[]" value={pick.mode} />
+              <input type="hidden" name="team_searches[]" value={pick.search} />
+              <span :if={pick.mode != "default"} title={mode_override_label(pick.mode)} class="badge badge-sm badge-primary font-mono"><%= mode_badge_label(pick.mode) %></span>
+              <.search_badge :if={pick.search != "default"} search={pick.search} />
+              <div class="relative" phx-click-away={Phoenix.LiveView.JS.hide(to: "#pick-options-#{index}")}>
+                <button type="button" phx-click={Phoenix.LiveView.JS.toggle(to: "#pick-options-#{index}", display: "flex")} disabled={cycle_locked?(@phase, @other_running?)}
+                        title={"Pack plan: " <> mode_override_label(pick.mode) <> ", " <> search_override_label(pick.search)}
+                        class={"btn btn-ghost btn-sm px-2 text-xl " <> if(pick.mode == "default" and pick.search == "default", do: "text-base-content/70", else: "text-primary")}>⚙</button>
+                <div id={"pick-options-#{index}"} style="display: none" class="absolute right-0 z-20 mt-1 w-max rounded-box border border-base-300 bg-base-100 p-3 shadow flex flex-row gap-6">
+                  <div class="flex flex-col gap-1">
+                    <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Pack mode</span>
+                    <%= for mode <- Resolver.mode_overrides() do %>
+                      <button type="button" phx-click="set_pick_option" phx-value-index={index} phx-value-key="mode" phx-value-option={mode}
+                              class="flex items-center gap-2 text-sm text-left">
+                        <input type="radio" class="radio radio-xs radio-primary pointer-events-none" checked={mode == pick.mode} tabindex="-1" />
+                        <%= mode_override_label(mode) %>
+                      </button>
+                    <% end %>
+                  </div>
+                  <div class="flex flex-col gap-1">
+                    <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Pack search</span>
+                    <%= for search <- Resolver.search_overrides() do %>
+                      <button type="button" phx-click="set_pick_option" phx-value-index={index} phx-value-key="search" phx-value-option={search}
+                              class="flex items-center gap-2 text-sm text-left">
+                        <input type="radio" class="radio radio-xs radio-primary pointer-events-none" checked={search == pick.search} tabindex="-1" />
+                        <%= search_override_label(search) %>
+                      </button>
+                    <% end %>
+                  </div>
+                </div>
+              </div>
               <button :if={length(@picks) > 1 and not cycle_locked?(@phase, @other_running?)} type="button" phx-click="remove_cycle_team" phx-value-index={index}
                       class="btn btn-ghost btn-xs text-error">✕</button>
             </div>

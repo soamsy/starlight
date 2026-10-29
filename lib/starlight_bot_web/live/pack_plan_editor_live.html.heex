@@ -219,6 +219,13 @@
                           </button>
                         <% end %>
                       <% end %>
+                      <%= if current == "hunt" do %>
+                        <button type="button" phx-click="toggle_favorite" phx-value-pack_id={pack.id} phx-value-mode={row.mode}
+                                class={"btn btn-ghost btn-xs h-5 min-h-0 px-1 text-xs " <> if(row_favorite?, do: "text-warning", else: "text-base-content/40")}
+                                title={if row_favorite?, do: "Favorite. Click to make it a normal Hunt pack.", else: "Mark as favorite: while any favorite is in play, only favorites are hunted, refreshed for and searched for"}>
+                          <%= if row_favorite?, do: "★", else: "☆" %>
+                        </button>
+                      <% end %>
                     </div>
                     <div class={"grid grid-cols-subgrid min-w-0 rounded border bg-base-200 overflow-hidden " <> if(row_favorite?, do: "border-warning ring-1 ring-warning/60", else: "border-base-300")}
                          style={"grid-row: 1; " <> span_style(row, floor_count, overflow?)}

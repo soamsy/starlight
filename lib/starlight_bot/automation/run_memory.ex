@@ -255,17 +255,15 @@ defmodule StarlightBot.Automation.RunMemory do
 
   def put_mode(ctx, mode), do: put(ctx, :mode, mode)
 
-  def mode_for(%{id: team_id}, floor), do: Resolver.mode_for_floor(mode_schedule(team_id), floor)
+  def mode_for(%{id: _} = team, floor), do: Resolver.mode_for_floor(Map.get(pack_plan_data(team), "mode_schedule", []), floor)
   def mode_for(_team, _floor), do: "normal"
 
-  def extreme?(team_id), do: team_id |> pack_plan_data() |> Resolver.extreme?()
+  def extreme?(team), do: team |> pack_plan_data() |> Resolver.extreme?()
 
-  defp mode_schedule(team_id), do: Map.get(pack_plan_data(team_id), "mode_schedule", [])
-
-  defp pack_plan_data(team_id) do
+  defp pack_plan_data(%{id: team_id} = team) do
     with %{pack_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
          %{data: %{"mode_schedule" => schedule} = data} when is_list(schedule) <- Plans.get(:pack_plans, id) do
-      data
+      Resolver.with_mode_override(data, Map.get(team, :mode_override))
     else
       _ -> %{}
     end

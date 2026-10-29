@@ -45,7 +45,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
   def run(team_id, ctx) do
     team = Teams.get_team(team_id)
-    plan_data = fetch_plan_data(team)
+    plan_data = team |> fetch_plan_data() |> Resolver.with_mode_override(team_override(ctx, :mode_override)) |> Resolver.with_search_override(team_override(ctx, :search_override))
     grace_picks = team[:grace_picks] || []
     theme_packs = ThemePacks.list_plannable_theme_packs()
 
@@ -134,6 +134,8 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
   defp grace_enhance(%{"enhance" => enhance}) when enhance in [1, 2], do: enhance
   defp grace_enhance(_pick), do: 0
+
+  defp team_override(ctx, key), do: ctx |> RunMemory.team() |> then(&(&1 && Map.get(&1, key)))
 
   defp fetch_plan_data(team) do
     with %{pack_plan_id: id} when is_integer(id) <- team,
