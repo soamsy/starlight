@@ -52,6 +52,9 @@
                 <td class="text-right whitespace-nowrap">
                   <button phx-click="capture_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost"
                           title="Capture sinner png from live battle">Capture</button>
+                  <button phx-click="reset_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost"
+                          data-confirm="Reset the hook image to the placeholder?"
+                          title="Reset hook image to the placeholder circle">Reset</button>
                   <button phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost">Test</button>
                   <button phx-click="delete_profile" phx-value-id={profile.id}
                           data-confirm={"Delete '#{profile.name}'?"}

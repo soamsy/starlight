@@ -24,10 +24,6 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
   @match_method "gray"
   @confidence 0.79
 
-  @placeholder_png Base.decode64!(
-                     "iVBORw0KGgoAAAANSUhEUgAAAC0AAAAoCAAAAABPvCz1AAABnElEQVQ4EZXBMWgTURzA4d+/HLEJLQg9LlDQoUMlYzLFbl11U3TRSRqHgg7Xrjro2t6g0MF0EXRRdGvXbjVTshno0EGhcOEKQmlSw1GEe++Sy9094b5PKEIoQihCKEIoQsiySos3/1yMQzKEtPr6bWfB8S8Hv4+6pAizaq1VGy04afeZISRZ7r15Ev4eeCEJQoL1rkFK70XIlDBV+m6Tcf7wiglhovJpmRxnT0bEhNjc7l1yddxrNCFW2yuTa7TZRxNi3hoGxy6aoDXe2BgEr3oogrb1CKMvHoqgWDtNjDrbIRFBqeyvYHS6MSQiKNW2g9Gg5RMRlDsf+Y9nP4kISvVDFSP/uU9EUCr7KxidbgyJCIq108Sosx0SETT3MUZfd1EErf7WxiB43UURYt4aBscumhCr7ZXJNdrsowmxOa9Jrh9b12jCRPnzMjnOng6JCVPz35bICB6MmRASrPd1UrovQ6aEJMu9f4OEq0MvJEGYVWut2mjBSbvPDCGtsX7LWXD8y8Gvox4pQpZVWlw6vxiHZAhFCEUIRQhF/AMQQ2QpXZ2PcgAAAABJRU5ErkJggg=="
-                   )
-
   @impl Mix.Task
   def run(_args) do
     Mix.Task.run("app.start")
@@ -180,7 +176,7 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
       {:ok, ^name} =
         Hooks.save_hook(%{
           name: name,
-          image: @placeholder_png,
+          image: SinnerProfiles.placeholder_png(),
           region_x: rx,
           region_y: ry,
           region_w: rw,

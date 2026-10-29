@@ -4,8 +4,9 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
   alias StarlightBot.{BattlePlans, Hooks, Plans, SinnerProfiles}
   alias StarlightBot.Vision.{Capture, Frame, Matcher, SkillTray}
 
-  @portrait_x_offset 6
-  @portrait_w 35
+  @portrait_x_offset 0
+  @portrait_w 33
+  @edge_pull 5
 
   @impl true
   def mount(_params, _session, socket) do
@@ -58,6 +59,19 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Save failed: #{inspect(reason)}")}
+    end
+  end
+
+  @impl true
+  def handle_event("reset_locator", %{"id" => id}, socket) do
+    id = String.to_integer(id)
+    profile = Enum.find(socket.assigns.profiles, &(&1.id == id))
+
+    with %{} <- profile.locator_hook && Hooks.get_hook(profile.locator_hook),
+         {:ok, _} <- Hooks.update_hook_image(profile.locator_hook, SinnerProfiles.placeholder_png()) do
+      {:noreply, socket |> assign_profiles() |> put_flash(:info, "Replaced #{profile.locator_hook} image with the placeholder.")}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Set a locator hook first.")}
     end
   end
 
@@ -168,7 +182,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
         |> Enum.with_index()
         |> Enum.dedup_by(&elem(&1, 0))
         |> Enum.map(fn {_sinner, column} ->
-          region = {round(SkillTray.slot_x(tray, column) + @portrait_x_offset - w / 2), y, w, h}
+          region = {round(portrait_center(tray, column) + @portrait_x_offset - w / 2), y, w, h}
           png = Evision.imencode(".png", Frame.crop(frame.mat, region))
           %{column: column, region: region, png: png, png_b64: Base.encode64(png)}
         end)
@@ -179,6 +193,13 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
       {:error, message} when is_binary(message) -> {:error, message}
       {:error, reason} -> {:error, "Capture failed: #{inspect(reason)}"}
     end
+  end
+
+  defp portrait_center(tray, column) do
+    mid = (tray.tray_start_x + tray.tray_end_x) / 2
+    half_span = (tray.tray_end_x - tray.tray_start_x - tray.bin_width) / 2
+    x = SkillTray.slot_x(tray, column)
+    if half_span > 0, do: x - @edge_pull * (x - mid) / half_span, else: x
   end
 
   defp test_locator(%{locator_hook: hook}) when hook in [nil, ""], do: "No locator hook set."
