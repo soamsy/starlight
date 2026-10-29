@@ -52,10 +52,10 @@
               <% milestone = selected_milestone(assigns) %>
               <div class="grid grid-cols-[17rem_1fr] gap-3 flex-1 min-h-0">
                 <div class="flex flex-col gap-3 min-h-0 pr-1">
-                  <div id="milestone-clipboard" phx-hook="MilestoneClipboard" class="flex flex-col gap-1 shrink-0 max-h-48 overflow-y-auto">
+                  <div id="milestone-clipboard" phx-hook="ItemClipboard" class="flex flex-col gap-1 shrink-0 max-h-48 overflow-y-auto">
                     <div class="flex items-center gap-2">
                       <span class="text-xs font-semibold text-base-content/70">Milestones</span>
-                      <button type="button" data-paste-milestone title="Paste a milestone from the clipboard" class="btn btn-ghost btn-xs ml-auto">Paste</button>
+                      <button type="button" data-paste-event="paste_milestone" title="Paste a milestone from the clipboard" class="btn btn-ghost btn-xs ml-auto">Paste</button>
                       <button phx-click="add_milestone" class="btn btn-primary btn-xs">+ New</button>
                     </div>
                     <div :for={{m, number} <- Enum.with_index(@plan_data["milestones"], 1)}

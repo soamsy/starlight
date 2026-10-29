@@ -378,7 +378,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def handle_event("copy_milestone", %{"id" => id}, socket) do
     case GiftPlans.find_milestone(socket.assigns.plan_data, id) do
       nil -> {:noreply, socket}
-      milestone -> {:noreply, socket |> push_event("copy_milestone_json", %{text: PlanClipboard.encode_milestone(milestone)}) |> put_flash(:info, "Milestone '#{milestone["name"]}' copied to the clipboard.")}
+      milestone -> {:noreply, socket |> push_event("copy_json", %{text: PlanClipboard.encode_milestone(milestone)}) |> put_flash(:info, "Milestone '#{milestone["name"]}' copied to the clipboard.")}
     end
   end
 
