@@ -197,6 +197,7 @@
                 <%= for row <- rows do %>
                   <% pack = row.pack %>
                   <% current = StarlightBot.PackPlans.Resolver.priority_for(@plan_data, pack.id, row.mode) %>
+                  <% row_favorite? = current == "hunt" and StarlightBot.PackPlans.Resolver.favorite?(@plan_data, pack.id, row.mode) %>
                   <div class="group col-span-full grid grid-cols-subgrid items-center rounded hover:bg-base-200">
                     <%= if hard_col do %>
                       <div class="self-stretch -my-px bg-warning/10" style={"grid-row: 1; grid-column: #{hard_col + 1} / -1"}></div>
@@ -219,7 +220,7 @@
                         <% end %>
                       <% end %>
                     </div>
-                    <div class="grid grid-cols-subgrid min-w-0 rounded border border-base-300 bg-base-200 overflow-hidden"
+                    <div class={"grid grid-cols-subgrid min-w-0 rounded border bg-base-200 overflow-hidden " <> if(row_favorite?, do: "border-warning ring-1 ring-warning/60", else: "border-base-300")}
                          style={"grid-row: 1; " <> span_style(row, floor_count, overflow?)}
                          title={"#{pack.name_en} (#{row.mode} floors #{Enum.join(row.floors, ",")})"}>
                       <%= for col <- highlight_columns(@plan_data, row, floor_count, overflow?) do %>
@@ -227,7 +228,7 @@
                       <% end %>
                       <div class="relative pointer-events-none flex items-center gap-1.5 px-1 min-w-0" style="grid-row: 1; grid-column: 1 / -1">
                         <img src={pack.image_path} class="w-5 h-5 rounded-sm object-cover shrink-0" draggable="false" />
-                        <span class="text-xs flex-1 truncate"><%= pack.name_en %></span>
+                        <span class={"text-xs flex-1 truncate " <> if(row_favorite?, do: "font-semibold", else: "")}><%= pack.name_en %><%= if row_favorite? do %> <span class="text-warning">★</span><% end %></span>
                       </div>
                       <%= for {col, floors, label} <- span_cells(row, floor_count, overflow?) do %>
                         <div phx-click="toggle_span_floors" phx-value-pack_id={pack.id} phx-value-floors={Enum.join(floors, ",")} phx-value-mode={row.mode}

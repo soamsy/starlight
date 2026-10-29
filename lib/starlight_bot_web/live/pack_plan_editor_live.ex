@@ -14,7 +14,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   def mount(_params, session, socket) do
     if connected?(socket), do: PlanCounts.subscribe()
 
-    theme_packs = ThemePacks.list_theme_packs()
+    theme_packs = ThemePacks.list_plannable_theme_packs()
     team = session["team_id"] && Teams.get_team(session["team_id"])
 
     socket =

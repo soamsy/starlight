@@ -3,6 +3,12 @@ defmodule StarlightBot.ThemePacks do
   alias StarlightBot.BaseRepo, as: Repo
   alias StarlightBot.Data
 
+  @unplannable_ids ["thm_117"]
+
+  def list_plannable_theme_packs do
+    Enum.reject(list_theme_packs(), &(&1.id in @unplannable_ids))
+  end
+
   def list_theme_packs do
     Repo.all(
       from t in "theme_packs",
