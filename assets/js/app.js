@@ -1009,6 +1009,17 @@ const TemplateTransfer = {
 
     this.el.querySelector("[data-upload]").addEventListener("click", () => input.click())
 
+    this.el.querySelector("[data-blacken]").addEventListener("click", () => {
+      if (!confirm("Replace this template with a black square? The current image will be lost.")) return
+      const canvas = document.createElement("canvas")
+      canvas.width = 4
+      canvas.height = 4
+      const ctx = canvas.getContext("2d")
+      ctx.fillStyle = "#000"
+      ctx.fillRect(0, 0, 4, 4)
+      this.pushEvent("upload_template", { name: this.el.dataset.name, data: canvas.toDataURL("image/png").split(",")[1] })
+    })
+
     input.addEventListener("change", () => {
       const file = input.files[0]
       input.value = ""

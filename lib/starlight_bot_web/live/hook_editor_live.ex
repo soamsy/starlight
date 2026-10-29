@@ -302,7 +302,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
                 end
 
               result = %{name: name, found: rect != nil, score: Float.round(score, 4), rect: rect}
-              {:noreply, socket |> assign(:screenshot_mat, frame.mat) |> show_test_result(result, frame.mat)}
+              {:noreply, socket |> assign(:screenshot_mat, frame.mat) |> assign(:screenshot_status, :done) |> show_test_result(result, frame.mat)}
 
             {:error, :hook_not_found} ->
               {:noreply, put_flash(socket, :error, "Hook '#{name}' not in registry — save it first.")}

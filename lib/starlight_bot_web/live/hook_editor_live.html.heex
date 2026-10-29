@@ -511,6 +511,11 @@
                             title={if deletable?(hook_for(@hooks, @editing_name)), do: "Upload template image", else: "Shipped hook is read-only; override it first"}>
                       <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M17 8l-5-5-5 5M12 3v12" /></svg>
                     </button>
+                    <button type="button" data-blacken disabled={!deletable?(hook_for(@hooks, @editing_name))}
+                            class="btn btn-ghost btn-xs btn-square"
+                            title={if deletable?(hook_for(@hooks, @editing_name)), do: "Replace template with a black square", else: "Shipped hook is read-only; override it first"}>
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
+                    </button>
                     <input type="file" accept="image/*" class="hidden" data-file />
                   </div>
                 </div>
