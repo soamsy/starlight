@@ -23,7 +23,7 @@ defmodule StarlightBot.PlanTemplatesTest do
     {:ok, _} = PlanTemplates.create(:pack_plans, %{"packs" => %{"thm_1" => %{"normal" => %{"priority" => "hunt"}}}})
     {:ok, _} = PlanTemplates.create(:gift_plans, %{"milestones" => [%{"entries" => [1, 2, 3]}]})
 
-    assert [%{count: 2}] = PlanTemplates.list(:battle_plans)
+    assert [%{count: 3}] = PlanTemplates.list(:battle_plans)
     assert [%{count: 1}] = PlanTemplates.list(:pack_plans)
     assert [%{count: 3}] = PlanTemplates.list(:gift_plans)
   end

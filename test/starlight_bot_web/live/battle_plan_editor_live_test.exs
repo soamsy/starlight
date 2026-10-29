@@ -360,10 +360,10 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
   test "playbooks can be reordered within their kind", %{socket: socket} do
     socket = event(socket, "new_playbook", %{"kind" => "chain"})
     chains = fn socket -> for %{"kind" => "chain"} = pb <- socket.assigns.data["playbooks"], do: pb["id"] end
-    [first, second] = chains.(socket)
+    [first, middle, second] = chains.(socket)
 
-    socket = event(socket, "reorder_playbooks", %{"scope" => "chain", "ids" => [second, first]})
-    assert chains.(socket) == [second, first]
+    socket = event(socket, "reorder_playbooks", %{"scope" => "chain", "ids" => [second, middle, first]})
+    assert chains.(socket) == [second, middle, first]
     assert render(socket) =~ ~s(data-sort-event="reorder_playbooks")
   end
 

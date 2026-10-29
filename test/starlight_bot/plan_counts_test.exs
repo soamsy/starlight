@@ -8,7 +8,7 @@ defmodule StarlightBot.PlanCountsTest do
   end
 
   test "battle counts every playbook" do
-    assert PlanCounts.count(:battle_plans, BattlePlans.blank()) == 2
+    assert PlanCounts.count(:battle_plans, BattlePlans.blank()) == 3
   end
 
   test "pack counts hunted packs across modes" do
@@ -36,14 +36,14 @@ defmodule StarlightBot.PlanCountsTest do
 
   test "for_team reads each of the team's plans" do
     {:ok, id} = Teams.create_default_team()
-    assert PlanCounts.for_team(id) == %{battle_plans: 2, pack_plans: 0, gift_plans: 0}
+    assert PlanCounts.for_team(id) == %{battle_plans: 3, pack_plans: 0, gift_plans: 0}
     assert PlanCounts.for_team(nil) == %{}
   end
 
   test "broadcast delivers the new count to subscribers" do
     PlanCounts.subscribe()
     PlanCounts.broadcast(7, :battle_plans, BattlePlans.blank())
-    assert_receive {:plan_count, 7, :battle_plans, 2}
+    assert_receive {:plan_count, 7, :battle_plans, 3}
     assert Plans.blank(:pack_plans) |> then(&PlanCounts.count(:pack_plans, &1)) == 0
   end
 end

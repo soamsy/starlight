@@ -599,6 +599,7 @@ defmodule StarlightBot.BattlePlans do
 
   def blank do
     chain = new_playbook("chain", "Chain fast")
+    chain_a_res = %{new_playbook("chain", "Chain A-res") | "actions" => [new_action("chain_a_res")]}
     focused = new_playbook("focused", "Win rate")
     lineup = new_lineup("Lineup")
 
@@ -606,16 +607,19 @@ defmodule StarlightBot.BattlePlans do
       "version" => 4,
       "max_retries" => @default_max_retries,
       "profiles" => %{},
-      "playbooks" => [chain, focused],
+      "playbooks" => [chain, chain_a_res, focused],
       "tracks" =>
         Map.new(@tracks, fn track ->
-          playbook = if track_kind(track) == "chain", do: chain, else: focused
+          playbook = default_playbook(track, chain, chain_a_res, focused)
           {track, [%{"from_floor" => 1, "playbook" => playbook["id"]}]}
         end),
       "lineups" => [lineup],
       "lineup_tracks" => Map.new(@venues, &{&1, [%{"from_floor" => 1, "lineup" => lineup["id"]}]})
     }
   end
+
+  defp default_playbook("normal_chain", chain, _chain_a_res, _focused), do: chain
+  defp default_playbook(track, _chain, chain_a_res, focused), do: if(track_kind(track) == "chain", do: chain_a_res, else: focused)
 
   def new_playbook(kind, name) do
     %{
