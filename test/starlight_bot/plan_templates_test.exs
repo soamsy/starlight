@@ -1,11 +1,11 @@
 defmodule StarlightBot.PlanTemplatesTest do
   use ExUnit.Case, async: false
 
-  alias StarlightBot.{PlanTemplates, Plans, Repo, Teams}
+  alias StarlightBot.{PlanTemplates, Plans, Teams}
   alias StarlightBotWeb.Live.PackPlanEditorLive, as: Live
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
+    :ok = StarlightBot.TestDB.checkout()
   end
 
   test "templates are listed per kind with unique default names" do

@@ -44,7 +44,7 @@ defmodule StarlightBot.Vision.Hook do
   @clahe_tile_grid_size {8, 2}
 
   def from_db_row(row) do
-    mat = Evision.imread(StarlightBot.Hooks.image_path(row.name))
+    mat = Evision.imread(StarlightBot.Hooks.image_path(row))
     gray_mat = Evision.cvtColor(mat, @color_bgr2gray)
     mask? = truthy?(row.mask)
     mask_mat = if(mask?, do: build_mask(gray_mat), else: nil)

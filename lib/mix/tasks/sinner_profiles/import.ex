@@ -2,7 +2,7 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
   @shortdoc "Import identities from gll-fun as sinner profiles with placeholder locator hooks"
   @moduledoc """
   Upserts one `sinner_profiles` row per gll-fun identity, keyed by `game_id`.
-  Existing profiles only get `name_en` and `image_path` refreshed; their `name` and
+  Existing profiles only get `name_en` refreshed; their `name` and
   `locator_hook` are kept, and a locator hook is only created when none is set.
   Existing hooks are never modified.
 
@@ -12,10 +12,8 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
   use Mix.Task
   import Ecto.Query
 
-  alias StarlightBot.{GllFun, Hooks, Repo, SinnerProfiles}
-
-  @images_dir Path.expand("../../../../priv/static/images/identities", __DIR__)
-  @image_base "https://gll-fun.com/images/identities"
+  alias StarlightBot.{GllFun, Hooks, SinnerProfiles}
+  alias StarlightBot.BaseRepo, as: Repo
 
   @gll_sinners %{"mersault" => "meursault"}
 
@@ -27,7 +25,6 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
   @impl Mix.Task
   def run(_args) do
     Mix.Task.run("app.start")
-    File.mkdir_p!(@images_dir)
 
     api_key =
       case GllFun.fetch_api_key() do
@@ -36,15 +33,14 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
       end
 
     {:ok, raw} =
-      GllFun.rest("ids", api_key, %{"select" => "gameId,nameEN,sinner,imgUrl,releaseDate", "order" => "gameId.asc"})
+      GllFun.rest("ids", api_key, %{"select" => "gameId,nameEN,sinner,releaseDate", "order" => "gameId.asc"})
 
     identities = raw |> Enum.map(&parse_identity/1) |> Enum.reject(&is_nil/1)
-    image_paths = Map.new(identities, &{&1.game_id, ensure_image(&1)})
 
     counts =
       Repo.checkout(fn ->
         Enum.reduce(identities, %{inserted: 0, updated: 0, hooks: 0}, fn identity, acc ->
-          import_identity(identity, image_paths[identity.game_id], acc)
+          import_identity(identity, acc)
         end)
       end)
 
@@ -54,7 +50,7 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
     )
   end
 
-  defp parse_identity(%{"gameId" => game_id, "nameEN" => name_en, "sinner" => gll_sinner, "imgUrl" => img_url} = raw)
+  defp parse_identity(%{"gameId" => game_id, "nameEN" => name_en, "sinner" => gll_sinner} = raw)
        when is_integer(game_id) and is_binary(name_en) and is_binary(gll_sinner) do
     sinner = Map.get(@gll_sinners, gll_sinner, String.replace(gll_sinner, " ", "_"))
 
@@ -63,7 +59,6 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
         game_id: game_id,
         name_en: String.trim(name_en),
         sinner: sinner,
-        img_url: img_url,
         released_on: parse_release_date(game_id, raw["releaseDate"])
       }
     else
@@ -98,7 +93,7 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
     end
   end
 
-  defp import_identity(identity, image_path, acc) do
+  defp import_identity(identity, acc) do
     existing =
       Repo.one(
         from p in "sinner_profiles",
@@ -117,7 +112,6 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
           from(p in "sinner_profiles", where: p.id == ^id),
           set: [
             name_en: identity.name_en,
-            image_path: image_path,
             released_on: identity.released_on,
             locator_hook: hook,
             updated_at: now
@@ -136,7 +130,6 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
             sinner: identity.sinner,
             game_id: identity.game_id,
             name_en: identity.name_en,
-            image_path: image_path,
             released_on: identity.released_on,
             locator_hook: hook,
             inserted_at: now,
@@ -191,30 +184,6 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
         })
 
       {name, true}
-    end
-  end
-
-  defp ensure_image(%{game_id: game_id, img_url: img_url}) do
-    dest = Path.join(@images_dir, "#{game_id}.webp")
-    path = "/images/identities/#{game_id}.webp"
-
-    cond do
-      File.exists?(dest) ->
-        path
-
-      not is_binary(img_url) ->
-        nil
-
-      true ->
-        case GllFun.download_image("#{@image_base}/#{img_url}.1.webp") do
-          {:ok, bytes} ->
-            File.write!(dest, bytes)
-            path
-
-          {:error, reason} ->
-            Mix.shell().error("Identity image #{game_id}: #{inspect(reason)}")
-            nil
-        end
     end
   end
 

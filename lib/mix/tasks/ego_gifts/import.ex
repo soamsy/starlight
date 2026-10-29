@@ -34,13 +34,13 @@ defmodule Mix.Tasks.EgoGifts.Import do
     File.mkdir_p!(@dest_images_dir)
 
     count =
-      StarlightBot.Repo.checkout(fn ->
-        Ecto.Adapters.SQL.query!(StarlightBot.Repo, "ATTACH DATABASE ? AS src", [@source_db])
+      StarlightBot.BaseRepo.checkout(fn ->
+        Ecto.Adapters.SQL.query!(StarlightBot.BaseRepo, "ATTACH DATABASE ? AS src", [@source_db])
 
         rows = fetch_source_rows()
         Enum.each(rows, &upsert_row/1)
 
-        Ecto.Adapters.SQL.query!(StarlightBot.Repo, "DETACH DATABASE src", [])
+        Ecto.Adapters.SQL.query!(StarlightBot.BaseRepo, "DETACH DATABASE src", [])
         length(rows)
       end)
 
@@ -52,7 +52,7 @@ defmodule Mix.Tasks.EgoGifts.Import do
 
     %{rows: rows} =
       Ecto.Adapters.SQL.query!(
-        StarlightBot.Repo,
+        StarlightBot.BaseRepo,
         "SELECT #{select_list} FROM src.ego_gifts",
         []
       )
@@ -69,7 +69,7 @@ defmodule Mix.Tasks.EgoGifts.Import do
     update_set = Enum.map_join(@columns -- ["id"], ", ", fn c -> "#{c} = excluded.#{c}" end)
 
     Ecto.Adapters.SQL.query!(
-      StarlightBot.Repo,
+      StarlightBot.BaseRepo,
       """
       INSERT INTO ego_gifts (#{Enum.join(@columns, ", ")})
       VALUES (#{placeholders})

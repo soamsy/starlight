@@ -100,18 +100,18 @@ defmodule Mix.Tasks.StarlightBot.Check do
   end
 
   defp check_db do
-    db_path = Application.get_env(:starlight_bot, StarlightBot.Repo)[:database]
+    paths = StarlightBot.Data.paths()
+    ok("data mode: #{paths.mode}")
 
-    case File.stat(db_path) do
-      {:ok, %{type: :regular}} -> ok("database: #{db_path}")
-      _ ->
-        dir = Path.dirname(db_path)
-        if File.exists?(dir) do
-          warn("database not found — run `mix db.setup` to create it")
-        else
-          fail("database directory missing: #{dir} — run `mix db.setup`")
+    results =
+      for {label, path} <- [base: paths.base, user: paths.user, runs: paths.runs] do
+        case File.stat(path) do
+          {:ok, %{type: :regular}} -> ok("#{label} database: #{path}")
+          _ -> warn("#{label} database not found at #{path}, run `mix db.setup` to create it")
         end
-    end
+      end
+
+    if :warn in results, do: :warn, else: :ok
   end
 
   defp check_x11 do

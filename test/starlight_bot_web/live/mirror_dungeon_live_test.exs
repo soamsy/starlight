@@ -18,7 +18,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
   end
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(StarlightBot.Repo)
+    :ok = StarlightBot.TestDB.checkout()
   end
 
   defp event(socket, name, params) do

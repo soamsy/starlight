@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.ThemePacks.Import do
-  @shortdoc "Import Mirror Dungeon theme pack + boss data/images from gll-fun"
+  @shortdoc "Import Mirror Dungeon theme pack data/images from gll-fun"
   @moduledoc """
       mix theme_packs.import
   """
@@ -7,15 +7,11 @@ defmodule Mix.Tasks.ThemePacks.Import do
   use Mix.Task
 
   alias StarlightBot.GllFun
-  alias StarlightBot.Repo
+  alias StarlightBot.BaseRepo, as: Repo
 
   @theme_images_dir Path.expand("../../../../priv/static/images/theme_packs", __DIR__)
-  @boss_images_dir Path.expand("../../../../priv/static/images/bosses", __DIR__)
 
   @theme_image_base "https://gll-fun.com/images/md-themes"
-  @boss_image_base "https://gll-fun.com/images/enemies"
-
-  @boss_re ~r/([^,\[]+)\[([^|]+)\|([^\]]+)\]/
 
   @theme_columns ~w(id name_en name_ru description_en description_ru normal_floors hard_floors tip event_ids image_path)a
 
@@ -24,7 +20,6 @@ defmodule Mix.Tasks.ThemePacks.Import do
     Mix.Task.run("app.start")
 
     File.mkdir_p!(@theme_images_dir)
-    File.mkdir_p!(@boss_images_dir)
 
     case GllFun.fetch_api_key() do
       {:ok, api_key} -> do_import(api_key)
@@ -38,27 +33,15 @@ defmodule Mix.Tasks.ThemePacks.Import do
     parsed = Enum.map(raw_themes, &parse_theme/1)
     Enum.each(parsed, &ensure_theme_image/1)
 
-    all_bosses = parsed |> Enum.flat_map(& &1.bosses) |> Enum.uniq_by(& &1.slug)
-    boss_image_paths = Map.new(all_bosses, fn b -> {b.slug, ensure_boss_image(b.slug)} end)
-
-    {gift_links, boss_links} =
+    gift_links =
       Repo.checkout(fn ->
-        Enum.each(all_bosses, fn b ->
-          upsert_boss(b.slug, b.name_en, b.name_ru, boss_image_paths[b.slug])
-        end)
-
-        Enum.reduce(parsed, {0, 0}, fn theme, {g_acc, b_acc} ->
+        Enum.reduce(parsed, 0, fn theme, acc ->
           upsert_theme_pack(theme)
-          g = replace_theme_pack_gifts(theme.id, theme.gift_ids)
-          b = replace_theme_pack_bosses(theme.id, Enum.map(theme.bosses, & &1.slug))
-          {g_acc + g, b_acc + b}
+          acc + replace_theme_pack_gifts(theme.id, theme.gift_ids)
         end)
       end)
 
-    Mix.shell().info(
-      "Imported #{length(parsed)} theme pack(s), #{gift_links} gift link(s), " <>
-        "#{length(all_bosses)} boss(es), #{boss_links} boss link(s)"
-    )
+    Mix.shell().info("Imported #{length(parsed)} theme pack(s), #{gift_links} gift link(s)")
   end
 
   defp parse_theme(raw) do
@@ -78,8 +61,7 @@ defmodule Mix.Tasks.ThemePacks.Import do
       tip: raw["tip"],
       event_ids: raw["events"],
       image_path: "/images/theme_packs/#{id}.webp",
-      gift_ids: parse_gift_ids(raw["uniquegifts"]),
-      bosses: parse_bosses(raw["possiblebosses"])
+      gift_ids: parse_gift_ids(raw["uniquegifts"])
     }
   end
 
@@ -121,17 +103,6 @@ defmodule Mix.Tasks.ThemePacks.Import do
     str |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
   end
 
-  defp parse_bosses(nil), do: []
-
-  defp parse_bosses(str) do
-    @boss_re
-    |> Regex.scan(str)
-    |> Enum.map(fn [_, slug, ru, en] ->
-      %{slug: String.trim(slug), name_ru: String.trim(ru), name_en: String.trim(en)}
-    end)
-    |> Enum.uniq_by(& &1.slug)
-  end
-
   defp ensure_theme_image(%{id: id}) do
     dest = Path.join(@theme_images_dir, "#{id}.webp")
 
@@ -139,25 +110,6 @@ defmodule Mix.Tasks.ThemePacks.Import do
       case GllFun.download_image("#{@theme_image_base}/#{id}.webp") do
         {:ok, bytes} -> File.write!(dest, bytes)
         {:error, reason} -> Mix.shell().error("Theme image #{id}: #{inspect(reason)}")
-      end
-    end
-  end
-
-  defp ensure_boss_image(slug) do
-    dest = Path.join(@boss_images_dir, "#{slug}.webp")
-    path = "/images/bosses/#{slug}.webp"
-
-    if File.exists?(dest) do
-      path
-    else
-      case GllFun.download_image("#{@boss_image_base}/#{slug}.webp") do
-        {:ok, bytes} ->
-          File.write!(dest, bytes)
-          path
-
-        {:error, reason} ->
-          Mix.shell().error("Boss image #{slug}: #{inspect(reason)}")
-          nil
       end
     end
   end
@@ -180,21 +132,6 @@ defmodule Mix.Tasks.ThemePacks.Import do
     )
   end
 
-  defp upsert_boss(slug, name_en, name_ru, image_path) do
-    Ecto.Adapters.SQL.query!(
-      Repo,
-      """
-      INSERT INTO bosses (slug, name_en, name_ru, image_path)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(slug) DO UPDATE SET
-        name_en = excluded.name_en,
-        name_ru = excluded.name_ru,
-        image_path = COALESCE(excluded.image_path, bosses.image_path)
-      """,
-      [slug, name_en, name_ru, image_path]
-    )
-  end
-
   defp replace_theme_pack_gifts(theme_id, gift_ids) do
     Ecto.Adapters.SQL.query!(Repo, "DELETE FROM theme_pack_gifts WHERE theme_pack_id = ?", [theme_id])
 
@@ -207,19 +144,5 @@ defmodule Mix.Tasks.ThemePacks.Import do
     end)
 
     length(gift_ids)
-  end
-
-  defp replace_theme_pack_bosses(theme_id, slugs) do
-    Ecto.Adapters.SQL.query!(Repo, "DELETE FROM theme_pack_bosses WHERE theme_pack_id = ?", [theme_id])
-
-    Enum.each(slugs, fn slug ->
-      Ecto.Adapters.SQL.query!(
-        Repo,
-        "INSERT INTO theme_pack_bosses (theme_pack_id, boss_slug) VALUES (?, ?)",
-        [theme_id, slug]
-      )
-    end)
-
-    length(slugs)
   end
 end

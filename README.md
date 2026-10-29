@@ -31,29 +31,31 @@ mix phx.server     # starts at localhost:4000
 
 | Command | Description |
 |---------|-------------|
-| `mix db.setup` | Set up starlight_bot database |
-| `mix db.reset` | Drop + recreate starlight_bot database |
+| `mix db.setup` | Create and migrate the base, user and runs databases |
+| `mix db.migrate` | Run pending migrations on all three databases |
 | `mix phx.server` | Start starlight_bot web server |
 | `mix assets.build` | Build starlight_bot CSS/JS assets |
 
-## Diffing master.db
+## Data layout
 
-`.gitattributes` marks `*.db` as `diff=sqlite3`, so git diffs the SQL dump instead of the binary. The textconv driver lives in local git config, so run this once per clone:
+Starlight keeps three SQLite files instead of one:
 
-```sh
-git config diff.sqlite3.textconv 'echo .dump | sqlite3 -readonly'
-git config diff.sqlite3.cachetextconv true
-```
+| File | Holds | Who writes it |
+|------|-------|---------------|
+| `base.db` | Shipped data: hooks, E.G.O gifts, theme packs, plan templates, fusion route templates, sinner profiles | Maintainers only; read-only for users |
+| `user.db` | The user's teams, plans, scheduler settings, runner forms, hook overrides, added sinner profiles | The user |
+| `runs.db` | Run logs and run events | The app, local only |
 
-Then:
+`priv/data/base.db` and `priv/data/user_seed.db` are committed. On first start in user mode the seed is copied to `~/.starlight/user.db`; after that the user owns it and upgrades never touch it. `runs.db` is never committed.
 
-```sh
-git diff -- master.db              # row-level changes
-git diff --word-diff -- master.db  # highlights changes inside long JSON rows
-git log -p -- master.db            # history
-```
+Where data lives is set by `~/.config/starlight/config.toml` (`mode` and `data_dir`), editable from the gear in the app's sidebar:
 
-Use `--word-diff` for hook and plan edits, since each row is a single line. Checkpoint the WAL before committing (stop `mix phx.server`, or run `sqlite3 master.db 'PRAGMA wal_checkpoint(TRUNCATE)'`), otherwise the committed file may be missing recent edits.
+- `mode = "authoring"` (the default under `mix phx.server` in dev) edits the committed databases in place; run history and user hook images go to `.starlight-dev/`.
+- `mode = "user"` reads `base.db` read-only and keeps everything else under `data_dir` (default `~/.starlight`). `STARLIGHT_HOME=/some/dir` forces user mode against that directory, which is the easiest way to try the user experience from a checkout.
+
+Hook overlays: a user can override a shipped hook by name. The override records the shipped hook's `version`; bumping `hooks.version` in `base.db` (the "Bump version" button in authoring mode) retires user overrides of that hook until they re-apply them.
+
+Commit `base.db` and `user_seed.db` only after stopping the server (or running `PRAGMA wal_checkpoint(TRUNCATE)` on `user_seed.db`) so the files contain the latest edits.
 
 ## System dependencies
 

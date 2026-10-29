@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.PageHook do
   import Phoenix.Component, only: [assign: 3]
   import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1, put_flash: 3]
-  alias StarlightBot.{GameWindow, Scheduler}
+  alias StarlightBot.{Data, GameWindow, Scheduler}
   alias StarlightBot.Vision.Capture
 
   @pages %{
@@ -29,6 +29,13 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:game_window_rect, nil)
       |> assign(:game_window_busy, nil)
       |> assign(:game_launch_label, nil)
+      |> assign(:settings_open, false)
+      |> assign(:settings, nil)
+
+    socket =
+      if connected?(socket),
+        do: attach_hook(socket, :settings, :handle_event, &handle_settings_event/3),
+        else: socket
 
     if connected?(socket) and GenServer.whereis(Capture) do
       Capture.subscribe()
@@ -45,6 +52,34 @@ defmodule StarlightBotWeb.Live.PageHook do
       {:cont, socket}
     end
   end
+
+  defp handle_settings_event("settings_open", _params, socket),
+    do: {:halt, socket |> assign(:settings_open, true) |> assign(:settings, Data.settings())}
+
+  defp handle_settings_event("settings_close", _params, socket), do: {:halt, assign(socket, :settings_open, false)}
+
+  defp handle_settings_event("settings_save", %{"mode" => mode, "data_dir" => data_dir}, socket)
+       when mode in ["user", "authoring"] do
+    case Data.write_config(mode: mode, data_dir: String.trim(data_dir)) do
+      :ok ->
+        {:halt,
+         socket
+         |> assign(:settings, Data.settings())
+         |> put_flash(:info, "Saved. Restart Starlight for the new location to take effect.")}
+
+      {:error, reason} ->
+        {:halt, put_flash(socket, :error, "Couldn't save settings: #{inspect(reason)}")}
+    end
+  end
+
+  defp handle_settings_event("settings_open_folder", _params, socket) do
+    dir = Data.settings().data_dir
+    File.mkdir_p(dir)
+    Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn -> System.cmd("xdg-open", [dir], stderr_to_stdout: true) end)
+    {:halt, socket}
+  end
+
+  defp handle_settings_event(_event, _params, socket), do: {:cont, socket}
 
   defp handle_window_rect({:window_rect, rect}, socket),
     do: {:halt, assign(socket, :game_window_rect, rect)}

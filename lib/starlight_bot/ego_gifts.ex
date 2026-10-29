@@ -1,6 +1,6 @@
 defmodule StarlightBot.EgoGifts do
   import Ecto.Query
-  alias StarlightBot.Repo
+  alias StarlightBot.BaseRepo, as: Repo
 
   def stackable?(name) when is_binary(name), do: String.contains?(name, "Vestige")
   def stackable?(_name), do: false

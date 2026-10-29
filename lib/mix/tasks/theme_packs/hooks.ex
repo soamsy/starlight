@@ -11,7 +11,7 @@ defmodule Mix.Tasks.ThemePacks.Hooks do
   import Ecto.Query
 
   alias StarlightBot.Hooks
-  alias StarlightBot.Repo
+  alias StarlightBot.BaseRepo, as: Repo
 
   @region {800, 670, 320, 50}
   @scan_region {180, 440, 1600, 70}

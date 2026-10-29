@@ -43,16 +43,27 @@ If the Rust code has errors, `mix compile` prints them in full. Fix them in `nat
 
 ## Database
 
-All app data (hooks, teams, run logs, ego gifts, etc.) lives in a single SQLite file, `master.db`, committed at the repo root. There is no separate user-local database — this keeps schema and seed data in version control during early dev.
+App data lives in three SQLite files, each behind its own Ecto repo:
+
+- `StarlightBot.BaseRepo` → `priv/data/base.db` (committed): hooks, ego_gifts, theme_packs, theme_pack_gifts, plan_templates, fusion_route_templates, sinner_profiles. Read-only in user mode.
+- `StarlightBot.Repo` → `priv/data/user_seed.db` in authoring mode (committed, copied to `~/.starlight/user.db` on a user's first run): teams, battle/pack/gift plans, fusion_route_defaults, scheduler_settings, runner_forms, hook_overrides, user sinner_profiles.
+- `StarlightBot.RunsRepo` → `.starlight-dev/runs.db` (gitignored) in authoring mode, `~/.starlight/runs.db` in user mode: run_logs, run_events.
+
+`StarlightBot.Data` resolves the paths and mode from `~/.config/starlight/config.toml` (`mode`, `data_dir`), `STARLIGHT_CONFIG` and `STARLIGHT_HOME`. Dev defaults to `authoring` mode, where hook, template and shipped-profile edits write to `base.db`; `user` mode writes them to the user layer instead.
 
 ```sh
-mix db.setup       # create + migrate master.db
-mix db.migrate     # run pending migrations
+mix db.setup       # create + migrate all three databases
+mix db.migrate     # run pending migrations on all three
 ```
 
-**Never run `mix db.reset`** (drop + recreate) against `master.db` — it destroys hooks/teams data with no undo. Migration files are in `priv/repo/migrations/`. All 9 migrations applying cleanly from scratch is already verified safely by `mix test` (`test_helper.exs` runs every migration against an isolated `/tmp/starlight_test.db`, not the live one) — that's the check to run, not `db.reset`.
+**Never drop or recreate `priv/data/base.db` or `priv/data/user_seed.db`**; they are the shipped defaults and there is no `db.reset` alias on purpose. Migrations live in `priv/base_repo/migrations/`, `priv/repo/migrations/` and `priv/runs_repo/migrations/`, and the app runs them at boot (`StarlightBot.Migrator`). `mix test` applies all three sets to isolated `/tmp/starlight_test_*.db` files.
 
-Override the path with the `STARLIGHT_DB` env var if needed (see `config/runtime.exs`).
+Layering rules to keep in mind:
+
+- Hooks are identified by name. The effective hook is the user's override when its `base_version` equals the shipped `hooks.version`, otherwise the shipped one (`Hooks.effective_rows/0`). Only `hooks.ex` and `vision/hook_registry.ex` touch the hook tables.
+- Shipped sinner profile ids stay below 1,000,000 and are never renumbered or reused; user-created profiles start at 1,000,000.
+- Plan templates and fusion route templates are shipped data that users copy from; runtime reads the user's own plans and routes (routes fall back to the template, then to the built-in defaults).
+- There are no cross-database joins. Look up across files in application code.
 
 ---
 
@@ -69,7 +80,7 @@ system, scan existing hook notes for
 relevant context rather than guessing at screen semantics from names alone:
 
 ```sh
-sqlite3 -readonly -header -column master.db \
+sqlite3 -readonly -header -column priv/data/base.db \
   "SELECT name, notes FROM hooks WHERE notes IS NOT NULL AND TRIM(notes) != '' ORDER BY name;"
 ```
 
@@ -77,12 +88,12 @@ Scope to one screen/feature with a `LIKE` filter on the name prefix, e.g. all
 `battle_*` hooks:
 
 ```sh
-sqlite3 -readonly -header -column master.db \
+sqlite3 -readonly -header -column priv/data/base.db \
   "SELECT name, notes FROM hooks WHERE name LIKE 'battle_%' AND notes IS NOT NULL AND TRIM(notes) != '' ORDER BY name;"
 ```
 
-Always use `-readonly` — `master.db` is typically held open by a live `mix
-phx.server` (WAL mode), and this is a read query, not a file copy.
+Always use `-readonly` — `priv/data/base.db` is typically held open by a live `mix
+phx.server`, and this is a read query, not a file copy.
 
 ---
 
@@ -92,16 +103,16 @@ phx.server` (WAL mode), and this is a read query, not a file copy.
 mix test
 ```
 
-`test_helper.exs` runs all migrations against `/tmp/starlight_test.db` before the test suite starts. **If any migration file has a syntax error or bad SQL, the test suite fails at startup** with the migration error. This is intentional — it catches migration bugs early.
+`test_helper.exs` runs all three migration sets against isolated `/tmp/starlight_test_{user,base,runs}.db` files before the test suite starts. **If any migration file has a syntax error or bad SQL, the test suite fails at startup** with the migration error. This is intentional — it catches migration bugs early.
 
 `test/starlight_bot/migrations_test.exs` verifies:
-- All migration files are reflected in `schema_migrations` (count is dynamic — no hardcoded number)
-- All expected tables exist in the test database
+- All migration files of each repo are reflected in `schema_migrations` (count is dynamic)
+- Each repo has exactly its expected tables
 
-The test pool is `Ecto.Adapters.SQL.Sandbox` in `:manual` mode. Every test that touches the DB must call:
+The test pool is `Ecto.Adapters.SQL.Sandbox` in `:manual` mode for all three repos. Every test that touches a DB must call:
 ```elixir
 setup do
-  :ok = Ecto.Adapters.SQL.Sandbox.checkout(StarlightBot.Repo)
+  :ok = StarlightBot.TestDB.checkout()
 end
 ```
 

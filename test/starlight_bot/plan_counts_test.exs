@@ -1,10 +1,10 @@
 defmodule StarlightBot.PlanCountsTest do
   use ExUnit.Case, async: false
 
-  alias StarlightBot.{BattlePlans, GiftPlans, PlanCounts, Plans, Repo, Teams}
+  alias StarlightBot.{BattlePlans, GiftPlans, PlanCounts, Plans, Teams}
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
+    :ok = StarlightBot.TestDB.checkout()
   end
 
   test "battle counts every playbook" do

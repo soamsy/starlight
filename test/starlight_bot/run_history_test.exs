@@ -1,10 +1,10 @@
 defmodule StarlightBot.RunHistoryTest do
   use ExUnit.Case, async: false
 
-  alias StarlightBot.{Repo, RunHistory}
+  alias StarlightBot.{RunHistory}
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
+    :ok = StarlightBot.TestDB.checkout()
   end
 
   test "a saved run lists with its summary and reloads its segments relative to the run start" do

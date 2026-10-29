@@ -1,7 +1,9 @@
 defmodule StarlightBot.SinnerProfiles do
   require Logger
   import Ecto.Query
-  alias StarlightBot.Repo
+  alias StarlightBot.{BaseRepo, Data, Repo}
+
+  @user_id_floor 1_000_000
 
   @sinners ~w(yi_sang faust don_quixote ryoshu meursault hong_lu heathcliff ishmael rodion sinclair outis gregor)
 
@@ -17,7 +19,18 @@ defmodule StarlightBot.SinnerProfiles do
 
   def label(sinner) when is_binary(sinner), do: sinner |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
 
+  def user_id_floor, do: @user_id_floor
+
+  def writable?(%{id: id}), do: Data.base_writable?() or id >= @user_id_floor
+
   def list do
+    (tag(BaseRepo, :base) ++ tag(Repo, :user))
+    |> Enum.sort_by(& &1.name)
+    |> Enum.sort_by(& &1.released_on, :desc)
+    |> Enum.sort_by(&sinner_rank(&1.sinner))
+  end
+
+  defp tag(repo, source) do
     from(p in "sinner_profiles",
       select: %{
         id: p.id,
@@ -28,12 +41,24 @@ defmodule StarlightBot.SinnerProfiles do
         released_on: p.released_on
       }
     )
-    |> Repo.all()
-    |> Enum.sort_by(& &1.name)
-    |> Enum.sort_by(& &1.released_on, :desc)
-    |> Enum.sort_by(&sinner_rank(&1.sinner))
+    |> repo.all()
+    |> Enum.map(&Map.put(&1, :source, source))
   rescue
     _ -> []
+  end
+
+  defp repo_for(id) when id >= @user_id_floor, do: Repo
+  defp repo_for(_id), do: if(Data.base_writable?(), do: BaseRepo, else: nil)
+
+  defp insert_repo, do: if(Data.base_writable?(), do: BaseRepo, else: Repo)
+
+  defp next_user_id do
+    top = Repo.one(from p in "sinner_profiles", select: max(p.id)) || 0
+    max(@user_id_floor, top + 1)
+  end
+
+  defp name_taken?(name, id) do
+    Enum.any?(list(), &(&1.name == name and &1.id != id))
   end
 
   def save(%{name: name} = attrs) when is_binary(name) and name != "" do
@@ -42,17 +67,10 @@ defmodule StarlightBot.SinnerProfiles do
 
     case attrs[:id] do
       id when is_integer(id) ->
-        {n, _} = Repo.update_all(from(p in "sinner_profiles", where: p.id == ^id), set: fields ++ [updated_at: now])
-        if n > 0, do: {:ok, id}, else: {:error, :not_found}
+        update_profile(id, name, fields, now)
 
       _ ->
-        released_on = attrs[:released_on] || Date.to_iso8601(Date.utc_today())
-        row = Map.new(fields ++ [released_on: released_on, inserted_at: now, updated_at: now])
-
-        case Repo.insert_all("sinner_profiles", [row], returning: [:id]) do
-          {1, [%{id: id}]} -> {:ok, id}
-          _ -> {:error, :insert_failed}
-        end
+        insert_profile(attrs, name, fields, now)
     end
   rescue
     e ->
@@ -62,10 +80,47 @@ defmodule StarlightBot.SinnerProfiles do
 
   def save(_attrs), do: {:error, :name_required}
 
+  defp update_profile(id, name, fields, now) do
+    case repo_for(id) do
+      nil ->
+        {:error, :read_only}
+
+      repo ->
+        if name_taken?(name, id) do
+          {:error, :name_taken}
+        else
+          {n, _} = repo.update_all(from(p in "sinner_profiles", where: p.id == ^id), set: fields ++ [updated_at: now])
+          if n > 0, do: {:ok, id}, else: {:error, :not_found}
+        end
+    end
+  end
+
+  defp insert_profile(attrs, name, fields, now) do
+    if name_taken?(name, nil) do
+      {:error, :name_taken}
+    else
+      repo = insert_repo()
+      released_on = attrs[:released_on] || Date.to_iso8601(Date.utc_today())
+      row = Map.new(fields ++ [released_on: released_on, inserted_at: now, updated_at: now])
+      row = if repo == Repo, do: Map.put(row, :id, next_user_id()), else: row
+
+      case repo.insert_all("sinner_profiles", [row], returning: [:id]) do
+        {1, [%{id: id}]} -> {:ok, id}
+        _ -> {:error, :insert_failed}
+      end
+    end
+  end
+
   defp sinner_rank(sinner), do: Enum.find_index(@sinners, &(&1 == sinner)) || length(@sinners)
 
   def delete(id) when is_integer(id) do
-    {n, _} = Repo.delete_all(from p in "sinner_profiles", where: p.id == ^id)
-    if n > 0, do: {:ok, id}, else: {:error, :not_found}
+    case repo_for(id) do
+      nil ->
+        {:error, :read_only}
+
+      repo ->
+        {n, _} = repo.delete_all(from p in "sinner_profiles", where: p.id == ^id)
+        if n > 0, do: {:ok, id}, else: {:error, :not_found}
+    end
   end
 end

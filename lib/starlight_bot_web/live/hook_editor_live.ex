@@ -555,6 +555,21 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   @impl true
+  def handle_event("override_hook", %{"name" => name}, socket) do
+    {:noreply, hook_action(socket, Hooks.override_hook(name), "Created your override of '#{name}'.")}
+  end
+
+  @impl true
+  def handle_event("reapply_hook", %{"name" => name}, socket) do
+    {:noreply, hook_action(socket, Hooks.reapply_hook(name), "Re-applied your override of '#{name}'.")}
+  end
+
+  @impl true
+  def handle_event("bump_version", %{"name" => name}, socket) do
+    {:noreply, hook_action(socket, Hooks.bump_version(name), "Bumped '#{name}' to a new version.")}
+  end
+
+  @impl true
   def handle_event("delete_hook", %{"name" => name}, socket) do
     case Hooks.delete_hook(name) do
       {:ok, _} ->
@@ -569,6 +584,9 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
 
       {:error, :not_found} ->
         {:noreply, put_flash(socket, :error, "Hook '#{name}' not found.")}
+
+      {:error, reason} ->
+        {:noreply, flash_error(socket, "Couldn't delete '#{name}': #{inspect(reason)}")}
     end
   end
 
@@ -863,6 +881,37 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
          |> put_flash(:error, "Screenshot failed: #{inspect(reason)}")}
     end
   end
+
+  defp hook_action(socket, {:ok, _name}, message), do: socket |> refresh_hooks() |> put_flash(:info, message)
+  defp hook_action(socket, {:error, reason}, _message), do: flash_error(socket, "Failed: #{inspect(reason)}")
+
+  def hook_for(_hooks, nil), do: nil
+  def hook_for(hooks, name), do: Enum.find(hooks, &(&1.name == name))
+
+  def deletable?(nil), do: true
+  def deletable?(hook), do: Hooks.editable?(hook)
+
+  def source_label(%{source: :base, retired: true}), do: "override retired"
+  def source_label(%{source: :base}), do: "shipped"
+  def source_label(%{source: :override}), do: "your override"
+  def source_label(%{source: :user}), do: "yours"
+
+  def source_badge_class(%{source: :base, retired: true}), do: "badge-warning"
+  def source_badge_class(%{source: :base}), do: "badge-ghost"
+  def source_badge_class(%{source: :override}), do: "badge-accent"
+  def source_badge_class(%{source: :user}), do: "badge-success"
+
+  def source_help(%{source: :base, retired: true}),
+    do: "The shipped hook was updated after you overrode it, so your override is paused and the shipped hook is in use."
+
+  def source_help(%{source: :base} = hook) do
+    if Hooks.editable?(hook),
+      do: "Shipped with the app. Editing here changes the app's default hook.",
+      else: "Shipped with the app and read-only. Override it to use your own region and template instead."
+  end
+
+  def source_help(%{source: :override}), do: "Your override is in use in place of the shipped hook."
+  def source_help(%{source: :user}), do: "Created by you."
 
   defp refresh_hooks(socket) do
     category = socket.assigns.category

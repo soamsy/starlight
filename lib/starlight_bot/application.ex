@@ -10,6 +10,9 @@ defmodule StarlightBot.Application do
     children =
       [
         StarlightBot.Repo,
+        StarlightBot.BaseRepo,
+        StarlightBot.RunsRepo,
+        StarlightBot.Migrator,
         {Phoenix.PubSub, name: StarlightBot.PubSub},
         {StarlightBot.LogStore, []},
         {Task.Supervisor, name: StarlightBot.TaskSupervisor},

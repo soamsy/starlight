@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-db="${1:-${STARLIGHT_DB:-$(dirname "$0")/../master.db}}"
+db="${1:-$(dirname "$0")/../priv/data/base.db}"
 
 ls -la "$db"*
 echo

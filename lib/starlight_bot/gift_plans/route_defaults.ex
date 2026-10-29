@@ -1,17 +1,21 @@
 defmodule StarlightBot.GiftPlans.RouteDefaults do
   require Logger
   alias StarlightBot.GiftPlans.Routes
-  alias StarlightBot.Repo
+  alias StarlightBot.{BaseRepo, Repo}
 
   def get(tier) when is_integer(tier) do
-    case stored(tier) do
+    case stored(Repo, "fusion_route_defaults", tier) || stored(BaseRepo, "fusion_route_templates", tier) do
       nil -> Routes.defaults(tier)
       routes -> Routes.copy(routes)
     end
   end
 
   def all do
-    case Repo.query("SELECT tier, routes FROM fusion_route_defaults ORDER BY tier") do
+    Map.merge(rows(BaseRepo, "fusion_route_templates"), rows(Repo, "fusion_route_defaults"))
+  end
+
+  defp rows(repo, table) do
+    case repo.query("SELECT tier, routes FROM #{table} ORDER BY tier") do
       {:ok, %{rows: rows}} -> for [tier, json] <- rows, {:ok, routes} <- [Jason.decode(json)], into: %{}, do: {tier, routes}
       {:error, _} -> %{}
     end
@@ -34,8 +38,8 @@ defmodule StarlightBot.GiftPlans.RouteDefaults do
     end
   end
 
-  defp stored(tier) do
-    case Repo.query("SELECT routes FROM fusion_route_defaults WHERE tier = ?", [tier]) do
+  defp stored(repo, table, tier) do
+    case repo.query("SELECT routes FROM #{table} WHERE tier = ?", [tier]) do
       {:ok, %{rows: [[json]]}} ->
         case Jason.decode(json) do
           {:ok, routes} when is_list(routes) -> routes

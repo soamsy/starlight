@@ -2,10 +2,10 @@ defmodule StarlightBot.GiftPlans.RouteDefaultsTest do
   use ExUnit.Case, async: false
 
   alias StarlightBot.GiftPlans.{RouteDefaults, Routes}
-  alias StarlightBot.Repo
+  alias StarlightBot.{BaseRepo, Repo}
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
+    :ok = StarlightBot.TestDB.checkout()
   end
 
   test "a saved tier default comes back with fresh route ids, and unsaved tiers fall back to the built-in defaults" do
@@ -29,11 +29,15 @@ defmodule StarlightBot.GiftPlans.RouteDefaultsTest do
     assert Enum.map(RouteDefaults.all()[2], & &1["combo"]) == [[2, 2, 1], [3, 2, 1]]
   end
 
-  test "the migration seeds the tier 3 and tier 4 route sets the plans already share" do
-    labels = fn tier -> Enum.map(RouteDefaults.get(tier), &Routes.label/1) end
+  test "shipped templates fill in for tiers the user has not saved, and a saved default wins over them" do
+    now = DateTime.utc_now() |> DateTime.to_iso8601()
+    template = Jason.encode!([Routes.new([2, 2, 1], buy_up_to: 2)])
+    BaseRepo.query!("INSERT INTO fusion_route_templates (tier, routes, updated_at) VALUES (3, ?, ?)", [template, now])
 
-    assert labels.(3) == ["2-2-2 (buy ≤T2)", "2-2-1 (buy ≤T2)", "3-2-1 (buy ≤T2)"]
-    assert length(labels.(4)) == 6
-    assert "3-3-2 (buy ≤T3, sub T3)" in labels.(4)
+    assert Enum.map(RouteDefaults.get(3), & &1["combo"]) == [[2, 2, 1]]
+    assert Enum.map(RouteDefaults.all()[3], & &1["combo"]) == [[2, 2, 1]]
+
+    :ok = RouteDefaults.put(3, [Routes.new([3, 3, 1])])
+    assert Enum.map(RouteDefaults.get(3), & &1["combo"]) == [[3, 3, 1]]
   end
 end

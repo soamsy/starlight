@@ -44,6 +44,8 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
     candidate = Enum.find(candidates, &(&1.column == String.to_integer(column)))
     {x, y, w, h} = candidate.region
 
+    ensure_editable_hook(profile.locator_hook)
+
     attrs =
       profile.locator_hook
       |> Hooks.get_hook()
@@ -68,6 +70,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
     profile = Enum.find(socket.assigns.profiles, &(&1.id == id))
 
     with %{} <- profile.locator_hook && Hooks.get_hook(profile.locator_hook),
+         _ <- ensure_editable_hook(profile.locator_hook),
          {:ok, _} <- Hooks.update_hook_image(profile.locator_hook, SinnerProfiles.placeholder_png()) do
       {:noreply, socket |> assign_profiles() |> put_flash(:info, "Replaced #{profile.locator_hook} image with the placeholder.")}
     else
@@ -163,6 +166,13 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
   end
 
   defp sinner_label(sinner), do: sinner |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
+
+  defp ensure_editable_hook(name) do
+    case Hooks.effective_row(name) do
+      %{source: :base} = row -> if Hooks.editable?(row), do: :ok, else: Hooks.override_hook(name)
+      _ -> :ok
+    end
+  end
 
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(value), do: value

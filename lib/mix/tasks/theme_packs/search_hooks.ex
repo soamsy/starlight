@@ -5,7 +5,7 @@ defmodule Mix.Tasks.ThemePacks.SearchHooks do
   import Ecto.Query
 
   alias StarlightBot.Hooks
-  alias StarlightBot.Repo
+  alias StarlightBot.BaseRepo, as: Repo
 
   @browser_hook "theme_pack_search_browser"
   @region_size 40

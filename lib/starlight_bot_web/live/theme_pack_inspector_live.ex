@@ -34,12 +34,10 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
 
     cond do
       hook_name == "" ->
-        ThemePacks.set_search_hook(pack_id, nil)
-        {:noreply, assign(socket, :theme_packs, ThemePacks.list_theme_packs())}
+        {:noreply, store_search_hook(socket, pack_id, nil)}
 
       hook_name in socket.assigns.hook_names ->
-        ThemePacks.set_search_hook(pack_id, hook_name)
-        {:noreply, assign(socket, :theme_packs, ThemePacks.list_theme_packs())}
+        {:noreply, store_search_hook(socket, pack_id, hook_name)}
 
       true ->
         {:noreply, put_flash(socket, :error, "No hook named #{hook_name}.")}
@@ -255,5 +253,12 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
     |> String.replace(~r/<br\s*\/?>/i, "\n")
     |> String.replace(~r/<[^>]*>/, "")
     |> String.trim()
+  end
+
+  defp store_search_hook(socket, pack_id, hook_name) do
+    case ThemePacks.set_search_hook(pack_id, hook_name) do
+      {:error, :read_only} -> put_flash(socket, :error, "Theme pack search hooks ship with the app and can't be changed here.")
+      _ -> assign(socket, :theme_packs, ThemePacks.list_theme_packs())
+    end
   end
 end

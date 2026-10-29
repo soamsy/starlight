@@ -1,10 +1,10 @@
 defmodule StarlightBot.TeamsDuplicateTest do
   use ExUnit.Case, async: false
 
-  alias StarlightBot.{Plans, Repo, Teams}
+  alias StarlightBot.{Plans, Teams}
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
+    :ok = StarlightBot.TestDB.checkout()
   end
 
   test "duplicate_team copies the hooks and plans under a unique name" do

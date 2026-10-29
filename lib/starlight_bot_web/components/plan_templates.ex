@@ -44,7 +44,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
                      onfocus="this.select()" onkeydown="if (event.key === 'Enter') this.blur()"
                      class="input input-bordered input-xs flex-1 min-w-0 font-mono" />
               <div :if={@editing != template.id} class="flex-1 min-w-0 flex items-center gap-1.5">
-                <span phx-dblclick="template_edit" phx-value-id={template.id} title="Double-click to rename"
+                <span phx-dblclick={PlanTemplates.writable?() && "template_edit"} phx-value-id={template.id} title={PlanTemplates.writable?() && "Double-click to rename"}
                       class="min-w-0 truncate font-mono text-xs cursor-text select-none"><%= template.name %></span>
                 <span class="badge badge-xs badge-ghost font-mono shrink-0"><%= template.count %></span>
                 <img :for={src <- template.icons} src={src} class={["h-5 w-5 shrink-0 object-contain", String.starts_with?(src, "/images/sinners/") && "sinner-icon"]} />
@@ -52,13 +52,13 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
               <button type="button" phx-click="template_load" phx-value-id={template.id} class="btn btn-xs btn-outline btn-warning"
                       title={"Replace this team's #{@label} with this template"}
                       data-confirm={"Replace this team's #{@label} with the template '#{template.name}'? The current #{@label} will be lost."}>Load</button>
-              <button type="button" phx-click="template_delete" phx-value-id={template.id} class="btn btn-xs btn-ghost text-error"
+              <button :if={PlanTemplates.writable?()} type="button" phx-click="template_delete" phx-value-id={template.id} class="btn btn-xs btn-ghost text-error"
                       data-confirm={"Delete the template '#{template.name}'?"}>Del</button>
             </div>
             <div :if={@templates == []} class="px-2 py-3 text-center text-xs text-base-content/40">No <%= @label %> templates yet.</div>
           </div>
-          <div class="my-2 border-t border-base-300"></div>
-          <div class="flex items-center gap-1 px-1">
+          <div :if={PlanTemplates.writable?()} class="my-2 border-t border-base-300"></div>
+          <div :if={PlanTemplates.writable?()} class="flex items-center gap-1 px-1">
             <div class="flex-1 flex items-center gap-1.5">
               <span class="text-xs font-semibold">Current <%= @label %></span>
               <span :if={@current_count} class="badge badge-xs badge-ghost font-mono"><%= @current_count %></span>

@@ -1,11 +1,11 @@
 defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
   use ExUnit.Case, async: false
 
-  alias StarlightBot.{BattlePlans, Plans, Repo, Teams}
+  alias StarlightBot.{BattlePlans, Plans, Teams}
   alias StarlightBotWeb.Live.BattlePlanEditorLive, as: Live
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
+    :ok = StarlightBot.TestDB.checkout()
     {:ok, socket} = Live.mount(%{}, %{}, %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, flash: %{}}})
     {:noreply, socket} = Live.handle_event("new_plan", %{}, socket)
     focused = Enum.find(socket.assigns.data["playbooks"], &(&1["kind"] == "focused"))

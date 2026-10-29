@@ -1,14 +1,14 @@
 defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
   use ExUnit.Case, async: false
 
-  alias StarlightBot.{GiftPlans, Plans, Repo}
+  alias StarlightBot.{BaseRepo, GiftPlans, Plans, Repo}
   alias StarlightBotWeb.Live.GiftPlanEditorLive, as: Live
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
+    :ok = StarlightBot.TestDB.checkout()
     Repo.query!("DELETE FROM fusion_route_defaults")
 
-    Repo.insert_all("ego_gifts", [
+    BaseRepo.insert_all("ego_gifts", [
       %{id: "g_glimpse", name: "Glimpse of Flames", affinity: "burn", tier: 4, buying_cost: 300, ingredients: nil, obtain_method: "Shop"},
       %{id: "g_fiery", name: "Fiery Down", affinity: "burn", tier: 2, buying_cost: 120, ingredients: nil, obtain_method: "Shop"},
       %{id: "g_a", name: "Ing A", affinity: "burn", tier: 2, buying_cost: nil, ingredients: nil, obtain_method: "Shop"},
@@ -16,7 +16,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
       %{id: "g_fixed", name: "Fixed Thing", affinity: "burn", tier: 4, buying_cost: nil, ingredients: "g_a,g_b", obtain_method: "Fuse #g_a# + #g_b#"}
     ])
 
-    Repo.insert_all("ego_gifts", [
+    BaseRepo.insert_all("ego_gifts", [
       %{id: "g_uptied", name: "Uptied One", affinity: "burn", tier: 1, buying_cost: 50, obtain_method: "Shop", description: "Base text", uptie2: "Plus text", uptie3: "Plus plus text"}
     ])
 

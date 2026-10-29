@@ -1,11 +1,11 @@
 defmodule StarlightBotWeb.Live.PackPlanCopyTest do
   use ExUnit.Case, async: false
 
-  alias StarlightBot.{Plans, Repo, Teams}
+  alias StarlightBot.{Plans, Teams}
   alias StarlightBotWeb.Live.PackPlanEditorLive, as: Live
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
+    :ok = StarlightBot.TestDB.checkout()
   end
 
   test "a copied pack plan pastes into another team and keeps its plan" do

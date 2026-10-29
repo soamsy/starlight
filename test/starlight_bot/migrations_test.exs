@@ -1,40 +1,40 @@
 defmodule StarlightBot.MigrationsTest do
   use ExUnit.Case, async: false
 
-  @migrations_path Path.join([:code.priv_dir(:starlight_bot), "repo", "migrations"])
+  @expected %{
+    StarlightBot.Repo =>
+      ~w[battle_plans fusion_route_defaults gift_plans hook_overrides pack_plans runner_forms scheduler_settings sinner_profiles teams],
+    StarlightBot.BaseRepo =>
+      ~w[ego_gifts fusion_route_templates hooks plan_templates sinner_profiles theme_pack_gifts theme_packs],
+    StarlightBot.RunsRepo => ~w[run_events run_logs]
+  }
 
   setup do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(StarlightBot.Repo)
-    :ok
+    :ok = StarlightBot.TestDB.checkout()
   end
 
-  test "all migration files were applied to the test database" do
-    files = Path.wildcard(Path.join(@migrations_path, "*.exs"))
-    assert length(files) > 0, "No migration files found in #{@migrations_path}"
+  for {repo, _} <- @expected do
+    @repo repo
+    @migrations_dir repo |> Module.split() |> List.last() |> Macro.underscore()
 
-    {:ok, %{rows: [[count]]}} =
-      Ecto.Adapters.SQL.query(StarlightBot.Repo, "SELECT COUNT(*) FROM schema_migrations", [])
+    test "#{inspect(repo)} applied every migration file" do
+      path = Path.join([:code.priv_dir(:starlight_bot), @migrations_dir, "migrations"])
+      files = Path.wildcard(Path.join(path, "*.exs"))
+      assert files != [], "No migration files found in #{path}"
 
-    assert count == length(files),
-           "Expected #{length(files)} migrations applied, found #{count}. " <>
-             "Run `mix db.reset` if the test DB is stale."
-  end
+      {:ok, %{rows: [[count]]}} = Ecto.Adapters.SQL.query(@repo, "SELECT COUNT(*) FROM schema_migrations", [])
+      assert count == length(files)
+    end
 
-  test "expected tables exist after migration" do
-    {:ok, %{rows: rows}} =
-      Ecto.Adapters.SQL.query(
-        StarlightBot.Repo,
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations' ORDER BY name",
-        []
-      )
+    test "#{inspect(repo)} has its expected tables" do
+      {:ok, %{rows: rows}} =
+        Ecto.Adapters.SQL.query(
+          @repo,
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'schema_migrations' ORDER BY name",
+          []
+        )
 
-    tables = Enum.map(rows, fn [name] -> name end)
-
-    expected =
-      ~w[battle_plans ego_gifts fusion_route_defaults gift_plans hooks images run_events run_logs scheduler_settings sinner_profiles teams pack_plans plan_templates]
-
-    for table <- expected do
-      assert table in tables, "Expected table '#{table}' to exist after migrations. Found: #{inspect(tables)}"
+      assert Enum.map(rows, fn [name] -> name end) == Enum.sort(@expected[@repo])
     end
   end
 end

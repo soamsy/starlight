@@ -2,7 +2,7 @@ defmodule StarlightBot.RunHistory do
   require Logger
   import Ecto.Query
   alias StarlightBot.Navigation.ScreenTimes
-  alias StarlightBot.Repo
+  alias StarlightBot.RunsRepo, as: Repo
 
   @topic "run_history"
 

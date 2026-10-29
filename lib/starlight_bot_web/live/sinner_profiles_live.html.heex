@@ -30,15 +30,17 @@
                   <form phx-change="save_profile" class="flex items-center gap-2">
                     <input type="hidden" name="profile_id" value={profile.id} />
                     <input type="text" name="name" value={profile.name} phx-debounce="blur"
+                           disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
                            phx-mounted={if profile.id == @focus_id, do: JS.focus()}
                            class="input input-bordered input-xs w-48" />
-                    <select name="sinner" class="select select-bordered select-xs w-32">
+                    <select name="sinner" disabled={!StarlightBot.SinnerProfiles.writable?(profile)} class="select select-bordered select-xs w-32">
                       <option value="" selected={is_nil(profile.sinner)}>(sinner)</option>
                       <%= for sinner <- StarlightBot.SinnerProfiles.sinners() do %>
                         <option value={sinner} selected={profile.sinner == sinner}><%= sinner %></option>
                       <% end %>
                     </select>
                     <input type="text" name="locator_hook" value={profile.locator_hook} list="locator-hook-names" phx-debounce="blur"
+                           disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
                            placeholder="hook name"
                            class={"input input-bordered input-xs w-64 font-mono " <> if(profile.locator_hook && profile.locator_hook not in @locator_names, do: "input-error", else: "")} />
                   </form>
@@ -57,6 +59,7 @@
                           title="Reset hook image to the placeholder circle">Reset</button>
                   <button phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost">Test</button>
                   <button phx-click="delete_profile" phx-value-id={profile.id}
+                          disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
                           data-confirm={"Delete '#{profile.name}'?"}
                           class="btn btn-xs btn-ghost text-error">Del</button>
                 </td>

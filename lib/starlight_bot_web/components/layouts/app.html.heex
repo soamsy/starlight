@@ -237,18 +237,74 @@
       </div>
     </div>
 
-    <label class="swap swap-rotate btn btn-ghost btn-square btn-sm" title="Toggle theme">
-      <input type="checkbox" id="theme-toggle-cb" />
-      <svg class="swap-off h-5 w-5 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-        <path d="M5.64,17l-.71.71a1,1,0,0,0,0,1.41,1,1,0,0,0,1.41,0l.71-.71A1,1,0,0,0,5.64,17ZM5,12a1,1,0,0,0-1-1H3a1,1,0,0,0,0,2H4A1,1,0,0,0,5,12Zm7-7a1,1,0,0,0,1-1V3a1,1,0,0,0-2,0V4A1,1,0,0,0,12,5ZM5.64,7.05a1,1,0,0,0,.7.29,1,1,0,0,0,.71-.29,1,1,0,0,0,0-1.41l-.71-.71A1,1,0,0,0,4.93,6.34Zm12,.29a1,1,0,0,0,.7-.29l.71-.71a1,1,0,1,0-1.41-1.41L17,5.64a1,1,0,0,0,0,1.41A1,1,0,0,0,17.66,7.34ZM21,11H20a1,1,0,0,0,0,2h1a1,1,0,0,0,0-2Zm-9,8a1,1,0,0,0-1,1v1a1,1,0,0,0,2,0V20A1,1,0,0,0,12,19ZM18.36,17A1,1,0,0,0,17,18.36l.71.71a1,1,0,0,0,1.41,0,1,1,0,0,0,0-1.41ZM12,6.5A5.5,5.5,0,1,0,17.5,12,5.51,5.51,0,0,0,12,6.5Zm0,9A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"/>
+    <button phx-click="settings_open" class="tooltip tooltip-right btn btn-ghost btn-square btn-sm text-base-content/50" data-tip="Settings">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5">
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+        <circle cx="12" cy="12" r="3" />
       </svg>
-      <svg class="swap-on h-5 w-5 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-        <path d="M21.64,13a1,1,0,0,0-1.05-.14,8.05,8.05,0,0,1-3.37.73A8.15,8.15,0,0,1,9.08,5.49a8.59,8.59,0,0,1,.25-2A1,1,0,0,0,8,2.36,10.14,10.14,0,1,0,22,14.05,1,1,0,0,0,21.64,13Zm-9.5,6.69A8.14,8.14,0,0,1,7.08,5.22v.27A10.15,10.15,0,0,0,17.22,15.63a9.79,9.79,0,0,0,2.1-.22A8.11,8.11,0,0,1,12.14,19.73Z"/>
-      </svg>
-    </label>
+    </button>
   </nav>
 
   <main class="p-3 flex-1 min-w-0 overflow-hidden flex flex-col">
     <%= @inner_content %>
   </main>
 </div>
+
+<%= if assigns[:settings_open] && assigns[:settings] do %>
+  <div class="modal modal-open" phx-window-keydown="settings_close" phx-key="Escape">
+    <div class="modal-box max-w-2xl">
+      <h3 class="font-bold text-lg">Settings</h3>
+      <p class="text-xs text-base-content/60 mb-3">Where Starlight keeps your data. Changes apply after restarting Starlight.</p>
+
+      <form phx-submit="settings_save" class="flex flex-col gap-3">
+        <div class="form-control">
+          <span class="label-text text-xs font-semibold mb-1">Mode</span>
+          <label class="flex items-start gap-2 cursor-pointer">
+            <input type="radio" name="mode" value="user" checked={@settings.mode == :user} class="radio radio-sm mt-0.5" />
+            <span class="text-sm">User<span class="block text-xs text-base-content/60">Your teams, plans, hook overrides and run history live in your data folder. Shipped data is read-only.</span></span>
+          </label>
+          <label class="flex items-start gap-2 cursor-pointer mt-1">
+            <input type="radio" name="mode" value="authoring" checked={@settings.mode == :authoring} class="radio radio-sm mt-0.5" />
+            <span class="text-sm">Authoring (development)<span class="block text-xs text-base-content/60">Edits the shipped databases in the repository directly. Run history stays in <span class="font-mono">.starlight-dev/</span>.</span></span>
+          </label>
+        </div>
+
+        <div class="form-control">
+          <label class="label-text text-xs font-semibold mb-1" for="settings-data-dir">Data folder (user mode)</label>
+          <input id="settings-data-dir" type="text" name="data_dir" value={@settings.config["data_dir"]} placeholder="~/.starlight"
+                 class="input input-bordered input-sm font-mono" />
+        </div>
+
+        <div class="flex gap-2 justify-end">
+          <button type="button" phx-click="settings_open_folder" class="btn btn-sm btn-ghost">Open data folder</button>
+          <button type="submit" class="btn btn-sm btn-primary">Save</button>
+        </div>
+      </form>
+
+      <div class="divider my-2 text-xs">In use right now ({@settings.mode}, set by {@settings.mode_source})</div>
+      <table class="table table-xs">
+        <tbody>
+          <tr><td class="whitespace-nowrap">Shipped data</td><td class="font-mono text-xs break-all">{@settings.paths.base}</td></tr>
+          <tr><td class="whitespace-nowrap">Your data</td><td class="font-mono text-xs break-all">{@settings.paths.user}</td></tr>
+          <tr><td class="whitespace-nowrap">Run history</td><td class="font-mono text-xs break-all">{@settings.paths.runs}</td></tr>
+          <tr><td class="whitespace-nowrap">Your hook images</td><td class="font-mono text-xs break-all">{@settings.paths.user_hooks_dir}</td></tr>
+          <tr><td class="whitespace-nowrap">Settings file</td><td class="font-mono text-xs break-all">{@settings.config_file}</td></tr>
+        </tbody>
+      </table>
+
+      <div class="divider my-2 text-xs">Appearance</div>
+      <div class="flex gap-2">
+        <button type="button" class="btn btn-xs"
+                onclick="localStorage.removeItem('starlight-theme');document.documentElement.setAttribute('data-theme', window.matchMedia('(prefers-color-scheme: dark)').matches ? 'halloween' : 'valentine')">System</button>
+        <button type="button" class="btn btn-xs"
+                onclick="localStorage.setItem('starlight-theme','valentine');document.documentElement.setAttribute('data-theme','valentine')">Light</button>
+        <button type="button" class="btn btn-xs"
+                onclick="localStorage.setItem('starlight-theme','halloween');document.documentElement.setAttribute('data-theme','halloween')">Dark</button>
+      </div>
+
+      <div class="modal-action">
+        <button phx-click="settings_close" class="btn btn-sm">Close</button>
+      </div>
+    </div>
+  </div>
+<% end %>

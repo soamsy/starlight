@@ -49,7 +49,6 @@ defmodule StarlightBot.MixProject do
   defp aliases do
     [
       "db.setup": ["ecto.create", "ecto.migrate"],
-      "db.reset": ["ecto.drop", "db.setup"],
       "db.migrate": ["ecto.migrate"],
       "test.hardware": ["test --include kde"],
       "ego_gifts.setup": ["ego_gifts.import"],

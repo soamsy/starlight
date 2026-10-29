@@ -49,7 +49,7 @@ defmodule StarlightBot.SchedulerTest do
 
   describe "settings" do
     setup do
-      :ok = Ecto.Adapters.SQL.Sandbox.checkout(StarlightBot.Repo)
+      :ok = StarlightBot.TestDB.checkout()
       now = DateTime.utc_now() |> DateTime.truncate(:second)
       StarlightBot.Repo.insert_all("teams", [%{id: 5, name: "Burn", hooks: ~s(["team_burn"]), inserted_at: now, updated_at: now}])
       :ok
