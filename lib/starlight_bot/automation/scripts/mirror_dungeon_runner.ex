@@ -11,8 +11,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   alias StarlightBot.Vision.{Capture, EgoGiftCapture}
 
   @max_dispatch_iterations 2_000
-  @max_consecutive_errors 7
-  @server_error_close_from_error 3
+  @max_consecutive_errors 10
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)a
   @home_screens [:home, :home_drive, :home_window, :home_sinners, :home_theater, :home_extract, :home_dispense, :home_unknown]
   @door_family @home_screens ++ [:md_door, :md_door_unknown, :md_door_enter_popup, :md_door_progress]
@@ -40,7 +39,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     if Map.get(config, :capture_ego_gifts?, false), do: EgoGiftCapture.enable()
 
     with {:ok, teams} <- prepare_teams(picks, ctx) do
-      {:steps, Recovery.steps(keep(), {__MODULE__, :started, [teams, run_count, config, 0]})}
+      {:steps, Recovery.steps(keep(), 0, {__MODULE__, :started, [teams, run_count, config, 0]})}
     end
   end
 
@@ -69,8 +68,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       {:error, :unknown_screen}
     else
       Ctx.log(ctx, :error, "mirror dungeon runner: error #{errors}/#{@max_consecutive_errors} (:unknown_screen) — re-localizing and retrying")
-      retry = Recovery.steps(keep(), {__MODULE__, :started, [teams, run_count, config, errors]})
-      {:steps, close_server_error(errors) ++ retry}
+      {:steps, Recovery.steps(keep(), errors, {__MODULE__, :started, [teams, run_count, config, errors]})}
     end
   end
 
@@ -88,7 +86,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     then = {__MODULE__, :located, [run]}
 
     cond do
-      run.errors > 0 -> {:steps, Recovery.steps(keep(), then)}
+      run.errors > 0 -> {:steps, Recovery.steps(keep(), run.errors, then)}
       known_screen && not Runner.fallback_screen?(known_screen) && identity?(known_screen) -> {:steps, [call(__MODULE__, :located, [run, {:ok, known_screen}])]}
       true -> {:steps, [locate_screen(then: then)]}
     end
@@ -450,20 +448,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       {:error, reason}
     else
       Ctx.log(ctx, :error, "mirror dungeon runner: error #{errors}/#{@max_consecutive_errors} (#{inspect(reason)}) — re-localizing and retrying")
-      {:steps, close_server_error(errors) ++ [loop(%{run | iterations: run.iterations + 1, errors: errors}, nil)]}
+      {:steps, [loop(%{run | iterations: run.iterations + 1, errors: errors}, nil)]}
     end
   end
-
-  defp close_server_error(errors) when errors >= @server_error_close_from_error do
-    [
-      branch(
-        [{:server_error_close, [log(:info, "server error popup up, closing it"), attempt([click(:server_error_close), sleep(500)], else: [])]}],
-        wait: @fresh_check_ms
-      )
-    ]
-  end
-
-  defp close_server_error(_errors), do: []
 
   defp season_pass_steps(config) do
     if Map.get(config, :collect_xp?, false),

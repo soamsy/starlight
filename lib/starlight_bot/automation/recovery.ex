@@ -6,8 +6,11 @@ defmodule StarlightBot.Automation.Recovery do
   @escape_hook :safe_corner
   @escape_click_sleep_ms 300
   @max_escape_hops 3
+  @server_error_close_from_error 3
+  @fresh_check_ms 1
 
-  def steps(keep, then), do: [locate_screen(then: {__MODULE__, :located, [keep, @max_escape_hops, then]})]
+  def steps(keep, errors, then),
+    do: close_server_error(errors) ++ [locate_screen(then: {__MODULE__, :located, [keep, @max_escape_hops, then]})]
 
   def located(keep, hops_left, then, {:ok, screen}, _frame, ctx), do: escape(screen, keep, hops_left, then, ctx)
   def located(_keep, _hops_left, then, :unknown, _frame, ctx), do: {:steps, fallback(then, ctx)}
@@ -27,6 +30,24 @@ defmodule StarlightBot.Automation.Recovery do
         {:steps, [capture(Runner.plan_program([transition]), then: {__MODULE__, :escaped, [{keep_mod, keep_fun}, hops_left, then]})]}
     end
   end
+
+  defp close_server_error(errors) when errors >= @server_error_close_from_error do
+    [
+      branch(
+        [
+          {:server_error_close,
+           [
+             log(:info, "server error popup up, closing it"),
+             attempt([click(:server_error_close), sleep(500)], else: []),
+             attempt([click(:potential_server_popup_confirm), sleep(500)], else: [])
+           ]}
+        ],
+        wait: @fresh_check_ms
+      )
+    ]
+  end
+
+  defp close_server_error(_errors), do: []
 
   defp fallback(then, ctx) do
     Ctx.log(ctx, :error, "still unrecognized — trying #{@escape_hook}/esc/#{@escape_hook} to find a pickoff point")

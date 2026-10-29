@@ -6,7 +6,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   alias StarlightBot.Ctx
 
   @max_consecutive 10
-  @max_navigation_retries 5
+  @max_navigation_retries 10
   @post_battle_settle_tries 4
   @post_battle_settle_ms 500
 
@@ -38,7 +38,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
 
     lux = %{teams: teams, collect_xp?: collect_xp?, collect_enkephalin?: collect_enkephalin?, convert_count: enkephalin_convert_count}
     queue = kind_queue(:exp, exp_consecutive, exp_repeats) ++ kind_queue(:thread, thread_consecutive, thread_repeats)
-    {:steps, Recovery.steps(no_keep(), {__MODULE__, :started, [lux, queue]})}
+    {:steps, Recovery.steps(no_keep(), 0, {__MODULE__, :started, [lux, queue]})}
   end
 
   def start(_team, _exp_consecutive, _exp_repeats, _thread_consecutive, _thread_repeats, _collect_xp?, _collect_enkephalin?, _count, _frame, ctx) do
@@ -194,7 +194,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
       "navigation error #{inspect(error)} — relocalizing to find a pickoff point (attempt #{errors + 1}/#{@max_navigation_retries})"
     )
 
-    {:steps, Recovery.steps(no_keep(), {__MODULE__, :recovered, [lux, kind, size, queue, errors, error]})}
+    {:steps, Recovery.steps(no_keep(), errors, {__MODULE__, :recovered, [lux, kind, size, queue, errors, error]})}
   end
 
   defp gave_up(ctx) do
