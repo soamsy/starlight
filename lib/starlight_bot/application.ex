@@ -19,7 +19,6 @@ defmodule StarlightBot.Application do
         {DynamicSupervisor, name: StarlightBot.MachineSupervisor, strategy: :one_for_one},
         {StarlightBot.Navigation.MachineStatus, []},
         {StarlightBot.Vision.HookRegistry, []},
-        {StarlightBot.Vision.EgoGiftCapture, []},
         {StarlightBot.Vision.EgoGiftDetector, []},
         {StarlightBot.Automation.TrayWatch, []},
       ] ++ hardware_children() ++ [StarlightBotWeb.Endpoint]

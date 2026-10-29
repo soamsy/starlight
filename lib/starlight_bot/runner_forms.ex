@@ -73,7 +73,6 @@ defmodule StarlightBot.RunnerForms do
         rewards: rewards,
         collect_enkephalin?: Map.get(params, "collect_enkephalin") == "true",
         collect_xp?: Map.get(params, "collect_xp") == "true",
-        capture_ego_gifts?: Map.get(params, "capture_ego_gifts") == "true",
         enkephalin_convert_count: convert_count
       }
 

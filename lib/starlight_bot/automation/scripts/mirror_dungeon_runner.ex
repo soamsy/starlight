@@ -8,7 +8,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   alias StarlightBot.{GiftPlans, RunnerForms, Teams}
   alias StarlightBot.Navigation.{Catalog, Runner, Screen}
   alias StarlightBot.Navigation.Screens.Shop
-  alias StarlightBot.Vision.{Capture, EgoGiftCapture}
+  alias StarlightBot.Vision.Capture
 
   @max_dispatch_iterations 2_000
   @max_consecutive_errors 10
@@ -36,8 +36,6 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   def start([_ | _] = picks, run_count, %{rewards: rewards} = config, _frame, ctx)
       when is_integer(run_count) and run_count >= 0 and rewards in [:none, :claim, :claim_weekly] do
-    if Map.get(config, :capture_ego_gifts?, false), do: EgoGiftCapture.enable()
-
     with {:ok, teams} <- prepare_teams(picks, ctx) do
       {:steps, Recovery.steps(keep(), 0, {__MODULE__, :started, [teams, run_count, config, 0]})}
     end

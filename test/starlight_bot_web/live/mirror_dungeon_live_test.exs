@@ -13,7 +13,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
 
   defp socket(picks) do
     %Phoenix.LiveView.Socket{
-      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, start_index: 0, run_count: "1", rewards: "weekly", collect_enkephalin: false, collect_xp: false, capture_ego_gifts: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil, phase: :idle, other_running?: false}
+      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, start_index: 0, run_count: "1", rewards: "weekly", collect_enkephalin: false, collect_xp: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil, phase: :idle, other_running?: false}
     }
   end
 

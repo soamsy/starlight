@@ -44,7 +44,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:rewards, "weekly")
      |> assign(:collect_enkephalin, false)
      |> assign(:collect_xp, false)
-     |> assign(:capture_ego_gifts, false)
      |> assign(:enkephalin_convert_count, "0")
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)
@@ -81,7 +80,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:rewards, Map.get(params, "rewards", socket.assigns.rewards))
      |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
      |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
-     |> assign(:capture_ego_gifts, Map.get(params, "capture_ego_gifts") == "true")
      |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))
      |> save_form()}
   end
@@ -493,7 +491,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     |> assign(:rewards, Map.get(params, "rewards", socket.assigns.rewards))
     |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
     |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
-    |> assign(:capture_ego_gifts, Map.get(params, "capture_ego_gifts") == "true")
     |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))
   end
 
@@ -508,7 +505,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
       "rewards" => a.rewards,
       "collect_enkephalin" => to_string(a.collect_enkephalin),
       "collect_xp" => to_string(a.collect_xp),
-      "capture_ego_gifts" => to_string(a.capture_ego_gifts),
       "enkephalin_convert_count" => a.enkephalin_convert_count
     })
 
@@ -544,9 +540,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
     xp = if Map.get(config, :collect_xp?, false), do: " + battle pass xp after all runs", else: ""
 
-    capture = if Map.get(config, :capture_ego_gifts?, false), do: " + ego gift captures", else: ""
-
-    "mirror dungeon: #{run_count} run(s)#{cycle}#{suffix}#{enkephalin}#{xp}#{capture}"
+    "mirror dungeon: #{run_count} run(s)#{cycle}#{suffix}#{enkephalin}#{xp}"
   end
 
   def pending_action_label(:resume_mirror_dungeon), do: "resume mirror dungeon"

@@ -5,7 +5,6 @@ defmodule StarlightBot.Navigation.Navigator do
   alias StarlightBot.{Ctx, LogStore, RunHistory, Teams}
   alias StarlightBot.Automation.Scripts.{ClaimRewards, LuxcavationRunner, MirrorDungeonRunner, SelectTeamOnScreen}
   alias StarlightBot.Navigation.{Catalog, DSL, Machine, RunClock, RunSplits, Runner, ScreenTimes}
-  alias StarlightBot.Vision.EgoGiftCapture
 
   @topic "navigation"
   @log_limit 1000
@@ -611,7 +610,6 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   defp release_run(state) do
-    if state.run_kind == :mirror_dungeon, do: EgoGiftCapture.disable()
     if state.run_memory_agent && Process.alive?(state.run_memory_agent), do: Agent.stop(state.run_memory_agent)
     %{state | run_memory_agent: nil}
   end

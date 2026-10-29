@@ -102,7 +102,7 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
   def scan_pass(tab, wanted, picked, seen, pass, rest, retries, _frame, ctx) do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, region} <- hook_region(@scan_hook, ctx),
-         {:ok, items} <- EgoGiftDetector.detect(frame.mat, region, capture_tag: :gift_search) do
+         {:ok, items} <- EgoGiftDetector.detect(frame.mat, region) do
       items = Enum.filter(items, &(&1.gift_id && &1.w * &1.h >= @min_item_area_px))
       picked = Enum.reduce(items, picked, &click_if_wanted(&1, wanted, &2, ctx))
       visible = MapSet.new(items, & &1.gift_id)
@@ -149,7 +149,7 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
   defp missing_selected(picked, deadline, ctx) do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, region} <- hook_region(@selected_area_hook, ctx),
-         {:ok, items} <- EgoGiftDetector.detect(frame.mat, region, capture_tag: :gift_search_selected) do
+         {:ok, items} <- EgoGiftDetector.detect(frame.mat, region) do
       missing = MapSet.difference(picked, MapSet.new(items, & &1.gift_id))
 
       if MapSet.size(missing) == 0 or System.monotonic_time(:millisecond) >= deadline do

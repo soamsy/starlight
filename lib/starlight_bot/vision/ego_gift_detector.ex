@@ -1,7 +1,7 @@
 defmodule StarlightBot.Vision.EgoGiftDetector do
   use GenServer
   require Logger
-  alias StarlightBot.Vision.{EgoGiftCapture, Frame}
+  alias StarlightBot.Vision.Frame
 
   @border_constant 0  # cv_BORDER_CONSTANT
 
@@ -17,7 +17,6 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
   @default_det_iou 0.45
   @default_cls_topk 3
   @default_cls_conf 0.9
-  @capture_det_conf 0.1
 
   def start_link(_), do: GenServer.start_link(__MODULE__, [], name: __MODULE__)
 
@@ -98,15 +97,9 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
       topk = Keyword.get(opts, :topk, @default_cls_topk)
       min_cls_conf = Keyword.get(opts, :classifier_conf, @default_cls_conf)
 
-      capture_tag = Keyword.get(opts, :capture_tag)
-      capturing? = capture_tag != nil and EgoGiftCapture.enabled?()
-      scan_conf = if capturing?, do: min(det_conf, @capture_det_conf), else: det_conf
-
-      boxes = run_detector(state.detector_net, crop, scan_conf, iou, imgsz)
+      boxes = run_detector(state.detector_net, crop, det_conf, iou, imgsz)
       preds = run_classifier(state.classifier_net, state.classes, Enum.map(boxes, &crop_box(crop, &1)), topk)
       classified = Enum.zip_with(boxes, preds, &%{box: &1, preds: &2})
-
-      if capturing?, do: EgoGiftCapture.record(capture_tag, crop, classified)
 
       results =
         classified

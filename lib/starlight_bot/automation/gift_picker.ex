@@ -144,7 +144,7 @@ defmodule StarlightBot.Automation.GiftPicker do
     with {:ok, %{} = hook} <- HookRegistry.find(scan_hook),
          region when not is_nil(region) <- hook.scan_region || hook.region,
          {:ok, frame} <- Capture.grab_frame(),
-         {:ok, results} <- EgoGiftDetector.detect(frame.mat, region, capture_tag: scan_hook) do
+         {:ok, results} <- EgoGiftDetector.detect(frame.mat, region) do
       detections =
         results
         |> Enum.filter(&(&1.w * &1.h >= @min_item_area_px))
