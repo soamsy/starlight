@@ -13,6 +13,11 @@ for db in priv/data/base.db priv/data/user_seed.db; do
     done_frames=${frames#*|}
     if [ "${result%%|*}" != "0" ] || [ "$log" != "$done_frames" ]; then
       echo "db-checkpoint: $db still has uncheckpointed WAL frames ($done_frames of $log)" >&2
+      pids=$(lsof -t "$db" "$db-shm" 2>/dev/null | sort -u | tr '\n' ',' | sed 's/,$//')
+      if [ -n "$pids" ]; then
+        echo "db-checkpoint: processes holding $db open (pid, elapsed, command):" >&2
+        ps -o pid=,etime=,args= -p "$pids" >&2
+      fi
       exit 1
     fi
   fi
