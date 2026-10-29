@@ -36,6 +36,25 @@ mix phx.server     # starts at localhost:4000
 | `mix phx.server` | Start starlight_bot web server |
 | `mix assets.build` | Build starlight_bot CSS/JS assets |
 
+## Diffing master.db
+
+`.gitattributes` marks `*.db` as `diff=sqlite3`, so git diffs the SQL dump instead of the binary. The textconv driver lives in local git config, so run this once per clone:
+
+```sh
+git config diff.sqlite3.textconv 'echo .dump | sqlite3 -readonly'
+git config diff.sqlite3.cachetextconv true
+```
+
+Then:
+
+```sh
+git diff -- master.db              # row-level changes
+git diff --word-diff -- master.db  # highlights changes inside long JSON rows
+git log -p -- master.db            # history
+```
+
+Use `--word-diff` for hook and plan edits, since each row is a single line. Checkpoint the WAL before committing (stop `mix phx.server`, or run `sqlite3 master.db 'PRAGMA wal_checkpoint(TRUNCATE)'`), otherwise the committed file may be missing recent edits.
+
 ## System dependencies
 
 - KDE Plasma 6.0+ with KWin — required for input injection via EIS (`LIBEI_SOCKET` set automatically in a KDE session)
