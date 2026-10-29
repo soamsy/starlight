@@ -1,10 +1,10 @@
-<div class="flex flex-col h-full gap-3 overflow-hidden">
+<div class="flex flex-col h-full gap-3 overflow-y-auto lg:overflow-hidden">
 
   <%!-- Top section: both columns fill the remaining height --%>
-  <div class="grid grid-cols-[30fr_28fr] grid-rows-1 gap-2 flex-1 min-h-0">
+  <div class="grid grid-cols-1 lg:grid-cols-[30fr_28fr] lg:grid-rows-1 gap-2 flex-none lg:flex-1 lg:min-h-0">
 
     <%!-- Left: Screenshot Panel --%>
-    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden">
+    <div class="card bg-base-100 shadow-lg flex flex-col overflow-hidden min-h-96 lg:min-h-0">
       <div class="card-body p-3 flex flex-col flex-1 min-h-0">
 
         <div class="flex items-center gap-3 mb-2">
@@ -110,7 +110,7 @@
     </div>
 
     <%!-- Right: Hook Form (scrolls internally) --%>
-    <div class="flex flex-col gap-3 min-h-0 overflow-y-auto">
+    <div class="flex flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
 
       <%= if @editing_name && hook_for(@hooks, @editing_name) do %>
         <% hook = hook_for(@hooks, @editing_name) %>

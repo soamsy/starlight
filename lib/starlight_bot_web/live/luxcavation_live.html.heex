@@ -24,10 +24,10 @@
   </div>
 
   <%!-- Body --%>
-  <div class="flex gap-2 flex-1 min-h-0 overflow-hidden">
+  <div class="flex flex-col lg:flex-row gap-2 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
 
     <%!-- Left: form --%>
-    <div class="w-[22rem] shrink-0 flex flex-col gap-3 overflow-y-auto">
+    <div class="w-full lg:w-[22rem] shrink-0 flex flex-col gap-3 lg:overflow-y-auto">
 
       <%= if @teams == [] do %>
         <div class="text-xs text-base-content/40 bg-base-200 rounded-xl p-3">
@@ -236,7 +236,7 @@
     </div>
 
     <%!-- Right: log --%>
-    <StarlightBotWeb.Live.LogLive.panel socket={@socket} id="luxcavation-log" class="flex-1 min-h-0" />
+    <StarlightBotWeb.Live.LogLive.panel socket={@socket} id="luxcavation-log" class="flex-1 min-h-80 lg:min-h-0" />
 
   </div>
 

@@ -185,15 +185,15 @@
                   </details>
                 </form>
                 <div :if={GiftPlans.cabinet_order(@plan_data) != []} id="cabinet-gift-order" phx-hook="SortableList"
-                     data-sort-event="reorder_cabinet_gifts" data-sort-scope="cabinet" data-sort-axis="x" class="flex items-center gap-2"
+                     data-sort-event="reorder_cabinet_gifts" data-sort-scope="cabinet" data-sort-axis="x" class="flex items-center gap-1 min-[600px]:gap-2"
                      title="Starting gift pick order. The cabinet only allows as many picks as your graces give.">
                   <div :for={{name, index} <- Enum.with_index(GiftPlans.cabinet_order(@plan_data), 1)} data-sort-id={name}
-                       class="flex items-center gap-2 rounded-lg border border-base-300 bg-base-200 p-2 min-h-14">
+                       class="flex items-center gap-1 min-[600px]:gap-2 min-w-0 rounded-lg border border-base-300 bg-base-200 p-1 min-[600px]:p-2 min-h-10 min-[600px]:min-h-14">
                     <span data-sort-handle class="cursor-grab text-base-content/40 select-none">⠿</span>
                     <span class="text-[10px] text-base-content/40"><%= index %></span>
                     <% gift = @gifts_by_name[name] %>
-                    <img :if={gift} src={gift.image_path} class="w-10 h-10 rounded object-cover" />
-                    <span class="text-xs font-semibold"><%= name %></span>
+                    <img :if={gift} src={gift.image_path} class="w-6 h-6 min-[600px]:w-10 min-[600px]:h-10 rounded object-cover" />
+                    <span class="text-[10px] min-[600px]:text-xs font-semibold truncate"><%= name %></span>
                   </div>
                 </div>
               </div>
@@ -249,14 +249,14 @@
                   </span>
                   <span class="badge badge-primary badge-sm ml-auto whitespace-nowrap shrink-0"><%= grace_total_cost(@plan_data) %> Starlight total</span>
                 </div>
-                <div class="grid grid-cols-5 grid-rows-2 gap-2">
-                  <%= for grace <- graces() do %>
+                <div class="grid grid-cols-2 grid-rows-5 min-[600px]:grid-cols-5 min-[600px]:grid-rows-2 gap-2">
+                  <%= for {grace, number} <- Enum.with_index(graces(), 1) do %>
                     <% pick = grace_pick(@plan_data, grace.index) %>
                     <% level = if pick, do: pick["enhance"], else: 0 %>
                     <div phx-click="toggle_grace" phx-value-index={grace.index}
                          class={"cursor-pointer rounded-lg border p-2 flex flex-col gap-1 min-w-0 " <>
                            if(pick, do: "bg-primary/10 border-primary", else: "border-base-300 hover:bg-base-200")}>
-                      <span class="text-xs font-semibold"><%= grace.name %></span>
+                      <span class="text-xs font-semibold"><%= number %>. <%= grace.name %></span>
                       <span class="badge badge-ghost badge-xs self-start max-w-full"><span class="truncate"><%= grace_level_cost(grace, level) %> Starlight</span></span>
                       <p class="text-[11px] text-base-content/60 leading-snug"><%= grace_effect(grace, level) %></p>
                       <div class="join w-full mt-auto pt-1">

@@ -15,9 +15,9 @@
     <% end %>
   </div>
 
-  <div class="flex gap-2 flex-1 min-h-0 overflow-hidden">
+  <div class="flex flex-col lg:flex-row gap-2 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
 
-    <div class="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto">
+    <div class="w-full lg:w-80 shrink-0 flex flex-col gap-3 lg:overflow-y-auto">
 
       <div class="flex flex-col gap-1 bg-base-200 rounded-xl p-3 text-sm">
         <span><%= plan_label(@now, @settings) %></span>
@@ -118,6 +118,6 @@
       </div>
     </div>
 
-    <StarlightBotWeb.Live.LogLive.panel socket={@socket} id="scheduler-log" class="flex-1 min-h-0" />
+    <StarlightBotWeb.Live.LogLive.panel socket={@socket} id="scheduler-log" class="flex-1 min-h-80 lg:min-h-0" />
   </div>
 </div>
