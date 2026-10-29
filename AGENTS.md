@@ -123,6 +123,8 @@ mix compile --warnings-as-errors   # zero-warning policy for Elixir
 cargo clippy --manifest-path native/starlight_native/Cargo.toml   # Rust lints
 ```
 
+A running `mix phx.server` (code reloader on) holds the `_build/dev` lock while it recompiles, so `mix compile` in dev can hang on "Waiting for lock". Don't stop the server. Use `MIX_ENV=test mix compile --warnings-as-errors` for the warning check instead; it builds in `_build/test` and never contends with the server.
+
 ---
 
 ## Key Constraints
