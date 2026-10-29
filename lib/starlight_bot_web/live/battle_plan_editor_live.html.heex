@@ -1,4 +1,4 @@
-<div class="flex flex-col h-full gap-2 overflow-hidden">
+<div id="battle-view-memory" phx-hook="ViewMemory" data-key={@editing_id && "starlight-battle-view-#{@editing_id}"} data-view={Jason.encode!(%{lineup: @lineup_id, playbook: @playbook_id, paint: @paint})} class="flex flex-col h-full gap-2 overflow-hidden">
   <datalist id="hook-names">
     <%= for name <- @hook_names do %>
       <option value={name}></option>

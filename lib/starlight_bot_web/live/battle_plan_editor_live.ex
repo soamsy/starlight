@@ -135,6 +135,18 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_event("restore_view", params, %{assigns: %{data: data}} = socket) when is_map(data) do
+    playbook_id = if find_playbook(data, params["playbook"]), do: params["playbook"], else: socket.assigns.playbook_id
+    lineup_id = if BattlePlans.find_lineup(data, params["lineup"]), do: params["lineup"], else: socket.assigns.lineup_id
+    paint = if params["paint"] == "erase", do: "erase", else: playbook_id
+
+    {:noreply, socket |> assign(:playbook_id, playbook_id) |> assign(:lineup_id, lineup_id) |> assign(:paint, paint)}
+  end
+
+  @impl true
+  def handle_event("restore_view", _params, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_event("select_playbook", %{"id" => id}, socket) do
     {:noreply, socket |> assign(:playbook_id, id) |> assign(:paint, id)}
   end

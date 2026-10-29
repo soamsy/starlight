@@ -146,6 +146,16 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("restore_view", params, %{assigns: %{editing_id: id}} = socket) when id != nil do
+    tab = if params["tab"] == "loadout", do: :loadout, else: :shop
+    milestone_id = if GiftPlans.find_milestone(socket.assigns.plan_data, params["milestone"]), do: params["milestone"], else: socket.assigns.selected_milestone_id
+    {:noreply, socket |> assign(:active_tab, tab) |> assign(:selected_milestone_id, milestone_id)}
+  end
+
+  @impl true
+  def handle_event("restore_view", _params, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_event("set_tab", %{"tab" => tab}, socket) do
     {:noreply, socket |> assign(:active_tab, String.to_existing_atom(tab)) |> assign(:gift_popup, nil)}
   end

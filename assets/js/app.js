@@ -1018,6 +1018,33 @@ const TeamNavMemory = {
   }
 }
 
+const ViewMemory = {
+  mounted() {
+    this.key = null
+    this.sync()
+  },
+  updated() {
+    this.sync()
+  },
+  sync() {
+    const key = this.el.dataset.key || null
+    if (key !== this.key) {
+      this.key = key
+      let saved = null
+      try {
+        saved = key && localStorage.getItem(key)
+      } catch (e) {}
+      if (saved) {
+        try {
+          this.pushEvent("restore_view", JSON.parse(saved))
+          return
+        } catch (e) {}
+      }
+    }
+    if (this.key && this.el.dataset.view) localStorage.setItem(this.key, this.el.dataset.view)
+  }
+}
+
 const GiftPopup = {
   mounted() {
     this.onClick = (e) => {
@@ -1150,7 +1177,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, ViewMemory, GiftPopup, FocusSelect }
 })
 
 liveSocket.connect()
