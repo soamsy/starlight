@@ -171,6 +171,24 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
       assert ThemePackSelector.pick_winner(matched_pairs, matched_hooks, reordered, "hard", 1) == {:ok, pack_a, {1, 1, 10, 10}}
     end
 
+    test "The B.E. beats everything in an extreme run, and only then" do
+      plan = %{
+        "mode_schedule" => [%{"from_floor" => 1, "mode" => "hard"}],
+        "extreme" => true,
+        "packs" => %{"thm_hunt" => %{"hard" => %{"priority" => "hunt"}}, "thm_116" => %{"hard" => %{"priority" => "banned"}}}
+      }
+
+      pack_hunt = pack("thm_hunt", [1], [1])
+      pack_be = pack("thm_116", [1], [1])
+      matched_pairs = [{pack_hunt, :hook_hunt}, {pack_be, :hook_be}]
+      matched_hooks = %{hook_hunt: {1, 1, 10, 10}, hook_be: {2, 2, 10, 10}}
+
+      assert ThemePackSelector.pick_winner(matched_pairs, matched_hooks, plan, "hard", 1) == {:ok, pack_be, {2, 2, 10, 10}}
+
+      not_extreme = Map.put(plan, "extreme", false)
+      assert ThemePackSelector.pick_winner(matched_pairs, matched_hooks, not_extreme, "hard", 1) == {:ok, pack_hunt, {1, 1, 10, 10}}
+    end
+
     test "falls back through the tiers when a higher one has no match" do
       plan = %{"packs" => %{"thm_hunt" => %{"hard" => %{"priority" => "hunt"}}}}
       pack_fine = pack("thm_fine", [1], [1])

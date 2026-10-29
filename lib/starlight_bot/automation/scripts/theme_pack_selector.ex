@@ -301,8 +301,8 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   end
 
   defp attempt(frame, backup, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used, ctx) do
-    wanted = hunt
     pool = floor_pool(theme_packs, mode, floor)
+    wanted = Enum.filter(pool, &Resolver.extreme_override?(plan_data, &1.id, mode)) ++ hunt
     refresh_available? = refreshes_used < limits.refreshes
     target = unless refresh_available?, do: search_target(plan_data, theme_packs, mode, floor, RunMemory.visited_packs(ctx), &search_hook_ready?/1)
 
@@ -646,12 +646,16 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   def pick_winner([], _matched_hooks, _plan_data, _mode, _floor), do: :none
 
   def pick_winner(matched_pairs, matched_hooks, plan_data, mode, floor) do
-    by_priority = Enum.group_by(matched_pairs, fn {pack, _hook} -> Resolver.priority_at(plan_data, pack, mode, floor) end)
+    by_priority =
+      Enum.group_by(matched_pairs, fn {pack, _hook} ->
+        if Resolver.extreme_override?(plan_data, pack.id, mode), do: "override", else: Resolver.priority_at(plan_data, pack, mode, floor)
+      end)
 
     rank = Resolver.hunt_rank(plan_data, mode)
 
     winner =
       cond do
+        override = by_priority["override"] -> hd(override)
         hunt = by_priority["hunt"] -> Enum.min_by(hunt, fn {pack, _hook} -> rank.(pack.id) end)
         fine = by_priority["fine"] -> hd(fine)
         true -> nil

@@ -19,6 +19,10 @@ defmodule StarlightBot.PackPlans.Resolver do
 
   def extreme?(plan_data), do: plan_data["extreme"] == true and extreme_allowed?(plan_data)
 
+  @extreme_override_pack "thm_116"
+
+  def extreme_override?(plan_data, pack_id, mode), do: pack_id == @extreme_override_pack and mode == "hard" and extreme?(plan_data)
+
   def searchable_floor?(floor), do: floor <= @last_searchable_floor
 
   def eligible_floors(pack, "hard"), do: ThemePacks.decode_floors(pack.hard_floors)
