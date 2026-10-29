@@ -123,7 +123,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   defp defeat_choice(choice) do
     [
       click(choice)
-    ] ++ confirm(:battle_defeat_confirm, every: 800, tries: 3) ++ [
+    ] ++ confirm_enter(:battle_defeat_confirm) ++ [
       premove(:battle_safe_click_spot)
     ] ++ loading()
   end
