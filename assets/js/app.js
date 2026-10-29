@@ -577,6 +577,26 @@ const PlanClipboard = {
   }
 }
 
+const MilestoneClipboard = {
+  mounted() {
+    this.handleEvent("copy_milestone_json", ({ text }) => {
+      navigator.clipboard.writeText(text).catch(err => {
+        this.pushEvent("plan_clipboard_failed", { message: `Couldn't copy to clipboard: ${err.message || err}` })
+      })
+    })
+
+    this.el.addEventListener("click", (e) => {
+      if (!e.target.closest("[data-paste-milestone]")) return
+
+      navigator.clipboard.readText()
+        .then(text => this.pushEvent("paste_milestone", { text }))
+        .catch(err => {
+          this.pushEvent("plan_clipboard_failed", { message: `Couldn't read clipboard: ${err.message || err}` })
+        })
+    })
+  }
+}
+
 const PriorityChips = {
   mounted() {
     const strip = () => this.el.querySelector("[data-chip-strip]")
@@ -1129,7 +1149,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, MilestoneClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
 })
 
 liveSocket.connect()

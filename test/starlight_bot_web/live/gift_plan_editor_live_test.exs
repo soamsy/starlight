@@ -60,6 +60,23 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
   defp entry(socket, name), do: Enum.find(milestone(socket)["entries"], &(GiftPlans.subject_gift(&1) == name))
   defp shop(socket), do: event(socket, "set_tab", %{"tab" => "shop"})
 
+  test "a milestone copied to the clipboard pastes back as a separate milestone", %{socket: socket} do
+    socket = event(socket, "ms_add_gift", %{"gift" => "Glimpse of Flames"})
+    source = milestone(socket)
+    text = StarlightBot.PlanClipboard.encode_milestone(source)
+    socket = event(socket, "paste_milestone", %{"text" => text})
+    [original, pasted] = saved(socket)["milestones"]
+    assert original == source
+    assert pasted["name"] == source["name"] <> " copy"
+    assert socket.assigns.selected_milestone_id == pasted["id"]
+    assert Enum.map(pasted["entries"], &GiftPlans.subject_gift/1) == ["Glimpse of Flames"]
+    refute hd(pasted["entries"])["id"] == hd(source["entries"])["id"]
+
+    socket = event(socket, "paste_milestone", %{"text" => "nope"})
+    assert length(saved(socket)["milestones"]) == 2
+    assert socket.assigns.flash["error"] =~ "doesn't hold a Starlight milestone"
+  end
+
   test "a new plan starts as a valid v5 plan with the shop pane on its milestone", %{socket: socket} do
     assert saved(socket)["version"] == 5
     assert GiftPlans.issues(saved(socket)) == []

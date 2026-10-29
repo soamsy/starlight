@@ -4,7 +4,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   import StarlightBotWeb.Components.PlanPicker
   import StarlightBotWeb.Components.PlanTemplates
 
-  alias StarlightBot.{PlanCounts, Conditions, EgoGifts, GiftPlans, Plans, Teams}
+  alias StarlightBot.{PlanClipboard, PlanCounts, Conditions, EgoGifts, GiftPlans, Plans, Teams}
   alias StarlightBot.GiftPlans.{Routes, RouteDefaults, Combos}
 
     @gift_tiers 1..6
@@ -372,6 +372,36 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
          end
        end)
      end)}
+  end
+
+  @impl true
+  def handle_event("copy_milestone", %{"id" => id}, socket) do
+    case GiftPlans.find_milestone(socket.assigns.plan_data, id) do
+      nil -> {:noreply, socket}
+      milestone -> {:noreply, socket |> push_event("copy_milestone_json", %{text: PlanClipboard.encode_milestone(milestone)}) |> put_flash(:info, "Milestone '#{milestone["name"]}' copied to the clipboard.")}
+    end
+  end
+
+  @impl true
+  def handle_event("paste_milestone", %{"text" => text}, socket) do
+    case PlanClipboard.decode_milestone(text) do
+      {:ok, source} ->
+        {data, milestone, dropped} = GiftPlans.import_milestone(socket.assigns.plan_data, source)
+
+        socket =
+          socket
+          |> assign(:plan_data, data)
+          |> persist_plan()
+          |> assign(:selected_milestone_id, milestone["id"])
+          |> assign(:fusion_entry_id, nil)
+          |> assign(:active_tab, :shop)
+          |> put_flash(:info, "Pasted milestone '#{milestone["name"]}'.")
+
+        {:noreply, warn_pasted_milestone(socket, milestone, dropped)}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
   end
 
   @impl true
@@ -1088,6 +1118,21 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       [first | rest] -> [Map.put(first, "from_floor", 1) | rest]
       [] -> []
     end
+  end
+
+  defp warn_pasted_milestone(socket, milestone, dropped) do
+    unknown = for entry <- milestone["entries"], name = GiftPlans.subject_gift(entry), not is_map_key(socket.assigns.gifts_by_name, name), uniq: true, do: name
+
+    warnings =
+      Enum.reject(
+        [
+          dropped > 0 && "#{dropped} refresh condition(s) pointed at milestones that aren't in this plan and now show '(none picked)'.",
+          unknown != [] && "Unknown gifts kept as-is: #{Enum.join(unknown, ", ")}."
+        ],
+        &(&1 == false)
+      )
+
+    if warnings == [], do: socket, else: put_flash(socket, :error, Enum.join(warnings, " "))
   end
 
   defp first_id([%{"id" => id} | _]), do: id

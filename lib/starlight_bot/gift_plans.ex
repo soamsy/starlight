@@ -243,6 +243,40 @@ defmodule StarlightBot.GiftPlans do
 
   def remove_milestone(data, id), do: Map.update!(data, "milestones", fn milestones -> Enum.reject(milestones, &(&1["id"] == id)) end)
 
+  def import_milestone(data, source) do
+    source = normalize_milestone(source)
+    new_ms = new_id("ms")
+    known = MapSet.new([source["id"] | Enum.map(data["milestones"], & &1["id"])])
+    groups = for %{"group" => group} <- source["entries"], uniq: true, into: %{}, do: {group, new_id("grp")}
+    remap = fn id -> if id == source["id"], do: new_ms, else: id end
+    fresh_case = fn refresh_case -> %{refresh_case | "id" => new_id("rc")} |> Map.update("condition", nil, &remap_condition(&1, known, remap)) end
+
+    entries =
+      Enum.map(source["entries"], fn entry ->
+        entry |> Map.put("id", new_id("me")) |> then(&if(&1["group"], do: Map.update!(&1, "group", fn group -> groups[group] end), else: &1))
+      end)
+
+    floors = Enum.map(source["refresh_floors"], &Map.update(&1, "cases", [], fn cases -> Enum.map(cases, fresh_case) end))
+    milestone = %{source | "id" => new_ms, "name" => unused_name(data, source["name"]), "entries" => entries, "refresh" => Enum.map(source["refresh"], fresh_case), "refresh_floors" => floors}
+    dropped = Enum.count(foreign_condition_leaves(source), &(not MapSet.member?(known, &1["milestone"])))
+    {Map.update!(data, "milestones", &(&1 ++ [milestone])), milestone, dropped}
+  end
+
+  defp unused_name(data, name) do
+    taken = MapSet.new(data["milestones"], & &1["name"])
+    Stream.iterate(name, &(&1 <> " copy")) |> Enum.find(&(not MapSet.member?(taken, &1)))
+  end
+
+  defp milestone_cases(milestone), do: (milestone["refresh"] || []) ++ Enum.flat_map(milestone["refresh_floors"] || [], &(&1["cases"] || []))
+
+  defp foreign_condition_leaves(milestone) do
+    for refresh_case <- milestone_cases(milestone), leaf <- Conditions.leaves(refresh_case["condition"]), is_binary(leaf["milestone"]), do: leaf
+  end
+
+  defp remap_condition(%{"children" => children} = node, known, remap), do: %{node | "children" => Enum.map(children, &remap_condition(&1, known, remap))}
+  defp remap_condition(%{"milestone" => id} = leaf, known, remap), do: %{leaf | "milestone" => if(MapSet.member?(known, id), do: remap.(id), else: nil)}
+  defp remap_condition(leaf, _known, _remap), do: leaf
+
   def gift_subject(name), do: %{"gift" => name}
   def tier_subject(tiers), do: %{"tiers" => tiers |> Enum.uniq() |> Enum.sort()}
   def affinity_subject(affinity, tiers), do: %{"affinity" => affinity, "tiers" => tiers |> Enum.uniq() |> Enum.sort()}

@@ -52,10 +52,11 @@
               <% milestone = selected_milestone(assigns) %>
               <div class="grid grid-cols-[17rem_1fr] gap-3 flex-1 min-h-0">
                 <div class="flex flex-col gap-3 min-h-0 pr-1">
-                  <div class="flex flex-col gap-1 shrink-0 max-h-48 overflow-y-auto">
+                  <div id="milestone-clipboard" phx-hook="MilestoneClipboard" class="flex flex-col gap-1 shrink-0 max-h-48 overflow-y-auto">
                     <div class="flex items-center gap-2">
                       <span class="text-xs font-semibold text-base-content/70">Milestones</span>
-                      <button phx-click="add_milestone" class="btn btn-primary btn-xs ml-auto">+ New</button>
+                      <button type="button" data-paste-milestone title="Paste a milestone from the clipboard" class="btn btn-ghost btn-xs ml-auto">Paste</button>
+                      <button phx-click="add_milestone" class="btn btn-primary btn-xs">+ New</button>
                     </div>
                     <div :for={{m, number} <- Enum.with_index(@plan_data["milestones"], 1)}
                          phx-click="select_milestone" phx-value-id={m["id"]}
@@ -70,6 +71,7 @@
                               class="flex-1 truncate select-none"><%= m["name"] %></span>
                       <% end %>
                       <span class="text-[10px] text-base-content/40"><%= length(m["entries"]) %></span>
+                      <button phx-click="copy_milestone" phx-value-id={m["id"]} title="Copy this milestone to the clipboard as JSON" class="btn btn-ghost btn-xs px-1">Copy</button>
                       <button phx-click="move_milestone" phx-value-id={m["id"]} phx-value-dir="up" class="btn btn-ghost btn-xs px-1">↑</button>
                       <button phx-click="move_milestone" phx-value-id={m["id"]} phx-value-dir="down" class="btn btn-ghost btn-xs px-1">↓</button>
                       <button phx-click="delete_milestone" phx-value-id={m["id"]} data-confirm={"Delete milestone '#{m["name"]}'?"}

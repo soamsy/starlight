@@ -530,4 +530,54 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.mounting_trials_mode(%{"mounting_trials" => []}, 3) == "best_gift"
     end
   end
+
+  describe "import_milestone/2" do
+    defp source do
+      leaf = fn id -> %{"op" => "milestone", "milestone" => id} end
+      refresh_case = fn id, condition -> %{"id" => id, "condition" => condition, "action" => "refresh", "affinity" => nil, "max" => nil} end
+
+      %{
+        "id" => "ms_src",
+        "name" => "Shop",
+        "goals" => [],
+        "entries" => [
+          %{"id" => "me_1", "subject" => %{"gift" => "Glimpse"}, "group" => "grp_x", "floors" => []},
+          %{"id" => "me_2", "subject" => %{"gift" => "Drumstick"}, "group" => "grp_x", "floors" => []},
+          %{"id" => "me_3", "subject" => %{"gift" => "Soothe"}, "floors" => []}
+        ],
+        "refresh" => [refresh_case.("rc_1", %{"op" => "and", "children" => [leaf.("ms_src"), leaf.("ms_here"), leaf.("ms_gone")]})],
+        "refresh_floors" => [%{"from" => 3, "cases" => [refresh_case.("rc_2", leaf.("ms_src"))]}]
+      }
+    end
+
+    defp target, do: %{"milestones" => [%{"id" => "ms_here", "name" => "Shop"}]}
+
+    test "gives the copy fresh ids and keeps groups together" do
+      {data, milestone, _dropped} = GiftPlans.import_milestone(target(), source())
+      assert [_, ^milestone] = data["milestones"]
+      refute milestone["id"] == "ms_src"
+      [first, second, third] = milestone["entries"]
+      assert first["group"] == second["group"]
+      refute first["group"] == "grp_x"
+      refute Map.has_key?(third, "group")
+      ids = [first["id"], second["id"], third["id"], hd(milestone["refresh"])["id"], hd(hd(milestone["refresh_floors"])["cases"])["id"]]
+      assert length(Enum.uniq(ids)) == 5
+      assert Enum.all?(ids, &(&1 not in ~w(me_1 me_2 me_3 rc_1 rc_2)))
+    end
+
+    test "renames a clashing name" do
+      {_data, milestone, _dropped} = GiftPlans.import_milestone(target(), source())
+      assert milestone["name"] == "Shop copy"
+    end
+
+    test "points self references at the copy, keeps known ones and drops unknown ones" do
+      {_data, milestone, dropped} = GiftPlans.import_milestone(target(), source())
+      %{"children" => [own, known, unknown]} = hd(milestone["refresh"])["condition"]
+      assert own["milestone"] == milestone["id"]
+      assert known["milestone"] == "ms_here"
+      assert unknown["milestone"] == nil
+      assert hd(hd(milestone["refresh_floors"])["cases"])["condition"]["milestone"] == milestone["id"]
+      assert dropped == 1
+    end
+  end
 end
