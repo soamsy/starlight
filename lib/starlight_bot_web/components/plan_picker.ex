@@ -3,32 +3,6 @@ defmodule StarlightBotWeb.Components.PlanPicker do
   use Phoenix.VerifiedRoutes, endpoint: StarlightBotWeb.Endpoint, router: StarlightBotWeb.Router
   alias StarlightBot.{PlanClipboard, PlanCounts, Plans, Teams}
 
-  attr :label, :string, required: true
-  attr :status, :atom, default: :unknown
-
-  def plan_clipboard(assigns) do
-    ~H"""
-    <div id={"plan-clipboard-#{String.replace(@label, " ", "-")}"} phx-hook="PlanClipboard" class="flex items-center gap-2">
-      <button type="button" phx-click="copy_plan" class="btn btn-sm btn-outline" title={"Copy this #{@label} to the clipboard as JSON"}>Copy plan</button>
-      <button type="button" data-paste-plan data-confirm={"Replace this #{@label} with the one on the clipboard?"}
-              disabled={@status == :invalid} class="btn btn-sm btn-outline gap-1"
-              title={paste_title(@status, @label)}>
-        <svg :if={@status == :different} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 text-success">
-          <rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
-          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-          <path d="m9 14 2 2 4-4" />
-        </svg>
-        Paste plan
-      </button>
-    </div>
-    """
-  end
-
-  defp paste_title(:invalid, label), do: "The clipboard doesn't hold a #{label} that can be pasted here"
-  defp paste_title(:same, label), do: "The clipboard holds the same #{label} as this one"
-  defp paste_title(:different, label), do: "The clipboard holds a different #{label}, ready to paste"
-  defp paste_title(:unknown, label), do: "Paste a #{label} from the clipboard"
-
   attr :team_id, :integer, default: nil
   attr :pane, :string, required: true
   attr :counts, :map, default: %{}
@@ -127,18 +101,25 @@ defmodule StarlightBotWeb.Components.PlanPicker do
   end
 
   def paste_plan(socket, table, field, text, load_plan) do
-    with {:ok, data} <- PlanClipboard.decode(text, table),
-         {:ok, id} <- Teams.paste_plan(socket.assigns.team_id, field, data) do
-      PlanCounts.broadcast(socket.assigns.team_id, table, data)
-      socket = socket |> load_plan.(id) |> notify_parent() |> Phoenix.Component.assign(:paste_status, :same) |> Phoenix.LiveView.put_flash(:info, "Plan pasted.")
+    case PlanClipboard.decode(text, table) do
+      {:ok, data} -> socket |> apply_plan(table, field, data, load_plan, "Plan pasted.") |> Phoenix.Component.assign(:paste_status, :same)
+      {:error, message} -> Phoenix.LiveView.put_flash(socket, :error, message)
+    end
+  end
 
-      case PlanClipboard.warnings(table, data) do
-        [] -> socket
-        warnings -> Phoenix.LiveView.put_flash(socket, :error, Enum.join(warnings, " "))
-      end
-    else
-      {:error, message} when is_binary(message) -> Phoenix.LiveView.put_flash(socket, :error, message)
-      {:error, reason} -> Phoenix.LiveView.put_flash(socket, :error, "Paste failed: #{inspect(reason)}")
+  def apply_plan(socket, table, field, data, load_plan, success_message) do
+    case Teams.paste_plan(socket.assigns.team_id, field, data) do
+      {:ok, id} ->
+        PlanCounts.broadcast(socket.assigns.team_id, table, data)
+        socket = socket |> load_plan.(id) |> notify_parent() |> Phoenix.LiveView.put_flash(:info, success_message)
+
+        case PlanClipboard.warnings(table, data) do
+          [] -> socket
+          warnings -> Phoenix.LiveView.put_flash(socket, :error, Enum.join(warnings, " "))
+        end
+
+      {:error, reason} ->
+        Phoenix.LiveView.put_flash(socket, :error, "Replacing the plan failed: #{inspect(reason)}")
     end
   end
 end

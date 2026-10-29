@@ -2,6 +2,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   use StarlightBotWeb, :live_view
   import StarlightBotWeb.Components.ConditionTree
   import StarlightBotWeb.Components.PlanPicker
+  import StarlightBotWeb.Components.PlanTemplates
 
   alias StarlightBot.{PlanCounts, Conditions, EgoGifts, GiftPlans, Plans, Teams}
   alias StarlightBot.GiftPlans.{Routes, RouteDefaults, Combos}
@@ -87,6 +88,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       socket
       |> assign(:team_id, team && team.id)
       |> assign(:paste_status, :unknown)
+      |> assign_templates(:gift_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
       |> assign(:gifts, gifts)
       |> assign(:gifts_by_name, Map.new(gifts, &{&1.name, &1}))
@@ -125,6 +127,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("plan_clipboard_failed", %{"message" => message}, socket), do: {:noreply, put_flash(socket, :error, message)}
+
+  @impl true
+  def handle_event("template_" <> action, params, socket), do: {:noreply, template_event(socket, action, params, :gift_plans, :gift_plan_id, &load_plan/2)}
 
   @impl true
   def handle_event("clipboard_status", %{"text" => text}, socket), do: {:noreply, paste_status(socket, :gift_plans, text)}

@@ -10,7 +10,7 @@
         <%= if @data do %>
           <div class="flex items-center gap-3">
             <.pane_tabs team_id={@team_id} pane="battle" counts={@tab_counts} />
-            <.plan_clipboard status={@paste_status} label="battle plan" />
+            <.template_picker id="battle-template-picker" templates={@templates} editing={@editing_template} current_count={@tab_counts[:battle_plans]} status={@paste_status} label="battle plan" />
             <form phx-change="set_max_retries" class="flex items-center gap-1 text-xs"
                   title="How many times a lost battle is retried before the run gives up.">
               <span class="text-base-content/60">Retries per battle</span>

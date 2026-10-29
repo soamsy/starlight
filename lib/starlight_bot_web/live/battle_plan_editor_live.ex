@@ -2,6 +2,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   use StarlightBotWeb, :live_view
   import StarlightBotWeb.Components.ConditionTree
   import StarlightBotWeb.Components.PlanPicker
+  import StarlightBotWeb.Components.PlanTemplates
 
   alias StarlightBot.{PlanCounts, BattlePlans, Conditions, Hooks, Plans, SinnerProfiles, Teams}
   alias StarlightBot.BattlePlans.Resolver
@@ -19,6 +20,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       socket
       |> assign(:team_id, team && team.id)
       |> assign(:paste_status, :unknown)
+      |> assign_templates(:battle_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
       |> assign(:hook_names, Enum.map(Hooks.list_hooks(), & &1.name))
       |> assign_profiles()
@@ -51,6 +53,9 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   @impl true
   def handle_event("plan_clipboard_failed", %{"message" => message}, socket), do: {:noreply, put_flash(socket, :error, message)}
+
+  @impl true
+  def handle_event("template_" <> action, params, socket), do: {:noreply, template_event(socket, action, params, :battle_plans, :battle_plan_id, &load_plan/2)}
 
   @impl true
   def handle_event("clipboard_status", %{"text" => text}, socket), do: {:noreply, paste_status(socket, :battle_plans, text)}

@@ -2,6 +2,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   use StarlightBotWeb, :live_view
 
   import StarlightBotWeb.Components.PlanPicker
+  import StarlightBotWeb.Components.PlanTemplates
 
   alias StarlightBot.{PlanCounts, Plans, Teams, ThemePacks}
   alias StarlightBot.PackPlans.Resolver
@@ -20,6 +21,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       socket
       |> assign(:team_id, team && team.id)
       |> assign(:paste_status, :unknown)
+      |> assign_templates(:pack_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
       |> assign(:theme_packs, theme_packs)
       |> assign(:packs_by_id, Map.new(theme_packs, &{&1.id, &1}))
@@ -56,6 +58,9 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
 
   @impl true
   def handle_event("plan_clipboard_failed", %{"message" => message}, socket), do: {:noreply, put_flash(socket, :error, message)}
+
+  @impl true
+  def handle_event("template_" <> action, params, socket), do: {:noreply, template_event(socket, action, params, :pack_plans, :pack_plan_id, &load_plan/2)}
 
   @impl true
   def handle_event("clipboard_status", %{"text" => text}, socket), do: {:noreply, paste_status(socket, :pack_plans, text)}
