@@ -3,6 +3,9 @@ defmodule StarlightBot.Automation.RunMemory do
   alias StarlightBot.PackPlans.Resolver
   alias StarlightBot.{BattlePlans, Plans, Teams}
 
+  @extreme_retry_floors 11..15
+  @extreme_max_retries 2
+
   def start_link, do: Agent.start_link(fn -> %{} end)
 
   def stop(%Ctx{run_memory: nil}), do: :ok
@@ -234,7 +237,7 @@ defmodule StarlightBot.Automation.RunMemory do
 
   def claim_battle_retry(ctx) do
     retries = battle_retries(ctx)
-    max_retries = BattlePlans.max_retries(battle_plan(ctx))
+    max_retries = max_battle_retries(ctx)
 
     cond do
       give_up?(ctx) ->
@@ -249,6 +252,14 @@ defmodule StarlightBot.Automation.RunMemory do
         put_give_up(ctx, :too_many_retries)
         :give_up
     end
+  end
+
+  defp max_battle_retries(ctx) do
+    planned = BattlePlans.max_retries(battle_plan(ctx))
+
+    if context(ctx) != :luxcavation and get(ctx, :floor, 1) in @extreme_retry_floors,
+      do: min(planned, @extreme_max_retries),
+      else: planned
   end
 
   def mode(ctx), do: get(ctx, :mode, nil) || mode_for(team(ctx), get(ctx, :floor, 1))
