@@ -185,6 +185,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     params =
       form_params(socket)
       |> Map.merge(%{"color_h" => to_string(h), "color_s" => to_string(s), "color_v" => to_string(v)})
+      |> put_default_tolerances()
 
     {:noreply, assign(socket, :form, build_form(params))}
   end
@@ -319,7 +320,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
         {:error, :not_found} ->
           {:noreply, put_flash(socket, :error, "Hook '#{name}' not in registry — save it first.")}
 
-        {:ok, %{method: method, region: nil}} when method in [:color_detector, :value_detector, :saturation_detector] ->
+        {:ok, %{method: method, region: nil}} when method == :hsv_range ->
           {:noreply, put_flash(socket, :error, "This hook has no region defined — use full Test instead.")}
 
         {:ok, %{method: :grayscale_detector, region: nil}} ->
@@ -330,7 +331,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
 
         {:ok, hook} ->
           search_region =
-            if hook.method in [:color_detector, :value_detector, :saturation_detector, :grayscale_detector],
+            if hook.method in [:hsv_range, :grayscale_detector],
               do: hook.region,
               else: hook.scan_region || hook.region
 
@@ -471,6 +472,9 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
           "color_h" => to_string(hook.color_h || ""),
           "color_s" => to_string(hook.color_s || ""),
           "color_v" => to_string(hook.color_v || ""),
+          "tol_h" => to_string(hook.tol_h || ""),
+          "tol_s" => to_string(hook.tol_s || ""),
+          "tol_v" => to_string(hook.tol_v || ""),
           "min_cluster_size" => to_string(hook.min_cluster_size || "")
         }
 
@@ -902,6 +906,9 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       color_h: :integer,
       color_s: :integer,
       color_v: :integer,
+      tol_h: :integer,
+      tol_s: :integer,
+      tol_v: :integer,
       min_cluster_size: :integer
     }
 
@@ -910,7 +917,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       |> Ecto.Changeset.cast(params, Map.keys(types))
       |> Ecto.Changeset.validate_required([:name, :match_method, :confidence])
       |> Ecto.Changeset.validate_inclusion(:match_method,
-        ~w(gray rgb sift sift_saturation binary_thresh color_detector value_detector saturation_detector grayscale_detector))
+        ~w(gray rgb sift sift_saturation binary_thresh hsv_range grayscale_detector))
       |> Ecto.Changeset.validate_number(:confidence,
         greater_than_or_equal_to: 0.0,
         less_than_or_equal_to: 1.0)
@@ -920,9 +927,23 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
         greater_than_or_equal_to: 0, less_than_or_equal_to: 255)
       |> Ecto.Changeset.validate_number(:color_v,
         greater_than_or_equal_to: 0, less_than_or_equal_to: 255)
+      |> Ecto.Changeset.validate_number(:tol_h,
+        greater_than_or_equal_to: 0, less_than_or_equal_to: 90)
+      |> Ecto.Changeset.validate_number(:tol_s,
+        greater_than_or_equal_to: 0, less_than_or_equal_to: 255)
+      |> Ecto.Changeset.validate_number(:tol_v,
+        greater_than_or_equal_to: 0, less_than_or_equal_to: 255)
       |> Ecto.Changeset.validate_number(:min_cluster_size, greater_than_or_equal_to: 0)
 
     to_form(changeset, as: :hook)
+  end
+
+  @default_tolerances %{"tol_h" => "5", "tol_s" => "30", "tol_v" => "30"}
+
+  defp put_default_tolerances(params) do
+    Enum.reduce(@default_tolerances, params, fn {key, default}, acc ->
+      if Map.get(acc, key, "") == "", do: Map.put(acc, key, default), else: acc
+    end)
   end
 
   defp form_params(socket) do
@@ -979,6 +1000,9 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
            color_h: parse_int(params["color_h"]),
            color_s: parse_int(params["color_s"]),
            color_v: parse_int(params["color_v"]),
+           tol_h: parse_int(params["tol_h"]),
+           tol_s: parse_int(params["tol_s"]),
+           tol_v: parse_int(params["tol_v"]),
            min_cluster_size: parse_int(params["min_cluster_size"]),
            match_method: params["match_method"] || "gray",
            confidence: parse_float(params["confidence"], 0.85),
@@ -1107,6 +1131,78 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
 
   def thumb_src(_name, nil), do: nil
   def thumb_src(name, version), do: ~p"/hooks/#{name}/thumb.png?#{[v: version]}"
+
+  @channel_max %{h: 179, s: 255, v: 255}
+
+  @doc "Inclusive bands a center ± tolerance covers on one channel; hue wraps around its ends."
+  def range_bands(center, tol, :h) when is_integer(center) and is_integer(tol) do
+    max = @channel_max.h
+    lo = center - tol
+    hi = center + tol
+
+    cond do
+      tol >= 90 -> [{0, max}]
+      lo < 0 -> [{0, hi}, {max + 1 + lo, max}]
+      hi > max -> [{lo, max}, {0, hi - max - 1}]
+      true -> [{lo, hi}]
+    end
+  end
+
+  def range_bands(center, tol, channel) when is_integer(center) and is_integer(tol) do
+    [{max(center - tol, 0), min(center + tol, @channel_max[channel])}]
+  end
+
+  def range_bands(_, _, _), do: []
+
+  @doc "Human label for a channel's range: a single value when it collapses, `any` when it spans the channel."
+  def range_label(center, tol, channel) do
+    max = @channel_max[channel]
+
+    case range_bands(center, tol, channel) do
+      [] -> "-"
+      [{0, ^max}] -> "any"
+      [{value, value}] -> to_string(value)
+      [{lo, hi}] -> "#{lo}-#{hi}"
+      [{lo1, hi1}, {lo2, hi2}] -> "#{lo1}-#{hi1}, #{lo2}-#{hi2}"
+    end
+  end
+
+  def range_band_boxes(center, tol, channel) do
+    max = @channel_max[channel]
+
+    for {lo, hi} <- range_bands(center, tol, channel) do
+      "left: #{Float.round(lo / max * 100, 2)}%; width: #{Float.round(max((hi - lo) / max * 100, 0.8), 2)}%;"
+    end
+  end
+
+  def form_int(form, field, default) do
+    case form[field].value do
+      value when is_integer(value) ->
+        value
+
+      value when is_binary(value) ->
+        case Integer.parse(value) do
+          {int, ""} -> int
+          _ -> default
+        end
+
+      _ ->
+        default
+    end
+  end
+
+  def channel_gradient(:h, _s, _v) do
+    stops = for h <- 0..179//15, do: "#{color_swatch_css(h, 255, 255)} #{Float.round(h / 179 * 100, 1)}%"
+    "linear-gradient(to right, #{Enum.join(stops, ", ")}, #{color_swatch_css(179, 255, 255)} 100%)"
+  end
+
+  def channel_gradient(:s, h, v) do
+    "linear-gradient(to right, #{color_swatch_css(h, 0, v)}, #{color_swatch_css(h, 255, v)})"
+  end
+
+  def channel_gradient(:v, h, s) do
+    "linear-gradient(to right, #{color_swatch_css(h, s, 0)}, #{color_swatch_css(h, s, 255)})"
+  end
 
   @doc "CSS color for the color_detector swatch preview, from OpenCV-scale HSV (h: 0-179, s/v: 0-255)."
   def color_swatch_css(h, s, v) when is_integer(h) and is_integer(s) and is_integer(v) do

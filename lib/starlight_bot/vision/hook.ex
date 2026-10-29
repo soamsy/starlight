@@ -1,5 +1,5 @@
 defmodule StarlightBot.Vision.Hook do
-  @type match_method :: :rgb | :gray | :sift | :sift_saturation | :binary_thresh | :color_detector | :value_detector | :saturation_detector | :grayscale_detector
+  @type match_method :: :rgb | :gray | :sift | :sift_saturation | :binary_thresh | :hsv_range | :grayscale_detector
 
   @enforce_keys [:name, :mat, :gray_mat, :method, :confidence]
   defstruct [
@@ -22,6 +22,7 @@ defmodule StarlightBot.Vision.Hook do
                       # frame shows there). Passed as matchTemplate's `mask:` option.
     :color,          # nil | {h, s, v} — OpenCV HSV scale (h: 0-179, s/v: 0-255).
                       # Only used by :color_detector hooks.
+    :tolerance,
     :min_cluster_size, # nil | integer — minimum pixel-area of a color cluster to
                       # count as detected. Defined for a 1920×1080 frame; scaled down
                       # proportionally when matched against a smaller-resolution
@@ -60,6 +61,7 @@ defmodule StarlightBot.Vision.Hook do
       mask: mask?,
       mask_mat: mask_mat,
       color: decode_color(row),
+      tolerance: decode_tolerance(row),
       min_cluster_size: Map.get(row, :min_cluster_size),
       method: method,
       confidence: row.confidence,
@@ -117,9 +119,7 @@ defmodule StarlightBot.Vision.Hook do
   defp decode_match_method("sift"), do: :sift
   defp decode_match_method("sift_saturation"), do: :sift_saturation
   defp decode_match_method("binary_thresh"), do: :binary_thresh
-  defp decode_match_method("color_detector"), do: :color_detector
-  defp decode_match_method("value_detector"), do: :value_detector
-  defp decode_match_method("saturation_detector"), do: :saturation_detector
+  defp decode_match_method("hsv_range"), do: :hsv_range
   defp decode_match_method("grayscale_detector"), do: :grayscale_detector
   defp decode_match_method(other), do: raise(ArgumentError, "unknown match_method: #{inspect(other)}")
 
@@ -142,4 +142,9 @@ defmodule StarlightBot.Vision.Hook do
        when is_integer(h) and is_integer(s) and is_integer(v),
        do: {h, s, v}
   defp decode_color(_), do: nil
+
+  defp decode_tolerance(%{tol_h: h, tol_s: s, tol_v: v})
+       when is_integer(h) and is_integer(s) and is_integer(v),
+       do: {h, s, v}
+  defp decode_tolerance(_), do: nil
 end

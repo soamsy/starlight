@@ -135,7 +135,7 @@ defmodule StarlightBot.Vision.SkillTrayTest do
   describe "first_action_bins/3" do
     test "buckets detected HP-color clusters into the correct skill slots" do
       tray = SkillTray.geometry(400)
-      hook = %{region: {13, 1025, 1885, 25}, color: {6, 200, 228}, confidence: 0.52, min_cluster_size: 12}
+      hook = %{region: {13, 1025, 1885, 25}, color: {6, 200, 228}, tolerance: {14, 14, 14}, min_cluster_size: 12}
       {_hx, hy, _hw, hh} = hook.region
 
       blob_bgr = hsv_to_bgr(hook.color)
@@ -151,7 +151,7 @@ defmodule StarlightBot.Vision.SkillTrayTest do
 
     test "returns no bins when nothing matches the HP color" do
       tray = SkillTray.geometry(400)
-      hook = %{region: {13, 1025, 1885, 25}, color: {6, 200, 228}, confidence: 0.52, min_cluster_size: 12}
+      hook = %{region: {13, 1025, 1885, 25}, color: {6, 200, 228}, tolerance: {14, 14, 14}, min_cluster_size: 12}
       mat = blank_mat(1920, 1080)
 
       assert SkillTray.first_action_bins(tray, mat, hook) == MapSet.new()

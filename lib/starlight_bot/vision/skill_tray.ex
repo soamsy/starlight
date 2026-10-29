@@ -261,11 +261,10 @@ defmodule StarlightBot.Vision.SkillTray do
   def first_action_bins(%__MODULE__{} = tray, mat, %{region: {_hx, hy, _hw, hh}} = hook) do
     width = tray.tray_end_x - tray.tray_start_x
     strip = Frame.crop(mat, {tray.tray_start_x, hy, width, hh})
-    tolerance = Matcher.confidence_to_hsv_tolerance(hook.confidence)
     min_area = hook.min_cluster_size || 0
 
     strip
-    |> Matcher.color_cluster_rects(hook.color, tolerance)
+    |> Matcher.color_cluster_rects(hook.color, hook.tolerance)
     |> Enum.filter(fn {area, _rect} -> area >= min_area end)
     |> Enum.map(fn {_area, {rx, _ry, rw, _rh}} -> bin_index(tray, rx + rw / 2) end)
     |> MapSet.new()

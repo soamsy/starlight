@@ -3,19 +3,25 @@ defmodule StarlightBot.Vision.MatcherTest do
 
   alias StarlightBot.Vision.Matcher
 
-  describe "color_cluster_rects/4" do
-    test "value_detector finds dark blobs whatever their hue, unlike color_detector" do
+  describe "color_cluster_rects/3" do
+    test "a full hue tolerance finds dark blobs whatever their hue, unlike a tight one" do
       mat = two_blobs({0, 0, 40}, {40, 0, 0})
 
-      assert [_, _] = Matcher.color_cluster_rects(mat, :value_detector, {90, 200, 40}, 6)
-      assert [{_area, {10, 20, 20, 20}}] = Matcher.color_cluster_rects(mat, :color_detector, {0, 255, 40}, 6)
+      assert [_, _] = Matcher.color_cluster_rects(mat, {90, 200, 40}, {90, 255, 6})
+      assert [{_area, {10, 20, 20, 20}}] = Matcher.color_cluster_rects(mat, {0, 255, 40}, {6, 6, 6})
     end
 
-    test "saturation_detector separates vivid from pale at the same brightness" do
+    test "a saturation-only range separates vivid from pale at the same brightness" do
       mat = two_blobs({0, 0, 255}, {200, 200, 255})
 
-      assert [{_area, {10, 20, 20, 20}}] = Matcher.color_cluster_rects(mat, :saturation_detector, {90, 255, 0}, 6)
-      assert [_, _] = Matcher.color_cluster_rects(mat, :value_detector, {0, 0, 255}, 6)
+      assert [{_area, {10, 20, 20, 20}}] = Matcher.color_cluster_rects(mat, {90, 255, 0}, {90, 6, 255})
+      assert [_, _] = Matcher.color_cluster_rects(mat, {0, 0, 255}, {90, 255, 6})
+    end
+
+    test "low saturation with high value picks out white and ignores bright colors" do
+      mat = two_blobs({255, 255, 255}, {0, 0, 255})
+
+      assert [{_area, {10, 20, 20, 20}}] = Matcher.color_cluster_rects(mat, {0, 0, 255}, {90, 30, 30})
     end
   end
 

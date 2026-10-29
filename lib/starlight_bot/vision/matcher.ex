@@ -14,9 +14,8 @@ defmodule StarlightBot.Vision.Matcher do
   @morph_ellipse      2  # cv_MORPH_ELLIPSE — structuring element shape
   @border_constant    0  # cv_BORDER_CONSTANT
 
-  @cluster_detectors [:color_detector, :value_detector, :saturation_detector]
+  @cluster_detectors [:hsv_range]
   @feature_methods [:sift, :sift_saturation]
-  @hsv_tolerance_max 30  # widest per-channel HSV slack, at confidence 0.0
   @hue_max 179           # OpenCV hue range is 0-179, not 0-359
 
   @fill_holes_close_kernel_px 3
@@ -384,12 +383,11 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp scored_matches(_image_mat, %Hook{method: method, color: nil}, _confidence) when method in @cluster_detectors, do: []
 
-  defp scored_matches(image_mat, %Hook{method: method} = hook, confidence) when method in @cluster_detectors do
-    tolerance = confidence_to_hsv_tolerance(confidence)
+  defp scored_matches(image_mat, %Hook{method: method} = hook, _confidence) when method in @cluster_detectors do
     min_area = scaled_min_cluster_size(hook, image_mat)
 
     image_mat
-    |> color_cluster_rects(method, hook.color, tolerance)
+    |> color_cluster_rects(hook.color, hook.tolerance)
     |> Enum.filter(fn {area, _rect} -> area >= min_area end)
     |> Enum.sort_by(fn {area, _rect} -> area end, :desc)
     |> Enum.map(fn {area, rect} ->
@@ -638,13 +636,12 @@ defmodule StarlightBot.Vision.Matcher do
   defp color_cluster_match(_image_mat, %Hook{color: nil}, _confidence, :first), do: :not_found
   defp color_cluster_match(_image_mat, %Hook{color: nil}, _confidence, :all), do: []
 
-  defp color_cluster_match(image_mat, %Hook{} = hook, confidence, mode) do
-    tolerance = confidence_to_hsv_tolerance(confidence)
+  defp color_cluster_match(image_mat, %Hook{} = hook, _confidence, mode) do
     min_area = scaled_min_cluster_size(hook, image_mat)
 
     clusters =
       image_mat
-      |> color_cluster_rects(hook.method, hook.color, tolerance)
+      |> color_cluster_rects(hook.color, hook.tolerance)
       |> Enum.filter(fn {area, _rect} -> area >= min_area end)
       |> Enum.sort_by(fn {area, _rect} -> area end, :desc)
 
@@ -662,11 +659,10 @@ defmodule StarlightBot.Vision.Matcher do
 
   defp color_detector_raw_score(_image_mat, %Hook{color: nil}, _confidence), do: 0.0
 
-  defp color_detector_raw_score(image_mat, %Hook{} = hook, confidence) do
-    tolerance = confidence_to_hsv_tolerance(confidence)
+  defp color_detector_raw_score(image_mat, %Hook{} = hook, _confidence) do
     min_area = scaled_min_cluster_size(hook, image_mat)
 
-    case color_cluster_rects(image_mat, hook.method, hook.color, tolerance) do
+    case color_cluster_rects(image_mat, hook.color, hook.tolerance) do
       [] ->
         0.0
 
@@ -697,33 +693,14 @@ defmodule StarlightBot.Vision.Matcher do
     _ -> 0.0
   end
 
-  def color_cluster_rects(image_mat, color, tolerance), do: color_cluster_rects(image_mat, :color_detector, color, tolerance)
-
-  def color_cluster_rects(image_mat, method, {h, s, v}, tolerance) do
+  def color_cluster_rects(image_mat, {h, s, v}, {tol_h, tol_s, tol_v}) do
     hsv = Evision.cvtColor(image_mat, @color_bgr2hsv)
-    mask = cluster_mask(hsv, method, {h, s, v}, tolerance)
+    mask = hsv_range_mask(hsv, h, tol_h, max(s - tol_s, 0), min(s + tol_s, 255), max(v - tol_v, 0), min(v + tol_v, 255))
     {contours, _hierarchy} = Evision.findContours(mask, @retr_external, @chain_approx_simple)
 
     Enum.map(contours, fn contour ->
       {Evision.contourArea(contour), Evision.boundingRect(contour)}
     end)
-  end
-
-  defp cluster_mask(hsv_mat, :color_detector, {h, s, v}, tolerance), do: color_mask(hsv_mat, h, s, v, tolerance)
-
-  defp cluster_mask(hsv_mat, :value_detector, {_h, _s, v}, tolerance),
-    do: Evision.inRange(hsv_mat, {0, 0, max(v - tolerance, 0)}, {@hue_max, 255, min(v + tolerance, 255)})
-
-  defp cluster_mask(hsv_mat, :saturation_detector, {_h, s, _v}, tolerance),
-    do: Evision.inRange(hsv_mat, {0, max(s - tolerance, 0), 0}, {@hue_max, min(s + tolerance, 255), 255})
-
-  defp color_mask(hsv_mat, h, s, v, tolerance) do
-    s_lo = max(s - tolerance, 0)
-    s_hi = min(s + tolerance, 255)
-    v_lo = max(v - tolerance, 0)
-    v_hi = min(v + tolerance, 255)
-
-    hsv_range_mask(hsv_mat, h, tolerance, s_lo, s_hi, v_lo, v_hi)
   end
 
   defp hsv_range_mask(hsv_mat, h, h_tolerance, s_lo, s_hi, v_lo, v_hi) do
@@ -755,10 +732,6 @@ defmodule StarlightBot.Vision.Matcher do
     hsv_mat
     |> hsv_range_mask(hue, hue_tolerance, s_lo, s_hi, v_lo, v_hi)
     |> Evision.morphologyEx(@morph_close, kernel)
-  end
-
-  def confidence_to_hsv_tolerance(confidence) do
-    round((1.0 - confidence) * @hsv_tolerance_max)
   end
 
   def inner_ring_mask(mask, kernel_px \\ 3) do

@@ -62,7 +62,7 @@
             </button>
             <button phx-click="set_canvas_mode" phx-value-mode="color"
                     class={"btn btn-xs join-item #{if @canvas_mode == :color, do: "btn-accent", else: "btn-ghost"}"}
-                    title="Click the screenshot to sample a color for a color_detector hook">
+                    title="Click the screenshot to sample a color for an hsv_range hook">
               🎨 Color
             </button>
           </div>
@@ -187,7 +187,7 @@
                     </span>
                   </label>
                   <select name="hook[match_method]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :match_method), do: "select-warning"}"}>
-                    <%= for method <- ~w(gray rgb binary_thresh color_detector value_detector saturation_detector grayscale_detector sift sift_saturation) do %>
+                    <%= for method <- ~w(gray rgb binary_thresh hsv_range grayscale_detector sift sift_saturation) do %>
                       <option value={method} selected={to_string(@form[:match_method].value) == method}>
                         <%= method %>
                       </option>
@@ -211,7 +211,8 @@
             </div>
 
             <%!-- Confidence --%>
-            <div class="form-control mb-2">
+            <input :if={to_string(@form[:match_method].value) == "hsv_range"} type="hidden" name="hook[confidence]" value={@form[:confidence].value} />
+            <div :if={to_string(@form[:match_method].value) != "hsv_range"} class="form-control mb-2">
               <label class="label py-0.5">
                 <span class="label-text text-sm font-medium flex items-center gap-1">
                   Confidence
@@ -229,7 +230,7 @@
               <div class="flex justify-between text-xs text-base-content/40 px-1 mt-0.5">
                 <span>0.0</span><span>0.5</span><span>1.0</span>
               </div>
-              <p class="text-xs text-base-content/40 mt-0.5">For color_detector: how tight the color match is instead of a correlation threshold — 1.0 requires an exact HSV match, 0.0 allows up to 30 points of slack per channel. For value_detector and saturation_detector: the same slack, but only on V (brightness) or S (saturation); hue is ignored. For grayscale_detector: how desaturated the region must be — 1.0 requires zero average saturation, 0.0 accepts any.</p>
+              <p class="text-xs text-base-content/40 mt-0.5">For grayscale_detector: how desaturated the region must be — 1.0 requires zero average saturation, 0.0 accepts any.</p>
             </div>
 
             <%!-- Region --%>
@@ -306,39 +307,74 @@
                   </div>
                 <% end %>
               </div>
-              <p class="text-xs text-base-content/40 mt-0.5">When set, searches this wider area for the template instead of expecting it exactly at Region. Ignored by color_detector hooks (they always scan Region).</p>
+              <p class="text-xs text-base-content/40 mt-0.5">When set, searches this wider area for the template instead of expecting it exactly at Region. Ignored by hsv_range hooks (they always scan Region).</p>
             </div>
 
             <%!-- Color (color_detector only) --%>
-            <% color_dirty = Enum.any?([:color_h, :color_s, :color_v], &field_dirty?(@form, @saved_params, &1)) %>
+            <% range_dirty = Enum.any?([:color_h, :color_s, :color_v, :tol_h, :tol_s, :tol_v], &field_dirty?(@form, @saved_params, &1)) %>
+            <% center_h = form_int(@form, :color_h, 0) %>
+            <% center_s = form_int(@form, :color_s, 0) %>
+            <% center_v = form_int(@form, :color_v, 0) %>
             <div class="mb-2">
               <label class="label py-0.5">
                 <span class="label-text text-sm font-medium flex items-center gap-1">
-                  Color (HSV)
-                  <span :if={color_dirty} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                  HSV Range
+                  <span :if={range_dirty} class="text-warning text-xs leading-none" title="unsaved change">●</span>
                 </span>
               </label>
-              <div class="flex items-center gap-2">
+              <div class="flex items-start gap-2">
                 <div
                   class="w-8 h-8 rounded border border-base-300 shrink-0"
-                  style={"background-color: #{color_swatch_css(@form[:color_h].value || 0, @form[:color_s].value || 0, @form[:color_v].value || 0)}"}
+                  style={"background-color: #{color_swatch_css(center_h, center_s, center_v)}"}
                 ></div>
-                <div class="grid grid-cols-3 gap-1 flex-1">
-                  <%= for {label, field, max} <- [{"H", :color_h, 179}, {"S", :color_s, 255}, {"V", :color_v, 255}] do %>
+                <div class="flex-1 space-y-2">
+                  <%= for {label, channel, color_field, tol_field, max, tol_max} <- [{"H", :h, :color_h, :tol_h, 179, 90}, {"S", :s, :color_s, :tol_s, 255, 255}, {"V", :v, :color_v, :tol_v, 255, 255}] do %>
+                    <% center = form_int(@form, color_field, 0) %>
+                    <% tol = form_int(@form, tol_field, 0) %>
+                    <% track =
+                      case channel do
+                        :h -> channel_gradient(:h, 0, 0)
+                        :s -> channel_gradient(:s, center_h, center_v)
+                        :v -> channel_gradient(:v, center_h, center_s)
+                      end %>
                     <div>
-                      <label class="label py-0"><span class="label-text-alt text-xs"><%= label %></span></label>
-                      <input
-                        type="number"
-                        name={"hook[#{field}]"}
-                        value={@form[field].value}
-                        min="0" max={max}
-                        class={"input input-bordered input-xs w-full font-mono #{if field_dirty?(@form, @saved_params, field), do: "input-warning"}"}
-                      />
+                      <div class="flex items-center justify-between text-xs">
+                        <span class="font-medium"><%= label %></span>
+                        <span class="font-mono text-primary"><%= range_label(center, tol, channel) %></span>
+                      </div>
+                      <div class="relative h-3 rounded overflow-hidden border border-base-300" style={"background: #{track}"}>
+                        <div
+                          :for={box <- range_band_boxes(center, tol, channel)}
+                          class="absolute inset-y-0 border-x-2 border-white bg-white/25"
+                          style={box}
+                        ></div>
+                        <div class="absolute inset-y-0 w-0.5 bg-black/70" style={"left: #{Float.round(center / max * 100, 2)}%"}></div>
+                      </div>
+                      <div class="flex items-center gap-2 mt-1">
+                        <input
+                          type="number"
+                          name={"hook[#{color_field}]"}
+                          value={@form[color_field].value}
+                          min="0" max={max}
+                          title={"#{label} center"}
+                          class={"input input-bordered input-xs w-16 font-mono #{if field_dirty?(@form, @saved_params, color_field), do: "input-warning"}"}
+                        />
+                        <span class="text-xs text-base-content/50">±</span>
+                        <input
+                          type="range"
+                          name={"hook[#{tol_field}]"}
+                          value={tol}
+                          min="0" max={tol_max} step="1"
+                          title={"#{label} tolerance"}
+                          class={"range range-xs flex-1 #{if field_dirty?(@form, @saved_params, tol_field), do: "range-warning", else: "range-primary"}"}
+                        />
+                        <span class="text-xs font-mono w-8 text-right"><%= tol %></span>
+                      </div>
                     </div>
                   <% end %>
                 </div>
               </div>
-              <p class="text-xs text-base-content/40 mt-0.5">color_detector uses all three; value_detector uses only V; saturation_detector uses only S. Switch to 🎨 Color mode above and click the screenshot to sample.</p>
+              <p class="text-xs text-base-content/40 mt-0.5">hsv_range matches pixels inside the shaded band on every channel at once. Sample a center with 🎨 Color mode above, then widen each channel; a tolerance of 0 matches that single value, and hue ±90 matches any hue. White is S near 0 and V near 255 with hue at any.</p>
             </div>
 
             <%!-- Min Cluster Size (color_detector only) --%>
@@ -349,14 +385,24 @@
                   <span :if={field_dirty?(@form, @saved_params, :min_cluster_size)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
                 </span>
               </label>
-              <input
-                type="number"
-                name="hook[min_cluster_size]"
-                value={@form[:min_cluster_size].value}
-                min="0"
-                class={"input input-bordered input-sm w-32 font-mono #{if field_dirty?(@form, @saved_params, :min_cluster_size), do: "input-warning"}"}
-              />
-              <p class="text-xs text-base-content/40 mt-0.5">color, value and saturation detectors. Minimum pixel-area of a cluster to count as detected, for a 1920×1080 frame (scaled down for smaller captures).</p>
+              <% cluster_size = form_int(@form, :min_cluster_size, 0) %>
+              <div class="flex items-center gap-2">
+                <input
+                  type="range"
+                  value={cluster_size}
+                  min="0" max={max(250, cluster_size)} step="1"
+                  oninput="const n = this.form.elements['hook[min_cluster_size]']; n.value = this.value; n.dispatchEvent(new Event('input', {bubbles: true}))"
+                  class={"range range-sm flex-1 #{if field_dirty?(@form, @saved_params, :min_cluster_size), do: "range-warning", else: "range-primary"}"}
+                />
+                <input
+                  type="number"
+                  name="hook[min_cluster_size]"
+                  value={@form[:min_cluster_size].value}
+                  min="0"
+                  class={"input input-bordered input-sm w-24 font-mono #{if field_dirty?(@form, @saved_params, :min_cluster_size), do: "input-warning"}"}
+                />
+              </div>
+              <p class="text-xs text-base-content/40 mt-0.5">hsv_range hooks. Minimum pixel-area of a cluster to count as detected, for a 1920×1080 frame (scaled down for smaller captures).</p>
             </div>
 
             <%!-- Mask --%>
