@@ -3,7 +3,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   import StarlightBotWeb.Components.ConditionTree
   import StarlightBotWeb.Components.PlanPicker
 
-  alias StarlightBot.{BattlePlans, Conditions, Hooks, Plans, SinnerProfiles, Teams}
+  alias StarlightBot.{PlanCounts, BattlePlans, Conditions, Hooks, Plans, SinnerProfiles, Teams}
   alias StarlightBot.BattlePlans.Resolver
 
   @collapsed_floors 5
@@ -11,12 +11,15 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   @impl true
   def mount(_params, session, socket) do
+    if connected?(socket), do: PlanCounts.subscribe()
+
     team = session["team_id"] && Teams.get_team(session["team_id"])
 
     socket =
       socket
       |> assign(:team_id, team && team.id)
-      |> assign(:plans, Plans.list(:battle_plans))
+      |> assign(:paste_status, :unknown)
+      |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
       |> assign(:hook_names, Enum.map(Hooks.list_hooks(), & &1.name))
       |> assign_profiles()
       |> reset_editor()
@@ -25,63 +28,32 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_info({:plan_count, team_id, table, count}, %{assigns: %{team_id: team_id}} = socket), do: {:noreply, update(socket, :tab_counts, &Map.put(&1, table, count))}
+
+  @impl true
+  def handle_info({:plan_count, _team_id, _table, _count}, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_event("new_plan", _, socket) do
     attrs = %{name: Plans.new_name(:battle_plans, socket.assigns.team_id), data: BattlePlans.blank()}
 
     case Plans.save(:battle_plans, attrs) do
-      {:ok, id} -> {:noreply, socket |> assign(:plans, Plans.list(:battle_plans)) |> load_plan(id) |> link_team(:battle_plan_id)}
+      {:ok, id} -> {:noreply, socket |> load_plan(id) |> link_team(:battle_plan_id)}
       {:error, reason} -> {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
     end
   end
 
   @impl true
-  def handle_event("select_plan", %{"id" => id}, socket) do
-    {:noreply, socket |> load_plan(String.to_integer(id)) |> link_team(:battle_plan_id)}
-  end
+  def handle_event("copy_plan", _, socket), do: {:noreply, copy_plan(socket, :battle_plans)}
 
   @impl true
-  def handle_event("duplicate_plan", %{"id" => id}, socket) do
-    case Plans.get(:battle_plans, String.to_integer(id)) do
-      nil ->
-        {:noreply, put_flash(socket, :error, "Plan not found.")}
-
-      plan ->
-        case Plans.save(:battle_plans, %{name: "#{plan.name} (copy)", data: plan.data}) do
-          {:ok, new_id} ->
-            {:noreply, socket |> assign(:plans, Plans.list(:battle_plans)) |> load_plan(new_id) |> link_team(:battle_plan_id)}
-
-          {:error, reason} ->
-            {:noreply, put_flash(socket, :error, "Duplicate failed: #{inspect(reason)}")}
-        end
-    end
-  end
+  def handle_event("paste_plan", %{"text" => text}, socket), do: {:noreply, paste_plan(socket, :battle_plans, :battle_plan_id, text, &load_plan/2)}
 
   @impl true
-  def handle_event("delete_plan", %{"id" => id}, socket) do
-    id = String.to_integer(id)
-
-    case Plans.delete(:battle_plans, id) do
-      {:ok, _} ->
-        socket = if socket.assigns.editing_id == id, do: reset_editor(socket), else: socket
-
-        {:noreply,
-         socket
-         |> assign(:plans, Plans.list(:battle_plans))
-         |> link_team(:battle_plan_id)
-         |> put_flash(:info, "Plan deleted.")}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Delete failed: #{inspect(reason)}")}
-    end
-  end
+  def handle_event("plan_clipboard_failed", %{"message" => message}, socket), do: {:noreply, put_flash(socket, :error, message)}
 
   @impl true
-  def handle_event("rename_plan", %{"value" => name}, socket) do
-    case String.trim(name) do
-      "" -> {:noreply, socket}
-      name -> {:noreply, socket |> assign(:name, name) |> persist() |> link_team(:battle_plan_id)}
-    end
-  end
+  def handle_event("clipboard_status", %{"text" => text}, socket), do: {:noreply, paste_status(socket, :battle_plans, text)}
 
   @impl true
   def handle_event("set_max_retries", %{"max_retries" => value}, socket) do
@@ -1358,7 +1330,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.data}
 
     case Plans.save(:battle_plans, attrs) do
-      {:ok, _id} -> assign(socket, :plans, Plans.list(:battle_plans))
+      {:ok, _id} -> broadcast_count(socket, :battle_plans, socket.assigns.data)
       {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
     end
   end

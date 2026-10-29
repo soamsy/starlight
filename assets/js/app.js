@@ -524,6 +524,50 @@ const PriorityClipboard = {
   }
 }
 
+const PlanClipboard = {
+  mounted() {
+    this.last = undefined
+
+    this.refresh = (force) => {
+      navigator.clipboard.readText()
+        .catch(() => null)
+        .then(text => {
+          if (!force && text === this.last) return
+          this.last = text
+          this.pushEvent("clipboard_status", { text })
+        })
+    }
+
+    this.onFocus = () => this.refresh(false)
+    window.addEventListener("focus", this.onFocus)
+    this.el.addEventListener("pointerenter", () => this.refresh(true))
+
+    this.handleEvent("copy_plan_json", ({ text }) => {
+      navigator.clipboard.writeText(text)
+        .then(() => this.refresh(true))
+        .catch(err => {
+          this.pushEvent("plan_clipboard_failed", { message: `Couldn't copy to clipboard: ${err.message || err}` })
+        })
+    })
+
+    this.el.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-paste-plan]")
+      if (!btn || !window.confirm(btn.dataset.confirm)) return
+
+      navigator.clipboard.readText()
+        .then(text => this.pushEvent("paste_plan", { text }))
+        .catch(err => {
+          this.pushEvent("plan_clipboard_failed", { message: `Couldn't read clipboard: ${err.message || err}` })
+        })
+    })
+
+    this.refresh(true)
+  },
+  destroyed() {
+    window.removeEventListener("focus", this.onFocus)
+  }
+}
+
 const PriorityChips = {
   mounted() {
     const strip = () => this.el.querySelector("[data-chip-strip]")
@@ -884,7 +928,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
 })
 
 liveSocket.connect()

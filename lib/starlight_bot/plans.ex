@@ -1,7 +1,7 @@
 defmodule StarlightBot.Plans do
   require Logger
   import Ecto.Query
-  alias StarlightBot.{Repo, Teams}
+  alias StarlightBot.{BattlePlans, GiftPlans, Repo, Teams}
 
   @tables ~w(gift_plans battle_plans pack_plans)a
 
@@ -64,6 +64,10 @@ defmodule StarlightBot.Plans do
       Logger.error("Plans DB error: #{Exception.message(e)}", module: __MODULE__)
       {:error, Exception.message(e)}
   end
+
+  def blank(:gift_plans), do: GiftPlans.blank()
+  def blank(:battle_plans), do: BattlePlans.blank()
+  def blank(:pack_plans), do: %{"version" => 1, "mode_schedule" => [], "packs" => %{}, "search_floors" => []}
 
   def new_name(table, team_id) when table in @tables do
     base =

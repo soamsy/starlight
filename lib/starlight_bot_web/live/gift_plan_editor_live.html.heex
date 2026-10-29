@@ -32,8 +32,8 @@
           <% issues = GiftPlans.issues(@plan_data, @gifts_by_name) %>
 
           <div class="flex items-center gap-2 flex-wrap">
-            <.pane_tabs team_id={@team_id} pane="gifts" />
-            <.plan_picker id="gift-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="gift plan" />
+            <.pane_tabs team_id={@team_id} pane="gifts" counts={@tab_counts} />
+            <.plan_clipboard status={@paste_status} label="gift plan" />
             <%= if @active_tab == :loadout do %>
               <button phx-click="set_tab" phx-value-tab="shop" class="btn btn-sm btn-accent w-32">Milestones</button>
             <% else %>
@@ -513,11 +513,11 @@
 
         <% else %>
           <div class="flex items-center gap-3">
-            <.pane_tabs team_id={@team_id} pane="gifts" />
-            <.plan_picker id="gift-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="gift plan" />
+            <.pane_tabs team_id={@team_id} pane="gifts" counts={@tab_counts} />
           </div>
-          <div class="flex-1 flex items-center justify-center text-base-content/40 text-sm">
-            Pick or create a gift plan for this team.
+          <div class="flex-1 flex flex-col gap-2 items-center justify-center text-base-content/40 text-sm">
+            This team has no gift plan.
+            <button type="button" phx-click="new_plan" class="btn btn-primary btn-sm">+ New gift plan</button>
           </div>
         <% end %>
       </div>

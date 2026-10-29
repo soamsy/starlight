@@ -121,7 +121,7 @@
     <div class="flex flex-col min-h-0 min-w-0">
       <div :if={@pane == "stats"} class="card bg-base-100 shadow-lg flex-1 min-h-0 overflow-y-auto">
         <div class="card-body p-3 gap-3">
-          <.pane_tabs team_id={@editing_id} pane="stats" />
+          <.pane_tabs team_id={@editing_id} pane="stats" counts={@tab_counts} />
           <% budget = starlight_budget(@gift_plans, @pack_plans, @theme_packs, @selected_ids, @budget_inputs) %>
           <h3 class="font-medium text-sm">Expected Starlight</h3>
           <form phx-change="budget_change" class="flex flex-wrap items-stretch gap-1.5 font-mono">

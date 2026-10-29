@@ -1,59 +1,37 @@
 defmodule StarlightBotWeb.Components.PlanPicker do
   use Phoenix.Component
   use Phoenix.VerifiedRoutes, endpoint: StarlightBotWeb.Endpoint, router: StarlightBotWeb.Router
-  alias Phoenix.LiveView.JS
-  alias StarlightBot.Teams
+  alias StarlightBot.{PlanClipboard, PlanCounts, Plans, Teams}
 
-  attr :id, :string, required: true
-  attr :items, :list, required: true
-  attr :current_id, :integer, default: nil
-  attr :name, :string, default: ""
-  attr :noun, :string, required: true
   attr :label, :string, required: true
+  attr :status, :atom, default: :unknown
 
-  def plan_picker(assigns) do
+  def plan_clipboard(assigns) do
     ~H"""
-    <div id={@id} class="relative" phx-click-away={JS.hide(to: "##{@id}-menu")}>
-      <div class="join">
-        <input type="text" value={@name} phx-blur={"rename_#{@noun}"} disabled={is_nil(@current_id)}
-               class="input input-bordered input-sm join-item w-64 font-semibold"
-               placeholder={"No #{@label} picked"} />
-        <button type="button" phx-click={JS.toggle(to: "##{@id}-menu")}
-                class="btn btn-sm join-item" title={"Switch, add, duplicate or delete #{@label}s"}>
-          <%= length(@items) %> ▾
-        </button>
-      </div>
-      <div id={"#{@id}-menu"} class="hidden absolute z-30 mt-1 w-96 rounded-box border border-base-300 bg-base-100 shadow-lg p-2">
-        <div class="max-h-96 overflow-y-auto">
-          <table class="table table-xs">
-            <tbody>
-              <tr :for={item <- @items}
-                  phx-click={JS.push("select_#{@noun}", value: %{id: to_string(item.id)}) |> JS.hide(to: "##{@id}-menu")}
-                  class={"cursor-pointer hover:bg-base-200 " <> if(@current_id == item.id, do: "bg-primary/10 border-l-2 border-primary", else: "")}>
-                <td class="font-mono text-xs"><%= item.name %></td>
-                <td class="text-right whitespace-nowrap">
-                  <button phx-click={JS.push("duplicate_#{@noun}", value: %{id: to_string(item.id)}) |> JS.hide(to: "##{@id}-menu")}
-                          class="btn btn-xs btn-ghost">Dup</button>
-                  <button phx-click={"delete_#{@noun}"} phx-value-id={item.id} data-confirm={"Delete '#{item.name}'?"}
-                          class="btn btn-xs btn-ghost text-error">Del</button>
-                </td>
-              </tr>
-              <tr :if={@items == []}>
-                <td colspan="2" class="text-center text-base-content/40 py-4">No <%= @label %>s yet.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <button phx-click={JS.push("new_#{@noun}") |> JS.hide(to: "##{@id}-menu")} class="btn btn-primary btn-xs w-full mt-2">
-          + New <%= @label %>
-        </button>
-      </div>
+    <div id={"plan-clipboard-#{String.replace(@label, " ", "-")}"} phx-hook="PlanClipboard" class="flex items-center gap-2">
+      <button type="button" phx-click="copy_plan" class="btn btn-sm btn-outline" title={"Copy this #{@label} to the clipboard as JSON"}>Copy plan</button>
+      <button type="button" data-paste-plan data-confirm={"Replace this #{@label} with the one on the clipboard?"}
+              disabled={@status == :invalid} class="btn btn-sm btn-outline gap-1"
+              title={paste_title(@status, @label)}>
+        <svg :if={@status == :different} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 text-success">
+          <rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+          <path d="m9 14 2 2 4-4" />
+        </svg>
+        Paste plan
+      </button>
     </div>
     """
   end
 
+  defp paste_title(:invalid, label), do: "The clipboard doesn't hold a #{label} that can be pasted here"
+  defp paste_title(:same, label), do: "The clipboard holds the same #{label} as this one"
+  defp paste_title(:different, label), do: "The clipboard holds a different #{label}, ready to paste"
+  defp paste_title(:unknown, label), do: "Paste a #{label} from the clipboard"
+
   attr :team_id, :integer, default: nil
   attr :pane, :string, required: true
+  attr :counts, :map, default: %{}
 
   def pane_tabs(assigns) do
     ~H"""
@@ -63,10 +41,16 @@ defmodule StarlightBotWeb.Components.PlanPicker do
              title={label}
              class={"btn btn-sm join-item " <> if(@pane == pane, do: "btn-primary", else: "btn-outline")}>
         <.pane_icon pane={pane} class="h-4 w-4" /><%= if pane != "stats", do: label %>
+        <span :if={tab_count(@counts, pane)} class="badge badge-xs badge-ghost font-mono"><%= tab_count(@counts, pane) %></span>
       </.link>
     </div>
     """
   end
+
+  defp tab_count(counts, "battle"), do: counts[:battle_plans]
+  defp tab_count(counts, "packs"), do: counts[:pack_plans]
+  defp tab_count(counts, "gifts"), do: counts[:gift_plans]
+  defp tab_count(_counts, _pane), do: nil
 
   attr :pane, :string, required: true
   attr :class, :string, default: nil
@@ -105,9 +89,56 @@ defmodule StarlightBotWeb.Components.PlanPicker do
 
   def link_team(%{assigns: %{team_id: team_id}} = socket, field) when is_integer(team_id) do
     Teams.set_plan(team_id, field, socket.assigns.editing_id)
-    send(socket.parent_pid, :team_plans_changed)
-    socket
+    notify_parent(socket)
   end
 
   def link_team(socket, _field), do: socket
+
+  def broadcast_count(socket, table, data) do
+    PlanCounts.broadcast(socket.assigns.team_id, table, data)
+    socket
+  end
+
+  def notify_parent(%{parent_pid: parent} = socket) when is_pid(parent) do
+    send(parent, :team_plans_changed)
+    socket
+  end
+
+  def notify_parent(socket), do: socket
+
+  def copy_plan(socket, table) do
+    %{data: data} = Plans.get(table, socket.assigns.editing_id)
+    text = PlanClipboard.encode(table, Teams.get_team(socket.assigns.team_id).name, data)
+    socket |> Phoenix.LiveView.push_event("copy_plan_json", %{text: text}) |> Phoenix.LiveView.put_flash(:info, "Plan copied to the clipboard.")
+  end
+
+  def paste_status(socket, table, text) do
+    Phoenix.Component.assign(socket, :paste_status, status_of(socket.assigns.editing_id, table, text))
+  end
+
+  defp status_of(_plan_id, _table, nil), do: :unknown
+  defp status_of(nil, _table, _text), do: :invalid
+
+  defp status_of(plan_id, table, text) do
+    case PlanClipboard.decode(text, table) do
+      {:ok, data} -> if Plans.get(table, plan_id).data == data, do: :same, else: :different
+      {:error, _} -> :invalid
+    end
+  end
+
+  def paste_plan(socket, table, field, text, load_plan) do
+    with {:ok, data} <- PlanClipboard.decode(text, table),
+         {:ok, id} <- Teams.paste_plan(socket.assigns.team_id, field, data) do
+      PlanCounts.broadcast(socket.assigns.team_id, table, data)
+      socket = socket |> load_plan.(id) |> notify_parent() |> Phoenix.Component.assign(:paste_status, :same) |> Phoenix.LiveView.put_flash(:info, "Plan pasted.")
+
+      case PlanClipboard.warnings(table, data) do
+        [] -> socket
+        warnings -> Phoenix.LiveView.put_flash(socket, :error, Enum.join(warnings, " "))
+      end
+    else
+      {:error, message} when is_binary(message) -> Phoenix.LiveView.put_flash(socket, :error, message)
+      {:error, reason} -> Phoenix.LiveView.put_flash(socket, :error, "Paste failed: #{inspect(reason)}")
+    end
+  end
 end

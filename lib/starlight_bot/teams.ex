@@ -110,7 +110,38 @@ defmodule StarlightBot.Teams do
 
   @doc "Insert a new team with a unique default name and blank fields. Returns `{:ok, id}` or `{:error, reason}`."
   def create_default_team do
-    save_team(%{name: unique_name("New Team")})
+    with {:ok, id} <- save_team(%{name: unique_name("New Team")}),
+         :ok <- ensure_plans(id) do
+      {:ok, id}
+    end
+  end
+
+  def ensure_plans(team_id) when is_integer(team_id) do
+    team = get_team(team_id)
+
+    Enum.reduce_while(@plan_fields, :ok, fn {field, table}, :ok ->
+      with nil <- Map.get(team, field),
+           {:ok, plan_id} <- Plans.save(table, %{name: Plans.new_name(table, team_id), data: Plans.blank(table)}),
+           {:ok, _} <- set_plan(team_id, field, plan_id) do
+        {:cont, :ok}
+      else
+        plan_id when is_integer(plan_id) -> {:cont, :ok}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  def paste_plan(team_id, field, data) when is_integer(team_id) and field in [:gift_plan_id, :battle_plan_id, :pack_plan_id] do
+    table = Keyword.fetch!(@plan_fields, field)
+
+    with %{} = team <- get_team(team_id),
+         target when is_integer(target) <- Map.get(team, field),
+         %{name: name} <- Plans.get(table, target) do
+      Plans.save(table, %{id: target, name: name, data: data})
+    else
+      {:error, _} = error -> error
+      _ -> {:error, :not_found}
+    end
   end
 
   def duplicate_team(id) when is_integer(id) do
@@ -121,7 +152,7 @@ defmodule StarlightBot.Teams do
       team ->
         with {:ok, new_id} <- team |> Map.take([:hooks]) |> Map.put(:name, unique_name("#{team.name} (copy)")) |> save_team() do
           Enum.each(@plan_fields, &copy_plan(team, new_id, &1))
-          {:ok, new_id}
+          with :ok <- ensure_plans(new_id), do: {:ok, new_id}
         end
     end
   end
@@ -150,8 +181,18 @@ defmodule StarlightBot.Teams do
 
   @doc "Delete a team by id."
   def delete_team(id) when is_integer(id) do
+    team = get_team(id)
     {n, _} = Repo.delete_all(from t in "teams", where: t.id == ^id)
-    if n > 0, do: {:ok, id}, else: {:error, :not_found}
+
+    if n > 0 do
+      Enum.each(@plan_fields, fn {field, table} ->
+        if plan_id = Map.get(team, field), do: Plans.delete(table, plan_id)
+      end)
+
+      {:ok, id}
+    else
+      {:error, :not_found}
+    end
   rescue
     e ->
       Logger.error("Teams DB error: #{Exception.message(e)}", module: __MODULE__)

@@ -36,14 +36,28 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     assert Plans.new_name(:battle_plans, nil) =~ "New Plan"
   end
 
-  test "duplicating a plan copies its data under a new name and opens the copy", %{socket: socket} do
-    original = Plans.get(:battle_plans, socket.assigns.editing_id)
-    socket = event(socket, "duplicate_plan", %{"id" => to_string(original.id)})
-    copy = Plans.get(:battle_plans, socket.assigns.editing_id)
+  test "a copied battle plan pastes into another team and warns about profiles it lacks" do
+    {:ok, source} = Teams.create_default_team()
+    {:ok, target} = Teams.create_default_team()
+    source_plan = Teams.get_team(source).battle_plan_id
+    {:ok, profile} = StarlightBot.SinnerProfiles.save(%{name: "Faust test", sinner: "faust", locator_hook: "some_hook"})
+    data = BattlePlans.blank() |> Map.put("max_retries", 7) |> BattlePlans.put_profile("faust", profile) |> BattlePlans.put_profile("ryoshu", -1)
+    {:ok, _} = Plans.save(:battle_plans, %{id: source_plan, name: Plans.get(:battle_plans, source_plan).name, data: data})
+    bare = %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, flash: %{}}}
 
-    assert copy.id != original.id
-    assert copy.name == "#{original.name} (copy)"
-    assert copy.data == original.data
+    {:ok, source_socket} = Live.mount(%{}, %{"team_id" => source}, bare)
+    source_socket = event(source_socket, "copy_plan", %{})
+    [["copy_plan_json", %{text: text}]] = source_socket.private.live_temp.push_events
+
+    {:ok, socket} = Live.mount(%{}, %{"team_id" => target}, bare)
+    socket = event(socket, "paste_plan", %{"text" => text})
+
+    target_plan = Teams.get_team(target).battle_plan_id
+    assert socket.assigns.editing_id == target_plan
+    assert target_plan != source_plan
+    assert Plans.get(:battle_plans, target_plan).data == data
+    assert socket.assigns.flash["error"] =~ "Ryoshu"
+    refute socket.assigns.flash["error"] =~ "Faust"
   end
 
   test "if blocks hold then and else actions and a hook condition tree", %{socket: socket, playbook_id: playbook_id} do

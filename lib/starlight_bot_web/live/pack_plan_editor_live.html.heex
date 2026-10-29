@@ -3,8 +3,9 @@
     <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
       <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
         <div class="flex items-center gap-3">
-          <.pane_tabs team_id={@team_id} pane="packs" />
-          <.plan_picker id="theme-plan-picker" items={@plans} current_id={@editing_id} name={@name} noun="plan" label="pack plan" />
+          <.pane_tabs team_id={@team_id} pane="packs" counts={@tab_counts} />
+          <.plan_clipboard :if={@editing_id} status={@paste_status} label="pack plan" />
+          <button :if={is_nil(@editing_id)} type="button" phx-click="new_plan" class="btn btn-primary btn-sm">+ New pack plan</button>
         </div>
         <%= if @editing_id do %>
 

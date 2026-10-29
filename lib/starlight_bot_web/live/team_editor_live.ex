@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{BattlePlans, EgoGifts, GiftPlans, Plans, StarlightBudget, Teams, ThemePacks}
+  alias StarlightBot.{BattlePlans, EgoGifts, GiftPlans, PlanCounts, Plans, StarlightBudget, Teams, ThemePacks}
   alias StarlightBotWeb.Live.{BattlePlanEditorLive, GiftPlanEditorLive, PackPlanEditorLive}
   alias StarlightBot.Navigation.Navigator
   import StarlightBotWeb.Components.PlanPicker, only: [pane_icon: 1, pane_tabs: 1]
@@ -41,6 +41,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket), do: Navigator.subscribe()
+    if connected?(socket), do: PlanCounts.subscribe()
     nav = Navigator.status()
 
     {:ok,
@@ -53,6 +54,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:theme_packs, ThemePacks.list_theme_packs())
      |> assign(:form, blank_form())
      |> assign(:editing_id, nil)
+     |> assign(:tab_counts, %{})
      |> assign(:hooks, [])
      |> assign(:expanded?, false)
      |> assign(:selected_ids, blank_selected_ids())
@@ -230,6 +232,12 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
+  def handle_info({:plan_count, team_id, table, count}, %{assigns: %{editing_id: team_id}} = socket), do: {:noreply, update(socket, :tab_counts, &Map.put(&1, table, count))}
+
+  @impl true
+  def handle_info({:plan_count, _team_id, _table, _count}, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_info({:nav_state, nav}, socket) do
     {:noreply, socket |> assign(:phase, nav.phase) |> assign(:log, nav.log)}
   end
@@ -274,6 +282,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         socket
         |> assign(:form, build_form(%{"name" => team.name}))
         |> assign(:editing_id, team.id)
+        |> assign(:tab_counts, PlanCounts.for_team(team.id))
         |> assign(:hooks, team.hooks)
         |> assign(:selected_ids, selected_ids(team))
         |> assign(:budget_inputs, blank_budget_inputs(team.battle_plan_id))
