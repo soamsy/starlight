@@ -35,7 +35,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @creep_step_ms 30
   @redetect_drop_px 120
   @redetect_settle_ms 400
-  @chosen_settle_ms 400
+  @chosen_settle_ms 200
   @target_release_settle_ms 300
   @target_found_hold_ms 150
   @preview_alt_tab_ms 2_000
