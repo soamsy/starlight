@@ -392,6 +392,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("ms_add_affinity_any", %{"affinity" => affinity}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.add_pattern(&1, socket.assigns.selected_milestone_id, GiftPlans.affinity_subject(affinity, [])))}
+  end
+
   def handle_event("ms_add_affinity", %{"affinity" => affinity, "tier" => tier}, socket) do
     {:noreply, update_plan(socket, &GiftPlans.add_pattern(&1, socket.assigns.selected_milestone_id, GiftPlans.affinity_subject(affinity, [String.to_integer(tier)])))}
   end

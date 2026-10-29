@@ -344,6 +344,15 @@
                         </div>
                         <div class="flex items-center gap-1"
                              title="Any-tier and any-affinity entries never count toward goals and never keep anything. Buy buys matches when nothing wanted is on the shelf; Sell sells matches at the start of Work on Milestone. A specific gift entry overrides them.">
+                          <div class="dropdown dropdown-end">
+                            <div tabindex="0" role="button" class="btn btn-xs btn-outline">+Any tier</div>
+                            <div tabindex="0" class="dropdown-content z-30 mt-1 w-36 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+                              <button :for={affinity <- affinities()} type="button" phx-click="ms_add_affinity_any" phx-value-affinity={affinity}
+                                      class="btn btn-ghost btn-xs w-full justify-start capitalize">
+                                <img src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
+                              </button>
+                            </div>
+                          </div>
                           <div :for={tier <- GiftPlans.shop_tiers()} class="dropdown dropdown-end">
                             <div tabindex="0" role="button" class="btn btn-xs btn-outline">+T<%= tier %></div>
                             <div tabindex="0" class="dropdown-content z-30 mt-1 w-36 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
