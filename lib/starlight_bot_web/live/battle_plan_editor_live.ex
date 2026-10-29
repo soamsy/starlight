@@ -1216,16 +1216,29 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   attr :disabled, :boolean, default: false
 
   def priority_chip(assigns) do
-    assigns = assign(assigns, canon: Enum.find_index(BattlePlans.priority_values(), &(&1 == assigns.value)), kind: chip_kind(assigns.value))
+    kind = chip_kind(assigns.value)
+    [base | rest] = String.split(assigns.value, "+")
+
+    assigns =
+      assign(assigns,
+        canon: Enum.find_index(BattlePlans.priority_values(), &(&1 == base)),
+        kind: kind,
+        tier: if(kind == :tier, do: base),
+        sin: if(kind == :sin, do: base, else: List.first(rest))
+      )
 
     ~H"""
-    <span data-chip data-canon={@canon} draggable="true" title={@value}
-          class={"inline-flex items-center justify-center h-6 min-w-6 px-1 rounded border cursor-grab select-none text-[11px] font-semibold " <> chip_class(@kind, @value)}>
+    <span data-chip data-canon={@canon} data-tier={@tier} data-sin={@sin} draggable="true" title={@value}
+          class={"inline-flex items-center justify-center h-6 min-w-6 px-1 rounded border cursor-grab select-none text-[11px] font-semibold " <> chip_class(@kind, @tier || @value)}>
       <input type="hidden" name={@name} value={@value} disabled={@disabled} />
-      <%= if @kind == :sin do %>
-        <img src={"/images/sin/#{@value}.webp"} alt={@value} class="size-4 pointer-events-none" draggable="false" />
-      <% else %>
-        <%= @value %>
+      <%= cond do %>
+        <% @kind == :sin -> %>
+          <img src={"/images/sin/#{@sin}.webp"} alt={@sin} class="size-4 pointer-events-none" draggable="false" />
+        <% true -> %>
+          <%= @tier || @value %>
+          <span :if={@sin} data-chip-sin class="ml-1 inline-flex rounded bg-base-200 p-px">
+            <img src={"/images/sin/#{@sin}.webp"} alt={@sin} class="size-4 pointer-events-none" draggable="false" />
+          </span>
       <% end %>
     </span>
     """
@@ -1234,7 +1247,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   defp chip_kind(value) do
     cond do
       value in BattlePlans.sins() -> :sin
-      value in BattlePlans.tiers() -> :tier
+      value in BattlePlans.tiers() or String.contains?(value, "+") -> :tier
       true -> :other
     end
   end

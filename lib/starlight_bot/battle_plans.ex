@@ -141,7 +141,7 @@ defmodule StarlightBot.BattlePlans do
   def put_row(holder, "priority", order) do
     order =
       if is_map(holder["priority"]),
-        do: order |> List.wrap() |> Enum.filter(&(&1 in @priority_values)) |> Enum.uniq(),
+        do: order |> List.wrap() |> Enum.filter(&priority_term?/1) |> Enum.uniq(),
         else: @default_priority_order
 
     holder |> Map.put("row", "priority") |> Map.put("priority", %{"order" => order})
@@ -246,8 +246,10 @@ defmodule StarlightBot.BattlePlans do
 
   def cell_label(%{sin: sin, tier: tier}), do: "#{sin}/#{tier_name(tier)}"
 
-  defp priority_match?(value, %{tier: tier}) when value in @tiers, do: tier_name(tier) == value
-  defp priority_match?(value, %{sin: sin}), do: Atom.to_string(sin) == value
+  defp priority_match?(value, cell), do: value |> String.split("+") |> Enum.all?(&part_match?(&1, cell))
+
+  defp part_match?(part, %{tier: tier}) when part in @tiers, do: tier_name(tier) == part
+  defp part_match?(part, %{sin: sin}), do: Atom.to_string(sin) == part
 
   defp tier_name(tier), do: tier |> Atom.to_string() |> String.replace_prefix("skill", "s")
 
@@ -415,6 +417,18 @@ defmodule StarlightBot.BattlePlans do
 
   def chip_values, do: @tiers ++ @sins
 
+  def priority_term?(value), do: value == "dodge" or chip_term?(value)
+
+  def chip_term?(value) when is_binary(value) do
+    case String.split(value, "+") do
+      [tier, sin] -> tier in @tiers and sin in @sins
+      [single] -> single in @tiers or single in @sins
+      _ -> false
+    end
+  end
+
+  def chip_term?(_value), do: false
+
   def parse_chosen_filter(params) do
     case params["where_c"] do
       conditions when is_map(conditions) ->
@@ -431,7 +445,7 @@ defmodule StarlightBot.BattlePlans do
   end
 
   defp parse_chosen_condition(%{"kind" => kind} = condition) when kind in @chosen_value_kinds,
-    do: %{"kind" => kind, "values" => condition["values"] |> List.wrap() |> Enum.filter(&(&1 in @tiers ++ @sins)) |> Enum.uniq()}
+    do: %{"kind" => kind, "values" => condition["values"] |> List.wrap() |> Enum.filter(&chip_term?/1) |> Enum.uniq()}
 
   defp parse_chosen_condition(%{"kind" => kind}) when kind in ~w(top bottom), do: %{"kind" => kind}
   defp parse_chosen_condition(_condition), do: new_chosen_condition()

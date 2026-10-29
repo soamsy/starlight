@@ -581,9 +581,20 @@ const PriorityChips = {
   mounted() {
     const strip = () => this.el.querySelector("[data-chip-strip]")
     const palette = () => this.el.querySelector("[data-chip-palette]")
-    const order = () => Array.from(strip().querySelectorAll("[data-chip]")).map(c => c.dataset.canon).join(",")
+    const order = () => Array.from(strip().querySelectorAll("[data-chip] input")).map(i => i.value).join(",")
+    const isFused = (chip) => chip.dataset.tier && chip.dataset.sin
+    const isPlainTier = (chip) => chip.dataset.tier && !chip.dataset.sin
+    const isPlainSin = (chip) => chip.dataset.sin && !chip.dataset.tier
+    const chips = () => Array.from(this.el.querySelectorAll("[data-chip]"))
+    const fuseClasses = ["ring-2", "ring-primary"]
     let dragged = null
     let before = null
+    let fuseTarget = null
+
+    const clearFuseTarget = () => {
+      fuseTarget?.classList.remove(...fuseClasses)
+      fuseTarget = null
+    }
 
     const place = (chip, container, ref) => {
       if (container === palette()) {
@@ -595,6 +606,41 @@ const PriorityChips = {
       chip.querySelector("input").disabled = container !== strip()
     }
 
+    const fuse = (target, sinChip) => {
+      const value = `${target.dataset.tier}+${sinChip.dataset.sin}`
+      if (chips().some(c => isFused(c) && c.querySelector("input").value === value)) return
+      const fused = target.cloneNode(true)
+      fused.dataset.sin = sinChip.dataset.sin
+      fused.title = value
+      fused.classList.remove(...fuseClasses)
+      const input = fused.querySelector("input")
+      input.value = value
+      input.disabled = false
+      const badge = document.createElement("span")
+      badge.dataset.chipSin = ""
+      badge.className = "ml-1 inline-flex rounded bg-base-200 p-px"
+      const icon = document.createElement("img")
+      icon.src = `/images/sin/${sinChip.dataset.sin}.webp`
+      icon.alt = sinChip.dataset.sin
+      icon.draggable = false
+      icon.className = "size-4 pointer-events-none"
+      badge.append(icon)
+      fused.append(badge)
+      if (target.parentElement === strip()) {
+        strip().insertBefore(fused, target)
+        place(target, palette())
+      } else {
+        strip().append(fused)
+      }
+      if (sinChip.parentElement === strip()) place(sinChip, palette())
+    }
+
+    const unfuse = (fused) => {
+      const plain = chips().find(c => isPlainTier(c) && c.dataset.tier === fused.dataset.tier)
+      if (plain && plain.parentElement === palette()) place(plain, strip(), fused)
+      fused.remove()
+    }
+
     const commit = (previous) => {
       if (order() === previous) return
       this.el.querySelector("[data-chip-anchor]").dispatchEvent(new Event("input", { bubbles: true }))
@@ -604,7 +650,15 @@ const PriorityChips = {
       const chip = eventElement(e)?.closest("[data-chip]")
       if (!chip) return
       const previous = order()
-      place(chip, chip.parentElement === strip() ? palette() : strip())
+      if (isFused(chip)) {
+        if (eventElement(e).closest("[data-chip-sin]")) unfuse(chip)
+        else chip.remove()
+      } else if (e.shiftKey && isPlainSin(chip) && chip.parentElement === palette()) {
+        const target = Array.from(strip().children).reverse().find(isPlainTier)
+        if (target) fuse(target, chip)
+      } else {
+        place(chip, chip.parentElement === strip() ? palette() : strip())
+      }
       commit(previous)
     })
 
@@ -625,6 +679,17 @@ const PriorityChips = {
       if (!container) return
       e.preventDefault()
       e.stopPropagation()
+      clearFuseTarget()
+      const hovered = eventElement(e)?.closest("[data-chip]")
+      if (isPlainSin(dragged) && hovered && hovered !== dragged && isPlainTier(hovered)) {
+        const rect = hovered.getBoundingClientRect()
+        const offset = (e.clientX - rect.left) / rect.width
+        if (offset > 0.25 && offset < 0.75) {
+          fuseTarget = hovered
+          hovered.classList.add(...fuseClasses)
+          return
+        }
+      }
       if (container === palette()) {
         if (dragged.parentElement !== container) place(dragged, container)
         return
@@ -642,6 +707,9 @@ const PriorityChips = {
       if (!dragged) return
       e.stopPropagation()
       dragged.classList.remove("opacity-40")
+      if (fuseTarget) fuse(fuseTarget, dragged)
+      clearFuseTarget()
+      if (isFused(dragged) && dragged.parentElement === palette()) dragged.remove()
       dragged = null
       commit(before)
     })

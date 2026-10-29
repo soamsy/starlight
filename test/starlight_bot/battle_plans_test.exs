@@ -321,6 +321,20 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.pick_row(priority(["dodge", "s3"]), cell(:wrath, :skill3), cell(:wrath, :skill3)) == :dodge
     end
 
+    test "a fused tier and sin only matches a cell that is both" do
+      order = priority(["s3+envy", "s2"])
+      assert BattlePlans.pick_row(order, cell(:envy, :skill3), cell(:wrath, :skill2)) == :top
+      assert BattlePlans.pick_row(order, cell(:wrath, :skill3), cell(:envy, :skill2)) == :bottom
+      assert BattlePlans.pick_row(order, cell(:wrath, :skill1), cell(:envy, :skill3)) == :bottom
+      assert BattlePlans.pick_row(order, cell(:envy, :skill1), cell(:wrath, :skill1)) == :bottom
+    end
+
+    test "put_row keeps valid fused terms and drops malformed ones" do
+      holder = %{"row" => "priority", "priority" => %{"order" => []}}
+      result = BattlePlans.put_row(holder, "priority", ["s3+envy", "envy+s3", "s3+bogus", "s3+envy+wrath", "dodge+envy", "s3+envy"])
+      assert result["priority"] == %{"order" => ["s3+envy"]}
+    end
+
     test "both rows matching or nothing matching picks bottom" do
       assert BattlePlans.pick_row(priority(["pride"]), cell(:pride, :skill1), cell(:pride, :skill3)) == :bottom
       assert BattlePlans.pick_row(priority(["wrath", "s3"]), cell(:gloom, :skill1), cell(:lust, :skill2)) == :bottom
@@ -420,6 +434,8 @@ defmodule StarlightBot.BattlePlansTest do
       params = %{"where_join" => "or", "where_c" => %{"1" => %{"kind" => "bottom"}, "0" => %{"kind" => "not_using", "values" => ["envy", "bogus", "envy", "s3"]}}}
       assert BattlePlans.parse_chosen_filter(params) == %{"join" => "or", "conditions" => [%{"kind" => "not_using", "values" => ["envy", "s3"]}, %{"kind" => "bottom"}]}
       assert BattlePlans.parse_chosen_filter(%{}) == BattlePlans.new_chosen_filter()
+      fused = %{"where_c" => %{"0" => %{"kind" => "bottom_is", "values" => ["s3+envy", "envy+s3", "dodge", "wrath"]}}}
+      assert BattlePlans.parse_chosen_filter(fused)["conditions"] == [%{"kind" => "bottom_is", "values" => ["s3+envy", "wrath"]}]
     end
 
     test "compares the count" do
