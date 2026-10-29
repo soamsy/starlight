@@ -44,6 +44,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   @perfected_possibility 9
 
   def run(team_id, ctx) do
+    RunMemory.put_bosses_only(ctx, false)
     team = Teams.get_team(team_id)
     plan_data = team |> fetch_plan_data() |> Resolver.with_mode_override(team_override(ctx, :mode_override)) |> Resolver.with_search_override(team_override(ctx, :search_override))
     grace_picks = team[:grace_picks] || []
