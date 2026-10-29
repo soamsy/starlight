@@ -1,7 +1,6 @@
 import "phoenix_html"
 import { Socket } from "phoenix"
 import { LiveSocket } from "phoenix_live_view"
-import TemplateEditor from "./template_editor"
 
 function postToServerLog(level, args) {
   const message = args
@@ -804,6 +803,76 @@ const GiftDropZone = {
   }
 }
 
+const REGION_DRAG_TYPE = "application/x-starlight-region"
+
+const RegionDragDrop = {
+  mounted() {
+    const target = (e) => eventElement(e)?.closest("[data-region-drop]")
+    const clearHighlight = () => {
+      this.el.querySelectorAll("[data-region-drop]").forEach(el => el.classList.remove("bg-primary/15"))
+    }
+    this.el.addEventListener("dragstart", (e) => {
+      const handle = eventElement(e)?.closest("[data-region-drag]")
+      if (!handle) return
+      e.dataTransfer.setData(REGION_DRAG_TYPE, handle.dataset.regionDrag)
+      e.dataTransfer.effectAllowed = "copy"
+    })
+    this.el.addEventListener("dragover", (e) => {
+      const zone = target(e)
+      if (!zone || !e.dataTransfer.types.includes(REGION_DRAG_TYPE)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = "copy"
+      clearHighlight()
+      zone.classList.add("bg-primary/15")
+    })
+    this.el.addEventListener("dragleave", (e) => {
+      if (!this.el.contains(e.relatedTarget)) clearHighlight()
+    })
+    this.el.addEventListener("dragend", clearHighlight)
+    this.el.addEventListener("drop", (e) => {
+      const zone = target(e)
+      if (!zone || !e.dataTransfer.types.includes(REGION_DRAG_TYPE)) return
+      e.preventDefault()
+      clearHighlight()
+      const from = e.dataTransfer.getData(REGION_DRAG_TYPE)
+      if (from !== zone.dataset.regionDrop) this.pushEvent("copy_region", { from, to: zone.dataset.regionDrop })
+    })
+  }
+}
+
+const ChannelBand = {
+  mounted() {
+    const max = Number(this.el.dataset.max)
+    this.pending = null
+    this.timer = null
+    const flush = () => {
+      clearTimeout(this.timer)
+      this.timer = null
+      if (this.pending === null) return
+      const input = this.el.closest("form").elements[this.el.dataset.inputName]
+      input.value = String(this.pending)
+      this.pending = null
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+    const setFromPointer = (e) => {
+      const rect = this.el.getBoundingClientRect()
+      const frac = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1)
+      const value = Math.round(frac * max)
+      this.el.querySelector("[data-band-marker]").style.left = `${(value / max) * 100}%`
+      this.pending = value
+      if (!this.timer) this.timer = setTimeout(flush, 80)
+    }
+    this.el.addEventListener("pointerdown", (e) => {
+      this.el.setPointerCapture(e.pointerId)
+      setFromPointer(e)
+    })
+    this.el.addEventListener("pointermove", (e) => {
+      if (this.el.hasPointerCapture(e.pointerId)) setFromPointer(e)
+    })
+    this.el.addEventListener("pointerup", flush)
+  }
+}
+
 const LocalStorageForm = {
   mounted() {
     this.key = this.el.dataset.storageKey
@@ -922,13 +991,50 @@ const RightClickEvent = {
   }
 }
 
+const TemplateTransfer = {
+  mounted() {
+    const input = this.el.querySelector("[data-file]")
+
+    this.handleEvent("download_template", ({ name, data }) => {
+      const a = document.createElement("a")
+      a.href = `data:image/png;base64,${data}`
+      a.download = `${name}.png`
+      a.click()
+    })
+
+    this.handleEvent("copy_template", async ({ data }) => {
+      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) })])
+    })
+
+    this.el.querySelector("[data-upload]").addEventListener("click", () => input.click())
+
+    input.addEventListener("change", () => {
+      const file = input.files[0]
+      input.value = ""
+      if (!file) return
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement("canvas")
+        canvas.width = img.naturalWidth
+        canvas.height = img.naturalHeight
+        canvas.getContext("2d").drawImage(img, 0, 0)
+        URL.revokeObjectURL(url)
+        this.pushEvent("upload_template", { name: this.el.dataset.name, data: canvas.toDataURL("image/png").split(",")[1] })
+      }
+      img.src = url
+    })
+  }
+}
+
 // --- LiveSocket setup ---
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateEditor, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, GiftPopup, FocusSelect }
 })
 
 liveSocket.connect()

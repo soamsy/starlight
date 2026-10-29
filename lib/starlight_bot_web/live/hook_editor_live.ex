@@ -22,8 +22,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
      |> assign(:editing_name, nil)
      |> assign(:test_result, nil)
      |> assign(:template_b64, nil)
-     |> assign(:saved_params, nil)
-     |> assign(:duplicate_name, "")}
+     |> assign(:saved_params, nil)}
   end
 
   @impl true
@@ -164,6 +163,26 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
      |> push_event("clear_scan_selection", %{})}
   end
 
+  @region_prefixes ~w(region click scan)
+
+  @impl true
+  def handle_event("copy_region", %{"from" => from, "to" => to}, socket)
+      when from in @region_prefixes and to in @region_prefixes do
+    params = form_params(socket)
+
+    case parse_region_values(params["#{from}_x"], params["#{from}_y"], params["#{from}_w"], params["#{from}_h"]) do
+      nil ->
+        {:noreply, socket}
+
+      region ->
+        {:noreply,
+         socket
+         |> assign(region_assign_key(to), region)
+         |> assign(:form, build_form(Map.merge(params, region_form_params(to, region))))
+         |> push_event(region_set_event(to), region)}
+    end
+  end
+
   @impl true
   def handle_event("set_canvas_mode", %{"mode" => mode}, socket) do
     canvas_mode =
@@ -217,6 +236,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
            |> assign(:editing_name, saved_name)
            |> assign(:saved_params, Map.put(params, "name", saved_name))
            |> assign(:test_result, nil)
+           |> assign_template(safe_to_atom(saved_name))
            |> put_flash(:info, "Hook renamed to '#{saved_name}'.")}
         else
           {:error, msg} -> {:noreply, flash_error(socket, "Rename failed: #{inspect(msg)}")}
@@ -250,6 +270,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
                   base
                   |> assign(:editing_name, name)
                   |> assign(:saved_params, Map.put(params, "name", name))
+                  |> assign_template(safe_to_atom(name))
                 end
 
               {:noreply, socket}
@@ -265,123 +286,33 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
 
   @impl true
   def handle_event("test_hook", %{"name" => name}, socket) do
-    case Capture.grab_frame() do
-      {:ok, frame} ->
-        hook_atom = safe_to_atom(name)
-
-        case hook_atom && Matcher.find_with_score(frame, hook_atom) do
-          nil ->
-            {:noreply, put_flash(socket, :error, "Invalid hook name.")}
-
-          {:ok, score, match_result} ->
-            result = case match_result do
-              {:ok, {x, y, w, h}} -> %{found: true, score: Float.round(score, 4), rect: %{x: x, y: y, w: w, h: h}, mode: :full}
-              :not_found -> %{found: false, score: Float.round(score, 4), rect: nil, mode: :full}
-            end
-
-            socket =
-              socket
-              |> assign(:test_result, result)
-              |> assign(:screenshot_mat, frame.mat)
-              |> assign_template(hook_atom)
-
-            socket = case encode_jpeg(frame.mat) do
-              {:ok, jpeg} ->
-                s = push_event(socket, "load_screenshot", %{data: Base.encode64(jpeg)})
-                if result.found,
-                  do: push_event(s, "show_match", %{rect: result.rect, score: score}),
-                  else: s
-              _ -> socket
-            end
-
-            {:noreply, socket}
-
-          {:error, :hook_not_found} ->
-            {:noreply,
-             put_flash(socket, :error, "Hook '#{name}' not in registry — save it first.")}
-        end
-
-      {:error, :no_window} ->
-        {:noreply, put_flash(socket, :error, "Game window not found.")}
-
-      {:error, reason} ->
-        {:noreply, flash_error(socket, "Screenshot failed: #{inspect(reason)}")}
-    end
-  end
-
-  @impl true
-  def handle_event("test_hook_region", %{"name" => name}, socket) do
     hook_atom = safe_to_atom(name)
 
     if is_nil(hook_atom) do
       {:noreply, put_flash(socket, :error, "Invalid hook name.")}
     else
-      case HookRegistry.find(hook_atom) do
-        {:error, :not_found} ->
-          {:noreply, put_flash(socket, :error, "Hook '#{name}' not in registry — save it first.")}
+      case Capture.grab_frame() do
+        {:ok, frame} ->
+          case Matcher.find_with_score(frame, hook_atom) do
+            {:ok, score, match_result} ->
+              rect =
+                case match_result do
+                  {:ok, {x, y, w, h}} -> %{x: x, y: y, w: w, h: h}
+                  :not_found -> nil
+                end
 
-        {:ok, %{method: method, region: nil}} when method == :hsv_range ->
-          {:noreply, put_flash(socket, :error, "This hook has no region defined — use full Test instead.")}
+              result = %{name: name, found: rect != nil, score: Float.round(score, 4), rect: rect}
+              {:noreply, socket |> assign(:screenshot_mat, frame.mat) |> show_test_result(result, frame.mat)}
 
-        {:ok, %{method: :grayscale_detector, region: nil}} ->
-          {:noreply, put_flash(socket, :error, "This hook has no region defined — use full Test instead.")}
-
-        {:ok, %{region: nil, scan_region: nil}} ->
-          {:noreply, put_flash(socket, :error, "This hook has no region defined — use full Test instead.")}
-
-        {:ok, hook} ->
-          search_region =
-            if hook.method in [:hsv_range, :grayscale_detector],
-              do: hook.region,
-              else: hook.scan_region || hook.region
-
-          {_rx, _ry, rw, rh} = search_region
-
-          case Capture.grab_region(search_region) do
-            {:error, :no_window} ->
-              {:noreply, put_flash(socket, :error, "Game window not found.")}
-
-            {:error, reason} ->
-              {:noreply, flash_error(socket, "Region capture failed: #{inspect(reason)}")}
-
-            {:ok, mat} ->
-              case Matcher.score_against_mat(mat, hook_atom) do
-                {:error, reason} ->
-                  {:noreply, flash_error(socket, "Match failed: #{inspect(reason)}")}
-
-                {:ok, score, match_result} ->
-                  # Scale match rect from region space (rw×rh) to canvas space (1920×1080)
-                  result_rect = case match_result do
-                    {:ok, {x, y, w, h}} ->
-                      %{x: round(x * 1920 / rw), y: round(y * 1080 / rh),
-                        w: round(w * 1920 / rw), h: round(h * 1080 / rh)}
-                    :not_found -> nil
-                  end
-
-                  result = %{
-                    found: match_result != :not_found,
-                    score: Float.round(score, 4),
-                    rect: result_rect,
-                    mode: :region
-                  }
-
-                  socket =
-                    socket
-                    |> assign(:test_result, result)
-                    |> assign_template(hook_atom)
-
-                  socket = case encode_jpeg(mat) do
-                    {:ok, jpeg} ->
-                      s = push_event(socket, "load_screenshot", %{data: Base.encode64(jpeg)})
-                      if result.found,
-                        do: push_event(s, "show_match", %{rect: result_rect, score: score}),
-                        else: s
-                    _ -> socket
-                  end
-
-                  {:noreply, socket}
-              end
+            {:error, :hook_not_found} ->
+              {:noreply, put_flash(socket, :error, "Hook '#{name}' not in registry — save it first.")}
           end
+
+        {:error, :no_window} ->
+          {:noreply, put_flash(socket, :error, "Game window not found.")}
+
+        {:error, reason} ->
+          {:noreply, flash_error(socket, "Screenshot failed: #{inspect(reason)}")}
       end
     end
   end
@@ -415,6 +346,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
             best = List.first(match_maps)
 
             result = %{
+              name: name,
               found: best != nil,
               score: if(best, do: best.score, else: 0.0),
               rect: best && best.rect,
@@ -422,10 +354,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
               matches: match_maps
             }
 
-            socket =
-              socket
-              |> assign(:test_result, result)
-              |> assign_template(hook_atom)
+            socket = assign(socket, :test_result, result)
 
             socket =
               case encode_jpeg(frame.mat) do
@@ -511,7 +440,8 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
          |> assign(:screenshot_mat, nil)
          |> assign(:screenshot_status, :idle)
          |> assign(:test_result, nil)
-         |> assign(:saved_params, params)}
+         |> assign(:saved_params, params)
+         |> assign_template(safe_to_atom(name))}
     end
   end
 
@@ -551,6 +481,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
      |> assign(:click_region, nil)
      |> assign(:canvas_mode, :detect)
      |> assign(:test_result, nil)
+     |> assign(:template_b64, nil)
      |> push_event("set_canvas_mode", %{mode: "detect"})}
   end
 
@@ -599,28 +530,18 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   @impl true
-  def handle_event("set_duplicate_name", %{"value" => val}, socket) do
-    {:noreply, assign(socket, :duplicate_name, val)}
-  end
-
-  @impl true
   def handle_event("duplicate_hook", %{"source" => source}, socket) do
-    new_name = String.trim(socket.assigns.duplicate_name)
+    new_name = source <> "_copy"
 
-    if new_name == "" do
-      {:noreply, put_flash(socket, :error, "Enter a name for the duplicate.")}
-    else
-      case Hooks.duplicate_hook(source, new_name) do
-        {:ok, _} ->
-          {:noreply,
-           socket
-           |> refresh_hooks()
-           |> assign(:duplicate_name, "")
-           |> put_flash(:info, "Duplicated as '#{new_name}'.")}
+    case Hooks.duplicate_hook(source, new_name) do
+      {:ok, _} ->
+        {:noreply,
+         socket
+         |> refresh_hooks()
+         |> put_flash(:info, "Duplicated as '#{new_name}'.")}
 
-        {:error, reason} ->
-          {:noreply, flash_error(socket, "Duplicate failed: #{inspect(reason)}")}
-      end
+      {:error, reason} ->
+        {:noreply, flash_error(socket, "Duplicate failed: #{inspect(reason)}")}
     end
   end
 
@@ -790,21 +711,13 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   @impl true
-  def handle_event("open_template_editor", %{"name" => name}, socket) do
-    case Hooks.get_hook(name) do
-      nil ->
-        {:noreply, put_flash(socket, :error, "Hook not found.")}
-
-      %{image: nil} ->
-        {:noreply, put_flash(socket, :error, "Hook has no template image — save it first.")}
-
-      %{image: png} ->
-        {:noreply, push_event(socket, "load_template_editor", %{data: Base.encode64(png), name: name})}
-    end
-  end
+  def handle_event("download_template", %{"name" => name}, socket), do: {:noreply, push_template(socket, name, "download_template")}
 
   @impl true
-  def handle_event("save_template_mask", %{"name" => name, "data" => b64}, socket) do
+  def handle_event("copy_template", %{"name" => name}, socket), do: {:noreply, push_template(socket, name, "copy_template")}
+
+  @impl true
+  def handle_event("upload_template", %{"name" => name, "data" => b64}, socket) do
     case Base.decode64(b64) do
       {:ok, png} ->
         case Hooks.update_hook_image(name, png) do
@@ -812,7 +725,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
             {:noreply,
              socket
              |> refresh_hooks()
-             |> assign(:template_b64, nil)
+             |> assign_template(safe_to_atom(name))
              |> put_flash(:info, "Template updated.")}
 
           {:error, reason} ->
@@ -915,11 +828,13 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
 
   defp refresh_hooks(socket) do
     category = socket.assigns.category
+    rows = Hooks.list_hooks()
+    hooks = Enum.filter(rows, &(&1.category == category))
 
     socket
-    |> assign(:hooks, Hooks.list_hooks(category))
-    |> assign(:hook_thumbnails, Hooks.hook_thumbnails(category))
-    |> assign(:category_counts, Hooks.category_counts())
+    |> assign(:hooks, hooks)
+    |> assign(:hook_thumbnails, Hooks.thumbnails_for(hooks))
+    |> assign(:category_counts, Hooks.category_counts(rows))
   end
 
   defp show_category(socket, category) do
@@ -1100,12 +1015,83 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     put_flash(socket, :error, msg)
   end
 
+  defp show_test_result(socket, result, mat) do
+    socket = assign(socket, :test_result, result)
+
+    case encode_jpeg(mat) do
+      {:ok, jpeg} ->
+        socket = push_event(socket, "load_screenshot", %{data: Base.encode64(jpeg)})
+
+        if result.found,
+          do: push_event(socket, "show_match", %{rect: result.rect, score: result.score}),
+          else: socket
+
+      _ ->
+        socket
+    end
+  end
+
+  attr :mat, :any, default: nil
+  attr :region, :map, default: nil
+
+  defp after_preview(%{mat: mat, region: %{x: x, y: y, w: w, h: h}} = assigns) when not is_nil(mat) do
+    case encode_jpeg(StarlightBot.Vision.Frame.crop(mat, {x, y, w, h})) do
+      {:ok, jpeg} ->
+        assigns = assign(assigns, :src, "data:image/jpeg;base64," <> Base.encode64(jpeg))
+
+        ~H"""
+        <div class="flex-1 min-w-0">
+          <h3 class="font-semibold text-sm mb-1 text-base-content/60">After</h3>
+          <img src={@src} alt="selected region"
+               class="max-w-full max-h-40 object-contain rounded border border-warning"
+               style="image-rendering: pixelated;" />
+        </div>
+        """
+
+      _ ->
+        ~H""
+    end
+  end
+
+  defp after_preview(assigns), do: ~H""
+
+  attr :result, :map, default: nil
+  attr :name, :string, required: true
+
+  defp test_badge(%{result: %{name: name}, name: name} = assigns) do
+    ~H"""
+    <span class="flex items-center gap-1 font-mono text-xs">
+      <span :if={Map.get(@result, :mode) == :all} class={["badge badge-sm", if(@result.found, do: "badge-success", else: "badge-error")]}>
+        <%= length(@result.matches) %> matches
+      </span>
+      <span :if={Map.get(@result, :mode) != :all} class={["badge badge-sm", if(@result.found, do: "badge-success", else: "badge-error")]}>
+        <%= if @result.found, do: "match", else: "no match" %>
+      </span>
+      <span><%= @result.score %></span>
+    </span>
+    """
+  end
+
+  defp test_badge(assigns), do: ~H""
+
+  defp push_template(socket, name, event) do
+    case Hooks.get_hook(name) do
+      %{image: png} when is_binary(png) ->
+        push_event(socket, event, %{name: name, data: Base.encode64(png)})
+
+      _ ->
+        put_flash(socket, :error, "Hook has no template image.")
+    end
+  end
+
+  defp assign_template(socket, nil), do: assign(socket, :template_b64, nil)
+
   defp assign_template(socket, hook_atom) do
     with {:ok, hook} <- HookRegistry.find(hook_atom),
          {:ok, jpeg} <- encode_jpeg(hook.mat) do
       assign(socket, :template_b64, Base.encode64(jpeg))
     else
-      _ -> socket
+      _ -> assign(socket, :template_b64, nil)
     end
   end
 
@@ -1149,6 +1135,14 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     }
   end
 
+  defp region_assign_key("region"), do: :region
+  defp region_assign_key("click"), do: :click_region
+  defp region_assign_key("scan"), do: :scan_region
+
+  defp region_set_event("region"), do: "set_selection"
+  defp region_set_event("click"), do: "set_click_selection"
+  defp region_set_event("scan"), do: "set_scan_selection"
+
   defp push_region_event(socket, nil, _set_event, clear_event), do: push_event(socket, clear_event, %{})
   defp push_region_event(socket, region, set_event, _clear_event), do: push_event(socket, set_event, region)
 
@@ -1178,8 +1172,8 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   def category_label("team"), do: "Team"
   def category_label("team_selected"), do: "Team selected"
 
-  def thumb_src(_name, nil), do: nil
-  def thumb_src(name, version), do: ~p"/hooks/#{name}/thumb.png?#{[v: version]}"
+  def thumb_src(_hook, nil), do: nil
+  def thumb_src(hook, version), do: ~p"/hooks/#{hook.name}/thumb.png?#{[v: version, s: hook.source]}"
 
   @channel_max %{h: 179, s: 255, v: 255}
 
@@ -1280,6 +1274,21 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   def color_swatch_css(_, _, _), do: "transparent"
+
+  def tolerance_gradient_css(h, s, v, tol_h, tol_v) do
+    stops = 8
+    v_hi = min(v + tol_v, 255)
+    v_lo = max(v - tol_v, 0)
+    dim = if v_hi == 0, do: 0.0, else: 1 - v_lo / v_hi
+
+    hues =
+      for i <- 0..stops do
+        hue = round(h - tol_h + 2 * tol_h * i / stops)
+        color_swatch_css(Integer.mod(hue, 180), s, v_hi)
+      end
+
+    "linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,#{Float.round(dim, 3)})), linear-gradient(to right, #{Enum.join(hues, ", ")})"
+  end
 
   def canvas_mode_label(:click), do: "click"
   def canvas_mode_label(:scan), do: "scan"

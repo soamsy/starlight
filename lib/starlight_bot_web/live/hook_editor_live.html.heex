@@ -123,384 +123,6 @@
     <%!-- Right: Hook Form (scrolls internally) --%>
     <div class="flex flex-col gap-3 min-h-0 overflow-y-auto">
 
-      <%!-- Form Card --%>
-      <div class="card bg-base-100 shadow-lg">
-        <div class="card-body p-3">
-          <div class="flex justify-between items-center mb-2">
-            <h2 class="card-title text-base">
-              <%= if @editing_name do %>
-                <span class="font-mono text-primary"><%= @editing_name %></span>
-              <% else %>
-                New Hook
-              <% end %>
-            </h2>
-            <button phx-click="new_hook" class="btn btn-xs btn-ghost">+ New</button>
-          </div>
-
-          <% editing_hook = hook_for(@hooks, @editing_name) %>
-          <div :if={editing_hook} class="mb-2 flex items-center gap-2">
-            <span class={["badge badge-sm", source_badge_class(editing_hook)]}><%= source_label(editing_hook) %></span>
-            <span :if={editing_hook.version} class="text-xs text-base-content/50 font-mono">v<%= editing_hook.version %></span>
-          </div>
-          <fieldset disabled={editing_hook && !Hooks.editable?(editing_hook)} class="contents">
-          <.form for={@form} phx-submit="save_hook" phx-change="validate_hook">
-
-            <div class="flex gap-3 mb-2">
-              <div class="flex-1 min-w-0">
-                <%!-- Name --%>
-                <div class="form-control mb-2">
-                  <label class="label py-0.5">
-                    <span class="label-text text-sm font-medium flex items-center gap-1">
-                      Name
-                      <span :if={field_dirty?(@form, @saved_params, :name)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                    </span>
-                  </label>
-                  <input
-                    type="text"
-                    name="hook[name]"
-                    value={@form[:name].value}
-                    placeholder="e.g. winrate_button"
-                    class={"input input-bordered input-sm #{if @form[:name].errors != [], do: "input-error", else: if(field_dirty?(@form, @saved_params, :name), do: "input-warning")}"}
-                  />
-                  <%= if err = List.first(@form[:name].errors) do %>
-                    <label class="label py-0"><span class="label-text-alt text-error"><%= elem(err, 0) %></span></label>
-                  <% end %>
-                </div>
-
-                <div class="form-control">
-                  <label class="label py-0.5">
-                    <span class="label-text text-sm font-medium flex items-center gap-1">
-                      Category
-                      <span :if={field_dirty?(@form, @saved_params, :category)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                    </span>
-                  </label>
-                  <select name="hook[category]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :category), do: "select-warning"}"}>
-                    <option value="" selected={to_string(@form[:category].value) == ""}>auto (from name)</option>
-                    <%= for category <- StarlightBot.Hooks.categories() do %>
-                      <option value={category} selected={to_string(@form[:category].value) == category}>
-                        <%= category_label(category) %>
-                      </option>
-                    <% end %>
-                  </select>
-                </div>
-
-                <%!-- Method --%>
-                <div class="form-control">
-                  <label class="label py-0.5">
-                    <span class="label-text text-sm font-medium flex items-center gap-1">
-                      Match Method
-                      <span :if={field_dirty?(@form, @saved_params, :match_method)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                    </span>
-                  </label>
-                  <select name="hook[match_method]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :match_method), do: "select-warning"}"}>
-                    <%= for method <- ~w(gray rgb binary_thresh hsv_range grayscale_detector sift sift_saturation) do %>
-                      <option value={method} selected={to_string(@form[:match_method].value) == method}>
-                        <%= method %>
-                      </option>
-                    <% end %>
-                  </select>
-                </div>
-              </div>
-
-              <%!-- Actions --%>
-              <div class="flex flex-row items-start gap-1 shrink-0">
-                <button type="submit" class="btn btn-primary btn-sm">💾 Save</button>
-                <%= if @editing_name do %>
-                  <button type="button" phx-click="test_hook" phx-value-name={@editing_name}
-                          class="btn btn-secondary btn-sm">🔍 Test</button>
-                  <button type="button" phx-click="test_hook_region" phx-value-name={@editing_name}
-                          class="btn btn-accent btn-sm" title="Screenshot only the hook's region (faster)">⚡ Region</button>
-                  <button type="button" phx-click="open_template_editor" phx-value-name={@editing_name}
-                          class="btn btn-warning btn-sm" title="Edit template mask">✏ Template</button>
-                <% end %>
-              </div>
-            </div>
-
-            <%!-- Confidence --%>
-            <input :if={to_string(@form[:match_method].value) == "hsv_range"} type="hidden" name="hook[confidence]" value={@form[:confidence].value} />
-            <div :if={to_string(@form[:match_method].value) != "hsv_range"} class="form-control mb-2">
-              <label class="label py-0.5">
-                <span class="label-text text-sm font-medium flex items-center gap-1">
-                  Confidence
-                  <span :if={field_dirty?(@form, @saved_params, :confidence)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                </span>
-                <span class="label-text-alt font-mono text-primary"><%= :erlang.float_to_binary(@form[:confidence].value, [{:decimals, 2}]) %></span>
-              </label>
-              <input
-                type="range"
-                name="hook[confidence]"
-                value={@form[:confidence].value}
-                min="0" max="1" step="0.01"
-                class={"range range-sm #{if field_dirty?(@form, @saved_params, :confidence), do: "range-warning", else: "range-primary"}"}
-              />
-              <div class="flex justify-between text-xs text-base-content/40 px-1 mt-0.5">
-                <span>0.0</span><span>0.5</span><span>1.0</span>
-              </div>
-              <p class="text-xs text-base-content/40 mt-0.5">For grayscale_detector: how desaturated the region must be — 1.0 requires zero average saturation, 0.0 accepts any.</p>
-            </div>
-
-            <%!-- Region --%>
-            <% region_dirty = Enum.any?([:region_x, :region_y, :region_w, :region_h], &field_dirty?(@form, @saved_params, &1)) %>
-            <% image_will_update = not is_nil(@screenshot_mat) and not is_nil(@region) and not is_nil(@editing_name) %>
-            <div class="mb-2">
-              <label class="label py-0.5">
-                <span class="label-text text-sm font-medium flex items-center gap-1">
-                  Region (1920×1080 space)
-                  <span :if={region_dirty} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                </span>
-                <span :if={image_will_update} class="label-text-alt text-warning text-xs">image will be recropped</span>
-              </label>
-              <div class="grid grid-cols-4 gap-1">
-                <%= for {label, field} <- [{"X", :region_x}, {"Y", :region_y}, {"W", :region_w}, {"H", :region_h}] do %>
-                  <div>
-                    <label class="label py-0"><span class="label-text-alt text-xs"><%= label %></span></label>
-                    <input
-                      type="number"
-                      name={"hook[#{field}]"}
-                      value={@form[field].value}
-                      class={"input input-bordered input-xs w-full font-mono #{if field_dirty?(@form, @saved_params, field), do: "input-warning"}"}
-                    />
-                  </div>
-                <% end %>
-              </div>
-              <p class="text-xs text-base-content/40 mt-0.5">Leave blank to search the full frame</p>
-            </div>
-
-            <%!-- Click Region --%>
-            <% click_dirty = Enum.any?([:click_x, :click_y, :click_w, :click_h], &field_dirty?(@form, @saved_params, &1)) %>
-            <div class="mb-2">
-              <label class="label py-0.5">
-                <span class="label-text text-sm font-medium flex items-center gap-1">
-                  Click Region
-                  <span :if={click_dirty} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                </span>
-              </label>
-              <div class="grid grid-cols-4 gap-1">
-                <%= for {label, field} <- [{"X", :click_x}, {"Y", :click_y}, {"W", :click_w}, {"H", :click_h}] do %>
-                  <div>
-                    <label class="label py-0"><span class="label-text-alt text-xs"><%= label %></span></label>
-                    <input
-                      type="number"
-                      name={"hook[#{field}]"}
-                      value={@form[field].value}
-                      class={"input input-bordered input-xs w-full font-mono #{if field_dirty?(@form, @saved_params, field), do: "input-warning"}"}
-                    />
-                  </div>
-                <% end %>
-              </div>
-              <p class="text-xs text-base-content/40 mt-0.5">Leave blank to click the center of the match result</p>
-            </div>
-
-            <%!-- Scan Region --%>
-            <% scan_dirty = Enum.any?([:scan_x, :scan_y, :scan_w, :scan_h], &field_dirty?(@form, @saved_params, &1)) %>
-            <div class="mb-2">
-              <label class="label py-0.5">
-                <span class="label-text text-sm font-medium flex items-center gap-1">
-                  Scan Region
-                  <span :if={scan_dirty} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                </span>
-              </label>
-              <div class="grid grid-cols-4 gap-1">
-                <%= for {label, field} <- [{"X", :scan_x}, {"Y", :scan_y}, {"W", :scan_w}, {"H", :scan_h}] do %>
-                  <div>
-                    <label class="label py-0"><span class="label-text-alt text-xs"><%= label %></span></label>
-                    <input
-                      type="number"
-                      name={"hook[#{field}]"}
-                      value={@form[field].value}
-                      class={"input input-bordered input-xs w-full font-mono #{if field_dirty?(@form, @saved_params, field), do: "input-warning"}"}
-                    />
-                  </div>
-                <% end %>
-              </div>
-              <p class="text-xs text-base-content/40 mt-0.5">When set, searches this wider area for the template instead of expecting it exactly at Region. Ignored by hsv_range hooks (they always scan Region).</p>
-            </div>
-
-            <%!-- Color (color_detector only) --%>
-            <% range_dirty = Enum.any?([:color_h, :color_s, :color_v, :tol_h, :tol_s, :tol_v], &field_dirty?(@form, @saved_params, &1)) %>
-            <% center_h = form_int(@form, :color_h, 0) %>
-            <% center_s = form_int(@form, :color_s, 0) %>
-            <% center_v = form_int(@form, :color_v, 0) %>
-            <div class="mb-2">
-              <label class="label py-0.5">
-                <span class="label-text text-sm font-medium flex items-center gap-1">
-                  HSV Range
-                  <span :if={range_dirty} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                </span>
-              </label>
-              <div class="flex items-start gap-2">
-                <div
-                  class="w-8 h-8 rounded border border-base-300 shrink-0"
-                  style={"background-color: #{color_swatch_css(center_h, center_s, center_v)}"}
-                ></div>
-                <div class="flex-1 space-y-2">
-                  <%= for {label, channel, color_field, tol_field, max, tol_max} <- [{"H", :h, :color_h, :tol_h, 179, 90}, {"S", :s, :color_s, :tol_s, 255, 255}, {"V", :v, :color_v, :tol_v, 255, 255}] do %>
-                    <% center = form_int(@form, color_field, 0) %>
-                    <% tol = form_int(@form, tol_field, 0) %>
-                    <% track =
-                      case channel do
-                        :h -> channel_gradient(:h, 0, 0)
-                        :s -> channel_gradient(:s, center_h, center_v)
-                        :v -> channel_gradient(:v, center_h, center_s)
-                      end %>
-                    <div>
-                      <div class="flex items-center justify-between text-xs">
-                        <span class="font-medium"><%= label %></span>
-                        <span class="font-mono text-primary"><%= range_label(center, tol, channel) %></span>
-                      </div>
-                      <div class="relative h-3 rounded overflow-hidden border border-base-300" style={"background: #{track}"}>
-                        <div
-                          :for={box <- range_band_boxes(center, tol, channel)}
-                          class="absolute inset-y-0 border-x-2 border-white bg-white/25"
-                          style={box}
-                        ></div>
-                        <div class="absolute inset-y-0 w-0.5 bg-black/70" style={"left: #{Float.round(center / max * 100, 2)}%"}></div>
-                      </div>
-                      <div class="flex items-center gap-2 mt-1">
-                        <input
-                          type="number"
-                          name={"hook[#{color_field}]"}
-                          value={@form[color_field].value}
-                          min="0" max={max}
-                          title={"#{label} center"}
-                          class={"input input-bordered input-xs w-16 font-mono #{if field_dirty?(@form, @saved_params, color_field), do: "input-warning"}"}
-                        />
-                        <span class="text-xs text-base-content/50">±</span>
-                        <input
-                          type="range"
-                          name={"hook[#{tol_field}]"}
-                          value={tol}
-                          min="0" max={tol_max} step="1"
-                          title={"#{label} tolerance"}
-                          class={"range range-xs flex-1 #{if field_dirty?(@form, @saved_params, tol_field), do: "range-warning", else: "range-primary"}"}
-                        />
-                        <span class="text-xs font-mono w-8 text-right"><%= tol %></span>
-                      </div>
-                    </div>
-                  <% end %>
-                </div>
-              </div>
-              <p class="text-xs text-base-content/40 mt-0.5">hsv_range matches pixels inside the shaded band on every channel at once. Sample a center with 🎨 Color mode above, then widen each channel; a tolerance of 0 matches that single value, and hue ±90 matches any hue. White is S near 0 and V near 255 with hue at any.</p>
-            </div>
-
-            <%!-- Min Cluster Size (color_detector only) --%>
-            <div class="form-control mb-2">
-              <label class="label py-0.5">
-                <span class="label-text text-sm font-medium flex items-center gap-1">
-                  Min Cluster Size
-                  <span :if={field_dirty?(@form, @saved_params, :min_cluster_size)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                </span>
-              </label>
-              <% cluster_size = form_int(@form, :min_cluster_size, 0) %>
-              <div class="flex items-center gap-2">
-                <input
-                  type="range"
-                  value={cluster_size}
-                  min="0" max={max(250, cluster_size)} step="1"
-                  oninput="const n = this.form.elements['hook[min_cluster_size]']; n.value = this.value; n.dispatchEvent(new Event('input', {bubbles: true}))"
-                  class={"range range-sm flex-1 #{if field_dirty?(@form, @saved_params, :min_cluster_size), do: "range-warning", else: "range-primary"}"}
-                />
-                <input
-                  type="number"
-                  name="hook[min_cluster_size]"
-                  value={@form[:min_cluster_size].value}
-                  min="0"
-                  class={"input input-bordered input-sm w-24 font-mono #{if field_dirty?(@form, @saved_params, :min_cluster_size), do: "input-warning"}"}
-                />
-              </div>
-              <p class="text-xs text-base-content/40 mt-0.5">hsv_range hooks. Minimum pixel-area of a cluster to count as detected, for a 1920×1080 frame (scaled down for smaller captures).</p>
-            </div>
-
-            <%!-- Mask --%>
-            <div class="form-control mb-2">
-              <label class="label py-0.5 cursor-pointer justify-start gap-2">
-                <input
-                  type="checkbox"
-                  name="hook[mask]"
-                  value="true"
-                  checked={@form[:mask].value == true}
-                  class="checkbox checkbox-sm"
-                />
-                <span class="label-text text-sm font-medium flex items-center gap-1">
-                  Ignore black pixels
-                  <span :if={field_dirty?(@form, @saved_params, :mask)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                </span>
-              </label>
-              <p class="text-xs text-base-content/40 mt-0.5 ml-7">Black areas of the template won't count against the match score — useful for glyph/icon templates with variable backgrounds</p>
-            </div>
-
-            <%!-- Notes --%>
-            <div class="form-control mb-3">
-              <label class="label py-0.5">
-                <span class="label-text text-sm font-medium flex items-center gap-1">
-                  Notes
-                  <span :if={field_dirty?(@form, @saved_params, :notes)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                </span>
-              </label>
-              <textarea
-                name="hook[notes]"
-                rows="2"
-                placeholder="Which screen is this for?"
-                class={"textarea textarea-bordered textarea-sm #{if field_dirty?(@form, @saved_params, :notes), do: "textarea-warning"}"}
-              ><%= @form[:notes].value %></textarea>
-            </div>
-          </.form>
-          </fieldset>
-
-          <%!-- Test Result --%>
-          <%= if @test_result do %>
-            <div class={"alert mt-2 " <> if(@test_result.found, do: "alert-success", else: "alert-warning")}>
-              <div class="w-full">
-                <div class="flex items-center gap-2 mb-0.5">
-                  <%= if @test_result.found do %>
-                    <span class="font-semibold">✓ Match found</span>
-                  <% else %>
-                    <span class="font-semibold">✗ No match</span>
-                  <% end %>
-                  <%= if @test_result.mode == :region do %>
-                    <span class="badge badge-accent badge-sm">⚡ region</span>
-                  <% end %>
-                  <%= if @test_result.mode == :all do %>
-                    <span class="badge badge-warning badge-sm"><%= length(@test_result.matches) %> matches</span>
-                  <% end %>
-                </div>
-                <%= if @test_result.mode == :all and @test_result.matches != [] do %>
-                  <ul class="text-xs font-mono max-h-32 overflow-y-auto mb-1">
-                    <%= for {m, i} <- Enum.with_index(@test_result.matches, 1) do %>
-                      <li>#<%= i %> <strong><%= m.score %></strong> x=<%= m.rect.x %> y=<%= m.rect.y %> w=<%= m.rect.w %> h=<%= m.rect.h %></li>
-                    <% end %>
-                  </ul>
-                <% end %>
-                <p class="text-sm font-mono">Score: <strong><%= @test_result.score %></strong></p>
-                <%= if @test_result.found do %>
-                  <p class="text-xs font-mono">
-                    x=<%= @test_result.rect.x %> y=<%= @test_result.rect.y %>
-                    w=<%= @test_result.rect.w %> h=<%= @test_result.rect.h %>
-                  </p>
-                <% else %>
-                  <p class="text-xs text-base-content/60">Try lowering confidence or checking the hook image</p>
-                <% end %>
-              </div>
-            </div>
-          <% end %>
-        </div>
-      </div>
-
-      <%!-- Template preview (shown after a test run) --%>
-      <%= if @template_b64 do %>
-        <div class="card bg-base-100 shadow-lg">
-          <div class="card-body p-3">
-            <h3 class="font-semibold text-sm mb-1 text-base-content/60">Template</h3>
-            <img
-              src={"data:image/jpeg;base64,#{@template_b64}"}
-              alt="hook template"
-              class="max-w-full max-h-40 object-contain rounded border border-base-300"
-              style="image-rendering: pixelated;"
-            />
-          </div>
-        </div>
-      <% end %>
-
       <%= if @editing_name && hook_for(@hooks, @editing_name) do %>
         <% hook = hook_for(@hooks, @editing_name) %>
         <div class="card bg-base-100 shadow-lg">
@@ -527,36 +149,379 @@
         </div>
       <% end %>
 
-      <%!-- Duplicate / Delete panel (shown when editing) --%>
-      <%= if @editing_name do %>
+      <%!-- Form Card --%>
+      <div class="card bg-base-100 shadow-lg">
+        <div class="card-body p-3">
+          <div class="flex justify-between items-center mb-2">
+            <h2 class="card-title text-base">
+              <%= if @editing_name do %>
+                <span class="font-mono text-primary"><%= @editing_name %></span>
+              <% else %>
+                New Hook
+              <% end %>
+            </h2>
+            <button phx-click="new_hook" class="btn btn-xs btn-ghost">+ New</button>
+          </div>
+
+          <% editing_hook = hook_for(@hooks, @editing_name) %>
+          <div :if={editing_hook} class="mb-2 flex items-center gap-2">
+            <span class={["badge badge-sm", source_badge_class(editing_hook)]}><%= source_label(editing_hook) %></span>
+            <span :if={editing_hook.version} class="text-xs text-base-content/50 font-mono">v<%= editing_hook.version %></span>
+          </div>
+          <fieldset disabled={editing_hook && !Hooks.editable?(editing_hook)} class="contents">
+          <.form for={@form} phx-submit="save_hook" phx-change="validate_hook">
+
+            <div class="flex gap-3 mb-2">
+              <div class="flex-1 min-w-0">
+                <div class="grid grid-cols-2 gap-2 mb-2">
+                <%!-- Name --%>
+                <div class="form-control flex flex-col min-w-0">
+                  <label class="label py-0.5">
+                    <span class="label-text text-sm font-medium flex items-center gap-1">
+                      Name
+                      <span :if={field_dirty?(@form, @saved_params, :name)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    name="hook[name]"
+                    value={@form[:name].value}
+                    placeholder="e.g. winrate_button"
+                    class={"input input-bordered input-sm w-full #{if @form[:name].errors != [], do: "input-error", else: if(field_dirty?(@form, @saved_params, :name), do: "input-warning")}"}
+                  />
+                  <%= if err = List.first(@form[:name].errors) do %>
+                    <label class="label py-0"><span class="label-text-alt text-error"><%= elem(err, 0) %></span></label>
+                  <% end %>
+                </div>
+
+                <div class="form-control flex flex-col min-w-0">
+                  <label class="label py-0.5">
+                    <span class="label-text text-sm font-medium flex items-center gap-1">
+                      Category
+                      <span :if={field_dirty?(@form, @saved_params, :category)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                    </span>
+                  </label>
+                  <select name="hook[category]" class={"select select-bordered select-sm w-full #{if field_dirty?(@form, @saved_params, :category), do: "select-warning"}"}>
+                    <option value="" selected={to_string(@form[:category].value) == ""}>auto (from name)</option>
+                    <%= for category <- StarlightBot.Hooks.categories() do %>
+                      <option value={category} selected={to_string(@form[:category].value) == category}>
+                        <%= category_label(category) %>
+                      </option>
+                    <% end %>
+                  </select>
+                </div>
+                </div>
+
+                <%!-- Method --%>
+                <div class="form-control">
+                  <label class="label py-0.5">
+                    <span class="label-text text-sm font-medium flex items-center gap-1">
+                      Match Method
+                      <span :if={field_dirty?(@form, @saved_params, :match_method)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                    </span>
+                  </label>
+                  <% method_tips = %{
+                    "gray" => "Template match on grayscale. Ignores color; the usual choice for buttons and icons.",
+                    "rgb" => "Template match on all three color channels. Use when color is what tells two elements apart.",
+                    "binary_thresh" => "Thresholds both frame and template to black and white before matching. Good for high-contrast text and glyphs.",
+                    "hsv_range" => "No template. Finds clusters of pixels within the HSV color range, tolerance and minimum cluster size set below. Always searches Region.",
+                    "grayscale_detector" => "No template. Scores how desaturated Region is; Confidence 1.0 requires zero average saturation. Always searches Region.",
+                    "sift" => "Feature matching on grayscale keypoints. Tolerates scale and small shifts; needs a textured template.",
+                    "sift_saturation" => "Feature matching on the saturation channel instead of grayscale. Use when the element differs by color intensity rather than brightness."
+                  } %>
+                  <% selected_method = to_string(@form[:match_method].value) %>
+                  <div class="flex items-center gap-1">
+                    <select name="hook[match_method]" class={"select select-bordered select-sm #{if field_dirty?(@form, @saved_params, :match_method), do: "select-warning"}"}>
+                      <%= for method <- ~w(gray rgb binary_thresh hsv_range grayscale_detector sift sift_saturation) do %>
+                        <option value={method} selected={selected_method == method}>
+                          <%= method %>
+                        </option>
+                      <% end %>
+                    </select>
+                    <span :if={method_tips[selected_method]} class="tooltip tooltip-bottom before:max-w-64 before:whitespace-normal before:text-left" data-tip={method_tips[selected_method]}>
+                      <span class="badge badge-xs badge-ghost cursor-help">?</span>
+                    </span>
+                    <label :if={selected_method not in ["hsv_range", "grayscale_detector"]} class="flex items-center gap-2 cursor-pointer ml-3 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        name="hook[mask]"
+                        value="true"
+                        checked={@form[:mask].value == true}
+                        class="checkbox checkbox-sm"
+                      />
+                      <span class="label-text text-sm font-medium flex items-center gap-1">
+                        Ignore black pixels
+                        <span :if={field_dirty?(@form, @saved_params, :mask)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                        <span class="tooltip tooltip-bottom before:max-w-64 before:whitespace-normal before:text-left" data-tip="Black areas of the template won't count against the match score. Useful for glyph/icon templates with variable backgrounds.">
+                          <span class="badge badge-xs badge-ghost cursor-help">?</span>
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <%!-- Actions --%>
+              <div class="flex flex-row items-start gap-1 shrink-0">
+                <button type="submit" class="btn btn-primary btn-sm">💾 Save</button>
+                <%= if @editing_name do %>
+                  <button type="button" phx-click="test_hook" phx-value-name={@editing_name}
+                          class="btn btn-secondary btn-sm">🔍 Test</button>
+                  <.test_badge result={@test_result} name={@editing_name} />
+                <% end %>
+              </div>
+            </div>
+
+            <%!-- Confidence --%>
+            <input :if={to_string(@form[:match_method].value) == "hsv_range"} type="hidden" name="hook[confidence]" value={@form[:confidence].value} />
+            <div :if={to_string(@form[:match_method].value) != "hsv_range"} class="form-control mb-2">
+              <label class="label py-0.5">
+                <span class="label-text text-sm font-medium flex items-center gap-1">
+                  Confidence
+                  <span :if={field_dirty?(@form, @saved_params, :confidence)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                </span>
+                <input
+                  type="number"
+                  name="hook[confidence]"
+                  value={@form[:confidence].value}
+                  min="0" max="1" step="0.01"
+                  oninput="this.closest('.form-control').querySelector('input[type=range]').value = this.value"
+                  class={"input input-bordered input-xs w-20 font-mono #{if field_dirty?(@form, @saved_params, :confidence), do: "input-warning"}"}
+                />
+              </label>
+              <input
+                type="range"
+                name="hook[confidence]"
+                value={@form[:confidence].value}
+                oninput="this.closest('.form-control').querySelector('input[type=number]').value = this.value"
+                min="0" max="1" step="0.01"
+                class={"range range-sm #{if field_dirty?(@form, @saved_params, :confidence), do: "range-warning", else: "range-primary"}"}
+              />
+            </div>
+
+            <%!-- Regions --%>
+            <% image_will_update = not is_nil(@screenshot_mat) and not is_nil(@region) and not is_nil(@editing_name) %>
+            <% is_hsv = to_string(@form[:match_method].value) == "hsv_range" %>
+            <% no_template = to_string(@form[:match_method].value) in ["hsv_range", "grayscale_detector"] %>
+            <% region_groups = [
+              {"Region", "region", "tooltip-right", "The area the template was captured from, in 1920×1080 space. Also the default search area. Leave blank to search the full frame."},
+              {"Click", "click", "tooltip-bottom", "Where clicks land. Leave blank to click the center of the match result."},
+              {"Scan", "scan", "tooltip-bottom", "When set, searches this wider area for the template instead of expecting it exactly at Region. Ignored by hsv_range and grayscale_detector hooks (they always scan Region)."}
+            ] %>
+            <% region_groups = if no_template, do: Enum.reject(region_groups, fn {_, prefix, _, _} -> prefix == "scan" end), else: region_groups %>
+            <div class="mb-2">
+              <input :for={field <- [:scan_x, :scan_y, :scan_w, :scan_h]} :if={no_template} type="hidden" name={"hook[#{field}]"} value={@form[field].value} />
+              <div id="region-groups" phx-hook="RegionDragDrop" class={"grid gap-3 #{if no_template, do: "grid-cols-2", else: "grid-cols-3"}"}>
+                <%= for {title, prefix, placement, tip} <- region_groups do %>
+                  <% fields = [{"X", :"#{prefix}_x"}, {"Y", :"#{prefix}_y"}, {"W", :"#{prefix}_w"}, {"H", :"#{prefix}_h"}] %>
+                  <% group_dirty = Enum.any?(fields, fn {_, field} -> field_dirty?(@form, @saved_params, field) end) %>
+                  <div data-region-drop={prefix} class="rounded">
+                    <div class="label py-0.5">
+                      <span class="label-text text-sm font-medium flex items-center gap-1">
+                        <span data-region-drag={prefix} draggable="true" class="cursor-grab select-none text-base-content/40 hover:text-base-content" title={"Drag onto another region to copy #{title} into it"}>⠿</span>
+                        <%= title %>
+                        <span class={"tooltip #{placement} before:max-w-64 before:whitespace-normal before:text-left"} data-tip={tip}>
+                          <span class="badge badge-xs badge-ghost cursor-help">?</span>
+                        </span>
+                        <span :if={group_dirty} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                        <button type="button" phx-click={if prefix == "region", do: "clear_region", else: "clear_#{prefix}_region"} class="btn btn-xs btn-ghost px-1 min-h-0 h-4 text-error" title={"Clear #{title}"}>✕</button>
+                      </span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-1">
+                      <%= for {label, field} <- fields do %>
+                        <div>
+                          <label class="label py-0"><span class="label-text-alt text-xs"><%= label %></span></label>
+                          <input
+                            type="number"
+                            name={"hook[#{field}]"}
+                            value={@form[field].value}
+                            class={"input input-bordered input-xs w-full font-mono #{if field_dirty?(@form, @saved_params, field), do: "input-warning"}"}
+                          />
+                        </div>
+                      <% end %>
+                    </div>
+                  </div>
+                <% end %>
+              </div>
+              <span :if={image_will_update} class="text-warning text-xs">image will be recropped</span>
+            </div>
+
+            <input
+              :for={field <- [:color_h, :color_s, :color_v, :tol_h, :tol_s, :tol_v, :min_cluster_size]}
+              :if={not is_hsv}
+              type="hidden"
+              name={"hook[#{field}]"}
+              value={@form[field].value}
+            />
+            <%= if is_hsv do %>
+            <%!-- Color (color_detector only) --%>
+            <% range_dirty = Enum.any?([:color_h, :color_s, :color_v, :tol_h, :tol_s, :tol_v], &field_dirty?(@form, @saved_params, &1)) %>
+            <% center_h = form_int(@form, :color_h, 0) %>
+            <% center_s = form_int(@form, :color_s, 0) %>
+            <% center_v = form_int(@form, :color_v, 0) %>
+            <div class="mb-2">
+              <label class="label py-0.5">
+                <span class="label-text text-sm font-medium flex items-center gap-1">
+                  HSV Range
+                  <span :if={range_dirty} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                </span>
+              </label>
+              <div class="flex items-start gap-2">
+                <div class="flex-1 space-y-2">
+                  <%= for {label, channel, color_field, tol_field, max, tol_max} <- [{"H", :h, :color_h, :tol_h, 179, 90}, {"S", :s, :color_s, :tol_s, 255, 255}, {"V", :v, :color_v, :tol_v, 255, 255}] do %>
+                    <% center = form_int(@form, color_field, 0) %>
+                    <% tol = form_int(@form, tol_field, 0) %>
+                    <% track =
+                      case channel do
+                        :h -> channel_gradient(:h, 0, 0)
+                        :s -> channel_gradient(:s, center_h, center_v)
+                        :v -> channel_gradient(:v, center_h, center_s)
+                      end %>
+                    <div>
+                      <div class="flex items-center gap-2 text-xs">
+                        <span class="font-medium w-3"><%= label %></span>
+                        <input
+                          type="number"
+                          name={"hook[#{color_field}]"}
+                          value={@form[color_field].value}
+                          min="0" max={max}
+                          title={"#{label} center"}
+                          class={"input input-bordered input-xs w-16 font-mono #{if field_dirty?(@form, @saved_params, color_field), do: "input-warning"}"}
+                        />
+                        <span class="text-base-content/50">±</span>
+                        <input
+                          type="range"
+                          name={"hook[#{tol_field}]"}
+                          value={tol}
+                          min="0" max={tol_max} step="1"
+                          title={"#{label} tolerance"}
+                          class={"range range-xs flex-1 #{if field_dirty?(@form, @saved_params, tol_field), do: "range-warning", else: "range-primary"}"}
+                        />
+                        <span class="font-mono w-8 text-right"><%= tol %></span>
+                      </div>
+                      <div class="flex items-center gap-2 mt-1">
+                        <div
+                          id={"band-#{color_field}"}
+                          phx-hook="ChannelBand"
+                          data-input-name={"hook[#{color_field}]"}
+                          data-max={max}
+                          class="relative h-3 flex-1 rounded overflow-hidden border border-base-300 cursor-crosshair touch-none"
+                          style={"background: #{track}"}
+                        >
+                          <div
+                            :for={box <- range_band_boxes(center, tol, channel)}
+                            class="absolute inset-y-0 border-x-2 border-white bg-white/25"
+                            style={box}
+                          ></div>
+                          <div data-band-marker class="absolute inset-y-0 w-0.5 bg-black/70 pointer-events-none" style={"left: #{Float.round(center / max * 100, 2)}%"}></div>
+                        </div>
+                        <span class="text-xs font-mono text-primary"><%= range_label(center, tol, channel) %></span>
+                      </div>
+                    </div>
+                  <% end %>
+                  <% cluster_size = form_int(@form, :min_cluster_size, 0) %>
+                  <% cluster_side = :math.sqrt(cluster_size) %>
+                  <div>
+                    <div class="flex items-center gap-2 text-xs">
+                      <span class="font-medium flex items-center gap-1">
+                        Min Cluster Size
+                        <span :if={field_dirty?(@form, @saved_params, :min_cluster_size)} class="text-warning leading-none" title="unsaved change">●</span>
+                      </span>
+                      <input
+                        type="number"
+                        name="hook[min_cluster_size]"
+                        value={@form[:min_cluster_size].value}
+                        min="0"
+                        title="Min cluster size"
+                        class={"input input-bordered input-xs w-16 font-mono #{if field_dirty?(@form, @saved_params, :min_cluster_size), do: "input-warning"}"}
+                      />
+                    </div>
+                    <input
+                      type="range"
+                      value={cluster_size}
+                      min="0" max={max(250, cluster_size)} step="1"
+                      title="Min cluster size"
+                      oninput="const n = this.form.elements['hook[min_cluster_size]']; n.value = this.value; n.dispatchEvent(new Event('input', {bubbles: true}))"
+                      class={"range range-xs w-full mt-1 #{if field_dirty?(@form, @saved_params, :min_cluster_size), do: "range-warning", else: "range-primary"}"}
+                    />
+                  </div>
+                </div>
+                <div class="flex flex-col items-center gap-1 shrink-0">
+                  <div
+                    class="w-[80px] h-[80px] rounded border border-base-300 flex items-center justify-center overflow-hidden"
+                    style={"background: #{tolerance_gradient_css(center_h, center_s, center_v, form_int(@form, :tol_h, 0), form_int(@form, :tol_v, 0))}"}
+                  >
+                    <div
+                      class="transition-all duration-500 ease-out"
+                      style={"width: #{Float.round(min(cluster_side, 80.0), 2)}px; height: #{Float.round(min(cluster_side, 80.0), 2)}px; background-color: #{color_swatch_css(center_h, center_s, center_v)}; box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 0 0 2px rgba(255,255,255,0.6)"}
+                    ></div>
+                  </div>
+                  <div class="text-xs font-mono text-base-content/50 whitespace-nowrap"><%= round(cluster_side) %>×<%= round(cluster_side) %> px</div>
+                </div>
+              </div>
+            </div>
+
+            <% end %>
+
+            <%!-- Mask --%>
+            <input :if={no_template and @form[:mask].value == true} type="hidden" name="hook[mask]" value="true" />
+
+            <%!-- Notes --%>
+            <div class="form-control mb-3 flex-row items-start gap-2">
+              <label class="label py-0.5 shrink-0">
+                <span class="label-text text-sm font-medium flex items-center gap-1">
+                  Notes
+                  <span :if={field_dirty?(@form, @saved_params, :notes)} class="text-warning text-xs leading-none" title="unsaved change">●</span>
+                </span>
+              </label>
+              <textarea
+                name="hook[notes]"
+                rows="1"
+                placeholder="Which screen is this for?"
+                class={"textarea textarea-bordered textarea-sm flex-1 min-w-0 min-h-0 #{if field_dirty?(@form, @saved_params, :notes), do: "textarea-warning"}"}
+              ><%= @form[:notes].value %></textarea>
+            </div>
+          </.form>
+          </fieldset>
+
+        </div>
+      </div>
+
+      <%!-- Template preview --%>
+      <%= if @template_b64 do %>
         <div class="card bg-base-100 shadow-lg">
           <div class="card-body p-3">
-            <h3 class="font-semibold text-sm mb-2">Duplicate / Delete</h3>
-            <div class="flex gap-2 items-end">
-              <div class="form-control flex-1">
-                <label class="label py-0"><span class="label-text-alt text-xs">New name</span></label>
-                <input
-                  type="text"
-                  value={@duplicate_name}
-                  phx-keyup="set_duplicate_name"
-                  placeholder={"#{@editing_name}_copy"}
-                  class="input input-bordered input-xs"
+            <div class="flex gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                  <h3 class="font-semibold text-sm text-base-content/60">
+                    <%= if @region && @screenshot_mat, do: "Before", else: "Template" %>
+                  </h3>
+                  <div id="template-transfer" phx-hook="TemplateTransfer" data-name={@editing_name} class="ml-auto flex items-center gap-1">
+                    <button type="button" phx-click="download_template" phx-value-name={@editing_name}
+                            class="btn btn-ghost btn-xs btn-square" title="Download template">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" /></svg>
+                    </button>
+                    <button type="button" phx-click="copy_template" phx-value-name={@editing_name}
+                            class="btn btn-ghost btn-xs btn-square" title="Copy template to clipboard">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2" /><path stroke-linecap="round" stroke-linejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>
+                    </button>
+                    <button type="button" data-upload disabled={!deletable?(hook_for(@hooks, @editing_name))}
+                            class="btn btn-ghost btn-xs btn-square"
+                            title={if deletable?(hook_for(@hooks, @editing_name)), do: "Upload template image", else: "Shipped hook is read-only; override it first"}>
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M17 8l-5-5-5 5M12 3v12" /></svg>
+                    </button>
+                    <input type="file" accept="image/*" class="hidden" data-file />
+                  </div>
+                </div>
+                <img
+                  src={"data:image/jpeg;base64,#{@template_b64}"}
+                  alt="hook template"
+                  class="max-w-full max-h-40 object-contain rounded border border-base-300"
+                  style="image-rendering: pixelated;"
                 />
               </div>
-              <button
-                phx-click="duplicate_hook"
-                phx-value-source={@editing_name}
-                class="btn btn-ghost btn-xs"
-              >Duplicate</button>
-            </div>
-            <div class="mt-2">
-              <button
-                phx-click="delete_hook"
-                phx-value-name={@editing_name}
-                data-confirm={"Delete hook '#{@editing_name}'?"}
-                disabled={!deletable?(hook_for(@hooks, @editing_name))}
-                class="btn btn-error btn-outline btn-xs w-full"
-              >🗑 Delete '<%= @editing_name %>'</button>
+              <.after_preview mat={@screenshot_mat} region={@region} />
             </div>
           </div>
         </div>
@@ -606,9 +571,9 @@
             <%= for hook <- filtered_hooks(@hooks, @hooks_filter) |> sorted_hooks(@sort_by, @sort_dir) do %>
               <tr class={[@editing_name == hook.name && "bg-primary/10 border-l-2 border-primary", !Hooks.editable?(hook) && "opacity-60"]}>
                 <td>
-                  <% thumb = thumb_src(hook.name, Map.get(@hook_thumbnails, hook.name)) %>
+                  <% thumb = thumb_src(hook, Map.get(@hook_thumbnails, hook.name)) %>
                   <%= if thumb do %>
-                    <img src={thumb} alt=""
+                    <img src={thumb} alt="" loading="lazy"
                          class="w-8 h-8 object-contain rounded border border-base-300 bg-base-300" />
                   <% else %>
                     <span class="text-base-content/20">—</span>
@@ -640,10 +605,7 @@
                             class="btn btn-xs btn-ghost">Edit</button>
                     <button phx-click="test_hook" phx-value-name={hook.name}
                             class="btn btn-xs btn-outline btn-secondary">Test</button>
-                    <%= if hook.region_x do %>
-                      <button phx-click="test_hook_region" phx-value-name={hook.name}
-                              class="btn btn-xs btn-outline btn-accent" title="Region-only capture">⚡</button>
-                    <% end %>
+                    <.test_badge result={@test_result} name={hook.name} />
                     <button phx-click="test_hook_all" phx-value-name={hook.name}
                             class="btn btn-xs btn-outline btn-warning"
                             title="Find every match on the screenshot already loaded">All</button>
@@ -656,8 +618,11 @@
                             phx-value-scan-w={hook.scan_w} phx-value-scan-h={hook.scan_h}
                             class="btn btn-xs btn-outline btn-primary"
                             title="Load this hook's region, click region, and scan region into the canvas + form">Regions</button>
+                    <button phx-click="duplicate_hook" phx-value-source={hook.name}
+                            class="btn btn-xs btn-ghost">Dup</button>
                     <button phx-click="delete_hook" phx-value-name={hook.name}
                             data-confirm={"Delete '#{hook.name}'?"}
+                            disabled={!deletable?(hook)}
                             class="btn btn-xs btn-ghost text-error">Del</button>
                   </div>
                 </td>
@@ -750,63 +715,3 @@
   </div>
 
 </div>
-
-<%!-- Template editor modal — always in DOM, opened via JS showModal() --%>
-<dialog id="template-editor-modal" class="modal">
-  <div class="modal-box w-auto max-w-2xl">
-    <h3 class="font-bold text-lg mb-3">Edit Template</h3>
-
-    <%!-- Tool controls --%>
-    <div class="flex items-center gap-2 mb-3 flex-wrap">
-      <div class="flex gap-1">
-        <button data-te="paint"  class="btn btn-sm btn-primary">✏ Paint</button>
-        <button data-te="erase"  class="btn btn-sm btn-outline">◻ Erase</button>
-        <button data-te="square" class="btn btn-sm btn-outline">▣ Square</button>
-        <button data-te="line"   class="btn btn-sm btn-outline">╱ Line</button>
-        <button data-te="undo"   class="btn btn-sm btn-ghost" disabled>↩ Undo</button>
-        <button data-te="reset"  class="btn btn-sm btn-ghost">↺ Reset</button>
-      </div>
-      <label class="flex items-center gap-1 text-sm select-none">
-        Brush
-        <input data-te="brush" type="range" min="2" max="30" value="10" class="range range-xs w-20" />
-        <span data-te="brush-label" class="font-mono w-5 text-right">10</span>px
-      </label>
-      <button data-te="threshold-toggle" class="btn btn-sm btn-outline">👁 Threshold</button>
-      <label data-te="threshold-row" style="display:none;" class="flex items-center gap-1 text-sm select-none">
-        <input data-te="threshold-val" type="range" min="0" max="255" value="127" class="range range-xs w-20" />
-        <span data-te="threshold-label" class="font-mono w-5 text-right">127</span>
-      </label>
-      <div class="flex gap-1">
-        <button data-te="grayscale" class="btn btn-sm btn-ghost" title="Convert to grayscale">◑ Grayscale</button>
-        <button data-te="brightness-down" class="btn btn-sm btn-ghost" title="Decrease brightness">🔅 −</button>
-        <button data-te="brightness-up" class="btn btn-sm btn-ghost" title="Increase brightness">🔆 +</button>
-      </div>
-    </div>
-
-    <%!-- Canvas --%>
-    <div data-te="workspace" class="flex justify-center bg-base-300 rounded p-3 overflow-auto" style="max-height: 60vh; user-select: none;">
-      <canvas
-        id="template-editor-canvas"
-        phx-hook="TemplateEditor"
-        class="cursor-crosshair"
-        style="image-rendering: pixelated;"
-      ></canvas>
-    </div>
-
-    <div class="modal-action justify-between">
-      <div class="flex gap-2">
-        <%!-- Label wraps hidden file input so clicking the button triggers the OS picker --%>
-        <label data-te="upload" class="btn btn-sm btn-ghost cursor-pointer" title="Replace template with an uploaded image (clears undo history)">
-          📁 Upload
-          <input data-te="file-input" type="file" accept="image/*" class="hidden" />
-        </label>
-        <button data-te="copy" class="btn btn-sm btn-ghost" title="Copy current canvas to clipboard">📋 Copy</button>
-      </div>
-      <div class="flex gap-2 items-center">
-        <button data-te="save" class="btn btn-primary">💾 Save template</button>
-        <form method="dialog"><button class="btn">Cancel</button></form>
-      </div>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>

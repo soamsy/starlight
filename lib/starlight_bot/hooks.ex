@@ -54,19 +54,32 @@ defmodule StarlightBot.Hooks do
     category |> list_hooks() |> Enum.map(& &1.name)
   end
 
-  def category_counts do
-    counts = effective_rows() |> Enum.frequencies_by(& &1.category)
+  def category_counts, do: category_counts(effective_rows())
+
+  def category_counts(rows) do
+    counts = Enum.frequencies_by(rows, & &1.category)
     Map.new(@categories, &{&1, Map.get(counts, &1, 0)})
   end
 
   @doc "Map of hook name => updated_at for hooks that have a template image, used to version thumbnail URLs."
-  def hook_thumbnails(category) when category in @categories do
-    for row <- list_hooks(category), File.exists?(image_path(row)), into: %{}, do: {row.name, row.updated_at}
+  def hook_thumbnails(category) when category in @categories, do: thumbnails_for(list_hooks(category))
+
+  def thumbnails_for(rows) do
+    for row <- rows, File.exists?(image_path(row)), into: %{}, do: {row.name, row.updated_at}
   end
 
   @doc "Template image binary for a hook, or nil if the hook or image is missing."
   def get_hook_image(name) when is_binary(name) do
     with path when is_binary(path) <- image_path(name),
+         {:ok, png} <- File.read(path) do
+      png
+    else
+      _ -> nil
+    end
+  end
+
+  def get_hook_image(name, source) when is_binary(name) do
+    with path when is_binary(path) <- image_path(name, source),
          {:ok, png} <- File.read(path) do
       png
     else

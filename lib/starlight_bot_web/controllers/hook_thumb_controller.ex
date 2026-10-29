@@ -3,8 +3,16 @@ defmodule StarlightBotWeb.HookThumbController do
 
   alias StarlightBot.Hooks
 
-  def show(conn, %{"name" => name}) do
-    case Hooks.get_hook_image(name) do
+  @sources %{"base" => :base, "override" => :override, "user" => :user}
+
+  def show(conn, %{"name" => name} = params) do
+    image =
+      case Map.fetch(@sources, params["s"]) do
+        {:ok, source} -> Hooks.get_hook_image(name, source)
+        :error -> Hooks.get_hook_image(name)
+      end
+
+    case image do
       nil ->
         send_resp(conn, 404, "")
 
