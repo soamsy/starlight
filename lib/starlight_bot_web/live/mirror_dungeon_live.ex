@@ -3,7 +3,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1]
   alias StarlightBot.Automation.{EnkephalinCharger, RunMemory}
   alias StarlightBot.Navigation.{Navigator, RunSplits, ScreenTimes}
-  alias StarlightBot.{RunHistory, RunnerForms, Teams}
+  alias StarlightBot.{EgoGifts, GiftPlans, Plans, RunHistory, RunnerForms, Teams}
   alias StarlightBot.PackPlans.Resolver
   alias StarlightBotWeb.Live.LuxcavationLive
 
@@ -29,6 +29,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:pause_requested, nav.pause_requested)
      |> assign(:other_running?, nav.run_kind == :luxcavation)
      |> assign(:run_memory, nav.run_memory)
+     |> assign(:gifts_by_name, Map.new(EgoGifts.list_gifts(), &{&1.name, &1}))
+     |> assign_milestones()
      |> assign_clock(nav.run_clock)
      |> assign(:run_splits, nav.run_splits)
      |> assign(:screen_times, nav.screen_times)
@@ -231,6 +233,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:pause_requested, nav.pause_requested)
      |> assign(:other_running?, nav.run_kind == :luxcavation)
      |> assign(:run_memory, nav.run_memory)
+     |> assign_milestones()
      |> assign_clock(nav.run_clock)
      |> assign(:run_splits, nav.run_splits)
      |> assign(:screen_times, nav.screen_times)}
@@ -480,6 +483,30 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
         Map.get(run_memory || %{}, :failed_runs, []),
         Map.get(run_memory || %{}, :picked_packs, %{})
       )
+
+  defp assign_milestones(socket) do
+    assign(socket, :milestones, milestone_statuses(socket.assigns.run_memory, socket.assigns.gifts_by_name))
+  end
+
+  defp milestone_statuses(run_memory, gifts_by_name) do
+    with %{id: team_id} <- Map.get(run_memory, :team),
+         %{gift_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
+         %{data: %{"milestones" => milestones} = data} <- Plans.get(:gift_plans, id) do
+      env = %{
+        plan: data,
+        floor: current_floor(run_memory),
+        gifts: gifts_by_name,
+        inventory: ego_gifts(run_memory),
+        skill_replaces: Map.get(run_memory, :skill_replaces, %{})
+      }
+
+      Enum.map(milestones, fn milestone ->
+        %{name: milestone["name"], reached?: data |> GiftPlans.progress(milestone["id"], env) |> GiftPlans.reached?()}
+      end)
+    else
+      _ -> []
+    end
+  end
 
   def ego_gifts(run_memory), do: Map.get(run_memory, :ego_gifts, %{})
 

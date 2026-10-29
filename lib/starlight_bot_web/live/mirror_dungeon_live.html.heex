@@ -72,6 +72,21 @@
         <% end %>
       </div>
 
+      <%= if @milestones != [] do %>
+        <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-1 shrink-0">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
+            Gift plan milestones (<%= Enum.count(@milestones, & &1.reached?) %>/<%= length(@milestones) %>)
+          </span>
+          <div class="flex flex-wrap gap-1">
+            <%= for milestone <- @milestones do %>
+              <span class={"badge badge-sm " <> if(milestone.reached?, do: "badge-success", else: "badge-outline")}>
+                <%= if milestone.reached?, do: "✓ " %><%= milestone.name %>
+              </span>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+
       <form
         id="mirror-dungeon-runner-form"
         phx-submit="run"
