@@ -13,7 +13,7 @@ defmodule StarlightBot.PlanTemplatesTest do
     {:ok, second} = PlanTemplates.create(:pack_plans, %{"b" => 2})
     {:ok, _} = PlanTemplates.create(:gift_plans, %{})
 
-    assert PlanTemplates.list(:pack_plans) == [%{id: first, name: "New template", count: 0}, %{id: second, name: "New template 2", count: 0}]
+    assert PlanTemplates.list(:pack_plans) == [%{id: first, name: "New template", count: 0, icons: []}, %{id: second, name: "New template 2", count: 0, icons: []}]
     assert PlanTemplates.get(second).data == %{"b" => 2}
     assert length(PlanTemplates.list(:gift_plans)) == 1
   end

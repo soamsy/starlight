@@ -35,3 +35,7 @@ select.select {
   padding-inline-end: 1.25rem;
   background-position: calc(100% - 12px) calc(1px + 50%), calc(100% - 8.1px) calc(1px + 50%);
 }
+
+.sinner-icon {
+  filter: drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000);
+}

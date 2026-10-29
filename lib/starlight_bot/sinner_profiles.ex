@@ -11,6 +11,8 @@ defmodule StarlightBot.SinnerProfiles do
 
   def sinners, do: @sinners
 
+  def icon(sinner) when sinner in @sinners, do: "/images/sinners/#{sinner}.webp"
+
   def placeholder_png, do: @placeholder_png
 
   def label(sinner) when is_binary(sinner), do: sinner |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)

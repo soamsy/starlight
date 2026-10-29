@@ -1,12 +1,19 @@
 defmodule StarlightBot.PlanTemplates do
   import Ecto.Query
-  alias StarlightBot.{PlanCounts, Repo}
+  alias StarlightBot.{PlanCounts, PlanIcons, Repo}
 
   @kinds ~w(gift_plans battle_plans pack_plans)a
 
   def list(kind) when kind in @kinds do
     Repo.all(from t in "plan_templates", where: t.kind == ^Atom.to_string(kind), order_by: [asc: t.name], select: %{id: t.id, name: t.name, data: t.data})
-    |> Enum.map(fn %{data: json} = row -> %{id: row.id, name: row.name, count: PlanCounts.count(kind, json && Jason.decode!(json))} end)
+    |> then(fn rows ->
+      context = PlanIcons.context(kind)
+
+      Enum.map(rows, fn %{data: json} = row ->
+        data = json && Jason.decode!(json)
+        %{id: row.id, name: row.name, count: PlanCounts.count(kind, data), icons: PlanIcons.icons(kind, data || %{}, context)}
+      end)
+    end)
   rescue
     _ -> []
   end

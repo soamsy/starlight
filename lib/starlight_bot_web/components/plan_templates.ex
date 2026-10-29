@@ -47,6 +47,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
                 <span phx-dblclick="template_edit" phx-value-id={template.id} title="Double-click to rename"
                       class="min-w-0 truncate font-mono text-xs cursor-text select-none"><%= template.name %></span>
                 <span class="badge badge-xs badge-ghost font-mono shrink-0"><%= template.count %></span>
+                <img :for={src <- template.icons} src={src} class={["h-5 w-5 shrink-0 object-contain", String.starts_with?(src, "/images/sinners/") && "sinner-icon"]} />
               </div>
               <button type="button" phx-click="template_load" phx-value-id={template.id} class="btn btn-xs btn-outline btn-warning"
                       title={"Replace this team's #{@label} with this template"}
