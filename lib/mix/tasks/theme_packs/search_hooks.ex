@@ -19,6 +19,7 @@ defmodule Mix.Tasks.ThemePacks.SearchHooks do
   @impl Mix.Task
   def run(_args) do
     Mix.Task.run("app.start")
+    StarlightBot.Data.require_authoring!()
 
     case Hooks.get_hook(@browser_hook) do
       %{scan_x: nil, region_x: x, region_y: y, region_w: w, region_h: h} when is_integer(x) ->

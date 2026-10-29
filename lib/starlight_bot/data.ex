@@ -8,6 +8,12 @@ defmodule StarlightBot.Data do
   def paths, do: resolved()
   def base_writable?, do: authoring?()
 
+  def require_authoring! do
+    unless authoring?() do
+      raise "this task edits the shipped databases and needs authoring mode (currently #{mode()}); see the settings file at #{config_file()}"
+    end
+  end
+
   def user_hooks_dir, do: resolved().user_hooks_dir
   def base_hooks_dir, do: resolved().base_hooks_dir
 

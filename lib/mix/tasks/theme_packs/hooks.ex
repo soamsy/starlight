@@ -24,6 +24,7 @@ defmodule Mix.Tasks.ThemePacks.Hooks do
   @impl Mix.Task
   def run(_args) do
     Mix.Task.run("app.start")
+    StarlightBot.Data.require_authoring!()
 
     themes =
       Repo.all(

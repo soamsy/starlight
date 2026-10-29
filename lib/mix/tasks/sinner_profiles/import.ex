@@ -1,10 +1,9 @@
 defmodule Mix.Tasks.SinnerProfiles.Import do
   @shortdoc "Import identities from gll-fun as sinner profiles with placeholder locator hooks"
   @moduledoc """
-  Upserts one `sinner_profiles` row per gll-fun identity, keyed by `game_id`.
-  Existing profiles only get `name_en` refreshed; their `name` and
-  `locator_hook` are kept, and a locator hook is only created when none is set.
-  Existing hooks are never modified.
+  Add-only: inserts a `sinner_profiles` row, with a placeholder locator hook, for each
+  gll-fun identity whose `game_id` isn't already present. Existing profiles and hooks
+  are never modified, and no identity images are downloaded.
 
       mix sinner_profiles.import
   """
@@ -25,6 +24,7 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
   @impl Mix.Task
   def run(_args) do
     Mix.Task.run("app.start")
+    StarlightBot.Data.require_authoring!()
 
     api_key =
       case GllFun.fetch_api_key() do
@@ -39,14 +39,14 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
 
     counts =
       Repo.checkout(fn ->
-        Enum.reduce(identities, %{inserted: 0, updated: 0, hooks: 0}, fn identity, acc ->
+        Enum.reduce(identities, %{inserted: 0, skipped: 0, hooks: 0}, fn identity, acc ->
           import_identity(identity, acc)
         end)
       end)
 
     Mix.shell().info(
       "#{length(identities)} identities: #{counts.inserted} new profile(s), " <>
-        "#{counts.updated} refreshed, #{counts.hooks} placeholder hook(s) created"
+        "#{counts.skipped} already present and left untouched, #{counts.hooks} placeholder hook(s) created"
     )
   end
 
@@ -94,50 +94,29 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
   end
 
   defp import_identity(identity, acc) do
-    existing =
-      Repo.one(
-        from p in "sinner_profiles",
-          where: p.game_id == ^identity.game_id,
-          select: %{id: p.id, locator_hook: p.locator_hook}
-      )
+    exists? = Repo.exists?(from p in "sinner_profiles", where: p.game_id == ^identity.game_id)
 
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    if exists? do
+      %{acc | skipped: acc.skipped + 1}
+    else
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      name = unique_profile_name(display_name(identity), identity.game_id)
+      {hook, created?} = ensure_hook(identity, name)
 
-    case existing do
-      %{id: id, locator_hook: locator_hook} ->
-        {hook, created?} =
-          if locator_hook, do: {locator_hook, false}, else: ensure_hook(identity, display_name(identity))
+      Repo.insert_all("sinner_profiles", [
+        %{
+          name: name,
+          sinner: identity.sinner,
+          game_id: identity.game_id,
+          name_en: identity.name_en,
+          released_on: identity.released_on,
+          locator_hook: hook,
+          inserted_at: now,
+          updated_at: now
+        }
+      ])
 
-        Repo.update_all(
-          from(p in "sinner_profiles", where: p.id == ^id),
-          set: [
-            name_en: identity.name_en,
-            released_on: identity.released_on,
-            locator_hook: hook,
-            updated_at: now
-          ]
-        )
-
-        %{acc | updated: acc.updated + 1, hooks: acc.hooks + if(created?, do: 1, else: 0)}
-
-      nil ->
-        name = unique_profile_name(display_name(identity), identity.game_id)
-        {hook, created?} = ensure_hook(identity, name)
-
-        Repo.insert_all("sinner_profiles", [
-          %{
-            name: name,
-            sinner: identity.sinner,
-            game_id: identity.game_id,
-            name_en: identity.name_en,
-            released_on: identity.released_on,
-            locator_hook: hook,
-            inserted_at: now,
-            updated_at: now
-          }
-        ])
-
-        %{acc | inserted: acc.inserted + 1, hooks: acc.hooks + if(created?, do: 1, else: 0)}
+      %{acc | inserted: acc.inserted + 1, hooks: acc.hooks + if(created?, do: 1, else: 0)}
     end
   end
 

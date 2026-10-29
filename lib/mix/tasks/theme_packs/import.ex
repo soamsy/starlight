@@ -1,6 +1,9 @@
 defmodule Mix.Tasks.ThemePacks.Import do
-  @shortdoc "Import Mirror Dungeon theme pack data/images from gll-fun"
+  @shortdoc "Add new Mirror Dungeon theme packs from gll-fun"
   @moduledoc """
+  Add-only: theme packs already in `theme_packs` are skipped entirely, and only new
+  packs get their poster image downloaded and their gift links inserted.
+
       mix theme_packs.import
   """
 
@@ -18,6 +21,7 @@ defmodule Mix.Tasks.ThemePacks.Import do
   @impl Mix.Task
   def run(_args) do
     Mix.Task.run("app.start")
+    StarlightBot.Data.require_authoring!()
 
     File.mkdir_p!(@theme_images_dir)
 
@@ -30,18 +34,23 @@ defmodule Mix.Tasks.ThemePacks.Import do
   defp do_import(api_key) do
     {:ok, raw_themes} = GllFun.rest("themes", api_key)
 
-    parsed = Enum.map(raw_themes, &parse_theme/1)
+    %{rows: rows} = Ecto.Adapters.SQL.query!(Repo, "SELECT id FROM theme_packs", [])
+    existing = MapSet.new(rows, &hd/1)
+    parsed = raw_themes |> Enum.map(&parse_theme/1) |> Enum.reject(&MapSet.member?(existing, &1.id))
     Enum.each(parsed, &ensure_theme_image/1)
 
     gift_links =
       Repo.checkout(fn ->
         Enum.reduce(parsed, 0, fn theme, acc ->
-          upsert_theme_pack(theme)
-          acc + replace_theme_pack_gifts(theme.id, theme.gift_ids)
+          insert_theme_pack(theme)
+          acc + add_theme_pack_gifts(theme.id, theme.gift_ids)
         end)
       end)
 
-    Mix.shell().info("Imported #{length(parsed)} theme pack(s), #{gift_links} gift link(s)")
+    Mix.shell().info(
+      "Added #{length(parsed)} new theme pack(s) and #{gift_links} gift link(s), " <>
+        "left #{MapSet.size(existing)} existing pack(s) untouched"
+    )
   end
 
   defp parse_theme(raw) do
@@ -114,31 +123,28 @@ defmodule Mix.Tasks.ThemePacks.Import do
     end
   end
 
-  defp upsert_theme_pack(theme) do
+  defp insert_theme_pack(theme) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     col_names = Enum.map(@theme_columns, &Atom.to_string/1)
     values = Enum.map(@theme_columns, &Map.fetch!(theme, &1)) ++ [now, now]
     placeholders = Enum.map_join(@theme_columns, ", ", fn _ -> "?" end)
-    update_set = col_names -- ["id"] |> Enum.map_join(", ", fn c -> "#{c} = excluded.#{c}" end)
 
     Ecto.Adapters.SQL.query!(
       Repo,
       """
       INSERT INTO theme_packs (#{Enum.join(col_names, ", ")}, inserted_at, updated_at)
       VALUES (#{placeholders}, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET #{update_set}, updated_at = excluded.updated_at
+      ON CONFLICT(id) DO NOTHING
       """,
       values
     )
   end
 
-  defp replace_theme_pack_gifts(theme_id, gift_ids) do
-    Ecto.Adapters.SQL.query!(Repo, "DELETE FROM theme_pack_gifts WHERE theme_pack_id = ?", [theme_id])
-
+  defp add_theme_pack_gifts(theme_id, gift_ids) do
     Enum.each(gift_ids, fn gift_id ->
       Ecto.Adapters.SQL.query!(
         Repo,
-        "INSERT INTO theme_pack_gifts (theme_pack_id, gift_id) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO theme_pack_gifts (theme_pack_id, gift_id) VALUES (?, ?)",
         [theme_id, gift_id]
       )
     end)
