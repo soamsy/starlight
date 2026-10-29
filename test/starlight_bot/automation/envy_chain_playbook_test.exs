@@ -20,8 +20,8 @@ defmodule StarlightBot.Automation.EnvyChainPlaybookTest do
         "skill" => %{"pick" => "last", "start" => 1, "end" => 1},
         "rest" => %{
           "type" => "target",
-          "who" => "chosen",
-          "chosen" => %{"join" => "and", "conditions" => [%{"kind" => "has", "values" => ["envy"]}, %{"kind" => "not_using", "values" => ["envy"]}]},
+          "who" => "everyone",
+          "where" => %{"join" => "and", "conditions" => [%{"kind" => "has", "values" => ["envy"]}, %{"kind" => "not_using", "values" => ["envy"]}]},
           "enemy" => %{"pick" => "last", "n" => 1, "step" => "left"},
           "row" => "priority",
           "priority" => %{"order" => ["envy", "s3", "s2", "s1"]},
@@ -29,15 +29,15 @@ defmodule StarlightBot.Automation.EnvyChainPlaybookTest do
           "skill" => %{"pick" => "all"},
           "rest" => %{
             "type" => "dodge",
-            "who" => "chosen",
-            "chosen" => %{"join" => "and", "conditions" => [%{"kind" => "has_no", "values" => ["envy"]}, %{"kind" => "top"}]},
+            "who" => "everyone",
+            "where" => %{"join" => "and", "conditions" => [%{"kind" => "has_no", "values" => ["envy"]}, %{"kind" => "top"}]},
             "enemy" => %{"pick" => "continue"},
             "sinners" => [],
             "skill" => %{"pick" => "all"},
             "rest" => %{
               "type" => "dodge",
-              "who" => "chosen",
-              "chosen" => %{"join" => "and", "conditions" => [%{"kind" => "has_no", "values" => ["envy"]}]},
+              "who" => "everyone",
+              "where" => %{"join" => "and", "conditions" => [%{"kind" => "has_no", "values" => ["envy"]}]},
               "enemy" => %{"pick" => "none"},
               "sinners" => [],
               "skill" => %{"pick" => "all"}

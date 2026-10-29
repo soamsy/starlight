@@ -110,23 +110,33 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [_, _, block] = actions(socket, playbook_id)
     assert Enum.at(block["then"], 0)["skill"] == %{"pick" => "first", "start" => 1, "end" => 1}
 
-    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "chosen", "pick" => "first"})
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "everyone", "pick" => "all"})
+    socket = event(socket, "add_where", %{"action" => ego["id"]})
     [_, _, block] = actions(socket, playbook_id)
-    assert Map.take(Enum.at(block["then"], 0), ["who", "chosen", "skill"]) == %{"who" => "chosen", "chosen" => %{"join" => "and", "conditions" => [%{"kind" => "top"}]}, "skill" => %{"pick" => "all"}}
+    assert Map.take(Enum.at(block["then"], 0), ["who", "where", "skill"]) == %{"who" => "everyone", "where" => %{"join" => "and", "conditions" => [%{"kind" => "top"}]}, "skill" => %{"pick" => "all"}}
     refute Map.has_key?(Enum.at(block["then"], 0), "slots")
 
-    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "chosen", "pick" => "all", "chosen_join" => "or", "chosen_c" => %{"0" => %{"kind" => "using", "values" => ["pride"]}, "1" => %{"kind" => "bottom"}}})
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "everyone", "pick" => "all", "where_join" => "or", "where_c" => %{"0" => %{"kind" => "using", "values" => ["pride"]}, "1" => %{"kind" => "bottom"}}})
     [_, _, block] = actions(socket, playbook_id)
-    assert Enum.at(block["then"], 0)["chosen"] == %{"join" => "or", "conditions" => [%{"kind" => "using", "values" => ["pride"]}, %{"kind" => "bottom"}]}
+    assert Enum.at(block["then"], 0)["where"] == %{"join" => "or", "conditions" => [%{"kind" => "using", "values" => ["pride"]}, %{"kind" => "bottom"}]}
 
     socket = event(socket, "add_chosen", %{"action" => ego["id"]})
     [_, _, block] = actions(socket, playbook_id)
-    assert length(Enum.at(block["then"], 0)["chosen"]["conditions"]) == 3
+    assert length(Enum.at(block["then"], 0)["where"]["conditions"]) == 3
 
     socket = event(socket, "remove_chosen", %{"action" => ego["id"], "index" => "0"})
     [_, _, block] = actions(socket, playbook_id)
-    assert Enum.map(Enum.at(block["then"], 0)["chosen"]["conditions"], & &1["kind"]) == ["bottom", "top"]
+    assert Enum.map(Enum.at(block["then"], 0)["where"]["conditions"], & &1["kind"]) == ["bottom", "top"]
 
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "before", "pick" => "all", "sinners" => ["faust", "ryoshu"]})
+    [_, _, block] = actions(socket, playbook_id)
+    assert Enum.map(Enum.at(block["then"], 0)["where"]["conditions"], & &1["kind"]) == ["bottom", "top"]
+
+    socket = event(socket, "remove_where", %{"action" => ego["id"]})
+    [_, _, block] = actions(socket, playbook_id)
+    refute Map.has_key?(Enum.at(block["then"], 0), "where")
+
+    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "everyone", "pick" => "all"})
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "only", "pick" => "all"})
 
     socket = event(socket, "remove_sinner", %{"action" => ego["id"], "sinner" => "faust"})
@@ -302,7 +312,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [_, _, target] = actions(socket, playbook_id)
     assert target["enemy"]["ignore"] == [%{"side" => "top", "n" => 1}]
 
-    socket = event(socket, "update_action", Map.merge(base, %{"automate_rest" => "true"}))
+    socket = event(socket, "add_rest", %{"action" => target["id"], "path" => ""})
     [_, _, target] = actions(socket, playbook_id)
     assert target["rest"]["enemy"] == %{"pick" => "continue"}
     assert render(socket) =~ ~s(name="rest[enemy_pick]")
@@ -321,7 +331,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [_, _, target] = actions(socket, playbook_id)
 
     base = %{"action" => target["id"], "pick" => "first", "enemy_pick" => "last", "enemy_n" => "2"}
-    socket = event(socket, "update_action", Map.merge(base, %{"automate_rest" => "true"}))
+    socket = event(socket, "add_rest", %{"action" => target["id"], "path" => ""})
     socket = event(socket, "update_action", Map.merge(base, %{"rest" => %{"kind" => "dodge", "pick" => "all", "enemy_pick" => "continue"}}))
     [_, _, target] = actions(socket, playbook_id)
     assert target["rest"]["type"] == "dodge"
@@ -341,7 +351,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [_, _, target] = actions(socket, playbook_id)
 
     base = %{"action" => target["id"], "pick" => "first", "enemy_pick" => "first"}
-    socket = event(socket, "update_action", Map.merge(base, %{"kind" => "nothing", "automate_rest" => "true"}))
+    socket = event(socket, "update_action", Map.merge(base, %{"kind" => "nothing"}))
+    socket = event(socket, "add_rest", %{"action" => target["id"], "path" => ""})
     [_, _, target] = actions(socket, playbook_id)
     assert target["type"] == "nothing"
     refute Map.has_key?(target, "enemy")
@@ -432,24 +443,24 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [chain_action] = actions(socket, chain["id"])
     assert hd(chain_action["pins"])["priority"] == %{"order" => ["pride", "s2"]}
 
-    pin_params = %{"pick" => "all", "kind" => "priority", "priority_order" => ["wrath", "s2"], "automate_rest" => "true"}
+    pin_params = %{"pick" => "all", "kind" => "priority", "priority_order" => ["wrath", "s2"]}
     socket = event(socket, "update_action", %{"action" => chain_action["id"], "pins" => %{"0" => pin_params}})
+    socket = event(socket, "add_rest", %{"action" => chain_action["id"], "path" => "pins[0]"})
     [chain_action] = actions(socket, chain["id"])
     [pin] = chain_action["pins"]
     assert pin["priority"] == %{"order" => ["wrath", "s2"]}
     assert %{"type" => "target", "row" => "priority", "who" => "everyone", "skill" => %{"pick" => "all"}} = pin["rest"]
     assert render(socket) =~ ~s(name="pins[0][rest][kind]")
 
-    rest_params = %{"kind" => "dodge", "pick" => "last", "slot_from" => "1", "slot_to" => "2", "who" => "everyone", "automate_rest" => "true"}
+    rest_params = %{"kind" => "dodge", "pick" => "last", "slot_from" => "1", "slot_to" => "2", "who" => "everyone"}
+    socket = event(socket, "add_rest", %{"action" => chain_action["id"], "path" => "pins[0][rest]"})
     socket = event(socket, "update_action", %{"action" => chain_action["id"], "pins" => %{"0" => Map.put(pin_params, "rest", rest_params)}})
     [chain_action] = actions(socket, chain["id"])
     assert %{"type" => "dodge", "skill" => %{"pick" => "last", "start" => 1, "end" => 2}, "rest" => %{"type" => "target"}} = hd(chain_action["pins"])["rest"]
     assert render(socket) =~ ~s(name="pins[0][rest][rest][kind]")
-    assert render(socket) =~ ~s(name="pins[0][rest][automate_rest]")
-    refute render(socket) =~ ~s(name="pins[0][rest][rest][automate_rest]")
+    assert render(socket) =~ ~s(phx-value-path="pins[0][rest][rest]")
 
-    pin_params = Map.put(pin_params, "automate_rest", "false")
-    socket = event(socket, "update_action", %{"action" => chain_action["id"], "pins" => %{"0" => pin_params}})
+    socket = event(socket, "remove_rest", %{"action" => chain_action["id"], "path" => "pins[0]"})
     [chain_action] = actions(socket, chain["id"])
     refute Map.has_key?(hd(chain_action["pins"]), "rest")
 

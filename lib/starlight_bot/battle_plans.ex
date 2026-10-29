@@ -153,7 +153,7 @@ defmodule StarlightBot.BattlePlans do
     holder |> Map.put("row", if(row == "top", do: "top", else: "bottom")) |> Map.delete("priority")
   end
 
-  @row_keys ~w(type who sinners slots chosen skill row priority grade corrode enemy)
+  @row_keys ~w(type who sinners slots where skill row priority grade corrode enemy skip_bottom_target)
 
   def put_rest(holder, "true"), do: Map.put_new(holder, "rest", new_rest())
   def put_rest(holder, "false"), do: Map.delete(holder, "rest")
@@ -427,16 +427,20 @@ defmodule StarlightBot.BattlePlans do
 
   def chip_values, do: @tiers ++ @sins
 
-  def parse_chosen_filter(%{"chosen_c" => conditions} = params) when is_map(conditions) do
-    parsed =
-      conditions
-      |> Enum.sort_by(fn {index, _} -> parse_count(index) || 0 end)
-      |> Enum.map(fn {_index, condition} -> parse_chosen_condition(condition) end)
+  def parse_chosen_filter(params) do
+    case params["where_c"] do
+      conditions when is_map(conditions) ->
+        parsed =
+          conditions
+          |> Enum.sort_by(fn {index, _} -> parse_count(index) || 0 end)
+          |> Enum.map(fn {_index, condition} -> parse_chosen_condition(condition) end)
 
-    %{"join" => if(params["chosen_join"] == "or", do: "or", else: "and"), "conditions" => parsed}
+        %{"join" => if(params["where_join"] == "or", do: "or", else: "and"), "conditions" => parsed}
+
+      _ ->
+        new_chosen_filter()
+    end
   end
-
-  def parse_chosen_filter(_params), do: new_chosen_filter()
 
   defp parse_chosen_condition(%{"kind" => kind} = condition) when kind in @chosen_value_kinds,
     do: %{"kind" => kind, "values" => condition["values"] |> List.wrap() |> Enum.filter(&(&1 in @tiers ++ @sins)) |> Enum.uniq()}
@@ -636,7 +640,7 @@ defmodule StarlightBot.BattlePlans do
   def new_action(type) when type in ~w(win_rate damage_rate commit retry), do: %{"id" => GiftPlans.new_id("ac"), "type" => type}
 
   def new_action("dodge"),
-    do: %{"id" => GiftPlans.new_id("ac"), "type" => "dodge", "who" => "everyone", "sinners" => [], "skill" => first_slot(), "enemy" => %{"pick" => "none"}}
+    do: %{"id" => GiftPlans.new_id("ac"), "type" => "dodge", "who" => "everyone", "sinners" => [], "skill" => first_slot(), "enemy" => %{"pick" => "none"}, "skip_bottom_target" => true}
 
   def new_action("ego") do
     %{
@@ -685,6 +689,7 @@ defmodule StarlightBot.BattlePlans do
     |> Map.drop(~w(grade corrode row priority))
     |> Map.put("type", "dodge")
     |> Map.put_new("enemy", %{"pick" => "none"})
+    |> Map.put_new("skip_bottom_target", true)
   end
 
   def convert_action(action, "ego") do

@@ -2,7 +2,7 @@ defmodule StarlightBot.Automation.SlotPlan do
   alias StarlightBot.BattlePlans
 
   def needs_classified?(holder),
-    do: Enum.any?(BattlePlans.holders(holder), &(&1["who"] in ~w(slots chosen) or &1["row"] == "priority"))
+    do: Enum.any?(BattlePlans.holders(holder), &(&1["who"] in ~w(slots) or &1["row"] == "priority" or is_map(&1["where"])))
 
   def plan(holder, env) do
     {assigned, assign_notes} = assign(holder, env)
@@ -22,17 +22,33 @@ defmodule StarlightBot.Automation.SlotPlan do
           {enemy, continued?} = resolve_enemy(holder["enemy"], previous)
           start = if continued?, do: offset, else: 0
           holder = Map.put(holder, "enemy", enemy)
+          untargeted = untargeted_columns(holder, taken, env)
 
-          steps =
-            taken
-            |> Enum.with_index(start)
-            |> Enum.map(fn {column, index} -> step(holder, enemy, column, index, env) end)
+          {steps, next} =
+            Enum.map_reduce(taken, start, fn column, index ->
+              if column in untargeted,
+                do: {step(holder, %{"pick" => "none"}, column, index, env), index},
+                else: {step(holder, enemy, column, index, env), index + 1}
+            end)
 
-          {steps, {start + length(taken), enemy}}
+          {steps, {next, enemy}}
       end)
 
     {steps, Enum.flat_map(steps, & &1.notes)}
   end
+
+  defp untargeted_columns(%{"type" => "dodge", "enemy" => %{"pick" => pick}} = holder, taken, env) do
+    if pick != "none" and Map.get(holder, "skip_bottom_target", true) do
+      case env.bottom_columns.() do
+        {:ok, bottom_columns} -> Enum.filter(taken, &(&1 in bottom_columns))
+        :skip -> []
+      end
+    else
+      []
+    end
+  end
+
+  defp untargeted_columns(_holder, _taken, _env), do: []
 
   def describe(%{action: "nothing", column: column}), do: "plan: slot #{column + 1} left alone"
   def describe(%{action: "dodge", column: column, enemy: enemy}), do: "plan: slot #{column + 1} dodge#{enemy_text(enemy)}"
@@ -85,6 +101,8 @@ defmodule StarlightBot.Automation.SlotPlan do
   defp take(%{"skill" => skill} = holder, available, env) do
     case select(holder, env) do
       {:ok, groups, notes} ->
+        {groups, notes} = narrow(groups, holder["where"], notes, env)
+
         pooled =
           groups
           |> Enum.flat_map(fn {columns, _who} -> Enum.filter(columns, &(&1 in available)) end)
@@ -94,6 +112,29 @@ defmodule StarlightBot.Automation.SlotPlan do
         pick(pooled, skill, name, notes)
 
       {:skip, notes} ->
+        {[], notes}
+    end
+  end
+
+  defp narrow(groups, nil, notes, _env), do: {groups, notes}
+
+  defp narrow(groups, filter, notes, env) do
+    case env.bottom_columns.() do
+      {:ok, bottom_columns} ->
+        allowed = BattlePlans.chosen_columns(filter, bottom_columns, length(env.columns), env.classified)
+        label = BattlePlans.chosen_filter_label(filter)
+
+        narrowed =
+          Enum.flat_map(groups, fn {columns, who} ->
+            case Enum.filter(columns, &(&1 in allowed)) do
+              [] -> []
+              kept -> [{kept, Map.update!(who, :name, &if(&1 == "everyone", do: label, else: "#{&1} (#{label})"))}]
+            end
+          end)
+
+        {narrowed, notes ++ ["bottom skill chosen in slot(s) [#{slots_text(bottom_columns, " ")}]"]}
+
+      :skip ->
         {[], notes}
     end
   end
@@ -114,20 +155,6 @@ defmodule StarlightBot.Automation.SlotPlan do
     label = BattlePlans.slot_filter_label(filter)
 
     if columns == [], do: {:skip, ["no #{label}, skipping"]}, else: {:ok, [{columns, %{name: label}}], []}
-  end
-
-  defp select(%{"who" => "chosen", "chosen" => filter}, env) do
-    case env.bottom_columns.() do
-      {:ok, bottom_columns} ->
-        columns = BattlePlans.chosen_columns(filter, bottom_columns, length(env.columns), env.classified)
-        label = BattlePlans.chosen_filter_label(filter)
-        notes = ["bottom skill chosen in slot(s) [#{slots_text(bottom_columns, " ")}]"]
-
-        if columns == [], do: {:skip, notes ++ ["no #{label}, skipping"]}, else: {:ok, [{columns, %{name: label}}], notes}
-
-      :skip ->
-        {:skip, []}
-    end
   end
 
   defp select(holder, env) do

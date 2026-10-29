@@ -427,7 +427,7 @@ defmodule StarlightBot.BattlePlansTest do
     end
 
     test "parse_chosen_filter reads indexed conditions and drops unknown chips" do
-      params = %{"chosen_join" => "or", "chosen_c" => %{"1" => %{"kind" => "bottom"}, "0" => %{"kind" => "not_using", "values" => ["envy", "bogus", "envy", "s3"]}}}
+      params = %{"where_join" => "or", "where_c" => %{"1" => %{"kind" => "bottom"}, "0" => %{"kind" => "not_using", "values" => ["envy", "bogus", "envy", "s3"]}}}
       assert BattlePlans.parse_chosen_filter(params) == %{"join" => "or", "conditions" => [%{"kind" => "not_using", "values" => ["envy", "s3"]}, %{"kind" => "bottom"}]}
       assert BattlePlans.parse_chosen_filter(%{}) == BattlePlans.new_chosen_filter()
     end
