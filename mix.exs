@@ -50,6 +50,7 @@ defmodule StarlightBot.MixProject do
     [
       "db.setup": ["ecto.create", "ecto.migrate"],
       "db.migrate": ["ecto.migrate"],
+      "db.checkpoint": ["cmd scripts/db-checkpoint"],
       "test.hardware": ["test --include kde"],
       "ego_gifts.setup": ["ego_gifts.import"],
       "theme_packs.setup": ["theme_packs.import", "theme_packs.hooks"],

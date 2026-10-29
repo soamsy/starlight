@@ -65,7 +65,7 @@ defmodule StarlightBot.Data do
   def repo_config(:runs, config), do: config |> put_database(:runs) |> ensure_ready()
 
   def repo_config(:base, config) do
-    config = config |> put_database(:base) |> Keyword.put(:journal_mode, :delete)
+    config = put_database(config, :base)
     if base_writable?(), do: config, else: Keyword.put(config, :mode, :readonly)
   end
 

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+cd "$(dirname "$0")/.."
+
+for db in priv/data/base.db priv/data/user_seed.db; do
+  mode=$(sqlite3 "$db" "PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;" | tail -n 1)
+  result=$(sqlite3 "$db" "PRAGMA busy_timeout=5000; PRAGMA wal_checkpoint(TRUNCATE);" | tail -n 1)
+  if [ "$mode" != "wal" ] || [ "${result%%|*}" != "0" ]; then
+    echo "db-checkpoint: $db not fully checkpointed (journal_mode=$mode, checkpoint=$result)" >&2
+    exit 1
+  fi
+done
