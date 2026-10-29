@@ -24,6 +24,13 @@ defmodule StarlightBot.Navigation.Screens.DungeonGraph do
     end
   end
 
+  screen :dungeon_graph_danger_zone_skip, identity: :dungeon_graph_danger_zone_skip, refines: :dungeon_graph do
+    transition to: :dungeon_graph_danger_zone_skipped do
+      confirm(:dungeon_graph_danger_zone_skip)
+    end
+  end
+
+  screen :dungeon_graph_danger_zone_skipped, identity: nil, catch_all: true
   screen :dungeon_graph_superposition_entered, identity: nil, catch_all: true
   screen :dungeon_graph_node, identity: nil, catch_all: true
 end
