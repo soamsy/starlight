@@ -89,37 +89,37 @@ defmodule StarlightBot.PackPlans.ResolverTest do
       banned = pack("thm_banned", [], [1, 2, 3])
       fine = pack("thm_fine", [], [1, 2, 3])
       hunt = pack("thm_hunt", [], [1, 2, 3])
-      chance = pack("thm_chance", [], [1, 2, 3])
+      favorite = pack("thm_favorite", [], [1, 2, 3])
 
       plan = %{
         "packs" => %{
           "thm_banned" => %{"hard" => %{"priority" => "banned"}},
           "thm_hunt" => %{"hard" => %{"priority" => "hunt"}},
-          "thm_chance" => %{"hard" => %{"priority" => "hunt", "chance" => true}}
+          "thm_favorite" => %{"hard" => %{"priority" => "hunt", "favorite" => true}}
         },
-        "hunt_order" => %{"hard" => ["thm_chance", "thm_hunt"]}
+        "hunt_order" => %{"hard" => ["thm_favorite", "thm_hunt"]}
       }
 
-      all_packs = [banned, fine, hunt, chance]
+      all_packs = [banned, fine, hunt, favorite]
       %{all_packs: all_packs, plan: plan}
     end
 
-    test "the highest hunt pack in hunt order wins, chance or not", %{all_packs: all_packs, plan: plan} do
-      [_banned, _fine, hunt, chance] = all_packs
-      assert Resolver.choose([hunt, chance], all_packs, plan, "hard", 1, 3) == {:pick, "thm_chance"}
+    test "the highest hunt pack in hunt order wins, favorite or not", %{all_packs: all_packs, plan: plan} do
+      [_banned, _fine, hunt, favorite] = all_packs
+      assert Resolver.choose([hunt, favorite], all_packs, plan, "hard", 1, 3) == {:pick, "thm_favorite"}
 
-      reordered = put_in(plan, ["hunt_order", "hard"], ["thm_hunt", "thm_chance"])
-      assert Resolver.choose([chance, hunt], all_packs, reordered, "hard", 1, 3) == {:pick, "thm_hunt"}
+      reordered = put_in(plan, ["hunt_order", "hard"], ["thm_hunt", "thm_favorite"])
+      assert Resolver.choose([favorite, hunt], all_packs, reordered, "hard", 1, 3) == {:pick, "thm_hunt"}
     end
 
-    test "chance packs alone never hold out for a refresh", %{all_packs: all_packs, plan: plan} do
-      [_banned, fine, _hunt, _chance] = all_packs
-      chance_only = update_in(plan, ["packs"], &Map.delete(&1, "thm_hunt"))
-      assert Resolver.choose([fine], all_packs, chance_only, "hard", 1, 3) == {:pick, "thm_fine"}
+    test "a lone favorite still holds out for a refresh", %{all_packs: all_packs, plan: plan} do
+      [_banned, fine, _hunt, _favorite] = all_packs
+      favorite_only = update_in(plan, ["packs"], &Map.delete(&1, "thm_hunt"))
+      assert Resolver.choose([fine], all_packs, favorite_only, "hard", 1, 3) == :refresh
     end
 
     test "hunt is picked over fine", %{all_packs: all_packs, plan: plan} do
-      [_banned, fine, hunt, _chance] = all_packs
+      [_banned, fine, hunt, _favorite] = all_packs
       assert Resolver.choose([fine, hunt], all_packs, plan, "hard", 1, 3) == {:pick, "thm_hunt"}
     end
 
@@ -133,17 +133,17 @@ defmodule StarlightBot.PackPlans.ResolverTest do
     end
 
     test "fine holds out for a refresh when a hunt pack is still in play", %{all_packs: all_packs, plan: plan} do
-      [banned, fine, _hunt, _chance] = all_packs
+      [banned, fine, _hunt, _favorite] = all_packs
       assert Resolver.choose([fine, banned], all_packs, plan, "hard", 1, 3) == :refresh
     end
 
     test "refreshes when only banned packs are shown and refreshes remain", %{all_packs: all_packs, plan: plan} do
-      [banned, _fine, _hunt, _chance] = all_packs
+      [banned, _fine, _hunt, _favorite] = all_packs
       assert Resolver.choose([banned], all_packs, plan, "hard", 1, 1) == :refresh
     end
 
     test "forced pick when only banned packs are shown and refreshes are gone", %{all_packs: all_packs, plan: plan} do
-      [banned, _fine, _hunt, _chance] = all_packs
+      [banned, _fine, _hunt, _favorite] = all_packs
       assert Resolver.choose([banned], all_packs, plan, "hard", 1, 0) == {:forced_pick, "thm_banned"}
     end
   end

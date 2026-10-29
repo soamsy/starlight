@@ -46,11 +46,11 @@ defmodule StarlightBot.PackPlans.Resolver do
   end
 
   def hunt_in_play?(plan_data, all_packs, mode, floor) do
-    Enum.any?(all_packs, &(priority_at(plan_data, &1, mode, floor) == "hunt" and not chance?(plan_data, &1.id, mode)))
+    Enum.any?(all_packs, &(priority_at(plan_data, &1, mode, floor) == "hunt"))
   end
 
-  def chance?(plan_data, pack_id, mode) do
-    get_in(plan_data, ["packs", pack_id, mode, "chance"]) == true
+  def favorite?(plan_data, pack_id, mode) do
+    get_in(plan_data, ["packs", pack_id, mode, "favorite"]) == true
   end
 
   def hunt_rank(plan_data, mode) do

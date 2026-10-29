@@ -53,11 +53,11 @@
                             <img src={pack.image_path} class="w-6 h-6 rounded object-cover shrink-0" />
                             <span class="text-[11px] truncate flex-1" title={pack.name_en}><%= pack.name_en %></span>
                             <%= if priority == "hunt" do %>
-                              <% chance? = StarlightBot.PackPlans.Resolver.chance?(@plan_data, pack.id, mode) %>
-                              <button phx-click="toggle_chance" phx-value-pack_id={pack.id} phx-value-mode={mode}
-                                      class={"btn btn-ghost btn-xs px-1 whitespace-nowrap " <> if(chance?, do: "text-warning", else: "text-base-content/40")}
-                                      title={if chance?, do: "Chance pack: grabbed on sight, never refreshed or searched for. Click to make it a normal Hunt pack.", else: "Mark as chance pack: grabbed on sight, never refreshed or searched for"}>
-                                <%= if chance?, do: "★ chance pack", else: "☆" %>
+                              <% favorite? = StarlightBot.PackPlans.Resolver.favorite?(@plan_data, pack.id, mode) %>
+                              <button phx-click="toggle_favorite" phx-value-pack_id={pack.id} phx-value-mode={mode}
+                                      class={"btn btn-ghost btn-xs px-1 whitespace-nowrap " <> if(favorite?, do: "text-warning", else: "text-base-content/40")}
+                                      title={if favorite?, do: "Favorite: while any favorite is in play, only favorites are hunted, refreshed for and searched for. Click to make it a normal Hunt pack.", else: "Mark as favorite: while any favorite is in play, only favorites are hunted, refreshed for and searched for"}>
+                                <%= if favorite?, do: "★ favorite", else: "☆" %>
                               </button>
                             <% end %>
                             <button phx-click="assign_priority" phx-value-pack_id={pack.id} phx-value-priority="fine" phx-value-mode={mode}
@@ -124,11 +124,11 @@
                     <div class="row-start-1 relative flex items-center py-1 pr-3 min-w-0" style={"grid-column: #{floor + 1}"}>
                       <%= case path[floor] do %>
                         <% {pack, others} -> %>
-                          <% chance? = StarlightBot.PackPlans.Resolver.chance?(@plan_data, pack.id, if(hard?, do: "hard", else: "normal")) %>
+                          <% favorite? = StarlightBot.PackPlans.Resolver.favorite?(@plan_data, pack.id, if(hard?, do: "hard", else: "normal")) %>
                           <div class={"flex-1 min-w-0 flex items-center gap-1 rounded-full border pl-0.5 pr-1 py-0.5 text-[10px] shadow-sm " <> if(hard?, do: "border-warning bg-warning/15", else: "border-success/60 bg-success/10")}
-                               title={"F#{floor}: #{pack.name_en}" <> if(chance?, do: " (chance pack)", else: "") <> if(others > 0, do: ", then #{others} more in Hunt order", else: "")}>
+                               title={"F#{floor}: #{pack.name_en}" <> if(favorite?, do: " (favorite)", else: "") <> if(others > 0, do: ", then #{others} more in Hunt order", else: "")}>
                             <img src={pack.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
-                            <span class="truncate font-medium flex-1"><%= if chance?, do: "★ " %><%= pack.name_en %></span>
+                            <span class="truncate font-medium flex-1"><%= if favorite?, do: "★ " %><%= pack.name_en %></span>
                             <%= if others > 0 do %>
                               <span class="shrink-0 rounded-full bg-base-content/10 px-1 text-[9px] text-base-content/60">+<%= others %></span>
                             <% end %>
@@ -172,7 +172,7 @@
                         <% end %>
                         <button phx-click="toggle_search_floor" phx-value-floor={floor} disabled={not searchable?}
                                 class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(search?, do: "btn-error", else: "btn-ghost border-base-300")}
-                                title={if(searchable?, do: "Once refreshes run out, search-replace the leftmost pack with the highest unvisited non-chance Hunt pack that has a search hook", else: "Pack search is unavailable on F11+")}>
+                                title={if(searchable?, do: "Once refreshes run out, search-replace the leftmost pack with the highest unvisited favorite (or Hunt pack when there are no favorites) that has a search hook", else: "Pack search is unavailable on F11+")}>
                           search
                         </button>
                       </div>

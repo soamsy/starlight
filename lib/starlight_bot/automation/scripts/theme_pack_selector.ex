@@ -256,24 +256,25 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   end
 
   defp select(frame, plan_data, theme_packs, mode, floor, limits, ctx) do
-    {chance, hunt} =
+    {favorites, others} =
       plan_data
       |> packs_with_priority(theme_packs, mode, floor, "hunt")
       |> Resolver.sort_hunt(plan_data, mode)
-      |> Enum.split_with(&Resolver.chance?(plan_data, &1.id, mode))
+      |> Enum.split_with(&Resolver.favorite?(plan_data, &1.id, mode))
 
+    {hunt, backup} = if favorites == [], do: {others, []}, else: {favorites, others}
     hunt = if hunt == [], do: packs_with_priority(plan_data, theme_packs, mode, floor, "fine"), else: hunt
 
-    Ctx.log(ctx, :info, "theme pack selector: floor #{floor} (#{mode}) hunting for #{pack_names(hunt)}#{chance_suffix(chance)}, expecting #{limits.packs} packs and #{limits.refreshes} refreshes")
+    Ctx.log(ctx, :info, "theme pack selector: floor #{floor} (#{mode}) hunting for #{pack_names(hunt)}#{backup_suffix(backup)}, expecting #{limits.packs} packs and #{limits.refreshes} refreshes")
 
-    attempt(frame, chance, hunt, theme_packs, plan_data, mode, floor, limits, 0, ctx)
+    attempt(frame, backup, hunt, theme_packs, plan_data, mode, floor, limits, 0, ctx)
   end
 
   defp pack_names([]), do: "(none)"
   defp pack_names(packs), do: Enum.map_join(packs, ", ", & &1.name_en)
 
-  defp chance_suffix([]), do: ""
-  defp chance_suffix(chance), do: "; chance: #{pack_names(chance)}"
+  defp backup_suffix([]), do: ""
+  defp backup_suffix(backup), do: "; backup: #{pack_names(backup)}"
 
   def packs_with_priority(plan_data, theme_packs, mode, floor, priority) do
     Enum.filter(theme_packs, fn pack ->
@@ -293,14 +294,14 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     Enum.filter(theme_packs, &(floor in Resolver.eligible_floors(&1, mode)))
   end
 
-  defp attempt(_frame, _chance, _hunt, _theme_packs, _plan_data, _mode, _floor, _limits, refreshes_used, ctx)
+  defp attempt(_frame, _backup, _hunt, _theme_packs, _plan_data, _mode, _floor, _limits, refreshes_used, ctx)
        when refreshes_used > @max_refresh_attempts do
     Ctx.log(ctx, :error, "theme pack selector: exceeded #{@max_refresh_attempts} refreshes — giving up")
     {:error, :refresh_limit_exceeded}
   end
 
-  defp attempt(frame, chance, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used, ctx) do
-    wanted = Enum.uniq_by(chance ++ hunt, & &1.id)
+  defp attempt(frame, backup, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used, ctx) do
+    wanted = hunt
     pool = floor_pool(theme_packs, mode, floor)
     refresh_available? = refreshes_used < limits.refreshes
     target = unless refresh_available?, do: search_target(plan_data, theme_packs, mode, floor, RunMemory.visited_packs(ctx), &search_hook_ready?/1)
@@ -320,7 +321,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
           :none
 
         {:none, last_frame} ->
-          fallback = Enum.uniq_by(wanted ++ all_unbanned(plan_data, theme_packs, mode, floor), & &1.id)
+          fallback = Enum.uniq_by(wanted ++ backup ++ all_unbanned(plan_data, theme_packs, mode, floor), & &1.id)
 
           case scan_and_pick(last_frame, fallback, [], plan_data, mode, floor, ctx) do
             {:none, _seen} -> :none
@@ -335,7 +336,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
         case confirm(frame, rect, pack, limits.exit_to, ctx) do
           :not_pulled when refresh_available? ->
             Ctx.log(ctx, :info, "theme pack selector: couldn't pull #{pack.name_en}, refreshing (#{refreshes_used + 1})")
-            refresh_and_attempt(chance, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used, ctx)
+            refresh_and_attempt(backup, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used, ctx)
 
           :not_pulled ->
             Ctx.log(ctx, :info, "theme pack selector: couldn't pull #{pack.name_en} and no refresh available, using default pick")
@@ -347,7 +348,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
       :none when refresh_available? ->
         Ctx.log(ctx, :info, "theme pack selector: nothing wanted shown, refreshing (#{refreshes_used + 1})")
-        refresh_and_attempt(chance, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used, ctx)
+        refresh_and_attempt(backup, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used, ctx)
 
       :none when target != nil ->
         Ctx.log(ctx, :info, "theme pack selector: no refreshes left, searching for #{target.name_en}")
@@ -358,7 +359,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
             plan_without_search = Map.put(plan_data, "search_floors", [])
 
             case await_ready_only(ctx) do
-              {:ok, next_frame} -> attempt(next_frame, chance, hunt, theme_packs, plan_without_search, mode, floor, limits, refreshes_used, ctx)
+              {:ok, next_frame} -> attempt(next_frame, backup, hunt, theme_packs, plan_without_search, mode, floor, limits, refreshes_used, ctx)
               {:error, _} -> leave(limits.exit_to, ctx)
             end
 
@@ -372,20 +373,20 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     end
   end
 
-  defp refresh_and_attempt(chance, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used, ctx) do
+  defp refresh_and_attempt(backup, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used, ctx) do
     with {:ok, _} <- Engine.act([click(:theme_pack_select_refresh)], ctx),
          {:ok, next_frame} <- await_refreshed(ctx) do
-      attempt(next_frame, chance, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used + 1, ctx)
+      attempt(next_frame, backup, hunt, theme_packs, plan_data, mode, floor, limits, refreshes_used + 1, ctx)
     end
   end
 
   def search_target(plan_data, theme_packs, mode, floor, visited_ids, search_hook_ready?) do
     if Resolver.searchable_floor?(floor) and floor in Map.get(plan_data, "search_floors", []) do
-      plan_data
-      |> packs_with_priority(theme_packs, mode, floor, "hunt")
-      |> Enum.reject(&Resolver.chance?(plan_data, &1.id, mode))
-      |> Resolver.sort_hunt(plan_data, mode)
-      |> Enum.find(&(&1.id not in visited_ids and search_hook_ready?.(&1)))
+      hunt = plan_data |> packs_with_priority(theme_packs, mode, floor, "hunt") |> Resolver.sort_hunt(plan_data, mode)
+      favorites = Enum.filter(hunt, &Resolver.favorite?(plan_data, &1.id, mode))
+      candidates = if favorites == [], do: hunt, else: favorites
+
+      Enum.find(candidates, &(&1.id not in visited_ids and search_hook_ready?.(&1)))
     end
   end
 

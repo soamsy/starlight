@@ -139,9 +139,9 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   @impl true
-  def handle_event("toggle_chance", %{"pack_id" => pack_id, "mode" => mode}, socket) when mode in @modes do
+  def handle_event("toggle_favorite", %{"pack_id" => pack_id, "mode" => mode}, socket) when mode in @modes do
     if Resolver.priority_for(socket.assigns.plan_data, pack_id, mode) == "hunt" do
-      plan_data = update_in(socket.assigns.plan_data, ["packs", pack_id, mode], &toggle_chance/1)
+      plan_data = update_in(socket.assigns.plan_data, ["packs", pack_id, mode], &toggle_favorite/1)
       {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
     else
       {:noreply, socket}
@@ -225,7 +225,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     do: "Never picked voluntarily. Only taken if nothing else is shown and no refreshes are left."
 
   def priority_tooltip("hunt"),
-    do: "Picked immediately if shown, highest in the list first. If none are shown and refreshes remain, keep refreshing to find one. Starred chance packs are picked on sight but never refreshed or searched for."
+    do: "Picked immediately if shown, highest in the list first. If none are shown and refreshes remain, keep refreshing to find one. With starred favorites, only favorites are hunted, refreshed for and searched for; the other Hunt packs are a backup once refreshes and search run out."
 
   def priority_tooltip("fine"),
     do: "The default. Acceptable filler, picked when nothing better is shown."
@@ -523,8 +523,8 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     end)
   end
 
-  defp toggle_chance(%{"chance" => true} = entry), do: Map.delete(entry, "chance")
-  defp toggle_chance(entry), do: Map.put(entry, "chance", true)
+  defp toggle_favorite(%{"favorite" => true} = entry), do: Map.delete(entry, "favorite")
+  defp toggle_favorite(entry), do: Map.put(entry, "favorite", true)
 
   defp toggle_pack_floor(plan_data, pack, mode, floor) do
     pack_id = pack.id
