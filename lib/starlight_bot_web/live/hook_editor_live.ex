@@ -9,6 +9,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     {:ok,
      socket
      |> assign(:category, "general")
+     |> assign(:overwrite_image, true)
      |> assign(:hooks_filter, "")
      |> assign(:sort_by, :inserted_at)
      |> assign(:sort_dir, :desc)
@@ -83,6 +84,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     {:noreply,
      socket
      |> assign(:region, region)
+     |> assign(:overwrite_image, true)
      |> assign(:form, build_form(updated_params))}
   end
 
@@ -178,6 +180,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
         {:noreply,
          socket
          |> assign(region_assign_key(to), region)
+         |> enable_overwrite_for(to)
          |> assign(:form, build_form(Map.merge(params, region_form_params(to, region))))
          |> push_event(region_set_event(to), region)}
     end
@@ -210,7 +213,13 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   @impl true
+  def handle_event("toggle_overwrite_image", _, socket) do
+    {:noreply, assign(socket, :overwrite_image, !socket.assigns.overwrite_image)}
+  end
+
+  @impl true
   def handle_event("validate_hook", %{"hook" => params}, socket) do
+    socket = if region_params_changed?(form_params(socket), params), do: assign(socket, :overwrite_image, true), else: socket
     {:noreply, assign(socket, :form, build_form(params))}
   end
 
@@ -219,6 +228,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     mat = socket.assigns.screenshot_mat
     region = socket.assigns.region
     editing_name = socket.assigns.editing_name
+    overwrite_image = socket.assigns.overwrite_image
     new_name = String.trim(params["name"] || "")
 
     cond do
@@ -228,7 +238,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       not is_nil(editing_name) and new_name != "" and editing_name != new_name ->
         # Name changed while editing — rename then apply any field updates
         with {:ok, _} <- Hooks.rename_hook(editing_name, new_name),
-             {:ok, attrs} <- build_save_attrs(params, mat, region, new_name),
+             {:ok, attrs} <- build_save_attrs(params, mat, region, new_name, overwrite_image),
              {:ok, saved_name} <- Hooks.save_hook(attrs) do
           {:noreply,
            socket
@@ -243,7 +253,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
         end
 
       true ->
-        with {:ok, attrs} <- build_save_attrs(params, mat, region, editing_name) do
+        with {:ok, attrs} <- build_save_attrs(params, mat, region, editing_name, overwrite_image) do
           case Hooks.save_hook(attrs) do
             {:ok, name} ->
               base =
@@ -302,7 +312,12 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
                 end
 
               result = %{name: name, found: rect != nil, score: Float.round(score, 4), rect: rect}
-              {:noreply, socket |> assign(:screenshot_mat, frame.mat) |> assign(:screenshot_status, :done) |> show_test_result(result, frame.mat)}
+              {:noreply,
+               socket
+               |> assign(:screenshot_mat, frame.mat)
+               |> assign(:screenshot_status, :done)
+               |> assign(:overwrite_image, false)
+               |> show_test_result(result, frame.mat)}
 
             {:error, :hook_not_found} ->
               {:noreply, put_flash(socket, :error, "Hook '#{name}' not in registry — save it first.")}
@@ -439,6 +454,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
          |> assign(:canvas_mode, :detect)
          |> assign(:screenshot_mat, nil)
          |> assign(:screenshot_status, :idle)
+         |> assign(:overwrite_image, true)
          |> assign(:test_result, nil)
          |> assign(:saved_params, params)
          |> assign_template(safe_to_atom(name))}
@@ -592,6 +608,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
         {:noreply,
          socket
          |> assign(:region, region)
+         |> assign(:overwrite_image, true)
          |> assign(:form, build_form(params))
          |> push_event("set_selection", region)}
 
@@ -835,7 +852,16 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     end)
   end
 
-  defp build_save_attrs(params, mat, region, editing_name) do
+  defp enable_overwrite_for(socket, "region"), do: assign(socket, :overwrite_image, true)
+  defp enable_overwrite_for(socket, _prefix), do: socket
+
+  defp region_params_changed?(old, new) do
+    Enum.any?(~w(region_x region_y region_w region_h), fn key ->
+      Map.has_key?(new, key) and to_string(new[key]) != Map.get(old, key, "")
+    end)
+  end
+
+  defp build_save_attrs(params, mat, region, editing_name, overwrite_image) do
     name = String.trim(params["name"] || "")
 
     if name == "" do
@@ -849,7 +875,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       image =
         cond do
           # New hook: crop the selected region from the screenshot
-          not is_nil(mat) and not is_nil(region) ->
+          not is_nil(mat) and not is_nil(region) and (overwrite_image or is_nil(editing_name)) ->
             crop_to_png(mat, region)
 
           # Editing existing hook without a new screenshot: keep existing image
@@ -952,6 +978,8 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
 
   attr :mat, :any, default: nil
   attr :region, :map, default: nil
+  attr :editing, :boolean, default: false
+  attr :overwrite, :boolean, default: true
 
   defp after_preview(%{mat: mat, region: %{x: x, y: y, w: w, h: h}} = assigns) when not is_nil(mat) do
     case encode_jpeg(StarlightBot.Vision.Frame.crop(mat, {x, y, w, h})) do
@@ -960,7 +988,13 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
 
         ~H"""
         <div class="flex-1 min-w-0">
-          <h3 class="font-semibold text-sm mb-1 text-base-content/60">After</h3>
+          <div class="flex items-center gap-2 mb-1">
+            <h3 class="font-semibold text-sm text-base-content/60">After</h3>
+            <label :if={@editing} class="flex items-center gap-1 cursor-pointer ml-auto" title="When on, saving replaces the template image with this crop">
+              <input type="checkbox" class="toggle toggle-xs toggle-warning" checked={@overwrite} phx-click="toggle_overwrite_image" />
+              <span class="text-xs text-base-content/60">Overwrite on save</span>
+            </label>
+          </div>
           <img src={@src} alt="selected region"
                class="max-w-full max-h-40 object-contain rounded border border-warning"
                style="image-rendering: pixelated;" />

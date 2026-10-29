@@ -253,11 +253,6 @@
               <%!-- Actions --%>
               <div class="flex flex-row items-start gap-1 shrink-0">
                 <button type="submit" class="btn btn-primary btn-sm">💾 Save</button>
-                <%= if @editing_name do %>
-                  <button type="button" phx-click="test_hook" phx-value-name={@editing_name}
-                          class="btn btn-secondary btn-sm">🔍 Test</button>
-                  <.test_badge result={@test_result} name={@editing_name} />
-                <% end %>
               </div>
             </div>
 
@@ -332,7 +327,7 @@
                   </div>
                 <% end %>
               </div>
-              <span :if={image_will_update} class="text-warning text-xs">image will be recropped</span>
+              <span :if={image_will_update and @overwrite_image} class="text-warning text-xs">image will be recropped</span>
             </div>
 
             <input
@@ -515,7 +510,7 @@
                   style="image-rendering: pixelated;"
                 />
               </div>
-              <.after_preview mat={@screenshot_mat} region={@region} />
+              <.after_preview mat={@screenshot_mat} region={@region} editing={not is_nil(@editing_name)} overwrite={@overwrite_image} />
             </div>
           </div>
         </div>
