@@ -2,7 +2,7 @@ defmodule StarlightBot.Automation.SlotPlan do
   alias StarlightBot.BattlePlans
 
   def needs_classified?(holder),
-    do: Enum.any?(BattlePlans.holders(holder), &(&1["who"] in ~w(slots) or &1["row"] == "priority" or is_map(&1["where"])))
+    do: Enum.any?(BattlePlans.holders(holder), &(&1["row"] == "priority" or is_map(&1["where"])))
 
   def plan(holder, env) do
     {assigned, assign_notes} = assign(holder, env)
@@ -149,13 +149,6 @@ defmodule StarlightBot.Automation.SlotPlan do
   end
 
   defp select(%{"who" => "everyone"}, env), do: {:ok, Enum.map(env.tray_groups, &{&1, %{name: "everyone"}}), []}
-
-  defp select(%{"who" => "slots", "slots" => filter}, env) do
-    columns = BattlePlans.slot_columns(filter, env.classified, length(env.columns))
-    label = BattlePlans.slot_filter_label(filter)
-
-    if columns == [], do: {:skip, ["no #{label}, skipping"]}, else: {:ok, [{columns, %{name: label}}], []}
-  end
 
   defp select(holder, env) do
     case env.sinner_groups.(holder) do

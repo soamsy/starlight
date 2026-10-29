@@ -29,7 +29,6 @@ defmodule StarlightBot.BattlePlans do
   @count_cmps ~w(eq gte lte)
   @grades ~w(zayin teth he waw)
   @rows ~w(top bottom priority)
-  @slot_rows ~w(bottom top available)
   @chosen_value_kinds ~w(using not_using bottom_is bottom_is_not top_is top_is_not has has_no)
   @chosen_kinds [
     {"top", "using a top skill"},
@@ -135,7 +134,6 @@ defmodule StarlightBot.BattlePlans do
   end
   def grades, do: @grades
   def rows, do: @rows
-  def slot_rows, do: @slot_rows
   def tiers, do: @tiers
   def priority_values, do: @priority_values
   def count_cmps, do: @count_cmps
@@ -153,7 +151,7 @@ defmodule StarlightBot.BattlePlans do
     holder |> Map.put("row", if(row == "top", do: "top", else: "bottom")) |> Map.delete("priority")
   end
 
-  @row_keys ~w(type who sinners slots where skill row priority grade corrode enemy skip_bottom_target)
+  @row_keys ~w(type who sinners where skill row priority grade corrode enemy skip_bottom_target)
 
   def put_rest(holder, "true"), do: Map.put_new(holder, "rest", new_rest())
   def put_rest(holder, "false"), do: Map.delete(holder, "rest")
@@ -407,16 +405,6 @@ defmodule StarlightBot.BattlePlans do
     end)
   end
 
-  def new_slot_filter, do: %{"row" => "bottom", "is" => true, "match" => "envy"}
-
-  def parse_slot_filter(params) do
-    %{
-      "row" => if(params["slot_row"] in @slot_rows, do: params["slot_row"], else: "bottom"),
-      "is" => params["slot_is"] != "false",
-      "match" => if(params["slot_match"] in @tiers ++ @sins, do: params["slot_match"], else: "envy")
-    }
-  end
-
   def new_chosen_filter, do: %{"join" => "and", "conditions" => [new_chosen_condition()]}
 
   def new_chosen_condition, do: %{"kind" => "top"}
@@ -481,17 +469,6 @@ defmodule StarlightBot.BattlePlans do
     {_kind, label} = List.keyfind(@chosen_kinds, kind, 0)
     "#{label} #{Enum.join(values, "/")}"
   end
-
-  def slot_columns(%{"row" => row, "is" => is?, "match" => match}, {top, bottom}, column_count) do
-    Enum.filter(0..(column_count - 1)//1, &(row_matches?(row, match, Enum.at(top, &1), Enum.at(bottom, &1)) == is?))
-  end
-
-  def slot_filter_label(%{"row" => "available", "is" => is?, "match" => match}), do: "slots where available #{if is?, do: "has", else: "has no"} #{match}"
-  def slot_filter_label(%{"row" => row, "is" => is?, "match" => match}), do: "slots where #{row} #{if is?, do: "is", else: "isn't"} #{match}"
-
-  defp row_matches?("top", match, top, _bottom), do: cell_matches?(match, top)
-  defp row_matches?("available", match, top, bottom), do: cell_matches?(match, top) or cell_matches?(match, bottom)
-  defp row_matches?(_bottom, match, _top, bottom), do: cell_matches?(match, bottom)
 
   defp cell_matches?(match, %{sin: _sin, tier: _tier} = cell), do: priority_match?(match, cell)
   defp cell_matches?(_match, _cell), do: false

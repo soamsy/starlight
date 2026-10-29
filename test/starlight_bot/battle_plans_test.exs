@@ -398,16 +398,6 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.tray_count(%{"match" => "s3"}, classified, [0, 2]) == 0
     end
 
-    test "slot_columns filters slots on one row being or not being a sin" do
-      classified = {[cell(:envy, :skill1), cell(:wrath, :skill2), cell(:pride, :skill1)], [cell(:pride, :skill3), cell(:envy, :skill1), cell(:envy, :skill1)]}
-      assert BattlePlans.slot_columns(%{"row" => "bottom", "is" => true, "match" => "envy"}, classified, 3) == [1, 2]
-      assert BattlePlans.slot_columns(%{"row" => "bottom", "is" => false, "match" => "envy"}, classified, 3) == [0]
-      assert BattlePlans.slot_columns(%{"row" => "top", "is" => true, "match" => "s1"}, classified, 3) == [0, 2]
-      assert BattlePlans.slot_columns(%{"row" => "available", "is" => true, "match" => "envy"}, classified, 3) == [0, 1, 2]
-      assert BattlePlans.slot_columns(%{"row" => "available", "is" => false, "match" => "envy"}, classified, 3) == []
-      assert BattlePlans.slot_columns(%{"row" => "available", "is" => false, "match" => "wrath"}, classified, 3) == [0, 2]
-    end
-
     test "chosen_columns combines row and used-skill conditions with and/or" do
       classified = {[cell(:envy, :skill1), cell(:wrath, :skill2), cell(:pride, :skill1), cell(:envy, :skill3), cell(:lust, :skill1)], [cell(:wrath, :skill1), cell(:envy, :skill1), cell(:envy, :skill2), cell(:pride, :skill1), cell(:wrath, :skill3)]}
       filter = fn join, conditions -> %{"join" => join, "conditions" => conditions} end

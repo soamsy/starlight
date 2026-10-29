@@ -102,19 +102,10 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [_, _, block] = actions(socket, playbook_id)
     assert Map.take(Enum.at(block["then"], 0), ["who", "sinners"]) == %{"who" => "only", "sinners" => ["faust", "ryoshu"]}
 
-    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "slots", "pick" => "first"})
-    [_, _, block] = actions(socket, playbook_id)
-    assert Map.take(Enum.at(block["then"], 0), ["who", "slots", "skill"]) == %{"who" => "slots", "slots" => %{"row" => "bottom", "is" => true, "match" => "envy"}, "skill" => %{"pick" => "all"}}
-
-    socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "slots", "pick" => "first", "slot_is" => "false"})
-    [_, _, block] = actions(socket, playbook_id)
-    assert Enum.at(block["then"], 0)["skill"] == %{"pick" => "first", "start" => 1, "end" => 1}
-
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "everyone", "pick" => "all"})
     socket = event(socket, "add_where", %{"action" => ego["id"]})
     [_, _, block] = actions(socket, playbook_id)
     assert Map.take(Enum.at(block["then"], 0), ["who", "where", "skill"]) == %{"who" => "everyone", "where" => %{"join" => "and", "conditions" => [%{"kind" => "top"}]}, "skill" => %{"pick" => "all"}}
-    refute Map.has_key?(Enum.at(block["then"], 0), "slots")
 
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "everyone", "pick" => "all", "where_join" => "or", "where_c" => %{"0" => %{"kind" => "using", "values" => ["pride"]}, "1" => %{"kind" => "bottom"}}})
     [_, _, block] = actions(socket, playbook_id)
