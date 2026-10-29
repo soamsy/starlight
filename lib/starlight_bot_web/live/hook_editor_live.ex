@@ -618,7 +618,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   @impl true
-  def handle_event("use_hook_region", %{"x" => x, "y" => y, "w" => w, "h" => h}, socket) do
+  def handle_event("use_hook_region", %{"x" => x, "y" => y, "w" => w, "h" => h, "kind" => kind}, socket) do
     region = %{
       x: String.to_integer(x),
       y: String.to_integer(y),
@@ -626,8 +626,8 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       h: String.to_integer(h)
     }
 
-    case socket.assigns.canvas_mode do
-      :detect ->
+    case kind do
+      "detect" ->
         params =
           form_params(socket)
           |> Map.merge(%{
@@ -643,7 +643,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
          |> assign(:form, build_form(params))
          |> push_event("set_selection", region)}
 
-      :click ->
+      "click" ->
         params =
           form_params(socket)
           |> Map.merge(%{
@@ -659,7 +659,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
          |> assign(:form, build_form(params))
          |> push_event("set_click_selection", region)}
 
-      :scan ->
+      "scan" ->
         params =
           form_params(socket)
           |> Map.merge(%{
@@ -674,40 +674,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
          |> assign(:scan_region, region)
          |> assign(:form, build_form(params))
          |> push_event("set_scan_selection", region)}
-
-      :color ->
-        {:noreply, socket}
     end
-  end
-
-  @impl true
-  def handle_event("use_hook_regions", params, socket) do
-    region =
-      parse_region_values(params["region-x"], params["region-y"], params["region-w"], params["region-h"])
-
-    click_region =
-      parse_region_values(params["click-x"], params["click-y"], params["click-w"], params["click-h"])
-
-    scan_region =
-      parse_region_values(params["scan-x"], params["scan-y"], params["scan-w"], params["scan-h"])
-
-    params =
-      form_params(socket)
-      |> Map.merge(region_form_params("region", region))
-      |> Map.merge(region_form_params("click", click_region))
-      |> Map.merge(region_form_params("scan", scan_region))
-
-    socket =
-      socket
-      |> assign(:region, region)
-      |> assign(:click_region, click_region)
-      |> assign(:scan_region, scan_region)
-      |> assign(:form, build_form(params))
-      |> push_region_event(region, "set_selection", "clear_selection")
-      |> push_region_event(click_region, "set_click_selection", "clear_click_selection")
-      |> push_region_event(scan_region, "set_scan_selection", "clear_scan_selection")
-
-    {:noreply, socket}
   end
 
   @impl true
@@ -1122,10 +1089,6 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     end
   end
 
-  defp region_form_params(prefix, nil) do
-    %{"#{prefix}_x" => "", "#{prefix}_y" => "", "#{prefix}_w" => "", "#{prefix}_h" => ""}
-  end
-
   defp region_form_params(prefix, %{x: x, y: y, w: w, h: h}) do
     %{
       "#{prefix}_x" => to_string(x),
@@ -1142,9 +1105,6 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   defp region_set_event("region"), do: "set_selection"
   defp region_set_event("click"), do: "set_click_selection"
   defp region_set_event("scan"), do: "set_scan_selection"
-
-  defp push_region_event(socket, nil, _set_event, clear_event), do: push_event(socket, clear_event, %{})
-  defp push_region_event(socket, region, set_event, _clear_event), do: push_event(socket, set_event, region)
 
   defp mask_param(val), do: if(val in [true, "true", 1], do: "true", else: "false")
 
@@ -1289,11 +1249,6 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
 
     "linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,#{Float.round(dim, 3)})), linear-gradient(to right, #{Enum.join(hues, ", ")})"
   end
-
-  def canvas_mode_label(:click), do: "click"
-  def canvas_mode_label(:scan), do: "scan"
-  def canvas_mode_label(:color), do: "color"
-  def canvas_mode_label(_), do: "detect"
 
   def mask_on?(val), do: val in [true, "true", 1]
 

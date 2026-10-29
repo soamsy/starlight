@@ -614,15 +614,6 @@
                     <button phx-click="test_hook_all" phx-value-name={hook.name}
                             class="btn btn-xs btn-outline btn-warning"
                             title="Find every match on the screenshot already loaded">All</button>
-                    <button phx-click="use_hook_regions"
-                            phx-value-region-x={hook.region_x} phx-value-region-y={hook.region_y}
-                            phx-value-region-w={hook.region_w} phx-value-region-h={hook.region_h}
-                            phx-value-click-x={hook.click_x} phx-value-click-y={hook.click_y}
-                            phx-value-click-w={hook.click_w} phx-value-click-h={hook.click_h}
-                            phx-value-scan-x={hook.scan_x} phx-value-scan-y={hook.scan_y}
-                            phx-value-scan-w={hook.scan_w} phx-value-scan-h={hook.scan_h}
-                            class="btn btn-xs btn-outline btn-primary"
-                            title="Load this hook's region, click region, and scan region into the canvas + form">Regions</button>
                     <button phx-click="duplicate_hook" phx-value-source={hook.name}
                             class="btn btn-xs btn-ghost">Dup</button>
                     <button phx-click="delete_hook" phx-value-name={hook.name}
@@ -640,8 +631,9 @@
                               phx-value-y={hook.region_y}
                               phx-value-w={hook.region_w}
                               phx-value-h={hook.region_h}
+                              phx-value-kind="detect"
                               class="btn btn-xs btn-ghost px-1 opacity-40 hover:opacity-100"
-                              title={"Select as #{canvas_mode_label(@canvas_mode)} region"}>⊞</button>
+                              title="Apply as region region">⊞</button>
                     </div>
                   <% else %>
                     full
@@ -656,8 +648,9 @@
                               phx-value-y={hook.click_y}
                               phx-value-w={hook.click_w}
                               phx-value-h={hook.click_h}
+                              phx-value-kind="click"
                               class="btn btn-xs btn-ghost px-1 opacity-40 hover:opacity-100"
-                              title={"Select as #{canvas_mode_label(@canvas_mode)} region"}>⊞</button>
+                              title="Apply as click region">⊞</button>
                     </div>
                   <% end %>
                 </td>
@@ -670,8 +663,9 @@
                               phx-value-y={hook.scan_y}
                               phx-value-w={hook.scan_w}
                               phx-value-h={hook.scan_h}
+                              phx-value-kind="scan"
                               class="btn btn-xs btn-ghost px-1 opacity-40 hover:opacity-100"
-                              title={"Select as #{canvas_mode_label(@canvas_mode)} region"}>⊞</button>
+                              title="Apply as scan region">⊞</button>
                     </div>
                   <% end %>
                 </td>
