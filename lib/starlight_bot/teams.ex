@@ -1,10 +1,10 @@
 defmodule StarlightBot.Teams do
   require Logger
   import Ecto.Query
-  alias StarlightBot.{BattlePlans, Repo}
+  alias StarlightBot.{BattlePlans, Plans, Repo}
 
   @team_groups [
-    {"Status", ~w(burn bleed tremor rupture sinking poise charge)},
+    {"Status", ~w(burn bleed tremor rupture sinking poise charge ammo discard)},
     {"Sin", ~w(wrath lust sloth gluttony gloom pride envy)},
     {"Damage Type", ~w(slash pierce blunt)},
     {"Fixer", ~w(zwei shi cinq liu seven devyat dieci oufi)},
@@ -17,6 +17,8 @@ defmodule StarlightBot.Teams do
     yi_sang faust don_quixote ryoshu meursault hong_lu
     heathcliff ishmael rodion sinclair outis gregor
   )
+
+  @plan_fields [gift_plan_id: :gift_plans, battle_plan_id: :battle_plans, pack_plan_id: :pack_plans]
 
   def all_sinners, do: @all_sinners
   def team_types, do: @team_types
@@ -113,8 +115,22 @@ defmodule StarlightBot.Teams do
 
   def duplicate_team(id) when is_integer(id) do
     case get_team(id) do
-      nil -> {:error, :not_found}
-      team -> team |> Map.take([:hooks, :gift_plan_id, :battle_plan_id, :pack_plan_id]) |> Map.put(:name, unique_name("#{team.name} (copy)")) |> save_team()
+      nil ->
+        {:error, :not_found}
+
+      team ->
+        with {:ok, new_id} <- team |> Map.take([:hooks]) |> Map.put(:name, unique_name("#{team.name} (copy)")) |> save_team() do
+          Enum.each(@plan_fields, &copy_plan(team, new_id, &1))
+          {:ok, new_id}
+        end
+    end
+  end
+
+  defp copy_plan(team, new_id, {field, table}) do
+    with plan_id when is_integer(plan_id) <- Map.get(team, field),
+         %{data: data} <- Plans.get(table, plan_id),
+         {:ok, copy_id} <- Plans.save(table, %{name: Plans.new_name(table, new_id), data: data}) do
+      set_plan(new_id, field, copy_id)
     end
   end
 
@@ -160,6 +176,17 @@ defmodule StarlightBot.Teams do
 
   def hook_label("team_" <> type), do: String.upcase(type)
   def hook_label(hook), do: hook
+
+  @affinity_types ~w(burn bleed tremor rupture sinking poise charge slash pierce blunt)
+  @sin_types ~w(wrath lust sloth gluttony gloom pride envy)
+  @fixer_types ~w(zwei shi cinq liu seven devyat dieci oufi)
+  @syndicate_types ~w(thumb index middle ring pinky)
+
+  def hook_icon("team_" <> type) when type in @affinity_types, do: "/images/affinity/#{type}.webp"
+  def hook_icon("team_" <> type) when type in @sin_types, do: "/images/sin/#{type}.webp"
+  def hook_icon("team_" <> type) when type in @fixer_types, do: "/images/fixer/#{type}.webp"
+  def hook_icon("team_" <> type) when type in @syndicate_types, do: "/images/syndicate/#{type}.webp"
+  def hook_icon(_hook), do: nil
 
   def pick_hook(%{hooks: hooks}, hook) do
     if hook in hooks, do: hook, else: List.first(hooks)

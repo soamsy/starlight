@@ -87,24 +87,17 @@
                             <div id={"team-hook-#{index}-#{hook}"} data-sort-id={index} class="flex items-center gap-1">
                               <span data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to reorder">⠿</span>
                               <span class="text-xs text-base-content/50 w-5 text-right"><%= index + 1 %>.</span>
-                              <span class="font-mono text-sm flex-1"><%= Teams.hook_label(hook) %></span>
+                              <div class="flex-1">
+                                <.hook_picker groups={@team_hooks} used={@hooks} event="replace_team_hook" index={index} label={Teams.hook_label(hook)} icon={Teams.hook_icon(hook)} class="btn-ghost" />
+                              </div>
                               <button type="button" phx-click="remove_team_hook" phx-value-index={index}
                                       class="btn btn-ghost btn-xs text-error">✕</button>
                             </div>
                           <% end %>
                         </div>
-                        <form phx-change="add_team_hook" class="mt-1">
-                          <select name="hook" class="select select-bordered select-sm w-full">
-                            <option value="" selected>+ add selector</option>
-                            <%= for {label, hooks} <- @team_hooks, hooks = Enum.reject(hooks, &(&1 in @hooks)), hooks != [] do %>
-                              <optgroup label={label}>
-                                <%= for h <- hooks do %>
-                                  <option value={h}><%= Teams.hook_label(h) %></option>
-                                <% end %>
-                              </optgroup>
-                            <% end %>
-                          </select>
-                        </form>
+                        <div class="mt-1">
+                          <.hook_picker groups={@team_hooks} used={@hooks} event="add_team_hook" label="+ add selector" class="btn-outline" />
+                        </div>
                       </div>
                     </div>
                   </td>

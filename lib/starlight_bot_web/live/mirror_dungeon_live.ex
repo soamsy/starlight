@@ -1,5 +1,6 @@
 defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   use StarlightBotWeb, :live_view
+  import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1]
   alias StarlightBot.Automation.{EnkephalinCharger, RunMemory}
   alias StarlightBot.Navigation.{Navigator, RunSplits, ScreenTimes}
   alias StarlightBot.{RunHistory, RunnerForms, Teams}

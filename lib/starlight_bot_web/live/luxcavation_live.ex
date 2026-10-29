@@ -1,5 +1,6 @@
 defmodule StarlightBotWeb.Live.LuxcavationLive do
   use StarlightBotWeb, :live_view
+  import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1]
   alias StarlightBot.Navigation.Navigator
   alias StarlightBotWeb.Live.MirrorDungeonLive
   alias StarlightBot.{LuxSchedule, RunnerForms, Teams}
@@ -54,7 +55,9 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
 
   @impl true
   def handle_event("run", params, socket) do
-    case RunnerForms.luxcavation_action(params) do
+    pins = %{"exp_pin" => to_string(socket.assigns.exp_pin), "thread_pin" => to_string(socket.assigns.thread_pin)}
+
+    case RunnerForms.luxcavation_action(Map.merge(params, pins)) do
       {:ok, lux} ->
         action =
           case {params["then"], socket.assigns.md_next} do
@@ -339,12 +342,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
             <option value="" selected={pick == nil}>None selected</option>
             <option :for={team <- @teams} value={team.id} selected={pick != nil and team.id == pick.id}>{team.name}</option>
           </select>
-          <select name={"#{@kind}_team_hooks[]"} class="select select-sm select-bordered w-24 shrink-0" disabled={@teams == []}>
-            <option :if={pick == nil} value="">-</option>
-            <option :for={hook <- if(pick, do: team_hooks(@teams, pick.id), else: [])} value={hook} selected={hook == pick.hook}>
-              {Teams.hook_label(hook)}
-            </option>
-          </select>
+          <.hook_select name={"#{@kind}_team_hooks[]"} hooks={if(pick, do: team_hooks(@teams, pick.id), else: [])} selected={pick && pick.hook} disabled={@teams == []} />
         </div>
       </div>
       <div class="relative flex flex-col gap-1 shrink-0">

@@ -16,7 +16,6 @@ defmodule StarlightBot.TeamsDuplicateTest do
     copy = Teams.get_team(copy_id)
     assert copy.name == "Saikai (copy)"
     assert copy.hooks == ["team_slash", "team_pierce"]
-    assert copy.battle_plan_id == 7
     assert Teams.get_team(second_id).name == "Saikai (copy) 2"
   end
 

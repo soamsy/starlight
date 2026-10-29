@@ -8,6 +8,36 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   @panes %{"packs" => PackPlanEditorLive, "gifts" => GiftPlanEditorLive, "battle" => BattlePlanEditorLive}
 
+  attr :groups, :list, required: true
+  attr :used, :list, required: true
+  attr :event, :string, required: true
+  attr :index, :integer, default: nil
+  attr :label, :string, required: true
+  attr :icon, :string, default: nil
+  attr :class, :string, default: ""
+
+  def hook_picker(assigns) do
+    ~H"""
+    <div class="dropdown w-full">
+      <div tabindex="0" role="button" class={"btn btn-sm w-full justify-start font-normal " <> @class}><img :if={@icon} src={@icon} class="size-4 object-contain" /><%= @label %></div>
+      <div tabindex="0" class="dropdown-content z-30 mt-1 w-[32rem] max-w-[90vw] rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+        <div class="columns-3 gap-3">
+          <%= for {group, hooks} <- @groups, hooks = Enum.reject(hooks, &(&1 in @used)), hooks != [] do %>
+            <div class="break-inside-avoid mb-2">
+              <div class="px-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/50"><%= group %></div>
+              <button :for={h <- hooks} type="button" phx-click={@event} phx-value-hook={h} phx-value-index={@index}
+                      onclick="document.activeElement.blur()"
+                      class="btn btn-ghost btn-xs w-full justify-start font-mono">
+                <img :if={Teams.hook_icon(h)} src={Teams.hook_icon(h)} class="size-4 object-contain" /><%= Teams.hook_label(h) %>
+              </button>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket), do: Navigator.subscribe()
@@ -122,7 +152,18 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
-  def handle_event("remove_team_hook", %{"index" => index}, socket) do
+  def handle_event("replace_team_hook", %{"index" => index, "hook" => hook}, socket) do
+    index = String.to_integer(index)
+
+    if hook == "" or hook in socket.assigns.hooks do
+      {:noreply, socket}
+    else
+      {:noreply, socket |> assign(:hooks, List.replace_at(socket.assigns.hooks, index, hook)) |> persist_team()}
+    end
+  end
+
+  @impl true
+  def handle_event("remove_team_hook",%{"index" => index}, socket) do
     {:noreply, socket |> assign(:hooks, List.delete_at(socket.assigns.hooks, String.to_integer(index))) |> persist_team()}
   end
 
