@@ -15,8 +15,6 @@
               <span class="loading loading-spinner loading-xs"></span> Running…
             </span>
           <% end %>
-
-          <button phx-click="new_team" class="btn btn-primary btn-sm ml-auto">+ New Team</button>
         </div>
 
         <%= if entry = List.first(@log) do %>
@@ -110,6 +108,7 @@
               </tr>
             </tbody>
           </table>
+          <button phx-click="new_team" class="btn btn-primary btn-sm w-full mt-2">+ New Team</button>
         </div>
       </div>
     </div>
