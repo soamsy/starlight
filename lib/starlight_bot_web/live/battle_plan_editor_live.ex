@@ -974,9 +974,9 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <option :for={pick <- skill_picks()} value={pick} selected={@skill["pick"] == pick}><%= pick_label(pick) %></option>
         </select>
         <%= if @skill["pick"] != "all" do %>
-          <input type="number" name={field_name(@prefix, "slot_from")} min="1" value={@skill["start"] || 1} class="input input-bordered input-xs w-14" phx-debounce="300" />
+          <input type="number" name={field_name(@prefix, "slot_from")} min="1" value={@skill["start"] || 1} class="input input-bordered input-xs w-12" phx-debounce="300" />
           <span class="text-base-content/60">-</span>
-          <input type="number" name={field_name(@prefix, "slot_to")} min="1" value={@skill["end"] || @skill["start"] || 1} class="input input-bordered input-xs w-14" phx-debounce="300" />
+          <input type="number" name={field_name(@prefix, "slot_to")} min="1" value={@skill["end"] || @skill["start"] || 1} class="input input-bordered input-xs w-12" phx-debounce="300" />
         <% end %>
       </div>
     </div>
@@ -994,8 +994,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     assigns = assign(assigns, type: assigns.holder["type"] || "target")
 
     ~H"""
-    <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5 flex-1">
-      <span class="font-semibold cursor-help" title={action_tooltip(@type)}>Action</span>
+    <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5 shrink-0">
+      <span :if={@ego_only?} class="font-semibold cursor-help" title={action_tooltip(@type)}>EGO</span>
       <.radio_group :if={not @ego_only?} name={field_name(@prefix, "kind")} value={action_kind(@holder)} options={[{"priority", "Priority"}, {"dodge", "Dodge"}, {"ego", "EGO"}] ++ if(@nothing?, do: [{"nothing", "Nothing"}], else: [])} />
       <%= if @holder["row"] == "priority" do %>
         <div class="flex flex-wrap items-center gap-1">
