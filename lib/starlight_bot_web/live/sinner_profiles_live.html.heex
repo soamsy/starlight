@@ -21,43 +21,60 @@
       <div class="overflow-y-auto flex-1 min-h-0">
         <table class="table table-xs table-pin-rows">
           <thead>
-            <tr><th>Name</th><th>Sinner</th><th>Locator hook</th><th></th><th>Used by</th><th></th></tr>
+            <tr><th>Profile</th><th>Used by</th><th></th></tr>
           </thead>
           <tbody>
             <%= for profile <- visible_profiles(@profiles, @search) do %>
               <tr>
-                <td colspan="3">
+                <td>
                   <form phx-change="save_profile" class="flex items-center gap-2">
                     <input type="hidden" name="profile_id" value={profile.id} />
+                    <%= if @profile_thumbs[profile.id] do %>
+                      <img src={"data:image/png;base64,#{@profile_thumbs[profile.id]}"} class="h-8 w-12 rounded shrink-0 object-contain" title={profile.locator_hook} />
+                    <% else %>
+                      <div class="h-8 w-12 rounded bg-base-200 shrink-0" title={profile.locator_hook}></div>
+                    <% end %>
+                    <details class="dropdown">
+                      <summary title={"Locator hook: " <> (profile.locator_hook || "none")}
+                               class={"btn btn-xs btn-square " <> if(is_nil(profile.locator_hook) or profile.locator_hook not in @locator_names, do: "btn-error btn-outline", else: "btn-ghost")}>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                      </summary>
+                      <div class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+                        <input type="text" name="locator_hook" value={profile.locator_hook} list="locator-hook-names" phx-debounce="blur"
+                               disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
+                               placeholder="hook name"
+                               class={"input input-bordered input-xs w-72 font-mono " <> if(profile.locator_hook && profile.locator_hook not in @locator_names, do: "input-error", else: "")} />
+                      </div>
+                    </details>
+                    <button type="button" phx-click="capture_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost"
+                            title="Capture sinner png from live battle">Capture</button>
+                    <button type="button" phx-click="reset_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost"
+                            data-confirm="Reset the hook image to the placeholder?"
+                            title="Reset hook image to the placeholder circle">Reset</button>
+                    <button type="button" phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost">Test</button>
                     <input type="text" name="name" value={profile.name} phx-debounce="blur"
                            disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
                            phx-mounted={if profile.id == @focus_id, do: JS.focus()}
                            class="input input-bordered input-xs w-48" />
-                    <select name="sinner" disabled={!StarlightBot.SinnerProfiles.writable?(profile)} class="select select-bordered select-xs w-32">
-                      <option value="" selected={is_nil(profile.sinner)}>(sinner)</option>
-                      <%= for sinner <- StarlightBot.SinnerProfiles.sinners() do %>
-                        <option value={sinner} selected={profile.sinner == sinner}><%= sinner %></option>
-                      <% end %>
-                    </select>
-                    <input type="text" name="locator_hook" value={profile.locator_hook} list="locator-hook-names" phx-debounce="blur"
-                           disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
-                           placeholder="hook name"
-                           class={"input input-bordered input-xs w-64 font-mono " <> if(profile.locator_hook && profile.locator_hook not in @locator_names, do: "input-error", else: "")} />
+                    <details class="dropdown">
+                      <summary title={"Sinner: " <> if(profile.sinner, do: sinner_label(profile.sinner), else: "none")}
+                               class="btn btn-xs btn-ghost px-1">
+                        <img :if={profile.sinner} src={StarlightBot.SinnerProfiles.icon(profile.sinner)} class="sinner-icon h-5 w-5 object-contain" />
+                        <span :if={is_nil(profile.sinner)} class="text-base-content/40">?</span>
+                      </summary>
+                      <div class="dropdown-content z-30 mt-1 w-max grid grid-cols-6 gap-1 rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+                        <label :for={sinner <- StarlightBot.SinnerProfiles.sinners()} title={sinner_label(sinner)}
+                               class="btn btn-sm btn-ghost px-1 has-[:checked]:btn-primary has-[:disabled]:opacity-50">
+                          <input type="radio" name="sinner" value={sinner} checked={profile.sinner == sinner}
+                                 disabled={!StarlightBot.SinnerProfiles.writable?(profile)} class="hidden" />
+                          <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-6 w-6 object-contain" />
+                        </label>
+                      </div>
+                    </details>
                   </form>
-                </td>
-                <td>
-                  <%= if @profile_thumbs[profile.id] do %>
-                    <img src={"data:image/png;base64,#{@profile_thumbs[profile.id]}"} class="h-8 rounded" />
-                  <% end %>
                 </td>
                 <td class="text-center"><%= Map.get(@profile_usage, profile.id, 0) %></td>
                 <td class="text-right whitespace-nowrap">
-                  <button phx-click="capture_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost"
-                          title="Capture sinner png from live battle">Capture</button>
-                  <button phx-click="reset_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost"
-                          data-confirm="Reset the hook image to the placeholder?"
-                          title="Reset hook image to the placeholder circle">Reset</button>
-                  <button phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost">Test</button>
                   <button phx-click="delete_profile" phx-value-id={profile.id}
                           disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
                           data-confirm={"Delete '#{profile.name}'?"}
@@ -65,11 +82,11 @@
                 </td>
               </tr>
               <%= if @profile_tests[profile.id] do %>
-                <tr><td colspan="6" class="text-xs text-base-content/60 pl-4"><%= @profile_tests[profile.id] %></td></tr>
+                <tr><td colspan="3" class="text-xs text-base-content/60 pl-4"><%= @profile_tests[profile.id] %></td></tr>
               <% end %>
             <% end %>
             <%= if @profiles == [] do %>
-              <tr><td colspan="6" class="text-center text-base-content/40 py-4">No sinner profiles yet.</td></tr>
+              <tr><td colspan="3" class="text-center text-base-content/40 py-4">No sinner profiles yet.</td></tr>
             <% end %>
           </tbody>
         </table>

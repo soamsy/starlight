@@ -32,9 +32,16 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
         <span :if={@status == :different} class="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-success"></span>
       </button>
       <div class="relative" phx-click-away={JS.hide(to: "##{@id}-menu")}>
-        <button type="button" phx-click={JS.toggle(to: "##{@id}-menu")} class="btn btn-sm btn-outline"
+        <button type="button" phx-click={JS.toggle(to: "##{@id}-menu")} class="btn btn-sm btn-outline max-lg:px-2 max-lg:gap-1"
                 title={"Load or delete #{@label} templates"}>
-          Templates (<%= length(@templates) %>) ▾
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:hidden">
+            <rect width="18" height="7" x="3" y="3" rx="1" />
+            <rect width="9" height="7" x="3" y="14" rx="1" />
+            <rect width="5" height="7" x="16" y="14" rx="1" />
+          </svg>
+          <span class="max-lg:hidden">Templates</span>
+          <span class="lg:before:content-['('] lg:after:content-[')']"><%= length(@templates) %></span>
+          <span class="max-lg:hidden">▾</span>
         </button>
         <div id={"#{@id}-menu"} class="hidden absolute z-30 mt-1 w-[30rem] max-w-[90vw] rounded-box border border-base-300 bg-base-100 shadow-lg p-2">
           <div class="max-h-80 overflow-y-auto flex flex-col gap-0.5">

@@ -1530,7 +1530,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         <div :if={@entry["subject"]["action"] in ["heal", "revive", "skill_replace"]} class="grid grid-cols-6 gap-0.5">
           <button :for={sinner <- Teams.all_sinners()} type="button" phx-click="ms_toggle_heal_sinner"
                   phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-sinner={sinner}
-                  class={"btn btn-xs h-5 min-h-0 px-0.5 min-w-0 text-[10px] " <> if(sinner in (@segment["sinners"] || []), do: if(@entry["subject"]["action"] == "skill_replace", do: "btn-info text-black", else: "btn-success"), else: "btn-outline")}><%= sinner_label(sinner) %></button>
+                  title={sinner_label(sinner)}
+                  class={"btn btn-xs h-5 min-h-0 px-0.5 min-w-0 flex-nowrap gap-0.5 text-[10px] " <> if(sinner in (@segment["sinners"] || []), do: if(@entry["subject"]["action"] == "skill_replace", do: "btn-info text-black", else: "btn-success"), else: "btn-outline")}>
+            <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-3.5 w-3.5 shrink-0 object-contain" /><span class="truncate"><%= sinner_label(sinner) %></span>
+          </button>
         </div>
         <div :if={@skill?} class="flex items-center gap-2 text-[11px]">
           <% locked? = @segment["lock_s2"] != false %>
