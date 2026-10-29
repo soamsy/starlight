@@ -50,6 +50,7 @@
         <line x1="12" x2="12" y1="22" y2="18" />
       </svg>
     </.link>
+    <%= if StarlightBot.Data.authoring?() do %>
     <.link navigate={~p"/screenshots"}
            class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :screenshots, do: "btn-primary", else: "btn-ghost text-base-content/50")}
            data-tip="Screenshots">
@@ -133,6 +134,7 @@
         <path d="M16.5 8a2.5 2.5 0 0 0 0-5C13 3 12 8 12 8" />
       </svg>
     </.link>
+    <% end %>
     <.link navigate={~p"/log"}
            class={"tooltip tooltip-right btn btn-square btn-sm " <> if(assigns[:page] == :log, do: "btn-primary", else: "btn-ghost text-base-content/50")}
            data-tip="Log">
