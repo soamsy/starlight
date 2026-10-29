@@ -58,7 +58,7 @@ defmodule StarlightBot.Navigation.Screens.Lux do
 
     transition to: :lux_thread do
       [
-        click(:lux_tab_thread),
+        retry_until(:lux_thread_time_left, [click(:lux_tab_thread)]),
         move_to(:lux_scroll),
         retry_until_arrived([scroll_down(30)], every: 600, tries: 10),
       ]
