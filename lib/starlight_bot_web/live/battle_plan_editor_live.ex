@@ -844,10 +844,10 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
             <div data-sort-id="0" class="flex flex-wrap items-stretch gap-2">
               <span :if={is_map(@action["rest"])} data-sort-handle class="cursor-grab text-base-content/40 select-none self-center">⠿</span>
               <.slot_selector holder={@action} prefix="" sinner_options={@sinner_options} action_id={@action["id"]} />
-              <.rule_boxes holder={@action} prefix="" ego_only?={@kind == "chain" and @action["type"] == "ego"} nothing?={@kind != "chain"} owner={@action["id"]} />
-              <.target_box :if={@kind != "chain" or @action["type"] != "ego"} holder={@action} prefix="" owner={@action["id"]} />
+              <.rule_boxes holder={@action} prefix="" ego_only?={@kind == "chain" and @action["type"] == "ego"} chain?={@kind == "chain"} nothing?={@kind != "chain"} owner={@action["id"]} />
+              <.target_box :if={@kind != "chain" or @action["type"] not in ~w(ego dodge)} holder={@action} prefix="" owner={@action["id"]} />
             </div>
-            <.rest_stack :if={not (@kind == "chain" and @action["type"] == "ego")} holder={@action} prefix="" enemy?={true} nothing?={@kind != "chain"} owner={@action["id"]} sinner_options={@sinner_options} />
+            <.rest_stack :if={not (@kind == "chain" and @action["type"] == "ego")} holder={@action} prefix="" enemy?={true} chain?={@kind == "chain"} nothing?={@kind != "chain"} owner={@action["id"]} sinner_options={@sinner_options} />
           </div>
           <.add_rest :if={not (@kind == "chain" and @action["type"] == "ego")} holder={@action} prefix="" owner={@action["id"]} />
         <% else %>
@@ -866,11 +866,11 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                 <div data-sort-id="0" class="flex flex-wrap items-stretch gap-2">
                   <span :if={is_map(pin["rest"])} data-sort-handle class="cursor-grab text-base-content/40 select-none self-center">⠿</span>
                   <.slot_selector holder={pin} prefix={"pins[#{pin_index}]"} sinner_options={@sinner_options} action_id={@action["id"]} />
-                  <.rule_boxes holder={pin} prefix={"pins[#{pin_index}]"} owner={@action["id"]} />
+                  <.rule_boxes holder={pin} prefix={"pins[#{pin_index}]"} chain?={@kind == "chain"} owner={@action["id"]} />
                   <button type="button" phx-click="remove_pin" phx-value-action={@action["id"]} phx-value-index={pin_index}
                           class="btn btn-xs btn-ghost text-error self-center">✕</button>
                 </div>
-                <.rest_stack holder={pin} prefix={"pins[#{pin_index}]"} enemy?={false} owner={@action["id"]} sinner_options={@sinner_options} />
+                <.rest_stack holder={pin} prefix={"pins[#{pin_index}]"} enemy?={false} chain?={@kind == "chain"} owner={@action["id"]} sinner_options={@sinner_options} />
                 <.add_rest holder={pin} prefix={"pins[#{pin_index}]"} owner={@action["id"]} />
               </div>
             </div>
@@ -894,6 +894,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   attr :prefix, :string, required: true
   attr :enemy?, :boolean, required: true
   attr :nothing?, :boolean, default: false
+  attr :chain?, :boolean, default: false
   attr :owner, :string, required: true
   attr :sinner_options, :list, required: true
   attr :index, :integer, default: 1
@@ -907,12 +908,12 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <span class="font-semibold italic text-base-content/60 cursor-help" title="Rules for every slot the actions above didn't capture">rest</span>
           <.slot_selector holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} sinner_options={@sinner_options} action_id={@owner} />
         </div>
-        <.rule_boxes holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} nothing?={@nothing?} owner={@owner} />
-        <.target_box :if={@enemy?} holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} owner={@owner} continue?={true} />
+        <.rule_boxes holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} chain?={@chain?} nothing?={@nothing?} owner={@owner} />
+        <.target_box :if={@enemy? and not (@chain? and @holder["rest"]["type"] == "dodge")} holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} owner={@owner} continue?={true} />
         <button type="button" phx-click="remove_rest" phx-value-action={@owner} phx-value-path={@prefix} title="Remove this rest and any below it"
                 class="btn btn-xs btn-ghost text-error self-center">✕</button>
       </div>
-      <.rest_stack holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} enemy?={@enemy?} nothing?={@nothing?} owner={@owner} sinner_options={@sinner_options} index={@index + 1} />
+      <.rest_stack holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} enemy?={@enemy?} chain?={@chain?} nothing?={@nothing?} owner={@owner} sinner_options={@sinner_options} index={@index + 1} />
     <% end %>
     """
   end
@@ -965,6 +966,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   attr :prefix, :string, required: true
   attr :owner, :string, required: true
   attr :ego_only?, :boolean, default: false
+  attr :chain?, :boolean, default: false
   attr :nothing?, :boolean, default: false
 
   def rule_boxes(assigns) do
@@ -979,7 +981,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <.row_picker holder={@holder} prefix={@prefix} select?={false} owner={@owner} />
         </div>
       <% end %>
-      <label :if={@type == "dodge"} class="flex items-center gap-1 cursor-pointer" title="When a slot is using a bottom skill, dodge it without dragging it onto an enemy">
+      <label :if={@type == "dodge" and not @chain?} class="flex items-center gap-1 cursor-pointer" title="When a slot is using a bottom skill, dodge it without dragging it onto an enemy">
         <input type="hidden" name={field_name(@prefix, "skip_bottom_target")} value="false" />
         <input type="checkbox" name={field_name(@prefix, "skip_bottom_target")} value="true" checked={Map.get(@holder, "skip_bottom_target", true)} class="checkbox checkbox-xs" />
         don't target with active bottom skill
