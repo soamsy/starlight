@@ -78,7 +78,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
       |> event("cond_update", %{"action" => id, "path" => "2", "op" => "sinners_eq", "value" => "1"})
 
     [_, _, block] = actions(socket, playbook_id)
-    [ego, target] = block["then"]
+    [ego, _target] = block["then"]
     assert Enum.map(block["else"], & &1["type"]) == ["retry"]
     assert BattlePlans.condition_label(block["condition"]) == "battle_combat_ready off AND battle_chain on AND sinners = 1"
 
