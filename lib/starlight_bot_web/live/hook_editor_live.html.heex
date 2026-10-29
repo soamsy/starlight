@@ -293,7 +293,7 @@
             <% is_hsv = to_string(@form[:match_method].value) == "hsv_range" %>
             <% no_template = to_string(@form[:match_method].value) in ["hsv_range", "grayscale_detector"] %>
             <% region_groups = [
-              {"Region", "region", "tooltip-right", "The area the template was captured from, in 1920×1080 space. Also the default search area. Leave blank to search the full frame."},
+              {"Region", "region", "tooltip-right", "The area the template was captured from, in 1920×1080 space. Also the default search area."},
               {"Click", "click", "tooltip-bottom", "Where clicks land. Leave blank to click the center of the match result."},
               {"Scan", "scan", "tooltip-bottom", "When set, searches this wider area for the template instead of expecting it exactly at Region. Ignored by hsv_range and grayscale_detector hooks (they always scan Region)."}
             ] %>
