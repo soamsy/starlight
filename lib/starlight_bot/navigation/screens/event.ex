@@ -10,7 +10,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
 
   @gift_battle_min_gap 100
   @skips [:event_skip, :event_skip_unselectable]
-  @actionable [:event_proceed, :event_continue, :event_commence, :event_advantage_none_selected, :event_choices]
+  @actionable [:event_proceed, :event_continue, :event_commence, :event_commence_battle, :event_advantage_none_selected, :event_choices]
   @choice_gone_wait_ms 1_500
   @advantage_proceed_timeout_ms 8_000
   @skip_timeout_ms 8_000
@@ -32,6 +32,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
             {:event_proceed, [reclick_until_gone(:event_proceed, every: 60), premove(:event_prechoice_region)]},
             {:event_continue, [reclick_until_gone(:event_continue, every: 60)]},
             {:event_commence, [reclick_until_gone(:event_commence, every: 60)]},
+            {:event_commence_battle, [reclick_until_gone(:event_commence_battle, every: 60)]},
             {:event_advantage_none_selected,
               [
                 retry_until(
