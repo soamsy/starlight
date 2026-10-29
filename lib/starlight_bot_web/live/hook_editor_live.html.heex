@@ -27,18 +27,6 @@
               ⏱ 2s
             <% end %>
           </button>
-          <button phx-click="save_screenshot"
-                  disabled={is_nil(@screenshot_mat)}
-                  class="btn btn-ghost btn-sm"
-                  title="Save screenshot to screenshots/">
-            💾
-          </button>
-          <button phx-click="save_raw_screenshot"
-                  disabled={@screenshot_status in [:loading, :waiting]}
-                  class="btn btn-ghost btn-sm"
-                  title="Save a fresh capture at the game window's native resolution (no upscale to 1920×1080)">
-            💾 Raw
-          </button>
           <%= if @screenshot_status == :done do %>
             <span class="badge badge-success badge-sm">Ready</span>
           <% end %>

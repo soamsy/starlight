@@ -87,15 +87,6 @@ pub fn grab_frame<B: DerefMut<Target = [u8]>>(
     Ok((out, scale::NORM_W, scale::NORM_H))
 }
 
-pub fn grab_frame_raw<B: DerefMut<Target = [u8]>>(
-    window_title: &str,
-    mut alloc: impl FnMut(usize) -> B,
-) -> Result<(B, u32, u32), NativeError> {
-    x11::with_bgrx(&x11::locate(window_title)?, None, |bgrx, w, h| {
-        (convert_into(bgrx, &mut alloc), w, h)
-    })
-}
-
 pub fn grab_frame_region<B: DerefMut<Target = [u8]>>(
     window_title: &str,
     (rx, ry, rw, rh): x11::Area,

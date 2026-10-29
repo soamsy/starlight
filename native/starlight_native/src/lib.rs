@@ -44,17 +44,6 @@ fn grab_regions<'a>(env: Env<'a>, window_title: String, rects: Vec<(u32, u32, u3
 }
 
 #[rustler::nif(schedule = "DirtyCpu")]
-fn grab_frame_raw<'a>(env: Env<'a>, window_title: String) -> Term<'a> {
-    match capture::grab_frame_raw(&window_title, new_binary) {
-        Ok((owned, w, h)) => (ok(), owned.release(env), w, h).encode(env),
-        Err(e) => {
-            eprintln!("[starlight_native] grab_frame_raw error: {e}");
-            (error(), e.to_atom(env)).encode(env)
-        }
-    }
-}
-
-#[rustler::nif(schedule = "DirtyCpu")]
 fn save_png(bgr: Binary, width: u32, height: u32, path: String) -> rustler::Atom {
     match capture::save_png(bgr.as_slice(), width, height, &path) {
         Ok(()) => ok(),

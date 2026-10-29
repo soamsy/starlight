@@ -19,9 +19,6 @@ defmodule StarlightBot.Native do
   @doc "Capture several regions of the game window in one batch (coords in 1920×1080 space). Returns {:ok, [binary]} in the order given, each rw×rh BGR, or {:error, atom}."
   def grab_regions(_window_title, _rects), do: nif_err()
 
-  @doc "Capture the game window at its native resolution, no resize to 1920×1080. Returns {:ok, binary, width, height} or {:error, atom}."
-  def grab_frame_raw(_window_title), do: nif_err()
-
   @doc "Save raw BGR binary as PNG. Returns :ok or {:error, reason_string}."
   def save_png(_bgr_binary, _width, _height, _path), do: nif_err()
 

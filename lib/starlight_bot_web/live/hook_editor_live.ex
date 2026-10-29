@@ -546,54 +546,6 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   @impl true
-  def handle_event("save_screenshot", _, socket) do
-    case socket.assigns.screenshot_mat do
-      nil ->
-        {:noreply, put_flash(socket, :error, "No screenshot to save.")}
-
-      mat ->
-        dir = Path.join(File.cwd!(), "screenshots")
-        File.mkdir_p!(dir)
-        ts = DateTime.utc_now() |> Calendar.strftime("%Y-%m-%d_%H-%M-%S")
-        path = Path.join(dir, "#{ts}.jpg")
-
-        case encode_jpeg(mat) do
-          {:ok, jpeg} ->
-            File.write!(path, jpeg)
-            {:noreply, put_flash(socket, :info, "Saved screenshots/#{ts}.jpg")}
-
-          {:error, reason} ->
-            {:noreply, flash_error(socket, "Save failed: #{inspect(reason)}")}
-        end
-    end
-  end
-
-  @impl true
-  def handle_event("save_raw_screenshot", _, socket) do
-    case Capture.grab_frame_raw() do
-      {:ok, mat, w, h} ->
-        dir = Path.join(File.cwd!(), "screenshots")
-        File.mkdir_p!(dir)
-        ts = DateTime.utc_now() |> Calendar.strftime("%Y-%m-%d_%H-%M-%S")
-        path = Path.join(dir, "#{ts}_raw_#{w}x#{h}.png")
-
-        case Evision.imwrite(path, mat) do
-          true ->
-            {:noreply, put_flash(socket, :info, "Saved screenshots/#{ts}_raw_#{w}x#{h}.png")}
-
-          _ ->
-            {:noreply, flash_error(socket, "Save failed")}
-        end
-
-      {:error, :no_window} ->
-        {:noreply, put_flash(socket, :error, "Game window not found. Start Limbus Company first.")}
-
-      {:error, reason} ->
-        {:noreply, flash_error(socket, "Raw screenshot failed: #{inspect(reason)}")}
-    end
-  end
-
-  @impl true
   def handle_event("filter_hooks", %{"value" => val}, socket) do
     {:noreply, assign(socket, :hooks_filter, val)}
   end
