@@ -95,6 +95,8 @@ const ScreenshotCanvas = {
     let img = null
     let selecting = false
     let startPos = null
+    let dragPoint = null
+    let lastMouse = null
     let sel = null       // detection region {x,y,w,h}
     let selClick = null  // click region {x,y,w,h}
     let selScan = null   // scan region {x,y,w,h}
@@ -202,6 +204,8 @@ const ScreenshotCanvas = {
 
       selecting = true
       startPos = getImageCoords(e)
+      dragPoint = { ...startPos }
+      lastMouse = startPos
       if (mode === "click") selClick = null
       else if (mode === "scan") selScan = null
       else sel = null
@@ -221,30 +225,29 @@ const ScreenshotCanvas = {
       }
     })
 
-    canvas.addEventListener("mousemove", (e) => {
+    const onMouseMove = (e) => {
       if (!selecting || !startPos) return
-      let cur = getImageCoords(e)
-      
+      const mouse = getImageCoords(e)
+      const step = e.shiftKey ? 0.1 : 1
+      dragPoint.x += (mouse.x - lastMouse.x) * step
+      dragPoint.y += (mouse.y - lastMouse.y) * step
+      lastMouse = mouse
       precisionMode = e.shiftKey
 
-      if (e.shiftKey) {
-        const dx = cur.x - startPos.x
-        const dy = cur.y - startPos.y
-        cur = {
-          x: Math.round(startPos.x + dx / 10),
-          y: Math.round(startPos.y + dy / 10)
-        }
+      const cur = {
+        x: Math.max(0, Math.min(canvas.width, Math.round(dragPoint.x))),
+        y: Math.max(0, Math.min(canvas.height, Math.round(dragPoint.y)))
       }
-      
-      const x = Math.max(0, Math.min(startPos.x, cur.x))
-      const y = Math.max(0, Math.min(startPos.y, cur.y))
-      const w = Math.min(Math.abs(cur.x - startPos.x), canvas.width - x)
-      const h = Math.min(Math.abs(cur.y - startPos.y), canvas.height - y)
+
+      const x = Math.min(startPos.x, cur.x)
+      const y = Math.min(startPos.y, cur.y)
+      const w = Math.abs(cur.x - startPos.x)
+      const h = Math.abs(cur.y - startPos.y)
       if (mode === "click") selClick = { x, y, w, h }
       else if (mode === "scan") selScan = { x, y, w, h }
       else sel = { x, y, w, h }
       redraw()
-    })
+    }
 
     const finishSelect = () => {
       if (!selecting) return
@@ -262,8 +265,15 @@ const ScreenshotCanvas = {
       }
     }
 
-    canvas.addEventListener("mouseup", finishSelect)
-    canvas.addEventListener("mouseleave", finishSelect)
+    document.addEventListener("mousemove", onMouseMove)
+    document.addEventListener("mouseup", finishSelect)
+    this.removeDragListeners = () => {
+      document.removeEventListener("mousemove", onMouseMove)
+      document.removeEventListener("mouseup", finishSelect)
+    }
+  },
+  destroyed() {
+    this.removeDragListeners?.()
   }
 }
 
