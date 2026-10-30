@@ -157,10 +157,13 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
         color: color,
         text: "#{m.hop} #{m.from}→#{m.to} #{status} #{Float.round(m.score, 2)}",
         text_x: x,
-        text_y: y - 6
+        text_y: label_y(y, h)
       }
     ]
   end
+
+  defp label_y(y, _h) when y >= 16, do: y - 6
+  defp label_y(y, h), do: y + h + 14
 
   defp diagnostic_style(%{matched?: false} = m, _reachable),
     do: {@miss_color, "no match (#{variant_label(m.variant)})"}
