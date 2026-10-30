@@ -39,7 +39,16 @@
                   <td class="font-mono text-xs">
                     <span data-sort-handle class="cursor-grab text-base-content/40 pr-1" title="Drag to reorder">⠿</span><%= team.name %>
                   </td>
-                  <td class="text-xs text-base-content/60"><%= if team.hooks == [], do: "—", else: Enum.map_join(team.hooks, " ", &Teams.hook_label/1) %></td>
+                  <td class="text-xs text-base-content/60">
+                    <% single_icon = case team.hooks do
+                         [hook] -> Teams.hook_icon(hook)
+                         _ -> nil
+                       end %>
+                    <span class="inline-flex items-center gap-1">
+                      <img :if={single_icon} src={single_icon} class="size-4 object-contain" />
+                      <%= if team.hooks == [], do: "—", else: Enum.map_join(team.hooks, " ", &Teams.hook_label/1) %>
+                    </span>
+                  </td>
                   <td>
                     <div class="join">
                       <button :for={{pane, label} <- [{"battle", "Battle"}, {"packs", "Packs"}, {"gifts", "Gifts"}, {"stats", "Stats"}]}
