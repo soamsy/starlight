@@ -63,7 +63,7 @@
             <% lineup = StarlightBot.BattlePlans.find_lineup(@data, @lineup_id) %>
             <%= if lineup do %>
               <div class="flex flex-wrap gap-4 items-start">
-                <div class="flex flex-col gap-2 pt-5">
+                <div class="flex flex-col gap-2 pt-5 w-2xl max-w-full">
                   <%= for row <- sinner_rows() do %>
                     <div class="grid grid-cols-6 gap-1 max-w-2xl">
                       <%= for sinner <- row do %>
@@ -78,14 +78,26 @@
                           </button>
                           <form phx-change="set_sinner_profile" class="flex items-center gap-0.5 min-w-0">
                             <input type="hidden" name="sinner" value={sinner} />
-                            <img :if={profile && profile.locator_hook && Map.has_key?(@locator_thumbs, profile.locator_hook)}
-                                 src={~p"/hooks/#{profile.locator_hook}/thumb.png?#{[v: @locator_thumbs[profile.locator_hook]]}"}
-                                 title={"#{profile.name} (#{profile.locator_hook})"} class="h-5 w-auto rounded shrink-0" />
-                            <select name="profile_id" title={if(profile, do: profile.name, else: "No profile: playbook checks for #{sinner_label(sinner)} are skipped")}
-                                    class={"select select-bordered select-xs min-w-0 flex-1 text-[10px] " <> if(profile, do: "", else: "text-base-content/40")}>
-                              <option value="" selected={is_nil(profile)}>(no profile)</option>
-                              <option :for={p <- Map.get(@profiles_by_sinner, sinner, [])} value={p.id} selected={profile && profile.id == p.id}><%= p.name %></option>
-                            </select>
+                            <div class="dropdown min-w-0 flex-1">
+                              <input type="hidden" name="profile_id" value={if(profile, do: profile.id, else: "")} />
+                              <div tabindex="0" role="button"
+                                   title={if(profile, do: profile.name, else: "No profile: playbook checks for #{sinner_label(sinner)} are skipped")}
+                                   class={"btn btn-outline btn-xs w-full min-w-0 flex-nowrap justify-start gap-1 px-1 font-normal text-[10px] " <> if(profile, do: "", else: "text-base-content/40")}>
+                                <img :if={profile_thumb(profile, @locator_thumbs)} src={profile_thumb(profile, @locator_thumbs)} class="h-5 w-auto rounded shrink-0" />
+                                <span class="truncate"><%= if profile, do: profile.name, else: "(no profile)" %></span>
+                              </div>
+                              <div tabindex="0" class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+                                <button type="button" data-value=""
+                                        onclick="const i = this.closest('.dropdown').querySelector('input'); i.value = this.dataset.value; i.dispatchEvent(new Event('input', {bubbles: true})); document.activeElement.blur()"
+                                        class={"btn btn-xs w-full justify-start text-base-content/60 " <> if(is_nil(profile), do: "btn-primary", else: "btn-ghost")}>(no profile)</button>
+                                <button :for={p <- Map.get(@profiles_by_sinner, sinner, [])} type="button" data-value={p.id}
+                                        onclick="const i = this.closest('.dropdown').querySelector('input'); i.value = this.dataset.value; i.dispatchEvent(new Event('input', {bubbles: true})); document.activeElement.blur()"
+                                        class={"btn btn-xs h-auto min-h-7 w-full flex-nowrap justify-start gap-1.5 py-0.5 " <> if(profile && profile.id == p.id, do: "btn-primary", else: "btn-ghost")}>
+                                  <img :if={profile_thumb(p, @locator_thumbs)} src={profile_thumb(p, @locator_thumbs)} class="h-6 w-auto rounded shrink-0" />
+                                  <span class="truncate"><%= p.name %></span>
+                                </button>
+                              </div>
+                            </div>
                           </form>
                         </div>
                       <% end %>
