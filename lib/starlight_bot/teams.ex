@@ -215,19 +215,23 @@ defmodule StarlightBot.Teams do
     end
   end
 
-  def hook_label("team_" <> type), do: String.upcase(type)
+  def hook_label("team_" <> type), do: type |> String.replace("_", " ") |> String.upcase()
   def hook_label(hook), do: hook
 
   @affinity_types ~w(burn bleed tremor rupture sinking poise charge slash pierce blunt)
   @sin_types ~w(wrath lust sloth gluttony gloom pride envy)
   @fixer_types ~w(zwei shi cinq liu seven devyat dieci oufi)
   @syndicate_types ~w(thumb index middle ring pinky)
+  @other_types ~w(ammo heishou ego_gear le_rouge le_noir sisyphe discard fingers)
 
   def hook_icon("team_" <> type) when type in @affinity_types, do: "/images/affinity/#{type}.webp"
   def hook_icon("team_" <> type) when type in @sin_types, do: "/images/sin/#{type}.webp"
   def hook_icon("team_" <> type) when type in @fixer_types, do: "/images/fixer/#{type}.webp"
   def hook_icon("team_" <> type) when type in @syndicate_types, do: "/images/syndicate/#{type}.webp"
+  def hook_icon("team_" <> type) when type in @other_types, do: "/images/other/#{type}.webp"
   def hook_icon(_hook), do: nil
+
+  def default_hook_icon, do: "/images/other/default.webp"
 
   def pick_hook(%{hooks: hooks}, hook) do
     if hook in hooks, do: hook, else: List.first(hooks)

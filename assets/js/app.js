@@ -1082,7 +1082,14 @@ const HookPicker = {
       const r = this.el.getBoundingClientRect()
       const margin = 8
       const width = Math.min(512, window.innerWidth - margin * 2)
-      const left = Math.max(margin, Math.min(r.left, window.innerWidth - width - margin))
+      const group = this.el.querySelector('[data-group="Damage Type"]')
+      let target = r.left + r.width / 2 - width / 2
+      if (group) {
+        const gr = group.getBoundingClientRect()
+        const er = this.el.getBoundingClientRect()
+        target = r.left + r.width / 2 - (gr.left - er.left) - gr.width / 2
+      }
+      const left = Math.max(margin, Math.min(target, window.innerWidth - width - margin))
       const below = window.innerHeight - r.bottom - margin
       const above = r.top - margin
       const openUp = below < 240 && above > below
@@ -1110,6 +1117,51 @@ const HookPicker = {
   destroyed() {
     window.removeEventListener("scroll", this.place, true)
     window.removeEventListener("resize", this.place)
+  }
+}
+
+const AnchoredPopup = {
+  mounted() {
+    this.place = () => {
+      const anchor = document.getElementById(this.el.dataset.anchor)
+      if (!anchor) return
+      const r = anchor.getBoundingClientRect()
+      const margin = 8
+      this.el.style.position = "fixed"
+      this.el.style.overflowY = "auto"
+      this.el.style.margin = "0"
+      this.el.style.right = "auto"
+      const width = Math.min(512, window.innerWidth - margin * 2)
+      this.el.style.width = `${width}px`
+      const columns = this.el.firstElementChild
+      const cs = getComputedStyle(columns)
+      const gap = parseFloat(cs.columnGap) || 0
+      const inset = columns.getBoundingClientRect().left - this.el.getBoundingClientRect().left
+      const gapCenter = inset + (columns.clientWidth - gap * 2) / 3 + gap / 2
+      const target = r.left + r.width / 2 - gapCenter
+      const left = Math.max(margin, Math.min(target, r.left, window.innerWidth - width - margin))
+      const below = window.innerHeight - r.bottom - margin
+      const above = r.top - margin
+      const openUp = below < 240 && above > below
+      this.el.style.left = `${left}px`
+      this.el.style.maxHeight = `${Math.max(120, (openUp ? above : below) - 4)}px`
+      this.el.style.top = openUp ? "auto" : `${r.bottom + 4}px`
+      this.el.style.bottom = openUp ? `${window.innerHeight - r.top + 4}px` : "auto"
+    }
+    this.el.showPopover()
+    this.place()
+    this.placed = this.el.style.cssText
+    this.onResize = () => {
+      this.place()
+      this.placed = this.el.style.cssText
+    }
+    window.addEventListener("resize", this.onResize)
+  },
+  updated() {
+    this.el.style.cssText = this.placed
+  },
+  destroyed() {
+    window.removeEventListener("resize", this.onResize)
   }
 }
 
@@ -1188,7 +1240,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, HookPicker, ViewMemory, GiftPopup, FocusSelect }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect }
 })
 
 liveSocket.connect()

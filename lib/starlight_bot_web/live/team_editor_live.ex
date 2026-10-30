@@ -57,6 +57,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:tab_counts, %{})
      |> assign(:hooks, [])
      |> assign(:expanded?, false)
+     |> assign(:editing_hooks?, false)
      |> assign(:selected_ids, blank_selected_ids())
      |> assign(:budget_inputs, blank_budget_inputs(nil))
      |> assign(:phase, nav.phase)
@@ -145,12 +146,20 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
-  def handle_event("add_team_hook", %{"hook" => hook}, socket) do
-    if hook == "" or hook in socket.assigns.hooks do
-      {:noreply, socket}
-    else
-      {:noreply, socket |> assign(:hooks, socket.assigns.hooks ++ [hook]) |> persist_team()}
-    end
+  def handle_event("toggle_edit_hooks", _params, socket) do
+    {:noreply, update(socket, :editing_hooks?, &(not &1))}
+  end
+
+  @impl true
+  def handle_event("close_edit_hooks", _params, socket) do
+    {:noreply, assign(socket, :editing_hooks?, false)}
+  end
+
+  @impl true
+  def handle_event("toggle_team_hook", %{"hook" => hook}, socket) do
+    hooks = socket.assigns.hooks
+    hooks = if hook in hooks, do: List.delete(hooks, hook), else: hooks ++ [hook]
+    {:noreply, socket |> assign(:hooks, hooks) |> persist_team()}
   end
 
   @impl true
@@ -284,6 +293,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         |> assign(:editing_id, team.id)
         |> assign(:tab_counts, PlanCounts.for_team(team.id))
         |> assign(:hooks, team.hooks)
+        |> assign(:editing_hooks?, false)
         |> assign(:selected_ids, selected_ids(team))
         |> assign(:budget_inputs, blank_budget_inputs(team.battle_plan_id))
     end
@@ -313,6 +323,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     |> assign(:editing_id, nil)
     |> assign(:hooks, [])
     |> assign(:expanded?, false)
+    |> assign(:editing_hooks?, false)
     |> assign(:selected_ids, blank_selected_ids())
   end
 
