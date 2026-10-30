@@ -16,7 +16,21 @@ fn pick_port() -> u16 {
         .port()
 }
 
+#[cfg(target_os = "linux")]
+fn configure_webkit() {
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        let backend = std::env::var("STARLIGHT_GDK_BACKEND").unwrap_or_else(|_| "wayland".into());
+        std::env::set_var("GDK_BACKEND", backend);
+        std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+    } else {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+}
+
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    configure_webkit();
+
     let port = if cfg!(debug_assertions) { DEV_PORT } else { pick_port() };
     let pubsub = elixirkit::PubSub::listen("tcp://127.0.0.1:0").expect("failed to listen");
 
