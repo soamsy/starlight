@@ -20,7 +20,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
           <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
         </svg>
       </button>
-      <button type="button" data-paste-plan data-confirm={"Replace this #{@label} with the one on the clipboard?"}
+      <button type="button" data-paste-plan data-confirm-text={"Replace this #{@label} with the one on the clipboard?"}
               disabled={@status == :invalid} class="btn btn-sm btn-square btn-outline relative" title={paste_title(@status, @label)}>
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={"h-4 w-4 " <> if(@status == :different, do: "text-success", else: "")}>
           <path d="M15 2H9a1 1 0 0 0-1 1v2c0 .6.4 1 1 1h6c.6 0 1-.4 1-1V3c0-.6-.4-1-1-1Z" />

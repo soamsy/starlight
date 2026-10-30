@@ -561,10 +561,12 @@ const PlanClipboard = {
 
     this.el.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-paste-plan]")
-      if (!btn || !window.confirm(btn.dataset.confirm)) return
+      if (!btn) return
 
       navigator.clipboard.readText()
-        .then(text => this.pushEvent("paste_plan", { text }))
+        .then(text => {
+          if (window.confirm(btn.dataset.confirmText)) this.pushEvent("paste_plan", { text })
+        })
         .catch(err => {
           this.pushEvent("plan_clipboard_failed", { message: `Couldn't read clipboard: ${err.message || err}` })
         })
