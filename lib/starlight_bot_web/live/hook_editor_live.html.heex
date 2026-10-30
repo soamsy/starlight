@@ -246,11 +246,6 @@
                   </div>
                 </div>
               </div>
-
-              <%!-- Actions --%>
-              <div class="flex flex-row items-start gap-1 shrink-0">
-                <button type="submit" class="btn btn-primary btn-sm">💾 Save</button>
-              </div>
             </div>
 
             <%!-- Confidence --%>
@@ -297,7 +292,7 @@
                   <% fields = [{"X", :"#{prefix}_x"}, {"Y", :"#{prefix}_y"}, {"W", :"#{prefix}_w"}, {"H", :"#{prefix}_h"}] %>
                   <% group_dirty = Enum.any?(fields, fn {_, field} -> field_dirty?(@form, @saved_params, field) end) %>
                   <div data-region-drop={prefix} class="rounded">
-                    <div class="label py-0.5">
+                    <div class="flex w-full items-center justify-between py-0.5">
                       <span class="label-text text-sm font-medium flex items-center gap-1">
                         <span data-region-drag={prefix} draggable="true" class="cursor-grab select-none text-base-content/40 hover:text-base-content" title={"Drag onto another region to copy #{title} into it"}>⠿</span>
                         <%= title %>
@@ -305,20 +300,20 @@
                           <span class="badge badge-xs badge-ghost cursor-help">?</span>
                         </span>
                         <span :if={group_dirty} class="text-warning text-xs leading-none" title="unsaved change">●</span>
-                        <button type="button" phx-click={if prefix == "region", do: "clear_region", else: "clear_#{prefix}_region"} class="btn btn-xs btn-ghost px-1 min-h-0 h-4 text-error" title={"Clear #{title}"}>✕</button>
                       </span>
+                      <button type="button" phx-click={if prefix == "region", do: "clear_region", else: "clear_#{prefix}_region"} class="btn btn-xs btn-ghost px-1 min-h-0 h-4 text-error" title={"Clear #{title}"}>✕</button>
                     </div>
                     <div class="grid grid-cols-2 gap-1">
                       <%= for {label, field} <- fields do %>
-                        <div>
-                          <label class="label py-0"><span class="label-text-alt text-xs"><%= label %></span></label>
+                        <label class={"input input-xs w-full font-mono #{if field_dirty?(@form, @saved_params, field), do: "input-warning"}"}>
+                          <span class="label h-full w-5 justify-center px-0 bg-base-300 text-base-content rounded-s-[var(--radius-field)]"><%= label %></span>
                           <input
                             type="number"
                             name={"hook[#{field}]"}
                             value={@form[field].value}
-                            class={"input input-bordered input-xs w-full font-mono #{if field_dirty?(@form, @saved_params, field), do: "input-warning"}"}
+                            class="min-w-0"
                           />
-                        </div>
+                        </label>
                       <% end %>
                     </div>
                   </div>
@@ -448,7 +443,7 @@
             <input :if={no_template and @form[:mask].value == true} type="hidden" name="hook[mask]" value="true" />
 
             <%!-- Notes --%>
-            <div class="form-control mb-3 flex-row items-start gap-2">
+            <div class="form-control mb-3 flex flex-row items-start gap-1 mt-4">
               <label class="label py-0.5 shrink-0">
                 <span class="label-text text-sm font-medium flex items-center gap-1">
                   Notes
@@ -461,6 +456,9 @@
                 placeholder="Which screen is this for?"
                 class={"textarea textarea-bordered textarea-sm flex-1 min-w-0 min-h-0 #{if field_dirty?(@form, @saved_params, :notes), do: "textarea-warning"}"}
               ><%= @form[:notes].value %></textarea>
+              <div class="w-20 shrink-0"></div>
+              <button type="submit" class="btn btn-primary btn-sm shrink-0 min-w-28">💾 Save</button>
+              <div class="w-10 shrink-0"></div>
             </div>
           </.form>
           </fieldset>
