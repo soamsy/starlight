@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="limbus">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,13 +7,6 @@
     <meta :if={dev_js_log?()} name="dev-js-log" content="on" />
     <title>StarlightBot</title>
     <link rel="icon" type="image/webp" href={~p"/images/icons/starlight.webp"} />
-    <script>
-      (function(){
-        var t = localStorage.getItem('starlight-theme') ||
-                (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'luxury' : 'retro');
-        document.documentElement.setAttribute('data-theme', t);
-      })();
-    </script>
     <link rel="stylesheet" href={~p"/assets/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}></script>
   </head>

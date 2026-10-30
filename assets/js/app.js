@@ -41,36 +41,6 @@ window.addEventListener("unhandledrejection", (e) => {
   postToServerLog("error", [`Unhandled promise rejection: ${e.reason?.stack || e.reason}`])
 })
 
-const LIGHT_THEME = 'valentine'
-const DARK_THEME = 'halloween'
-
-function activeTheme() {
-  return localStorage.getItem('starlight-theme') ||
-    (window.matchMedia('(prefers-color-scheme: dark)').matches ? DARK_THEME : LIGHT_THEME)
-}
-
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme)
-  const cb = document.getElementById('theme-toggle-cb')
-  if (cb) cb.checked = (theme === DARK_THEME)
-}
-
-function toggleTheme() {
-  const next = activeTheme() === DARK_THEME ? LIGHT_THEME : DARK_THEME
-  localStorage.setItem('starlight-theme', next)
-  applyTheme(next)
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  applyTheme(activeTheme())
-  const cb = document.getElementById('theme-toggle-cb')
-  if (cb) cb.addEventListener('change', toggleTheme)
-})
-
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-  if (!localStorage.getItem('starlight-theme')) applyTheme(e.matches ? DARK_THEME : LIGHT_THEME)
-})
-
 function rgbToHsvCv(r, g, b) {
   r /= 255; g /= 255; b /= 255
   const max = Math.max(r, g, b), min = Math.min(r, g, b)

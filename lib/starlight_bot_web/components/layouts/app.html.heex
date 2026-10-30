@@ -295,16 +295,6 @@
         </tbody>
       </table>
 
-      <div class="divider my-2 text-xs">Appearance</div>
-      <div class="flex gap-2">
-        <button type="button" class="btn btn-xs"
-                onclick="localStorage.removeItem('starlight-theme');document.documentElement.setAttribute('data-theme', window.matchMedia('(prefers-color-scheme: dark)').matches ? 'halloween' : 'valentine')">System</button>
-        <button type="button" class="btn btn-xs"
-                onclick="localStorage.setItem('starlight-theme','valentine');document.documentElement.setAttribute('data-theme','valentine')">Light</button>
-        <button type="button" class="btn btn-xs"
-                onclick="localStorage.setItem('starlight-theme','halloween');document.documentElement.setAttribute('data-theme','halloween')">Dark</button>
-      </div>
-
       <div class="modal-action">
         <button phx-click="settings_close" class="btn btn-sm">Close</button>
       </div>
