@@ -59,7 +59,7 @@ defmodule StarlightBot.LogStore do
   @impl true
   def init(_opts) do
     :ets.new(@table, [:ordered_set, :named_table, :protected, read_concurrency: true])
-    dir = Application.get_env(:starlight_bot, :bot_log_dir, "log")
+    dir = StarlightBot.Data.log_dir()
     {path, device} = open_file(dir)
     send(self(), :prune)
     {:ok, %{seq: 0, path: path, device: device, dir: dir}}

@@ -9,6 +9,8 @@ config :starlight_bot, :hook_image_dir, "/tmp/starlight_test_hooks"
 
 config :starlight_bot, :auto_migrate, false
 
+config :starlight_bot, :allow_authoring, true
+
 config :starlight_bot, :data_paths, %{
   mode: :authoring,
   mode_source: :test,
@@ -17,6 +19,7 @@ config :starlight_bot, :data_paths, %{
   seed: "/tmp/starlight_test_seed.db",
   user: "/tmp/starlight_test_user.db",
   runs: "/tmp/starlight_test_runs.db",
+  screenshots_dir: "/tmp/starlight_test_screenshots",
   user_hooks_dir: "/tmp/starlight_test_user_hooks",
   base_hooks_dir: "/tmp/starlight_test_hooks"
 }

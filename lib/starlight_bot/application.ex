@@ -7,6 +7,8 @@ defmodule StarlightBot.Application do
     setup_file_logger()
     Logger.info("StarlightBot starting", module: __MODULE__)
 
+    pubsub = System.get_env("ELIXIRKIT_PUBSUB")
+
     children =
       [
         StarlightBot.Repo,
@@ -14,6 +16,7 @@ defmodule StarlightBot.Application do
         StarlightBot.RunsRepo,
         StarlightBot.Migrator,
         {Phoenix.PubSub, name: StarlightBot.PubSub},
+        {ElixirKit.PubSub, connect: pubsub || :ignore, on_exit: fn -> System.stop() end},
         {StarlightBot.LogStore, []},
         {Task.Supervisor, name: StarlightBot.TaskSupervisor},
         {DynamicSupervisor, name: StarlightBot.MachineSupervisor, strategy: :one_for_one},
@@ -21,7 +24,12 @@ defmodule StarlightBot.Application do
         {StarlightBot.Vision.HookRegistry, []},
         {StarlightBot.Vision.EgoGiftDetector, []},
         {StarlightBot.Automation.TrayWatch, []},
-      ] ++ hardware_children() ++ [StarlightBotWeb.Endpoint]
+      ] ++
+        hardware_children() ++
+        [
+          StarlightBotWeb.Endpoint,
+          {Task, fn -> if pubsub, do: ElixirKit.PubSub.broadcast("messages", "ready") end},
+        ]
 
     opts = [strategy: :one_for_one, name: StarlightBot.Supervisor]
     result = Supervisor.start_link(children, opts)

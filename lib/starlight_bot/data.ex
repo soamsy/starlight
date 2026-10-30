@@ -7,6 +7,9 @@ defmodule StarlightBot.Data do
   def authoring?, do: mode() == :authoring
   def paths, do: resolved()
   def base_writable?, do: authoring?()
+  def authoring_allowed?, do: Application.get_env(:starlight_bot, :allow_authoring, false)
+  def log_dir, do: Application.get_env(:starlight_bot, :bot_log_dir, Map.get(resolved(), :log_dir))
+  def screenshots_dir, do: Map.fetch!(resolved(), :screenshots_dir)
 
   def require_authoring! do
     unless authoring?() do
@@ -35,7 +38,7 @@ defmodule StarlightBot.Data do
       data_dir: paths.root,
       config_file: config_file(),
       config: file,
-      paths: Map.take(paths, [:base, :user, :runs, :user_hooks_dir, :base_hooks_dir, :seed])
+      paths: Map.take(paths, [:base, :user, :runs, :user_hooks_dir, :base_hooks_dir, :seed, :log_dir])
     }
   end
 
@@ -65,11 +68,31 @@ defmodule StarlightBot.Data do
   def repo_config(:runs, config), do: config |> put_database(:runs) |> ensure_ready()
 
   def repo_config(:base, config) do
-    config = put_database(config, :base)
-    if base_writable?(), do: config, else: Keyword.put(config, :mode, :readonly)
+    if base_writable?() do
+      put_database(config, :base)
+    else
+      stage_base()
+      config |> put_database(:base) |> Keyword.put(:mode, :readonly)
+    end
   end
 
   def reset_cache, do: :persistent_term.erase(@term_key)
+
+  defp stage_base do
+    paths = resolved()
+    shipped = Map.get(paths, :shipped_base)
+
+    if shipped && shipped != paths.base do
+      File.mkdir_p!(Path.dirname(paths.base))
+
+      unless File.regular?(paths.base) and md5(paths.base) == md5(shipped) do
+        for suffix <- ["-wal", "-shm"], do: File.rm(paths.base <> suffix)
+        File.cp!(shipped, paths.base)
+      end
+    end
+  end
+
+  defp md5(path), do: path |> File.read!() |> :erlang.md5()
 
   defp put_database(config, key), do: Keyword.put(config, :database, Map.fetch!(resolved(), key))
 
@@ -112,6 +135,7 @@ defmodule StarlightBot.Data do
 
     {mode, source} =
       cond do
+        not authoring_allowed?() -> {:user, if(env_home, do: :env, else: :release)}
         env_home -> {:user, :env}
         file["mode"] in ["user", "authoring"] -> {String.to_existing_atom(file["mode"]), :config}
         true -> {Application.get_env(:starlight_bot, :default_data_mode, :user), :default}
@@ -132,6 +156,8 @@ defmodule StarlightBot.Data do
           seed: Path.join(shipped, "user_seed.db"),
           user: Path.join(shipped, "user_seed.db"),
           runs: Path.join(local, "runs.db"),
+          log_dir: Path.join(File.cwd!(), "log"),
+          screenshots_dir: Path.join(File.cwd!(), "screenshots"),
           user_hooks_dir: Path.join(local, "user_hooks"),
           base_hooks_dir: Application.get_env(:starlight_bot, :hook_image_dir) || Path.join(priv, "hooks")
         }
@@ -143,10 +169,13 @@ defmodule StarlightBot.Data do
           mode: :user,
           mode_source: source,
           root: root,
-          base: Path.join(shipped, "base.db"),
+          base: Path.join(root, "base.db"),
+          shipped_base: Path.join(shipped, "base.db"),
           seed: Path.join(shipped, "user_seed.db"),
           user: Path.join(root, "user.db"),
           runs: Path.join(root, "runs.db"),
+          log_dir: Path.join(root, "log"),
+          screenshots_dir: Path.join(root, "screenshots"),
           user_hooks_dir: Path.join(root, "hooks"),
           base_hooks_dir: Application.get_env(:starlight_bot, :hook_image_dir) || Path.join(priv, "hooks")
         }

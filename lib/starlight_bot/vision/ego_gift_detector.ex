@@ -41,8 +41,13 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
     {:reply, run_detect(state, frame_mat, region, opts), state}
   end
 
+  defp models_dir do
+    bundled = Path.join(to_string(:code.priv_dir(:starlight_bot)), "models")
+    if File.dir?(bundled), do: bundled, else: @models_dir
+  end
+
   defp load_models do
-    dir = @models_dir
+    dir = models_dir()
     detector_path = Path.join(dir, "detector.onnx")
     classifier_path = Path.join(dir, "classifier.onnx")
     classes_path = Path.join(dir, "classifier_classes.json")

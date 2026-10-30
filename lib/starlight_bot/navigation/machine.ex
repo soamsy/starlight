@@ -754,7 +754,7 @@ defmodule StarlightBot.Navigation.Machine do
          {:ok, frame} <- Runner.grab_frame() do
       stamp = NaiveDateTime.local_now() |> NaiveDateTime.to_string() |> String.replace([" ", ":", "."], "_")
       name = hook |> inspect() |> String.replace(~r/[^A-Za-z0-9_]+/, "_") |> String.trim("_") |> String.slice(0, 80)
-      dir = Path.join(Application.get_env(:starlight_bot, :bot_log_dir, "log"), "timeouts")
+      dir = Path.join(StarlightBot.Data.log_dir(), "timeouts")
       File.mkdir_p!(dir)
       path = Path.expand(Path.join(dir, "#{stamp}_#{name}.png"))
       Evision.imwrite(path, frame.mat)

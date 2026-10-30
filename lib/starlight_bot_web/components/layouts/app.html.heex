@@ -259,7 +259,7 @@
       <p class="text-xs text-base-content/60 mb-3">Where Starlight keeps your data. Changes apply after restarting Starlight.</p>
 
       <form phx-submit="settings_save" class="flex flex-col gap-3">
-        <div class="form-control">
+        <div :if={StarlightBot.Data.authoring_allowed?()} class="form-control">
           <span class="label-text text-xs font-semibold mb-1">Mode</span>
           <label class="flex items-start gap-2 cursor-pointer">
             <input type="radio" name="mode" value="user" checked={@settings.mode == :user} class="radio radio-sm mt-0.5" />
@@ -272,7 +272,7 @@
         </div>
 
         <div class="form-control">
-          <label class="label-text text-xs font-semibold mb-1" for="settings-data-dir">Data folder (user mode)</label>
+          <label class="label-text text-xs font-semibold mb-1" for="settings-data-dir">Data folder</label>
           <input id="settings-data-dir" type="text" name="data_dir" value={@settings.config["data_dir"]} placeholder="~/.starlight"
                  class="input input-bordered input-sm font-mono" />
         </div>
@@ -290,6 +290,7 @@
           <tr><td class="whitespace-nowrap">Your data</td><td class="font-mono text-xs break-all">{@settings.paths.user}</td></tr>
           <tr><td class="whitespace-nowrap">Run history</td><td class="font-mono text-xs break-all">{@settings.paths.runs}</td></tr>
           <tr><td class="whitespace-nowrap">Your hook images</td><td class="font-mono text-xs break-all">{@settings.paths.user_hooks_dir}</td></tr>
+          <tr><td class="whitespace-nowrap">Logs</td><td class="font-mono text-xs break-all">{@settings.paths.log_dir}</td></tr>
           <tr><td class="whitespace-nowrap">Settings file</td><td class="font-mono text-xs break-all">{@settings.config_file}</td></tr>
         </tbody>
       </table>

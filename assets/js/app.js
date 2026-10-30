@@ -3,6 +3,7 @@ import { Socket } from "phoenix"
 import { LiveSocket } from "phoenix_live_view"
 
 function postToServerLog(level, args) {
+  if (!document.querySelector("meta[name=dev-js-log]")) return
   const message = args
     .map(a => {
       if (a instanceof Error) return a.stack || a.message

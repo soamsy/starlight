@@ -5,6 +5,8 @@ defmodule StarlightBotWeb.Layouts do
 
   @target_ratio 16 / 9
 
+  def dev_js_log?, do: Application.get_env(:starlight_bot, :dev_js_log, false)
+
   def window_status({_x, _y, 1920, 1080}), do: :exact
   def window_status({_x, _y, w, h}) when h > 0 do
     if abs(w / h - @target_ratio) > 0.01, do: :bad_aspect, else: :scaled

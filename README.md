@@ -19,6 +19,18 @@ mix db.setup
 mix phx.server     # starts at localhost:4000
 ```
 
+## Desktop app (Tauri)
+
+`src-tauri/` wraps the Phoenix app in a Tauri window using [ElixirKit](https://elixirkit.hexdocs.pm/tauri.html). Needs `cargo-tauri` (`cargo install tauri-cli`) and webkit2gtk-4.1.
+
+```sh
+cd src-tauri
+cargo tauri dev                          # runs mix phx.server on :4000; code reload and asset watchers work as in the browser
+env NO_STRIP=true cargo tauri build      # prod release + AppImage in src-tauri/target/release/bundle/appimage/
+```
+
+Packaged builds always run in user mode (`allow_authoring` is off outside dev and test), keep data in `~/.starlight` (including logs, risky-battle screenshots and a staged copy of `base.db`), and skip dev-only behavior: JS console log forwarding, `save_timeout_frames` and the file logger. The window uses port 47621 when free, otherwise a random one, and only one instance can run at a time.
+
 ## Web UI routes (starlight_bot)
 
 | Route | Description |

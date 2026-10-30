@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
+    <meta :if={dev_js_log?()} name="dev-js-log" content="on" />
     <title>StarlightBot</title>
     <link rel="icon" type="image/webp" href={~p"/images/icons/starlight.webp"} />
     <script>

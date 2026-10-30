@@ -6,6 +6,8 @@ config :starlight_bot, :log_to_file, true
 
 config :starlight_bot, default_data_mode: :authoring
 
+config :starlight_bot, allow_authoring: true, dev_js_log: true
+
 config :starlight_bot, save_timeout_frames: true
 
 config :starlight_bot, StarlightBotWeb.Endpoint,

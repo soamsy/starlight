@@ -252,7 +252,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   end
 
   defp save_risky_frame(frame) do
-    dir = Path.join(File.cwd!(), "screenshots")
+    dir = StarlightBot.Data.screenshots_dir()
     File.mkdir_p!(dir)
     path = Path.join(dir, "risky_battle_#{Calendar.strftime(DateTime.utc_now(), "%Y-%m-%d_%H-%M-%S")}.png")
 

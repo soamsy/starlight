@@ -10,6 +10,7 @@ defmodule StarlightBot.MixProject do
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
       deps: deps(),
+      releases: releases(),
       listeners: [Phoenix.CodeReloader],
     ]
   end
@@ -43,7 +44,29 @@ defmodule StarlightBot.MixProject do
       {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
       {:esbuild, "~> 0.8", runtime: Mix.env() == :dev},
       {:phoenix_live_reload, "~> 1.5", only: :dev},
+      {:elixirkit, github: "livebook-dev/elixirkit"},
     ]
+  end
+
+  defp releases do
+    [
+      starlight_bot: [
+        include_executables_for: [:unix],
+        steps: [:assemble, &copy_models/1],
+      ],
+    ]
+  end
+
+  defp copy_models(release) do
+    source = Path.expand("vendor/EgoGiftML/models/best", __DIR__)
+    dest = Path.join([release.path, "lib", "starlight_bot-#{release.version}", "priv", "models"])
+    File.mkdir_p!(dest)
+
+    for file <- ~w(detector.onnx classifier.onnx classifier_classes.json) do
+      File.cp!(Path.join(source, file), Path.join(dest, file))
+    end
+
+    release
   end
 
   defp aliases do

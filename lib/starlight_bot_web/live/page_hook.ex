@@ -58,8 +58,9 @@ defmodule StarlightBotWeb.Live.PageHook do
 
   defp handle_settings_event("settings_close", _params, socket), do: {:halt, assign(socket, :settings_open, false)}
 
-  defp handle_settings_event("settings_save", %{"mode" => mode, "data_dir" => data_dir}, socket)
-       when mode in ["user", "authoring"] do
+  defp handle_settings_event("settings_save", %{"data_dir" => data_dir} = params, socket) do
+    mode = if Data.authoring_allowed?(), do: Map.get(params, "mode", "user"), else: "user"
+
     case Data.write_config(mode: mode, data_dir: String.trim(data_dir)) do
       :ok ->
         {:halt,
