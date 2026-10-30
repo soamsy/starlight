@@ -13,7 +13,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
 
   defp socket(picks) do
     %Phoenix.LiveView.Socket{
-      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, start_index: 0, run_count: "1", rewards: "weekly", collect_enkephalin: false, collect_xp: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil, phase: :idle, other_running?: false}
+      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, start_index: 0, run_count: "1", rewards: "auto", collect_enkephalin: false, collect_xp: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil, phase: :idle, other_running?: false}
     }
   end
 
@@ -76,7 +76,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     event(socket([@burn]), "update_form", %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "start_index" => "1", "run_count" => "3", "collect_xp" => "true"})
 
     saved = RunnerForms.get("mirror_dungeon")
-    assert %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "start_index" => "1", "run_count" => "3", "collect_xp" => "true", "rewards" => "weekly"} = saved
+    assert %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "start_index" => "1", "run_count" => "3", "collect_xp" => "true", "rewards" => "auto"} = saved
     assert {:ok, {:run_mirror_dungeon, [@burn, @saikai_pierce], 3, %{collect_xp?: true}}} = RunnerForms.mirror_dungeon_action(saved, @teams)
   end
 

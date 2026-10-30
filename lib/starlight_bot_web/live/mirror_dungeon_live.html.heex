@@ -163,6 +163,7 @@
           <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Rewards</span>
           <select name="rewards" class="select select-sm select-bordered">
             <option value="none" selected={@rewards == "none"}>Don't claim rewards (dry run)</option>
+            <option value="auto" selected={@rewards == "auto"}>Claim rewards, with bonuses if hard from F1</option>
             <option value="claim" selected={@rewards == "claim"}>Claim rewards</option>
             <option value="weekly" selected={@rewards == "weekly"}>Claim rewards with weekly bonuses</option>
           </select>

@@ -269,6 +269,8 @@ defmodule StarlightBot.Automation.RunMemory do
   def mode_for(%{id: _} = team, floor), do: Resolver.mode_for_floor(Map.get(pack_plan_data(team), "mode_schedule", []), floor)
   def mode_for(_team, _floor), do: "normal"
 
+  def full_hard?(team), do: team |> pack_plan_data() |> Resolver.full_hard?()
+
   def extreme?(team), do: team |> pack_plan_data() |> Resolver.extreme?()
 
   defp pack_plan_data(%{id: team_id} = team) do

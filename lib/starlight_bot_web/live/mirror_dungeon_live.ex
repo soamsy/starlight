@@ -44,7 +44,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:picks, default_picks(teams))
      |> assign(:start_index, 0)
      |> assign(:run_count, "1")
-     |> assign(:rewards, "weekly")
+     |> assign(:rewards, "auto")
      |> assign(:collect_enkephalin, false)
      |> assign(:collect_xp, false)
      |> assign(:enkephalin_convert_count, "0")
@@ -600,6 +600,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
         :none -> " (dry run, refusing rewards)"
         :claim -> ""
         :claim_weekly -> " + weekly bonuses"
+        :claim_auto -> " + weekly bonuses if hard from F1"
       end
     cycle = if length(picks) > 1, do: " cycling #{length(picks)} teams", else: ""
 

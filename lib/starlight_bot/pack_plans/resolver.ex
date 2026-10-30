@@ -46,6 +46,8 @@ defmodule StarlightBot.PackPlans.Resolver do
 
   def extreme_allowed?(plan_data), do: plan_data["mode_schedule"] == [%{"from_floor" => 1, "mode" => "hard"}]
 
+  def full_hard?(plan_data), do: Enum.all?(1..5, &(mode_for_floor(plan_data["mode_schedule"] || [], &1) == "hard"))
+
   def extreme?(plan_data), do: plan_data["extreme"] == true and extreme_allowed?(plan_data)
 
   @extreme_override_pack "thm_116"

@@ -7,7 +7,7 @@ defmodule StarlightBot.RunnerForms do
   @topic "runner_forms"
   @runners ~w(mirror_dungeon luxcavation)
   @max_lux_consecutive 10
-  @rewards %{"none" => :none, "claim" => :claim, "weekly" => :claim_weekly}
+  @rewards %{"none" => :none, "claim" => :claim, "weekly" => :claim_weekly, "auto" => :claim_auto}
 
   def subscribe, do: Phoenix.PubSub.subscribe(StarlightBot.PubSub, @topic)
 
