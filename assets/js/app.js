@@ -1075,6 +1075,44 @@ const FocusSelect = {
   }
 }
 
+const HookPicker = {
+  mounted() {
+    const panel = this.el.querySelector(".dropdown-content")
+    const place = () => {
+      const r = this.el.getBoundingClientRect()
+      const margin = 8
+      const width = Math.min(512, window.innerWidth - margin * 2)
+      const left = Math.max(margin, Math.min(r.left, window.innerWidth - width - margin))
+      const below = window.innerHeight - r.bottom - margin
+      const above = r.top - margin
+      const openUp = below < 240 && above > below
+      panel.style.position = "fixed"
+      panel.style.width = `${width}px`
+      panel.style.left = `${left}px`
+      panel.style.overflowY = "auto"
+      panel.style.maxHeight = `${Math.max(120, (openUp ? above : below) - 4)}px`
+      panel.style.top = openUp ? "auto" : `${r.bottom + 4}px`
+      panel.style.bottom = openUp ? `${window.innerHeight - r.top + 4}px` : "auto"
+    }
+    this.place = place
+    this.onFocus = () => {
+      place()
+      window.addEventListener("scroll", place, true)
+      window.addEventListener("resize", place)
+    }
+    this.onBlur = () => {
+      window.removeEventListener("scroll", place, true)
+      window.removeEventListener("resize", place)
+    }
+    this.el.addEventListener("focusin", this.onFocus)
+    this.el.addEventListener("focusout", this.onBlur)
+  },
+  destroyed() {
+    window.removeEventListener("scroll", this.place, true)
+    window.removeEventListener("resize", this.place)
+  }
+}
+
 const DblClickEvent = {
   mounted() {
     this.el.addEventListener("dblclick", () => this.pushEvent(this.el.dataset.event, { id: this.el.dataset.id }))
@@ -1150,7 +1188,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, ViewMemory, GiftPopup, FocusSelect }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, HookPicker, ViewMemory, GiftPopup, FocusSelect }
 })
 
 liveSocket.connect()

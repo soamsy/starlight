@@ -74,7 +74,7 @@
                                   title={sinner_label(sinner)}
                                   class={"btn btn-xs relative min-w-0 flex-nowrap gap-1 px-1 " <> if(pos, do: "btn-primary", else: "btn-outline")}>
                             <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-4 w-4 shrink-0 object-contain" /><span class="truncate"><%= sinner_label(sinner) %></span>
-                            <span :if={pos} class={"absolute -top-2 -right-2 badge badge-xs " <> if(pos < StarlightBot.BattlePlans.front_line_size(), do: "badge-secondary", else: "badge-neutral")}><%= pos + 1 %></span>
+                            <span :if={pos} class={"absolute -top-2 -right-2 z-10 badge badge-xs " <> if(pos <StarlightBot.BattlePlans.front_line_size(), do: "badge-secondary", else: "badge-neutral")}><%= pos + 1 %></span>
                           </button>
                           <form phx-change="set_sinner_profile" class="flex items-center gap-0.5 min-w-0">
                             <input type="hidden" name="sinner" value={sinner} />

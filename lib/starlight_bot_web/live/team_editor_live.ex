@@ -18,9 +18,9 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   def hook_picker(assigns) do
     ~H"""
-    <div class="dropdown w-full">
+    <div id={"hook-picker-#{@event}-#{@index}"} phx-hook="HookPicker" class="dropdown w-full">
       <div tabindex="0" role="button" class={"btn btn-sm w-full justify-start font-normal " <> @class}><img :if={@icon} src={@icon} class="size-4 object-contain" /><%= @label %></div>
-      <div tabindex="0" class="dropdown-content z-30 mt-1 w-[32rem] max-w-[90vw] rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+      <div tabindex="0" class="dropdown-content z-30 mt-1 w-[32rem] rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
         <div class="columns-3 gap-3">
           <%= for {group, hooks} <- @groups, hooks = Enum.reject(hooks, &(&1 in @used)), hooks != [] do %>
             <div class="break-inside-avoid mb-2">
