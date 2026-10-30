@@ -26,6 +26,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       |> assign(:theme_packs, theme_packs)
       |> assign(:packs_by_id, Map.new(theme_packs, &{&1.id, &1}))
       |> assign(:extreme?, false)
+      |> assign(:show_help, false)
       |> reset_editor()
 
     {:ok, if(team && team.pack_plan_id, do: load_plan(socket, team.pack_plan_id), else: socket)}
@@ -179,10 +180,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   @impl true
-  def handle_event("toggle_floor_editor", %{"pack_id" => pack_id, "mode" => mode}, socket) when mode in @modes do
-    key = {mode, pack_id}
-    {:noreply, assign(socket, :floor_editor, if(socket.assigns.floor_editor == key, do: nil, else: key))}
-  end
+  def handle_event("toggle_help", _, socket), do: {:noreply, update(socket, :show_help, &(!&1))}
 
   @impl true
   def handle_event("copy_priority", %{"priority" => priority, "mode" => mode}, socket) when priority in @priorities and mode in @modes do
@@ -226,14 +224,26 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   def priority_label("hunt"), do: "Hunt"
   def priority_label("fine"), do: "Fine"
 
-  def priority_tooltip("banned"),
-    do: "Never picked voluntarily. Only taken if nothing else is shown and no refreshes are left."
+  def copy_icon(assigns) do
+    ~H"""
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5">
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+    """
+  end
 
-  def priority_tooltip("hunt"),
-    do: "Picked immediately if shown, highest in the list first. If none are shown and refreshes remain, keep refreshing to find one. With starred favorites, only favorites are hunted, refreshed for and searched for; the other Hunt packs are a backup once refreshes and search run out."
-
-  def priority_tooltip("fine"),
-    do: "The default. Acceptable filler, picked when nothing better is shown."
+  def paste_icon(assigns) do
+    ~H"""
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5">
+      <path d="M15 2H9a1 1 0 0 0-1 1v2c0 .6.4 1 1 1h6c.6 0 1-.4 1-1V3c0-.6-.4-1-1-1Z" />
+      <path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+      <path d="M16 4h2a2 2 0 0 1 2 2v2" />
+      <path d="M21 14H11" />
+      <path d="m15 10-4 4 4 4" />
+    </svg>
+    """
+  end
 
   def packs_with_priority(plan_data, theme_packs, mode, "hunt") do
     theme_packs
@@ -344,12 +354,6 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
 
   defp column_of(floor, floor_count), do: min(floor, floor_count + 1)
 
-  def pack_floor_label(plan_data, pack, mode) do
-    floors = Resolver.floors_for(plan_data, pack.id, mode, pack)
-    eligible = Resolver.eligible_floors(pack, mode)
-    if floors == eligible, do: "all", else: Enum.join(floors, ",")
-  end
-
   def copy_payload(plan_data, theme_packs, mode, priority) do
     packs_json =
       plan_data
@@ -438,7 +442,6 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     |> assign(:plan_data, blank_plan_data())
     |> assign(:floor_filter, nil)
     |> assign(:filter, "")
-    |> assign(:floor_editor, nil)
   end
 
   defp load_plan(socket, id) do
@@ -453,8 +456,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
         |> assign(:plan_data, plan.data |> normalize_plan_data() |> materialize_hunt_order(socket.assigns.theme_packs))
         |> assign(:floor_filter, nil)
         |> assign(:filter, "")
-        |> assign(:floor_editor, nil)
-    end
+        end
   end
 
   defp persist_plan(socket) do
