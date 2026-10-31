@@ -245,6 +245,17 @@
         <%= if status == :missing do %>
           <%= if launch = assigns[:game_launch_label] do %>
             <div class="text-base-content/70 mb-2">Launches <span class="font-mono break-all">{launch}</span> using the Runners settings.</div>
+            <% launchers = assigns[:game_launchers_available] || %{} %>
+            <form phx-change="game_launcher_set" class="mb-2">
+              <select name="launcher" class="select select-bordered select-xs w-full" disabled={busy != nil}>
+                <option value="kwin" selected={assigns[:game_launcher] == "kwin"} disabled={!launchers["kwin"]}>
+                  Nested KWin{if !launchers["kwin"], do: " (not installed)"}
+                </option>
+                <option value="gamescope" selected={assigns[:game_launcher] == "gamescope"} disabled={!launchers["gamescope"]}>
+                  Headless gamescope{if !launchers["gamescope"], do: " (not installed)"}
+                </option>
+              </select>
+            </form>
             <button class="btn btn-primary btn-xs w-full" phx-click="game_window_launch" disabled={busy != nil}>
               <%= if busy, do: String.capitalize(busy) <> "…", else: "Open Limbus" %>
             </button>

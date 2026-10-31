@@ -1,5 +1,5 @@
 defmodule StarlightBot.GameWindow do
-  alias StarlightBot.{LogStore, Native, NestedKwin, SteamLaunch}
+  alias StarlightBot.{AppSettings, LogStore, Native, NestedGamescope, NestedKwin, SteamLaunch}
   alias StarlightBot.Vision.Capture
 
   @target_w 1920
@@ -18,30 +18,40 @@ defmodule StarlightBot.GameWindow do
 
   def aspect_ok?({_x, _y, w, h}), do: h > 0 and abs(w * 9 - h * 16) <= w * 9 * 0.005
 
-  def launch(%{launch_mode: "steam", steam_app_id: app_id}) do
-    LogStore.append(:info, "launch: opening Steam app #{app_id} in a nested KWin")
+  def launch(settings, launcher \\ AppSettings.launcher())
+
+  def launch(%{launch_mode: "steam", steam_app_id: app_id}, launcher) do
+    LogStore.append(:info, "launch: opening Steam app #{app_id} in #{launcher_label(launcher)}")
 
     with :ok <- ensure_not_running(window_class() <> ".exe"),
-         {:ok, %{argv: argv, env: env, cwd: cwd}} <- SteamLaunch.command(app_id),
-         {:ok, kwin_pid} <- NestedKwin.ensure(),
+         {:ok, %{argv: argv, env: env, cwd: cwd}} <- SteamLaunch.command(app_id) do
+      start(launcher, argv, env, cwd)
+    end
+    |> log_failure()
+  end
+
+  def launch(%{launch_mode: "exe", exe_path: path}, launcher) do
+    LogStore.append(:info, "launch: opening #{path} in #{launcher_label(launcher)}")
+
+    with :ok <- ensure_not_running(Path.basename(path)) do
+      start(launcher, [path], [], File.cwd!())
+    end
+    |> log_failure()
+  end
+
+  def launch(%{launch_mode: "none"}, _launcher), do: {:error, :launch_disabled}
+
+  defp start("gamescope", argv, env, cwd), do: NestedGamescope.spawn(argv, env, cwd)
+
+  defp start(_kwin, argv, env, cwd) do
+    with {:ok, kwin_pid} <- NestedKwin.ensure(),
          :ok <- NestedKwin.lock_frame(kwin_pid) do
       NestedKwin.spawn(argv, env, cwd)
     end
-    |> log_failure()
   end
 
-  def launch(%{launch_mode: "exe", exe_path: path}) do
-    LogStore.append(:info, "launch: opening #{path} in a nested KWin")
-
-    with :ok <- ensure_not_running(Path.basename(path)),
-         {:ok, kwin_pid} <- NestedKwin.ensure(),
-         :ok <- NestedKwin.lock_frame(kwin_pid) do
-      NestedKwin.spawn([path])
-    end
-    |> log_failure()
-  end
-
-  def launch(%{launch_mode: "none"}), do: {:error, :launch_disabled}
+  defp launcher_label("gamescope"), do: "a headless gamescope"
+  defp launcher_label(_kwin), do: "a nested KWin"
 
   defp ensure_not_running(exe) do
     case System.cmd("pgrep", ["-f", exe], stderr_to_stdout: true) do

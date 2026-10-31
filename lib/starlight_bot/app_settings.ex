@@ -25,6 +25,15 @@ defmodule StarlightBot.AppSettings do
     end
   end
 
+  def launcher do
+    case Repo.one(from_key("launcher")) do
+      "gamescope" -> "gamescope"
+      _ -> "kwin"
+    end
+  end
+
+  def put_launcher(launcher) when launcher in ["kwin", "gamescope"], do: put("launcher", launcher)
+
   def get(key), do: Repo.one(from_key(key))
 
   def put(key, value) do

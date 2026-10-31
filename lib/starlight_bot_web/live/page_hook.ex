@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.PageHook do
   import Phoenix.Component, only: [assign: 3, assign_new: 3]
   import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1, put_flash: 3]
-  alias StarlightBot.{AppSettings, Data, EnkephalinSchedule, GameWindow, Scheduler}
+  alias StarlightBot.{AppSettings, Data, EnkephalinSchedule, GameWindow, NestedGamescope, NestedKwin, Scheduler}
   alias StarlightBot.Automation.EnkephalinCharger
   alias StarlightBot.Scheduler.Overview
   alias StarlightBot.Vision.Capture
@@ -37,6 +37,8 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:game_window_rect, nil)
       |> assign(:game_window_busy, nil)
       |> assign(:game_launch_label, nil)
+      |> assign(:game_launcher, AppSettings.launcher())
+      |> assign(:game_launchers_available, %{"kwin" => NestedKwin.available?(), "gamescope" => NestedGamescope.available?()})
       |> assign(:settings_open, false)
       |> assign(:settings_tab, "scheduler")
       |> assign(:scheduler_view, "runners")
@@ -249,11 +251,17 @@ defmodule StarlightBotWeb.Live.PageHook do
     end)
   end
 
+  defp handle_window_event("game_launcher_set", %{"launcher" => launcher}, socket) when launcher in ["kwin", "gamescope"] do
+    AppSettings.put_launcher(launcher)
+    {:halt, assign(socket, :game_launcher, launcher)}
+  end
+
   defp handle_window_event("game_window_launch", _params, socket) do
     settings = Scheduler.get_settings()
+    launcher = socket.assigns.game_launcher
 
     run_window_action(socket, "launching", fn ->
-      with :ok <- GameWindow.launch(settings),
+      with :ok <- GameWindow.launch(settings, launcher),
            {:ok, {_, _, w, h}} <- GameWindow.await_window(settings.launch_timeout_s * 1000) do
         {:info, "Limbus window appeared (#{w}x#{h})"}
       else
