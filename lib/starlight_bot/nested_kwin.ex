@@ -31,6 +31,8 @@ defmodule StarlightBot.NestedKwin do
   exec sleep infinity
   """
 
+  def available?, do: System.find_executable("kwin_wayland") != nil
+
   def state_dir do
     Path.join(System.get_env("XDG_RUNTIME_DIR") || System.tmp_dir!(), "starlight-nested")
   end

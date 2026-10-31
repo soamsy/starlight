@@ -269,6 +269,17 @@ pub mod linux {
         Ok(format!("unix:path={runtime}/starlight-nested/bus"))
     }
 
+    fn nested_eis_socket() -> Option<std::path::PathBuf> {
+        let name = std::env::var("STARLIGHT_EIS_SOCKET").ok().filter(|v| !v.is_empty())?;
+        let path = std::path::PathBuf::from(name);
+        let path = if path.is_absolute() {
+            path
+        } else {
+            std::path::PathBuf::from(std::env::var("XDG_RUNTIME_DIR").ok()?).join(path)
+        };
+        path.exists().then_some(path)
+    }
+
     fn nested_kwin_bus_exists() -> bool {
         nested_bus_address()
             .map(|address| std::path::Path::new(address.trim_start_matches("unix:path=")).exists())
@@ -317,12 +328,20 @@ pub mod linux {
     }
 
     fn connect(mut display: Option<String>) -> Result<EisClient, NativeError> {
-        let (ctx, mut session, mut kwin_bus) = match &display {
-            Some(name) if nested_kwin_bus_exists() => {
+        let (ctx, mut session, mut kwin_bus) = match (&display, nested_eis_socket()) {
+            (Some(name), _) if nested_kwin_bus_exists() => {
                 eprintln!("[eis] game is on nested display {name}, connecting to its KWin");
                 let address = nested_bus_address()?;
                 let (ctx, bus) = futures_lite::future::block_on(connect_via_kwin_dbus(&address))?;
                 (ctx, None, Some(bus))
+            }
+            (Some(name), Some(path)) => {
+                eprintln!("[eis] game is on nested display {name}, connecting to {}", path.display());
+                let stream = UnixStream::connect(&path)
+                    .map_err(|e| NativeError::EisConnectFailed(format!("{}: {e}", path.display())))?;
+                let ctx = ei::Context::new(stream)
+                    .map_err(|e| NativeError::EisConnectFailed(format!("EIS context: {e}")))?;
+                (ctx, None, None)
             }
             _ => match reis::ei::Context::connect_to_env() {
                 Ok(Some(ctx)) => (ctx, None, None),
