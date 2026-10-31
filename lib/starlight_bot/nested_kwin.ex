@@ -86,8 +86,22 @@ defmodule StarlightBot.NestedKwin do
 
   def lock_frame(kwin_pid) do
     File.write!(path("frame_lock.js"), frame_lock_script(kwin_pid))
-    gdbus("unloadScript", [@frame_lock_plugin])
 
+    case gdbus("unloadScript", [@frame_lock_plugin]) do
+      {:error, reason} ->
+        if String.contains?(reason, "ServiceUnknown") do
+          log("host compositor is not KWin, skipping the frame lock")
+          :ok
+        else
+          run_frame_lock(kwin_pid)
+        end
+
+      {:ok, _} ->
+        run_frame_lock(kwin_pid)
+    end
+  end
+
+  defp run_frame_lock(kwin_pid) do
     with {:ok, out} <- gdbus("loadScript", [path("frame_lock.js"), @frame_lock_plugin]),
          [_, id] <- Regex.run(~r/\((\d+),\)/, out),
          {:ok, _} <- gdbus_object("/Scripting/Script#{id}", "org.kde.kwin.Script.run", []) do
