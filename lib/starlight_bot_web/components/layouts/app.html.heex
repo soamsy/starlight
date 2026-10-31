@@ -337,10 +337,20 @@
       <div class="h-[40rem] max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-hidden">
       <%= if @settings_tab == "scheduler" do %>
       <div class="flex min-h-full flex-col">
-        <div class="mb-4">
-          {live_render(@socket, StarlightBotWeb.Live.SchedulerLive, id: "scheduler-progress", session: %{"part" => "progress"})}
+        <div>
+          {live_render(@socket, StarlightBotWeb.Live.SchedulerLive, id: "scheduler-banner", session: %{"part" => "banner"})}
         </div>
         <div class="flex items-end gap-1 border-b border-base-300">
+          <div class={["flex shrink-0 items-center rounded-t-lg border px-3 py-2 -mb-px", @scheduler_view == "progress" && "bg-base-200 border-base-300 border-b-base-200", @scheduler_view != "progress" && "border-transparent hover:bg-base-200/50"]}>
+            <button type="button" phx-click="scheduler_view" phx-value-view="progress" class={["flex items-center gap-2 text-left font-semibold", @scheduler_view != "progress" && "text-base-content/60"]}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-5">
+                <line x1="18" x2="18" y1="20" y2="10" />
+                <line x1="12" x2="12" y1="20" y2="4" />
+                <line x1="6" x2="6" y1="20" y2="14" />
+              </svg>
+              Progress
+            </button>
+          </div>
           <div class={["flex flex-1 items-center gap-3 rounded-t-lg border px-3 py-2 -mb-px", @scheduler_view == "runners" && "bg-base-200 border-base-300 border-b-base-200", @scheduler_view != "runners" && "border-transparent hover:bg-base-200/50"]}>
             <button type="button" phx-click="scheduler_view" phx-value-view="runners" class={["flex flex-1 items-center gap-2 text-left font-semibold", @scheduler_view != "runners" && "text-base-content/60"]}>
               <span class="relative">
@@ -356,7 +366,7 @@
                 </svg>
                 <span :if={@scheduler_settings.enabled} class="absolute -right-1 -top-1 size-2 rounded-full bg-success ring-2 ring-base-200"></span>
               </span>
-              Daily Runs
+              Runners
             </button>
             <input type="checkbox" class="toggle toggle-sm toggle-success" checked={@scheduler_settings.enabled} phx-click="scheduler_toggle" title="Enabled" />
             <span class={["badge font-bold", if(@scheduler_settings.enabled, do: "badge-success", else: "badge-ghost text-base-content/50")]}>{if @scheduler_settings.enabled, do: "ON", else: "OFF"}</span>
@@ -376,7 +386,11 @@
         <div class="flex-1 rounded-b-lg border border-t-0 border-base-300 bg-base-200 p-3">
           <%= if @scheduler_view == "runners" do %>
             {live_render(@socket, StarlightBotWeb.Live.SchedulerLive, id: "scheduler-settings", session: %{"part" => "form"})}
-          <% else %>
+          <% end %>
+          <%= if @scheduler_view == "progress" do %>
+            {live_render(@socket, StarlightBotWeb.Live.SchedulerLive, id: "scheduler-progress", session: %{"part" => "progress"})}
+          <% end %>
+          <%= if @scheduler_view == "enkephalin" do %>
           <% form = @enkephalin_form %>
           <form phx-change="enkephalin_schedule_save" class="flex flex-col gap-3">
             <div class="flex items-end gap-3">

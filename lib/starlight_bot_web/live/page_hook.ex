@@ -41,7 +41,7 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:game_launcher_missing, [])
       |> assign(:settings_open, false)
       |> assign(:settings_tab, "scheduler")
-      |> assign(:scheduler_view, "runners")
+      |> assign(:scheduler_view, "progress")
       |> assign(:app_settings, nil)
       |> assign(:enkephalin_convert_count, AppSettings.enkephalin_convert_count())
       |> assign_scheduler(Scheduler.get_settings())
@@ -82,7 +82,7 @@ defmodule StarlightBotWeb.Live.PageHook do
     {:halt, socket |> assign(:settings_open, true) |> assign(:settings_tab, tab) |> assign(:app_settings, Data.settings())}
   end
 
-  defp handle_settings_event("scheduler_view", %{"view" => view}, socket) when view in ["runners", "enkephalin"],
+  defp handle_settings_event("scheduler_view", %{"view" => view}, socket) when view in ["runners", "enkephalin", "progress"],
     do: {:halt, assign(socket, :scheduler_view, view)}
 
   defp handle_settings_event("settings_tab", %{"tab" => tab}, socket) when tab in @settings_tabs,

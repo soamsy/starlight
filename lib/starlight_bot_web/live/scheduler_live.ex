@@ -14,6 +14,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   embed_templates "scheduler_live/*"
 
   @impl true
+  def render(%{part: "banner"} = assigns), do: banner(assigns)
   def render(%{part: "progress"} = assigns), do: progress(assigns)
   def render(%{part: "launch"} = assigns), do: launch(assigns)
   def render(assigns), do: runners_form(assigns)
