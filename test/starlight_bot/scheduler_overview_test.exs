@@ -24,7 +24,7 @@ defmodule StarlightBot.Scheduler.OverviewTest do
     test "waits for its window and says so" do
       assert EnkephalinSchedule.next_charge(@now, @charger, nil) == ~N[2026-10-18 10:00:00]
       text = EnkephalinSchedule.outlook(@now, @charger, nil, false)
-      assert text =~ "Will charge enkephalin at 10:00 AM today, in 2h"
+      assert text =~ "Will charge enkephalin in 2h"
       assert text =~ "Waiting on the charging window opening at 10:00 AM"
     end
 

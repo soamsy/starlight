@@ -76,9 +76,14 @@ defmodule StarlightBot.EnkephalinSchedule do
     if NaiveDateTime.compare(at, now) != :gt do
       "Charging enkephalin now"
     else
-      "Will charge enkephalin at #{Scheduler.clock12(at)} #{Scheduler.day_word(now, at)}, in #{Scheduler.exact_duration_label(NaiveDateTime.diff(at, now, :second))}" <>
+      "Will charge enkephalin#{charge_time(now, settings, at)} in #{Scheduler.exact_duration_label(NaiveDateTime.diff(at, now, :second))}" <>
         waiting_on(settings, blocked, at)
     end
+  end
+
+  defp charge_time(now, settings, at) do
+    {start_at, _end_at} = current_window(at, settings)
+    if NaiveDateTime.compare(start_at, at) == :eq, do: "", else: " at #{Scheduler.clock12(at)} #{Scheduler.day_word(now, at)},"
   end
 
   defp waiting_on(settings, blocked, at) do
