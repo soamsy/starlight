@@ -1401,7 +1401,17 @@ defmodule StarlightBot.Automation.Shop.Ops do
 
       other ->
         Ctx.log(ctx, :error, "cost: read failed after #{@cost_read_tries} tries (#{inspect(other)})")
+        if StarlightBot.Data.authoring?(), do: save_cost_failure_frame(ctx)
         :ok
+    end
+  end
+
+  defp save_cost_failure_frame(ctx) do
+    with {:ok, frame} <- Capture.grab_frame() do
+      dir = StarlightBot.Data.screenshots_dir()
+      File.mkdir_p!(dir)
+      path = Path.join(dir, "cost_read_failed_#{Calendar.strftime(DateTime.utc_now(), "%Y-%m-%d_%H-%M-%S")}.png")
+      if Evision.imwrite(path, frame.mat), do: Ctx.log(ctx, :info, "cost: saved screenshot #{path}")
     end
   end
 end
