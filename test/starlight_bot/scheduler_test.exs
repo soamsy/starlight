@@ -103,7 +103,7 @@ defmodule StarlightBot.SchedulerTest do
       text = Scheduler.outlook(now, settings, remaining, false, nil)
       assert text =~ "Will start 3 EXP waves, 1 MD run at #{Scheduler.clock12(planned)} today"
 
-      assert Scheduler.outlook(now, settings, remaining, true, nil) =~ "waiting for it to finish before starting 3 EXP waves, 1 MD run"
+      assert Scheduler.outlook(now, settings, remaining, true, nil) == nil
       assert Scheduler.outlook(now, %{settings | enabled: false}, remaining, false, nil) =~ "Scheduler is off"
 
       blocked = {:hold, now |> DateTime.from_naive!("Etc/UTC") |> DateTime.add(3600)}

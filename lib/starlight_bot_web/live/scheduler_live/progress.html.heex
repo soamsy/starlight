@@ -1,5 +1,5 @@
 <div class="flex flex-col gap-3">
-<div class={["alert flex items-center justify-between gap-3 px-3 py-2 text-sm", if(@blocked, do: "alert-warning", else: "alert-info")]}>
+<div :if={@outlook} class={["alert flex items-center justify-between gap-3 px-3 py-2 text-sm", if(@blocked, do: "alert-warning", else: "alert-info")]}>
   <span class="min-w-0 flex-1 font-medium">{@outlook}</span>
   <div :if={@settings.enabled || @charger.enabled} class="shrink-0 text-xs"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={@blocked} section={:start} /></div>
 </div>

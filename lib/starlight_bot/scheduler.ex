@@ -121,7 +121,7 @@ defmodule StarlightBot.Scheduler do
     cond do
       not DailyProgress.pending?(remaining) -> "All of today's targets are done"
       not settings.enabled -> "Scheduler is off, #{work} left today"
-      busy? -> "A run is in progress or paused, waiting for it to finish before starting #{work}"
+      busy? -> nil
       true -> start_outlook(now, work, next_start(now, settings, blocked), blocked)
     end
   end
