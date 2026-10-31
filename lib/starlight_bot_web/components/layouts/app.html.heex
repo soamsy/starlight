@@ -292,7 +292,7 @@
 
 <%= if assigns[:settings_open] && assigns[:app_settings] do %>
   <div class="modal modal-open" phx-window-keydown="settings_close" phx-key="Escape">
-    <div class="modal-box max-w-2xl">
+    <div class="modal-box max-w-2xl" phx-click-away="settings_close">
       <div class="flex items-center justify-between gap-3 mb-3">
         <div role="tablist" class="tabs tabs-bordered">
           <button role="tab" phx-click="settings_tab" phx-value-tab="scheduler" class={["tab text-lg font-bold px-0 me-6", @settings_tab == "scheduler" && "tab-active"]}>Scheduler</button>
