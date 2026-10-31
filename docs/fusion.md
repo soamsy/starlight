@@ -25,7 +25,7 @@ Point Tally	Fusion E.G.O Gift Tier
 * If you have obtained every possible E.G.O Gift obtainable in that specific Tier + Keyword combination, you will receive an E.G.O Gift of a different Keyword in the same Tier.
 * If you have obtained every possible E.G.O Gift obtainable from the resultant Tier, you will receive a Fusion & Sale Only E.G.O Gift.
 
-Fusing in a Super Shop adds a special modifier to the required tally of th Points from each indigredient.
+Fusing in a Super Shop adds a special modifier to the required tally of the Points from each ingredient.
 Point Tally	Fusion E.G.O Gift Tier
 9- Points	Tier 1
 10-14 Points	Tier 2
