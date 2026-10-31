@@ -53,7 +53,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
 
   def handle_info(:clock_tick, socket) do
     Process.send_after(self(), :clock_tick, @clock_tick_ms)
-    {:noreply, assign_outlook(socket)}
+    {:noreply, socket |> assign_server_status() |> assign_outlook()}
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -89,6 +89,10 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     |> assign(:now, Scheduler.local_now())
     |> assign(:blocked, blocked)
     |> assign(:outlook, Scheduler.outlook(Scheduler.local_now(), settings, DailyProgress.remaining(settings), Scheduler.busy?(), blocked))
+  end
+
+  defp assign_server_status(socket) do
+    if GenServer.whereis(Server), do: assign_status(socket, Server.status()), else: socket
   end
 
   defp assign_status(socket, status) do

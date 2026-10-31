@@ -38,7 +38,7 @@ defmodule StarlightBot.Scheduler.Server do
   @impl true
   def handle_info(:tick, state) do
     Process.send_after(self(), :tick, @tick_ms)
-    {:noreply, maybe_fire(state)}
+    {:noreply, state |> forget_while_blocked() |> maybe_fire()}
   end
 
   def handle_info({:scheduler_settings, settings}, state) do
@@ -59,6 +59,10 @@ defmodule StarlightBot.Scheduler.Server do
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp forget_while_blocked(state) do
+    if Scheduler.blocked(), do: %{state | last_fire: nil, retry_after: nil}, else: state
+  end
 
   defp maybe_fire(%{task: %Task{}} = state), do: state
   defp maybe_fire(%{settings: %{enabled: false}} = state), do: state

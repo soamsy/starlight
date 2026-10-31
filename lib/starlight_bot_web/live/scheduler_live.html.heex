@@ -25,7 +25,7 @@
     <span :if={rows == []} class="text-xs text-base-content/50">No daily targets set</span>
     <span class="text-xs text-base-content/70 text-right">{@outlook}</span>
     <div class="text-xs"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={@blocked} /></div>
-    <%= if @retry_after_ms do %>
+    <%= if @retry_after_ms && !@blocked do %>
       <span class="text-xs text-warning">Retrying in <%= div(@retry_after_ms, 60_000) + 1 %> min</span>
     <% end %>
     <%= if @activity do %>
