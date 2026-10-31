@@ -1,6 +1,7 @@
 defmodule StarlightBotWeb.Live.DungeonInspectorLive do
   use StarlightBotWeb, :live_view
   alias StarlightBot.Automation.DungeonPathPlanner
+  alias StarlightBot.RunHistory
   alias StarlightBot.Vision.{Capture, DungeonGraph}
 
   @tmp_jpeg "/tmp/_starlight_dungeon_inspector.jpg"
@@ -46,10 +47,30 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
      |> assign(:frame_b64, nil)
      |> assign(:graph, nil)
      |> assign(:plan, {:error, :no_graph})
-     |> assign(:error, nil)}
+     |> assign(:error, nil)
+     |> assign(:snapshot, nil)
+     |> assign(:selected_id, nil)
+     |> assign(:snapshots, RunHistory.dungeon_graph_snapshots())}
   end
 
   @impl true
+  def handle_event("refresh_history", _, socket) do
+    {:noreply, assign(socket, :snapshots, RunHistory.dungeon_graph_snapshots())}
+  end
+
+  def handle_event("load_snapshot", %{"id" => id}, socket) do
+    {:noreply, load_snapshot(socket, String.to_integer(id))}
+  end
+
+  def handle_event("step_snapshot", %{"dir" => dir}, socket) do
+    ids = Enum.map(socket.assigns.snapshots, & &1.id)
+    index = Enum.find_index(ids, &(&1 == socket.assigns.selected_id))
+    step = if dir == "older", do: 1, else: -1
+    target = index && index + step >= 0 && Enum.at(ids, index + step)
+
+    {:noreply, if(target, do: load_snapshot(socket, target), else: socket)}
+  end
+
   def handle_event("take_screenshot", _, socket) do
     case Capture.grab_frame() do
       {:ok, frame} ->
@@ -69,6 +90,27 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
     end
   end
 
+  defp load_snapshot(socket, id) do
+    case RunHistory.dungeon_graph_snapshot(id) do
+      {:ok, snapshot} ->
+        socket
+        |> assign(:status, :done)
+        |> assign(:frame_b64, nil)
+        |> assign(:graph, snapshot.graph)
+        |> assign(:plan, DungeonPathPlanner.planned_path(snapshot.graph))
+        |> assign(:error, nil)
+        |> assign(:snapshot, snapshot)
+        |> assign(:selected_id, id)
+
+      :error ->
+        put_flash(socket, :error, "Snapshot #{id} not found")
+    end
+  end
+
+  def snapshot_time(timestamp), do: timestamp |> String.slice(0, 19) |> String.replace("T", " ")
+
+  def format_score(score), do: :erlang.float_to_binary(score * 1.0, decimals: 3)
+
   defp handle_frame(socket, frame) do
     case encode_jpeg(frame.mat) do
       {:ok, jpeg} ->
@@ -81,6 +123,8 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
              |> assign(:status, :done)
              |> assign(:frame_b64, b64)
              |> assign(:graph, graph)
+             |> assign(:snapshot, nil)
+             |> assign(:selected_id, nil)
              |> assign(:plan, DungeonPathPlanner.planned_path(graph))
              |> assign(:error, nil)
              |> push_event("load_dungeon_frame", %{data: b64, overlays: overlays(graph)})}
@@ -91,6 +135,8 @@ defmodule StarlightBotWeb.Live.DungeonInspectorLive do
              |> assign(:status, :done)
              |> assign(:frame_b64, b64)
              |> assign(:graph, nil)
+             |> assign(:snapshot, nil)
+             |> assign(:selected_id, nil)
              |> assign(:plan, {:error, :no_graph})
              |> assign(:error, reason)
              |> push_event("load_dungeon_frame", %{data: b64, overlays: []})}

@@ -5,6 +5,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   alias StarlightBot.BattlePlans
   alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Ctx
+  alias StarlightBot.{Data, RunHistory}
   alias StarlightBot.Vision.{Capture, DungeonGraph, HookRegistry, Matcher}
 
   @levels DungeonGraph.levels()
@@ -39,6 +40,11 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
       end
 
     kind = if boss?, do: :boss, else: kind
+
+    with true <- Data.authoring?(), {:ok, seen, _frame} <- graph_result do
+      merged = with {:ok, graph, _frame} <- recalled, do: graph, else: (_ -> seen)
+      RunHistory.record_dungeon_graph(seen, merged, %{direction: direction, kind: kind, boss_only: boss?, run_floor: RunMemory.floor(ctx)})
+    end
 
     with :risky_battle <- kind, {:ok, seen, frame} <- graph_result, {:ok, graph, _frame} <- recalled do
       log_risky_entry(seen, graph, frame, direction, ctx)

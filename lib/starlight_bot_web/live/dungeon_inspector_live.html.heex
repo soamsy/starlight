@@ -4,6 +4,13 @@
     <button phx-click="take_screenshot" class="btn btn-sm btn-primary" disabled={@status == :loading}>
       📸 Take Screenshot
     </button>
+    <%= if @snapshot do %>
+      <span class="text-xs text-base-content/60">
+        recorded <%= snapshot_time(@snapshot.timestamp) %> · run <%= @snapshot.run_log_id || "unlinked" %> · chose <%= @snapshot.decision["direction"] %> → <%= @snapshot.decision["kind"] %>
+      </span>
+      <button phx-click="step_snapshot" phx-value-dir="older" class="btn btn-xs">◀ older</button>
+      <button phx-click="step_snapshot" phx-value-dir="newer" class="btn btn-xs">newer ▶</button>
+    <% end %>
     <%= if @graph do %>
       <span class="text-xs text-base-content/60">
         floor <%= @graph.floor || "?" %> · current level <%= @graph.current_level %>
@@ -31,9 +38,36 @@
         <canvas id="dungeon-inspector-canvas" phx-hook="DungeonInspectorCanvas" phx-update="ignore"
                 class="max-w-full max-h-full" style="aspect-ratio: 16/9;"></canvas>
       <% else %>
-        <div class="text-base-content/40 text-sm">Take a screenshot to inspect the current dungeon graph</div>
+        <div class="text-base-content/40 text-sm">
+          <%= if @snapshot, do: "Recorded graphs have no screenshot", else: "Take a screenshot to inspect the current dungeon graph" %>
+        </div>
       <% end %>
     </div>
+
+    <%= if @snapshots != [] do %>
+      <div class="shrink-0 flex flex-col gap-1">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold text-base-content/60">History (<%= length(@snapshots) %> most recent graphs)</span>
+          <button phx-click="refresh_history" class="btn btn-xs">↻</button>
+        </div>
+        <div class="overflow-y-auto max-h-40 border border-base-300 rounded-lg">
+          <table class="table table-xs table-pin-rows">
+            <thead><tr><th>time</th><th>run</th><th>floor</th><th>level</th><th>chose</th></tr></thead>
+            <tbody>
+              <%= for row <- @snapshots do %>
+                <tr phx-click="load_snapshot" phx-value-id={row.id} class={"cursor-pointer hover:bg-base-200 " <> if(row.id == @selected_id, do: "bg-base-300", else: "")}>
+                  <td><%= snapshot_time(row.timestamp) %></td>
+                  <td><%= row.run_log_id || "—" %></td>
+                  <td><%= row.floor || "?" %></td>
+                  <td><%= row.current_level %></td>
+                  <td><%= row.direction %> → <%= row.kind %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    <% end %>
 
     <%= if @graph do %>
       <div class="text-xs font-semibold text-base-content/60 shrink-0">
@@ -76,6 +110,47 @@
           </tbody>
         </table>
       </div>
+
+      <%= if @snapshot do %>
+        <details class="shrink-0">
+          <summary class="text-xs font-semibold text-base-content/60 cursor-pointer">Node hits (<%= length(@snapshot.node_hits) + length(@snapshot.warning_hits) %>)</summary>
+          <table class="table table-xs">
+            <thead><tr><th>hop</th><th>level</th><th>hook</th><th>score</th><th>offset</th><th>centered</th></tr></thead>
+            <tbody>
+              <%= for hit <- @snapshot.node_hits ++ @snapshot.warning_hits do %>
+                <tr>
+                  <td><%= hit["hop"] %></td>
+                  <td><%= hit["level"] %></td>
+                  <td class="font-mono text-xs"><%= hit["hook"] %></td>
+                  <td><%= format_score(hit["score"]) %></td>
+                  <td><%= hit["offset"] %></td>
+                  <td><%= hit["centered?"] %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </details>
+
+        <details class="shrink-0">
+          <summary class="text-xs font-semibold text-base-content/60 cursor-pointer">Edge hooks (<%= length(@snapshot.diagnostics) %>)</summary>
+          <table class="table table-xs">
+            <thead><tr><th>hop</th><th>from</th><th>to</th><th>variant</th><th>hook</th><th>score</th><th>matched</th></tr></thead>
+            <tbody>
+              <%= for d <- Enum.sort_by(@snapshot.diagnostics, &{&1["hop"], &1["from"], &1["to"], &1["hook"]}) do %>
+                <tr class={if d["matched?"], do: "", else: "text-base-content/40"}>
+                  <td><%= d["hop"] %></td>
+                  <td><%= d["from"] %></td>
+                  <td><%= d["to"] %></td>
+                  <td><%= d["variant"] || "—" %></td>
+                  <td class="font-mono text-xs"><%= d["hook"] %></td>
+                  <td><%= format_score(d["score"]) %></td>
+                  <td><%= d["matched?"] %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </details>
+      <% end %>
     <% end %>
   </div>
 </div>
