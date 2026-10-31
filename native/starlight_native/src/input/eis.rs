@@ -104,11 +104,17 @@ pub mod linux {
     type KeyboardHandles = (ei::Keyboard, ei::Device, u32);
     type AbsoluteHandles = (ei::PointerAbsolute, ei::Device, u32, Vec<(f32, f32, f32, f32)>);
 
-    fn acquire_absolute(resumed: &DeviceResumed, connection: &Connection) -> Option<AbsoluteHandles> {
+    fn acquire_absolute(
+        resumed: &DeviceResumed,
+        connection: &Connection,
+        already_emulating: bool,
+    ) -> Option<AbsoluteHandles> {
         let absolute = resumed.device.interface::<ei::PointerAbsolute>()?;
         let device = resumed.device.device();
-        device.start_emulating(resumed.serial, 1);
-        let _ = connection.flush();
+        if !already_emulating {
+            device.start_emulating(resumed.serial, 1);
+            let _ = connection.flush();
+        }
         let regions = resumed
             .device
             .regions()
@@ -172,7 +178,7 @@ pub mod linux {
                             r.serial
                         );
                         let (pointer, keyboard) = acquire(&r, &self.connection);
-                        if let Some(absolute) = acquire_absolute(&r, &self.connection) {
+                        if let Some(absolute) = acquire_absolute(&r, &self.connection, pointer.is_some() || keyboard.is_some()) {
                             self.absolute = Some(absolute);
                         }
                         if let Some((pointer, button, scroll, device, serial)) = pointer {
@@ -406,7 +412,7 @@ pub mod linux {
                             r.device.interface::<ei::Scroll>().is_some(),
                         );
                         let (pointer, keyboard) = acquire(&r, &connection);
-                        if let Some(absolute) = acquire_absolute(&r, &connection) {
+                        if let Some(absolute) = acquire_absolute(&r, &connection, pointer.is_some() || keyboard.is_some()) {
                             found_absolute = Some(absolute);
                         }
                         if found_keyboard.is_none() && keyboard.is_some() {
