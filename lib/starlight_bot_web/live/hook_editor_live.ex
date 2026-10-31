@@ -219,7 +219,14 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
 
   @impl true
   def handle_event("validate_hook", %{"hook" => params}, socket) do
-    socket = if region_params_changed?(form_params(socket), params), do: assign(socket, :overwrite_image, true), else: socket
+    old_params = form_params(socket)
+    socket = if region_params_changed?(old_params, params), do: assign(socket, :overwrite_image, true), else: socket
+
+    socket =
+      Enum.reduce(@region_prefixes, socket, fn prefix, acc ->
+        sync_region_from_params(acc, prefix, old_params, params)
+      end)
+
     {:noreply, assign(socket, :form, build_form(params))}
   end
 
@@ -1074,6 +1081,37 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       {x, y, w, h} -> %{x: x, y: y, w: w, h: h}
     end
   end
+
+  defp sync_region_from_params(socket, prefix, old, new) do
+    keys = Enum.map(~w(x y w h), &"#{prefix}_#{&1}")
+
+    if Enum.any?(keys, &(Map.has_key?(new, &1) and to_string(new[&1]) != Map.get(old, &1, ""))) do
+      values = Enum.map(keys, &parse_int(new[&1]))
+
+      case values do
+        [x, y, w, h] when is_integer(x) and is_integer(y) and is_integer(w) and is_integer(h) and w > 0 and h > 0 ->
+          region = %{x: x, y: y, w: w, h: h}
+
+          socket
+          |> assign(region_assign_key(prefix), region)
+          |> push_event(region_set_event(prefix), region)
+
+        [nil, nil, nil, nil] ->
+          socket
+          |> assign(region_assign_key(prefix), nil)
+          |> push_event(region_clear_event(prefix), %{})
+
+        _ ->
+          socket
+      end
+    else
+      socket
+    end
+  end
+
+  defp region_clear_event("region"), do: "clear_selection"
+  defp region_clear_event("click"), do: "clear_click_selection"
+  defp region_clear_event("scan"), do: "clear_scan_selection"
 
   defp region_form_params(prefix, %{x: x, y: y, w: w, h: h}) do
     %{
