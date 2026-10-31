@@ -33,6 +33,8 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   @search_bottom_steps 3
   @search_scroll_settle_ms 400
   @search_pack_poll_tries 50
+  @search_commit_attempts 3
+  @search_popup_close_poll_tries 10
 
   @floor_hooks Enum.map(15..1//-1, &:"theme_pack_floor_#{&1}")
   @base_pack_count 3
@@ -412,7 +414,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
          :ok <- open_search_popup(frame, icon, ctx),
          {:ok, _} <- Engine.act([move_to(:theme_pack_search_browser)], ctx),
          {:ok, frame, rect} <- scroll_to_pack(search_hook, scroll_plan(pane_packs), ctx),
-         :ok <- commit_search(frame, rect, ctx),
+         :ok <- commit_search(search_hook, frame, rect, @search_commit_attempts, ctx),
          {:ok, {x, _y, w, _h}} <- poll_replaced_pack(sleeve_hook, @search_pack_poll_tries),
          :ok <- pull_replaced({x, w}, sleeve_hook, ctx) do
       RunMemory.add_visited_pack(ctx, pack.id)
@@ -505,14 +507,53 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     end
   end
 
-  defp commit_search(frame, rect, ctx) do
+  defp commit_search(search_hook, frame, rect, attempts_left, ctx) do
     click_rect_center(frame, rect)
 
     steps =
       [click(:theme_pack_search_popup_black_confirm, settle_ms: 50)] ++
       confirm_enter(:theme_pack_search_popup_white_confirm)
 
-    with {:ok, _} <- Engine.act(steps, ctx), do: :ok
+    with {:ok, _} <- Engine.act(steps, ctx) do
+      case await_search_popup_closed(search_hook, @search_popup_close_poll_tries) do
+        :closed ->
+          :ok
+
+        {:still_open, frame, rect} when attempts_left > 1 ->
+          Ctx.log(ctx, :info, "theme pack selector: pack still in search after confirm, clicking it again (#{attempts_left - 1} retries left)")
+          commit_search(search_hook, frame, rect, attempts_left - 1, ctx)
+
+        {:still_open, _frame, _rect} ->
+          {:error, :search_pick_not_registered}
+      end
+    end
+  end
+
+  defp await_search_popup_closed(search_hook, tries_left) do
+    case Capture.grab_frame() do
+      {:ok, frame} ->
+        cond do
+          not Runner.hook_matches?(frame, :theme_pack_search_popup_black_cancel) ->
+            :closed
+
+          tries_left <= 1 ->
+            case Matcher.find(frame, search_hook) do
+              {:ok, rect} -> {:still_open, frame, rect}
+              _ -> :closed
+            end
+
+          true ->
+            Process.sleep(@search_poll_every_ms)
+            await_search_popup_closed(search_hook, tries_left - 1)
+        end
+
+      {:error, _} when tries_left <= 1 ->
+        :closed
+
+      {:error, _} ->
+        Process.sleep(@search_poll_every_ms)
+        await_search_popup_closed(search_hook, tries_left - 1)
+    end
   end
 
   defp poll_replaced_pack(nil, _tries_left), do: {:error, :no_sleeve_hook}
