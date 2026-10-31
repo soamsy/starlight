@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use xcb::Xid;
 use xcb::x::{self, Atom, Drawable, Window};
@@ -47,6 +48,10 @@ pub struct Located {
 static DISPLAYS: OnceLock<Mutex<HashMap<String, Arc<Display>>>> = OnceLock::new();
 static LAST: Mutex<Option<(String, Located)>> = Mutex::new(None);
 static TARGET: Mutex<Option<String>> = Mutex::new(None);
+static UNRESPONSIVE: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(1500);
+const UNRESPONSIVE_TTL: Duration = Duration::from_secs(30);
 
 fn xerr(e: impl std::fmt::Display) -> NativeError {
     NativeError::CaptureFailed(e.to_string())
@@ -138,6 +143,33 @@ fn open_display(name: &str) -> Result<Display, NativeError> {
     })
 }
 
+fn open_display_within(name: &str) -> Option<Display> {
+    let unresponsive = UNRESPONSIVE.get_or_init(Default::default);
+    let skip = unresponsive
+        .lock()
+        .ok()?
+        .get(name)
+        .is_some_and(|at| at.elapsed() < UNRESPONSIVE_TTL);
+    if skip {
+        return None;
+    }
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let owned = name.to_string();
+    std::thread::spawn(move || {
+        let _ = tx.send(open_display(&owned));
+    });
+
+    match rx.recv_timeout(CONNECT_TIMEOUT) {
+        Ok(opened) => opened.ok(),
+        Err(_) => {
+            eprintln!("[starlight_native] X display {name} did not answer, skipping it for a while");
+            unresponsive.lock().ok()?.insert(name.to_string(), Instant::now());
+            None
+        }
+    }
+}
+
 fn display(name: &str) -> Option<Arc<Display>> {
     let mut cache = DISPLAYS.get_or_init(Default::default).lock().ok()?;
 
@@ -148,7 +180,7 @@ fn display(name: &str) -> Option<Arc<Display>> {
         cache.remove(name);
     }
 
-    let d = Arc::new(open_display(name).ok()?);
+    let d = Arc::new(open_display_within(name)?);
     cache.insert(name.to_string(), d.clone());
     Some(d)
 }
