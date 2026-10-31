@@ -1,11 +1,12 @@
 defmodule StarlightBotWeb.Live.PageHook do
   import Phoenix.Component, only: [assign: 3]
   import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1, put_flash: 3]
-  alias StarlightBot.{Data, GameWindow, Scheduler}
+  alias StarlightBot.{AppSettings, Data, GameWindow, Scheduler}
+  alias StarlightBot.Automation.EnkephalinCharger
   alias StarlightBot.Vision.Capture
 
   @scheduler_clock_ms 30_000
-  @settings_tabs ["scheduler", "data"]
+  @settings_tabs ["scheduler", "enkephalin", "data"]
 
   @pages %{
     StarlightBotWeb.Live.HookEditorLive => :hooks,
@@ -36,6 +37,7 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:settings_open, false)
       |> assign(:settings_tab, "scheduler")
       |> assign(:app_settings, nil)
+      |> assign(:enkephalin_convert_count, AppSettings.enkephalin_convert_count())
       |> assign_scheduler(Scheduler.get_settings())
 
     socket =
@@ -78,6 +80,13 @@ defmodule StarlightBotWeb.Live.PageHook do
     case Scheduler.set_enabled(not socket.assigns.scheduler_settings.enabled) do
       {:ok, settings} -> {:halt, assign_scheduler(socket, settings)}
       {:error, message} -> {:halt, put_flash(socket, :error, "Scheduler not changed: #{message}")}
+    end
+  end
+
+  defp handle_settings_event("enkephalin_save", %{"enkephalin_convert_count" => count}, socket) do
+    case AppSettings.put_enkephalin_convert_count(count) do
+      {:ok, count} -> {:halt, assign(socket, :enkephalin_convert_count, count)}
+      :error -> {:halt, put_flash(socket, :error, "Conversions must be a number from 0 to #{EnkephalinCharger.max_convert_count()}")}
     end
   end
 

@@ -86,15 +86,14 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     assert Live.pending_action_label(socket.assigns.pending_action) == "mirror dungeon: 2 run(s) cycling 2 teams (dry run, refusing rewards)"
   end
 
-  test "collecting enkephalin carries the lunacy conversion count into the run config" do
-    params = %{"team_ids" => ["5"], "run_count" => "2", "collect_enkephalin" => "true", "enkephalin_convert_count" => "2"}
+  test "collecting enkephalin carries the shared lunacy conversion count into the run config" do
+    {:ok, 2} = StarlightBot.AppSettings.put_enkephalin_convert_count(2)
+    params = %{"team_ids" => ["5"], "run_count" => "2", "collect_enkephalin" => "true"}
     socket = event(socket([@burn]), "run", params)
 
     assert {:run_mirror_dungeon, [@burn], 2, %{collect_enkephalin?: true, enkephalin_convert_count: 2}} = socket.assigns.pending_action
     assert Live.pending_action_label(socket.assigns.pending_action) =~ "enkephalin before each run"
-
-    socket = event(socket([@burn]), "run", %{params | "enkephalin_convert_count" => "9"})
-    assert socket.assigns.pending_action == nil
+    assert :error = StarlightBot.AppSettings.put_enkephalin_convert_count(9)
   end
 
   test "the starred team starts the run and the cycle wraps around from it" do

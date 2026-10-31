@@ -39,7 +39,6 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:thread_repeats, "1")
      |> assign(:collect_xp, true)
      |> assign(:collect_enkephalin, true)
-     |> assign(:enkephalin_convert_count, "0")
      |> assign(:md_next, RunnerForms.mirror_dungeon_action())
      |> assign(:then_md, false)
      |> assign(:pending_action, nil)
@@ -98,7 +97,6 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:thread_repeats, thread_repeats)
      |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
      |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
-     |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))
      |> save_form()}
   end
 
@@ -229,7 +227,6 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
     |> assign(:thread_repeats, Map.get(params, "thread_repeats", socket.assigns.thread_repeats))
     |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
     |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
-    |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))
   end
 
   defp save_form(socket) do
@@ -248,8 +245,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
       "thread_consecutive" => a.thread_consecutive,
       "thread_repeats" => a.thread_repeats,
       "collect_xp" => to_string(a.collect_xp),
-      "collect_enkephalin" => to_string(a.collect_enkephalin),
-      "enkephalin_convert_count" => a.enkephalin_convert_count
+      "collect_enkephalin" => to_string(a.collect_enkephalin)
     })
 
     socket

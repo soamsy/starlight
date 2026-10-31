@@ -182,16 +182,19 @@
         </label>
 
         <%= if @collect_enkephalin do %>
-          <label class="flex flex-col gap-1">
+          <div class="flex flex-col gap-1">
             <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lunacy → enkephalin conversions</span>
-            <select name="enkephalin_convert_count" class="select select-sm select-bordered">
-              <%= for n <- 0..EnkephalinCharger.max_convert_count() do %>
-                <option value={n} selected={to_string(n) == to_string(@enkephalin_convert_count)}>
-                  <%= n %>x (<%= LuxcavationLive.enkephalin_cumulative_cost(n) %> lunacy)
-                </option>
-              <% end %>
-            </select>
-          </label>
+            <div class="flex items-center gap-2">
+              <span class="text-sm flex-1 min-w-0"><%= @enkephalin_convert_count %>x (<%= LuxcavationLive.enkephalin_cumulative_cost(@enkephalin_convert_count) %> lunacy)</span>
+              <button type="button" phx-click="settings_open" phx-value-tab="enkephalin" class="tooltip tooltip-left btn btn-ghost btn-square btn-sm text-base-content/60" data-tip="Change in settings">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                  <path d="M15 3h6v6" />
+                  <path d="M10 14 21 3" />
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                </svg>
+              </button>
+            </div>
+          </div>
         <% end %>
 
         <%= if @other_running? do %>

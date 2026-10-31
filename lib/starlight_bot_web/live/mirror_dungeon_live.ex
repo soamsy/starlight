@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   use StarlightBotWeb, :live_view
   import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1]
-  alias StarlightBot.Automation.{EnkephalinCharger, RunMemory}
+  alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Navigation.{Navigator, RunSplits, ScreenTimes}
   alias StarlightBot.{EgoGifts, GiftPlans, Plans, RunHistory, RunnerForms, Teams}
   alias StarlightBot.PackPlans.Resolver
@@ -47,7 +47,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:rewards, "auto")
      |> assign(:collect_enkephalin, false)
      |> assign(:collect_xp, false)
-     |> assign(:enkephalin_convert_count, "0")
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)
      |> restore_form(RunnerForms.get("mirror_dungeon"))}
@@ -83,7 +82,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:rewards, Map.get(params, "rewards", socket.assigns.rewards))
      |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
      |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
-     |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))
      |> save_form()}
   end
 
@@ -559,7 +557,6 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     |> assign(:rewards, Map.get(params, "rewards", socket.assigns.rewards))
     |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
     |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
-    |> assign(:enkephalin_convert_count, Map.get(params, "enkephalin_convert_count", socket.assigns.enkephalin_convert_count))
   end
 
   defp save_form(socket) do
@@ -574,8 +571,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
       "run_count" => a.run_count,
       "rewards" => a.rewards,
       "collect_enkephalin" => to_string(a.collect_enkephalin),
-      "collect_xp" => to_string(a.collect_xp),
-      "enkephalin_convert_count" => a.enkephalin_convert_count
+      "collect_xp" => to_string(a.collect_xp)
     })
 
     socket

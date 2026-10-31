@@ -66,7 +66,7 @@ defmodule StarlightBot.SchedulerTest do
       launch_timeout_s: 900
     }
 
-    @lux_form %{"exp_team_ids" => List.duplicate("7", 4), "thread_team_ids" => List.duplicate("7", 7), "exp_consecutive" => "1", "exp_repeats" => "2", "thread_consecutive" => "3", "thread_repeats" => "1", "collect_xp" => "true", "collect_enkephalin" => "false", "enkephalin_convert_count" => "0"}
+    @lux_form %{"exp_team_ids" => List.duplicate("7", 4), "thread_team_ids" => List.duplicate("7", 7), "exp_consecutive" => "1", "exp_repeats" => "2", "thread_consecutive" => "3", "thread_repeats" => "1", "collect_xp" => "true", "collect_enkephalin" => "false"}
     @md_form %{"team_ids" => ["5"], "start_index" => "0", "run_count" => "2", "rewards" => "weekly", "collect_xp" => "true"}
 
     test "save_settings stores the schedule and get_settings reads it back" do

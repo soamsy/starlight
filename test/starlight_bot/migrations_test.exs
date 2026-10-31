@@ -3,7 +3,7 @@ defmodule StarlightBot.MigrationsTest do
 
   @expected %{
     StarlightBot.Repo =>
-      ~w[battle_plans fusion_route_defaults gift_plans hook_overrides pack_plans runner_forms scheduler_settings sinner_profiles teams],
+      ~w[app_settings battle_plans fusion_route_defaults gift_plans hook_overrides pack_plans runner_forms scheduler_settings sinner_profiles teams],
     StarlightBot.BaseRepo =>
       ~w[ego_gifts fusion_route_templates hooks plan_templates sinner_profiles theme_pack_gifts theme_packs],
     StarlightBot.RunsRepo => ~w[run_events run_logs]

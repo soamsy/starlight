@@ -1,8 +1,7 @@
 defmodule StarlightBot.RunnerForms do
   import Ecto.Query
-  alias StarlightBot.{LuxSchedule, Repo, Teams}
+  alias StarlightBot.{AppSettings, LuxSchedule, Repo, Teams}
   alias StarlightBot.PackPlans.Resolver
-  alias StarlightBot.Automation.EnkephalinCharger
 
   @topic "runner_forms"
   @runners ~w(mirror_dungeon luxcavation)
@@ -67,14 +66,12 @@ defmodule StarlightBot.RunnerForms do
     with [_ | _] <- picks,
          {run_count, ""} <- Integer.parse(to_string(params["run_count"])),
          true <- run_count >= 0,
-         {convert_count, ""} <- Integer.parse(to_string(params["enkephalin_convert_count"] || "0")),
-         true <- convert_count in 0..EnkephalinCharger.max_convert_count(),
          {:ok, rewards} <- Map.fetch(@rewards, Map.get(params, "rewards", "none")) do
       config = %{
         rewards: rewards,
         collect_enkephalin?: Map.get(params, "collect_enkephalin") == "true",
         collect_xp?: Map.get(params, "collect_xp") == "true",
-        enkephalin_convert_count: convert_count
+        enkephalin_convert_count: AppSettings.enkephalin_convert_count()
       }
 
       {:ok, {:run_mirror_dungeon, picks, run_count, config}}
@@ -97,17 +94,15 @@ defmodule StarlightBot.RunnerForms do
          {exp_repeats, ""} <- Integer.parse(to_string(params["exp_repeats"])),
          {thread_consecutive, ""} <- Integer.parse(to_string(params["thread_consecutive"])),
          {thread_repeats, ""} <- Integer.parse(to_string(params["thread_repeats"])),
-         {enkephalin_convert_count, ""} <- Integer.parse(to_string(params["enkephalin_convert_count"] || "0")),
          true <- exp_consecutive in 0..@max_lux_consecutive and thread_consecutive in 0..@max_lux_consecutive,
          true <- exp_repeats >= 0 and thread_repeats >= 0,
-         true <- enkephalin_convert_count in 0..4,
          exp_team = Enum.at(exp_picks, parse_pin(params["exp_pin"], LuxSchedule.exp_slot_count()) || LuxSchedule.exp_slot(day)),
          thread_team = Enum.at(thread_picks, parse_pin(params["thread_pin"], LuxSchedule.thread_slot_count()) || day),
          true <- exp_team != nil or exp_consecutive * exp_repeats == 0,
          true <- thread_team != nil or thread_consecutive * thread_repeats == 0 do
       {:ok,
        {:run_luxcavation, %{exp: exp_team, thread: thread_team}, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats,
-        Map.get(params, "collect_xp") == "true", Map.get(params, "collect_enkephalin") == "true", enkephalin_convert_count}}
+        Map.get(params, "collect_xp") == "true", Map.get(params, "collect_enkephalin") == "true", AppSettings.enkephalin_convert_count()}}
     else
       _ -> :error
     end
