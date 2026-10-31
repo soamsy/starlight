@@ -190,8 +190,8 @@ defmodule StarlightBot.Scheduler.Server do
 
   defp request_run({:run_mirror_dungeon, picks, run_count, config}), do: Navigator.run_mirror_dungeon(picks, run_count, config)
 
-  defp request_run({:run_luxcavation, team, exp_c, exp_r, thread_c, thread_r, collect_xp?, collect_enkephalin?, convert}),
-    do: Navigator.run_luxcavation(team, exp_c, exp_r, thread_c, thread_r, collect_xp?, collect_enkephalin?, convert)
+  defp request_run({:run_luxcavation, team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, convert}),
+    do: Navigator.run_luxcavation(team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, convert)
 
   defp confirm_run_started do
     Process.sleep(@run_start_confirm_ms)

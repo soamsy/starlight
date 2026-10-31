@@ -43,10 +43,8 @@ defmodule StarlightBot.Navigation.Navigator do
 
   def run_luxcavation(
         team,
-        exp_consecutive,
-        exp_repeats,
-        thread_consecutive,
-        thread_repeats,
+        exp_waves,
+        thread_waves,
         collect_xp?,
         collect_enkephalin?,
         enkephalin_convert_count
@@ -54,8 +52,7 @@ defmodule StarlightBot.Navigation.Navigator do
       do:
         GenServer.cast(
           __MODULE__,
-          {:run_luxcavation, team, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
-           collect_enkephalin?, enkephalin_convert_count}
+          {:run_luxcavation, team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count}
         )
 
   def run_mirror_dungeon(picks, run_count, config),
@@ -226,15 +223,14 @@ defmodule StarlightBot.Navigation.Navigator do
     {:noreply, state}
   end
 
-  def handle_cast({:run_luxcavation, _, _, _, _, _, _, _, _}, %{run_kind: :mirror_dungeon, task_pid: pid} = state) when is_pid(pid),
+  def handle_cast({:run_luxcavation, _, _, _, _, _, _}, %{run_kind: :mirror_dungeon, task_pid: pid} = state) when is_pid(pid),
     do: refuse_run(state, "luxcavation", "mirror dungeon")
 
   def handle_cast({:run_mirror_dungeon, _, _, _}, %{run_kind: :luxcavation, task_pid: pid} = state) when is_pid(pid),
     do: refuse_run(state, "mirror dungeon", "luxcavation")
 
   def handle_cast(
-        {:run_luxcavation, team, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
-         collect_enkephalin?, enkephalin_convert_count},
+        {:run_luxcavation, team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count},
         state
       ) do
     state = cancel_running(state)
@@ -243,7 +239,7 @@ defmodule StarlightBot.Navigation.Navigator do
       add_log(
         state,
         :info,
-        "Running luxcavation: exp_team=#{team_label(team.exp)} thread_team=#{team_label(team.thread)} exp=#{exp_repeats}x#{exp_consecutive} thread=#{thread_repeats}x#{thread_consecutive} " <>
+        "Running luxcavation: exp_team=#{team_label(team.exp)} thread_team=#{team_label(team.thread)} exp_waves=#{exp_waves} thread_waves=#{thread_waves} " <>
           "collect_xp=#{collect_xp?} collect_enkephalin=#{collect_enkephalin?} enkephalin_convert_count=#{enkephalin_convert_count}"
       )
 
@@ -252,10 +248,8 @@ defmodule StarlightBot.Navigation.Navigator do
     program =
       LuxcavationRunner.program(
         team,
-        exp_consecutive,
-        exp_repeats,
-        thread_consecutive,
-        thread_repeats,
+        exp_waves,
+        thread_waves,
         collect_xp?,
         collect_enkephalin?,
         enkephalin_convert_count

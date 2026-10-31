@@ -66,7 +66,7 @@ defmodule StarlightBot.SchedulerTest do
       launch_timeout_s: 900
     }
 
-    @lux_form %{"exp_team_ids" => List.duplicate("7", 4), "thread_team_ids" => List.duplicate("7", 7), "exp_consecutive" => "1", "exp_repeats" => "2", "thread_consecutive" => "3", "thread_repeats" => "1", "collect_xp" => "true", "collect_enkephalin" => "false"}
+    @lux_form %{"exp_team_ids" => List.duplicate("7", 4), "thread_team_ids" => List.duplicate("7", 7), "exp_waves" => "2", "thread_waves" => "3", "collect_xp" => "true", "collect_enkephalin" => "false"}
     @md_form %{"team_ids" => ["5"], "start_index" => "0", "run_count" => "2", "rewards" => "weekly", "collect_xp" => "true"}
 
     test "save_settings stores the schedule and get_settings reads it back" do
@@ -96,13 +96,13 @@ defmodule StarlightBot.SchedulerTest do
 
       RunnerForms.put("mirror_dungeon", @md_form)
       assert {:ok, settings} = Scheduler.save_settings(@attrs)
-      assert {:luxcavation_then_mirror_dungeon, {:run_luxcavation, %{exp: %{id: 7, hook: nil}, thread: %{id: 7, hook: nil}}, 1, 2, 3, 1, true, false, 0}, {:run_mirror_dungeon, [%{id: 5, hook: "team_burn"}], 2, _}} = Scheduler.runner_action(settings)
+      assert {:luxcavation_then_mirror_dungeon, {:run_luxcavation, %{exp: %{id: 7, hook: nil}, thread: %{id: 7, hook: nil}}, 2, 3, true, false, 0}, {:run_mirror_dungeon, [%{id: 5, hook: "team_burn"}], 2, _}} = Scheduler.runner_action(settings)
 
       RunnerForms.put("mirror_dungeon", %{@md_form | "run_count" => "5"})
       assert {_, _, {:run_mirror_dungeon, [%{id: 5, hook: "team_burn"}], 5, _}} = Scheduler.runner_action(settings)
 
       RunnerForms.put("luxcavation", @lux_form)
-      assert {:run_luxcavation, _, 1, 2, 3, 1, true, false, 0} = Scheduler.runner_action(settings)
+      assert {:run_luxcavation, _, 2, 3, true, false, 0} = Scheduler.runner_action(settings)
     end
   end
 end

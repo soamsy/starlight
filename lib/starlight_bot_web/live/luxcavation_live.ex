@@ -33,10 +33,8 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:thread_pin, nil)
      |> assign(:exp_picks, List.duplicate(nil, LuxSchedule.exp_slot_count()))
      |> assign(:thread_picks, List.duplicate(nil, LuxSchedule.thread_slot_count()))
-     |> assign(:exp_consecutive, "1")
-     |> assign(:exp_repeats, "1")
-     |> assign(:thread_consecutive, "3")
-     |> assign(:thread_repeats, "1")
+     |> assign(:exp_waves, "1")
+     |> assign(:thread_waves, "3")
      |> assign(:collect_xp, true)
      |> assign(:collect_enkephalin, true)
      |> assign(:md_next, RunnerForms.mirror_dungeon_action())
@@ -71,7 +69,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
          put_flash(
            socket,
            :error,
-           "Pick a team for today's slots, keep waves at 0-#{RunnerForms.max_lux_consecutive()}, and repeats non-negative."
+           "Pick a team for today's slots, and keep waves non-negative."
          )}
     end
   end
@@ -80,10 +78,8 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   def handle_event(
         "update_form",
         %{
-          "exp_consecutive" => exp_consecutive,
-          "exp_repeats" => exp_repeats,
-          "thread_consecutive" => thread_consecutive,
-          "thread_repeats" => thread_repeats
+          "exp_waves" => exp_waves,
+          "thread_waves" => thread_waves
         } = params,
         socket
       ) do
@@ -91,10 +87,8 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      socket
      |> assign_picks(params)
      |> assign(:then_md, params["then"] == "mirror_dungeon")
-     |> assign(:exp_consecutive, exp_consecutive)
-     |> assign(:exp_repeats, exp_repeats)
-     |> assign(:thread_consecutive, thread_consecutive)
-     |> assign(:thread_repeats, thread_repeats)
+     |> assign(:exp_waves, exp_waves)
+     |> assign(:thread_waves, thread_waves)
      |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
      |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
      |> save_form()}
@@ -221,10 +215,8 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
     |> assign(:then_md, params["then"] == "mirror_dungeon")
     |> assign(:exp_pin, RunnerForms.parse_pin(params["exp_pin"], LuxSchedule.exp_slot_count()))
     |> assign(:thread_pin, RunnerForms.parse_pin(params["thread_pin"], LuxSchedule.thread_slot_count()))
-    |> assign(:exp_consecutive, Map.get(params, "exp_consecutive", socket.assigns.exp_consecutive))
-    |> assign(:exp_repeats, Map.get(params, "exp_repeats", socket.assigns.exp_repeats))
-    |> assign(:thread_consecutive, Map.get(params, "thread_consecutive", socket.assigns.thread_consecutive))
-    |> assign(:thread_repeats, Map.get(params, "thread_repeats", socket.assigns.thread_repeats))
+    |> assign(:exp_waves, Map.get(params, "exp_waves", socket.assigns.exp_waves))
+    |> assign(:thread_waves, Map.get(params, "thread_waves", socket.assigns.thread_waves))
     |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
     |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
   end
@@ -240,10 +232,8 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
       "then" => if(a.then_md, do: "mirror_dungeon", else: ""),
       "exp_pin" => to_string(a.exp_pin),
       "thread_pin" => to_string(a.thread_pin),
-      "exp_consecutive" => a.exp_consecutive,
-      "exp_repeats" => a.exp_repeats,
-      "thread_consecutive" => a.thread_consecutive,
-      "thread_repeats" => a.thread_repeats,
+      "exp_waves" => a.exp_waves,
+      "thread_waves" => a.thread_waves,
       "collect_xp" => to_string(a.collect_xp),
       "collect_enkephalin" => to_string(a.collect_enkephalin)
     })
@@ -265,16 +255,13 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   end
 
   defp run_pending_action(
-         {:run_luxcavation, team, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
-          collect_enkephalin?, enkephalin_convert_count}
+         {:run_luxcavation, team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count}
        ),
        do:
          Navigator.run_luxcavation(
            team,
-           exp_consecutive,
-           exp_repeats,
-           thread_consecutive,
-           thread_repeats,
+           exp_waves,
+           thread_waves,
            collect_xp?,
            collect_enkephalin?,
            enkephalin_convert_count
@@ -283,14 +270,12 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   defp run_pending_action(:resume_luxcavation), do: Navigator.resume_luxcavation()
 
   def pending_action_label(
-        {:run_luxcavation, _team_id, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?,
-         collect_enkephalin?, enkephalin_convert_count}
+        {:run_luxcavation, _team_id, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count}
       ) do
     enkephalin_prefix = if collect_enkephalin?, do: "enkephalin (#{enkephalin_convert_count}x lunacy) + ", else: ""
     xp_suffix = if collect_xp?, do: " + battle pass xp", else: ""
 
-    "luxcavation: #{enkephalin_prefix}#{exp_repeats}x#{exp_consecutive} exp (#{total_runs(exp_consecutive, exp_repeats)}), " <>
-      "#{thread_repeats}x#{thread_consecutive} thread (#{total_runs(thread_consecutive, thread_repeats)})#{xp_suffix}"
+    "luxcavation: #{enkephalin_prefix}#{exp_waves} exp wave(s), #{thread_waves} thread wave(s)#{xp_suffix}"
   end
 
   def pending_action_label({:then, lux, md}), do: pending_action_label(lux) <> ", then " <> MirrorDungeonLive.pending_action_label(md)
@@ -374,20 +359,25 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
 
   def enkephalin_cumulative_cost(count) when count in 0..4, do: Enum.at(@enkephalin_cumulative_costs, count)
 
-  def total_runs(consecutive, repeats) do
-    with {consecutive, ""} <- Integer.parse(to_string(consecutive)),
-         {repeats, ""} <- Integer.parse(to_string(repeats)) do
-      consecutive * repeats
-    else
+  def total_waves(waves) do
+    case Integer.parse(to_string(waves)) do
+      {waves, ""} when waves >= 0 -> waves
       _ -> 0
     end
   end
 
-  def max_consecutive, do: RunnerForms.max_lux_consecutive()
   def exp_enkephalin_cost, do: @exp_enkephalin_cost
   def thread_enkephalin_cost, do: @thread_enkephalin_cost
 
-  def enkephalin_modules(run_count, per_run_cost), do: run_count * per_run_cost
+  def module_terms(exp_waves, thread_waves) do
+    [
+      {"EXP", total_waves(exp_waves), @exp_enkephalin_cost},
+      {"THREAD", total_waves(thread_waves), @thread_enkephalin_cost}
+    ]
+  end
+
+  defdelegate modules_total(terms), to: StarlightBotWeb.Live.SchedulerLive
+  defdelegate term_badge_class(label), to: StarlightBotWeb.Live.SchedulerLive
 
   def screen_label(nil), do: "Not localized"
   def screen_label(:unknown), do: "Unknown"

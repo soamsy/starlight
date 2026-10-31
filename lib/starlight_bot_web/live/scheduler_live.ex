@@ -124,10 +124,10 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def term_badge_class("THREAD"), do: "badge-secondary"
   def term_badge_class("MD"), do: "badge-primary"
 
-  defp action_terms({:run_luxcavation, _teams, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, _xp?, _enkephalin?, _convert}) do
+  defp action_terms({:run_luxcavation, _teams, exp_waves, thread_waves, _xp?, _enkephalin?, _convert}) do
     [
-      {"EXP", exp_consecutive * exp_repeats, LuxcavationLive.exp_enkephalin_cost()},
-      {"THREAD", thread_consecutive * thread_repeats, LuxcavationLive.thread_enkephalin_cost()}
+      {"EXP", exp_waves, LuxcavationLive.exp_enkephalin_cost()},
+      {"THREAD", thread_waves, LuxcavationLive.thread_enkephalin_cost()}
     ]
   end
 

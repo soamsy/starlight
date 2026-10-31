@@ -3,15 +3,21 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunnerTest do
 
   alias StarlightBot.Automation.Scripts.LuxcavationRunner
 
-  describe "batches/2" do
-    test "zero repeats yields no batches" do
-      assert LuxcavationRunner.batches(5, 0) == []
+  describe "batches/1" do
+    test "zero waves yields no batches" do
+      assert LuxcavationRunner.batches(0) == []
     end
 
-    test "repeats the consecutive count that many times" do
-      assert LuxcavationRunner.batches(2, 1) == [2]
-      assert LuxcavationRunner.batches(2, 4) == [2, 2, 2, 2]
-      assert LuxcavationRunner.batches(10, 3) == [10, 10, 10]
+    test "up to ten waves is a single batch" do
+      assert LuxcavationRunner.batches(1) == [1]
+      assert LuxcavationRunner.batches(10) == [10]
+    end
+
+    test "waves past ten spill into further batches" do
+      assert LuxcavationRunner.batches(11) == [10, 1]
+      assert LuxcavationRunner.batches(17) == [10, 7]
+      assert LuxcavationRunner.batches(25) == [10, 10, 5]
+      assert LuxcavationRunner.batches(30) == [10, 10, 10]
     end
   end
 end

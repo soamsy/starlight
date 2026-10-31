@@ -10,42 +10,38 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   @post_battle_settle_tries 4
   @post_battle_settle_ms 500
 
-  def program(team, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?, collect_enkephalin?, enkephalin_convert_count) do
-    args = [team, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, collect_xp?, collect_enkephalin?, enkephalin_convert_count]
+  def program(team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count) do
+    args = [team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count]
     [call(__MODULE__, :start, args)]
   end
 
   def start(
         %{exp: _, thread: _} = teams,
-        exp_consecutive,
-        exp_repeats,
-        thread_consecutive,
-        thread_repeats,
+        exp_waves,
+        thread_waves,
         collect_xp?,
         collect_enkephalin?,
         enkephalin_convert_count,
         _frame,
         ctx
       )
-      when is_integer(exp_consecutive) and exp_consecutive in 0..@max_consecutive and
-             is_integer(exp_repeats) and exp_repeats >= 0 and
-             is_integer(thread_consecutive) and thread_consecutive in 0..@max_consecutive and
-             is_integer(thread_repeats) and thread_repeats >= 0 and
+      when is_integer(exp_waves) and exp_waves >= 0 and
+             is_integer(thread_waves) and thread_waves >= 0 and
              is_boolean(collect_xp?) and is_boolean(collect_enkephalin?) and
              is_integer(enkephalin_convert_count) and enkephalin_convert_count in 0..4 do
     RunMemory.put_context(ctx, :luxcavation)
     Ctx.log(ctx, :info, "Localizing…")
 
     lux = %{teams: teams, collect_xp?: collect_xp?, collect_enkephalin?: collect_enkephalin?, convert_count: enkephalin_convert_count}
-    queue = kind_queue(:exp, exp_consecutive, exp_repeats) ++ kind_queue(:thread, thread_consecutive, thread_repeats)
+    queue = kind_queue(:exp, exp_waves) ++ kind_queue(:thread, thread_waves)
     {:steps, Recovery.steps(no_keep(), 0, {__MODULE__, :started, [lux, queue]})}
   end
 
-  def start(_team, _exp_consecutive, _exp_repeats, _thread_consecutive, _thread_repeats, _collect_xp?, _collect_enkephalin?, _count, _frame, ctx) do
+  def start(_team, _exp_waves, _thread_waves, _collect_xp?, _collect_enkephalin?, _count, _frame, ctx) do
     Ctx.log(
       ctx,
       :error,
-      "exp/thread consecutive counts must be 0-#{@max_consecutive}, repeat counts must be non-negative, enkephalin_convert_count must be 0-4"
+      "exp/thread wave counts must be non-negative, enkephalin_convert_count must be 0-4"
     )
 
     {:error, :invalid_counts}
@@ -179,8 +175,14 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
 
   def keeps_nothing?(_screen), do: false
 
-  def batches(_consecutive, 0), do: []
-  def batches(consecutive, repeats) when repeats > 0, do: List.duplicate(consecutive, repeats)
+  def batches(waves) when waves >= 0 do
+    full = List.duplicate(@max_consecutive, div(waves, @max_consecutive))
+
+    case rem(waves, @max_consecutive) do
+      0 -> full
+      rest -> full ++ [rest]
+    end
+  end
 
   defp recover(_lux, _kind, _size, _queue, errors, error, _frame, ctx) when errors >= @max_navigation_retries do
     Ctx.log(ctx, :error, "navigation error #{inspect(error)} — giving up after #{errors} relocalize attempt(s)")
@@ -204,11 +206,11 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
 
   defp no_keep, do: {__MODULE__, :keeps_nothing?}
 
-  defp kind_queue(_kind, _consecutive, 0), do: []
+  defp kind_queue(_kind, 0), do: []
 
-  defp kind_queue(kind, consecutive, repeats) do
-    [{:log, "starting #{repeats} x #{consecutive} consecutive #{kind} run(s) (#{consecutive * repeats} total)"}] ++
-      Enum.map(batches(consecutive, repeats), &{:batch, kind, &1})
+  defp kind_queue(kind, waves) do
+    [{:log, "starting #{waves} #{kind} wave(s) in batches of up to #{@max_consecutive}"}] ++
+      Enum.map(batches(waves), &{:batch, kind, &1})
   end
 
   defp lux_screen(:exp), do: :lux_exp

@@ -56,7 +56,7 @@
         <div class="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1">
           <%= for {label, runs, cost} <- terms do %>
             <span class={["badge badge-sm font-semibold", term_badge_class(label)]}>{label}</span>
-            <span class="font-mono text-base-content/60">{runs} × {cost}</span>
+            <span class="flex items-center gap-1 font-mono text-base-content/60">{runs} × {cost}<img src={~p"/images/icons/enkephalin.webp"} alt="modules" class="h-4 w-4" /></span>
             <span class="flex items-center justify-end gap-1 font-mono">
               {runs * cost}
               <img src={~p"/images/icons/enkephalin.webp"} alt="modules" class="h-4 w-4" />

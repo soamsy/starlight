@@ -5,12 +5,9 @@ defmodule StarlightBot.RunnerForms do
 
   @topic "runner_forms"
   @runners ~w(mirror_dungeon luxcavation)
-  @max_lux_consecutive 10
   @rewards %{"none" => :none, "claim" => :claim, "weekly" => :claim_weekly, "auto" => :claim_auto}
 
   def subscribe, do: Phoenix.PubSub.subscribe(StarlightBot.PubSub, @topic)
-
-  def max_lux_consecutive, do: @max_lux_consecutive
 
   def get(runner) when runner in @runners do
     case Repo.one(from f in "runner_forms", where: f.runner == ^runner, select: f.params) do
@@ -90,18 +87,15 @@ defmodule StarlightBot.RunnerForms do
   def luxcavation_action(params, day \\ LuxSchedule.today()) do
     with {:ok, exp_picks} <- parse_slot_picks(params["exp_team_ids"], params["exp_team_hooks"], LuxSchedule.exp_slot_count()),
          {:ok, thread_picks} <- parse_slot_picks(params["thread_team_ids"], params["thread_team_hooks"], LuxSchedule.thread_slot_count()),
-         {exp_consecutive, ""} <- Integer.parse(to_string(params["exp_consecutive"])),
-         {exp_repeats, ""} <- Integer.parse(to_string(params["exp_repeats"])),
-         {thread_consecutive, ""} <- Integer.parse(to_string(params["thread_consecutive"])),
-         {thread_repeats, ""} <- Integer.parse(to_string(params["thread_repeats"])),
-         true <- exp_consecutive in 0..@max_lux_consecutive and thread_consecutive in 0..@max_lux_consecutive,
-         true <- exp_repeats >= 0 and thread_repeats >= 0,
+         {exp_waves, ""} <- Integer.parse(to_string(params["exp_waves"])),
+         {thread_waves, ""} <- Integer.parse(to_string(params["thread_waves"])),
+         true <- exp_waves >= 0 and thread_waves >= 0,
          exp_team = Enum.at(exp_picks, parse_pin(params["exp_pin"], LuxSchedule.exp_slot_count()) || LuxSchedule.exp_slot(day)),
          thread_team = Enum.at(thread_picks, parse_pin(params["thread_pin"], LuxSchedule.thread_slot_count()) || day),
-         true <- exp_team != nil or exp_consecutive * exp_repeats == 0,
-         true <- thread_team != nil or thread_consecutive * thread_repeats == 0 do
+         true <- exp_team != nil or exp_waves == 0,
+         true <- thread_team != nil or thread_waves == 0 do
       {:ok,
-       {:run_luxcavation, %{exp: exp_team, thread: thread_team}, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats,
+       {:run_luxcavation, %{exp: exp_team, thread: thread_team}, exp_waves, thread_waves,
         Map.get(params, "collect_xp") == "true", Map.get(params, "collect_enkephalin") == "true", AppSettings.enkephalin_convert_count()}}
     else
       _ -> :error
