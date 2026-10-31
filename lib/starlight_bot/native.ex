@@ -47,10 +47,12 @@ defmodule StarlightBot.Native do
   `$XDG_RUNTIME_DIR/starlight-nested/bus`; otherwise uses `LIBEI_SOCKET`, then
   the RemoteDesktop portal. If the game isn't running yet, connects to the host;
   input calls reconnect automatically once the game is found on another display.
+  `token_path` is where the portal's restore token is kept so the permission
+  dialog only appears the first time.
   Must be called once at startup before any input functions.
   Returns :ok or {:error, reason_atom}.
   """
-  def init_input(_window_title), do: nif_err()
+  def init_input(_window_title, _token_path), do: nif_err()
 
   @doc "Inject relative mouse motion (screen pixels). Returns :ok or {:error, atom}."
   def move_relative(_dx, _dy), do: nif_err()

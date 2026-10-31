@@ -14,7 +14,7 @@ defmodule StarlightBot.HardwareTest do
   end
 
   test "Native.init_input/1 connects to KWin's EIS interface" do
-    assert :ok = StarlightBot.Native.init_input("LimbusCompany")
+    assert :ok = StarlightBot.Native.init_input("LimbusCompany", StarlightBot.Data.portal_token_path())
   end
 
   test "Native.get_cursor_pos/0 round-trips through the KWin scripting D-Bus bridge" do

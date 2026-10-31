@@ -83,8 +83,8 @@ fn is_window_focused<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-fn init_input<'a>(env: Env<'a>, window_title: String) -> Term<'a> {
-    match input::init_input(&window_title) {
+fn init_input<'a>(env: Env<'a>, window_title: String, token_path: String) -> Term<'a> {
+    match input::init_input(&window_title, &token_path) {
         Ok(()) => ok().encode(env),
         Err(e) => {
             eprintln!("[starlight_native] init_input error: {e}");

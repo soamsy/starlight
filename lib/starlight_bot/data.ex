@@ -10,6 +10,7 @@ defmodule StarlightBot.Data do
   def authoring_allowed?, do: Application.get_env(:starlight_bot, :allow_authoring, false)
   def log_dir, do: Application.get_env(:starlight_bot, :bot_log_dir, Map.get(resolved(), :log_dir))
   def screenshots_dir, do: Map.fetch!(resolved(), :screenshots_dir)
+  def portal_token_path, do: Path.join(resolved().root, "portal_remote_desktop_token")
 
   def require_authoring! do
     unless authoring?() do

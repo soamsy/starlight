@@ -74,7 +74,7 @@ defmodule StarlightBot.Input.Mouse do
   def init(_opts) do
     Logger.info("Input.Mouse starting — initializing EIS connection", module: __MODULE__)
 
-    case Native.init_input(Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany")) do
+    case Native.init_input(Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany"), StarlightBot.Data.portal_token_path()) do
       :ok ->
         Logger.info("EIS input device ready", module: __MODULE__)
       {:error, reason} ->

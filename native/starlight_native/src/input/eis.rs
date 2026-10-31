@@ -26,7 +26,7 @@ pub mod linux {
     use ashpd::desktop::remote_desktop::{
         ConnectToEISOptions, DeviceType, RemoteDesktop, SelectDevicesOptions,
     };
-    use ashpd::desktop::{CreateSessionOptions, Session};
+    use ashpd::desktop::{CreateSessionOptions, PersistMode, Session};
 
     use crate::error::NativeError;
 
@@ -63,6 +63,30 @@ pub mod linux {
     unsafe impl Sync for EisClient {}
 
     static EIS: OnceLock<Mutex<Option<EisClient>>> = OnceLock::new();
+    static TOKEN_PATH: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+
+    fn read_restore_token() -> Option<String> {
+        let path = TOKEN_PATH.lock().unwrap().clone()?;
+        let token = std::fs::read_to_string(path).ok()?;
+        let token = token.trim();
+        (!token.is_empty()).then(|| token.to_owned())
+    }
+
+    fn write_restore_token(token: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(path) = TOKEN_PATH.lock().unwrap().clone() else {
+            return;
+        };
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        match std::fs::write(&path, token)
+            .and_then(|_| std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)))
+        {
+            Ok(()) => eprintln!("[eis] saved portal restore token to {}", path.display()),
+            Err(e) => eprintln!("[eis] could not save portal restore token: {e}"),
+        }
+    }
 
     fn eis() -> &'static Mutex<Option<EisClient>> {
         EIS.get_or_init(|| Mutex::new(None))
@@ -168,23 +192,37 @@ pub mod linux {
             .await
             .map_err(|e| NativeError::EisConnectFailed(format!("CreateSession: {e}")))?;
 
+        let saved_token = read_restore_token();
+        eprintln!(
+            "[eis] portal restore token: {}",
+            if saved_token.is_some() { "found" } else { "none" }
+        );
+
         proxy
             .select_devices(
                 &session,
                 SelectDevicesOptions::default()
-                    .set_devices(DeviceType::Keyboard | DeviceType::Pointer),
+                    .set_devices(DeviceType::Keyboard | DeviceType::Pointer)
+                    .set_persist_mode(PersistMode::ExplicitlyRevoked)
+                    .set_restore_token(saved_token.as_deref()),
             )
             .await
             .map_err(|e| NativeError::EisConnectFailed(format!("SelectDevices: {e}")))?;
 
         eprintln!("[eis] portal Start — approve the permission dialog if one appears");
-        proxy
+        let selected = proxy
             .start(&session, None, Default::default())
             .await
             .map_err(|e| NativeError::EisConnectFailed(format!("Start: {e}")))?
             .response()
             .map_err(|e| NativeError::EisConnectFailed(format!("Start denied: {e}")))?;
         eprintln!("[eis] Start approved");
+
+        if let Some(token) = selected.restore_token() {
+            if saved_token.as_deref() != Some(token) {
+                write_restore_token(token);
+            }
+        }
 
         eprintln!("[eis] calling ConnectToEIS");
         let fd = proxy
@@ -239,7 +277,8 @@ pub mod linux {
         Ok((ctx, bus))
     }
 
-    pub fn init_input(window_title: &str) -> Result<(), NativeError> {
+    pub fn init_input(window_title: &str, token_path: &str) -> Result<(), NativeError> {
+        *TOKEN_PATH.lock().unwrap() = Some(std::path::PathBuf::from(token_path));
         let _ = crate::capture::x11::locate(window_title);
         let client = connect(crate::capture::nested_display_name())?;
         *eis().lock().unwrap() = Some(client);
@@ -517,7 +556,7 @@ pub mod linux {
 pub mod linux {
     use crate::error::NativeError;
 
-    pub fn init_input(_window_title: &str) -> Result<(), NativeError> {
+    pub fn init_input(_window_title: &str, _token_path: &str) -> Result<(), NativeError> {
         Err(NativeError::EisNotAvailable)
     }
     pub fn move_relative(_dx: f32, _dy: f32) -> Result<(), NativeError> {
