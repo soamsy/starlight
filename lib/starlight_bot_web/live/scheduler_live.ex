@@ -6,6 +6,8 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
 
   @clock_tick_ms 30_000
   @md_modules_per_run 5
+  @modules_per_conversion 7
+  @daily_charge_modules 12
   @launch_keys ~w(launch_mode steam_app_id exe_path launch_timeout_s)
   @runner_keys ~w(window_start window_end exp_waves thread_waves md_runs)
 
@@ -102,12 +104,16 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     settings = socket.assigns.settings
     blocked = Scheduler.blocked()
 
+    remaining = DailyProgress.remaining(settings)
+
     socket
+    |> assign(:pending, DailyProgress.pending?(remaining))
     |> assign(:progress, DailyProgress.completed())
     |> assign(:now, Scheduler.local_now())
     |> assign(:blocked, blocked)
     |> assign(:charger, EnkephalinSchedule.get_settings())
-    |> assign(:outlook, Scheduler.outlook(Scheduler.local_now(), settings, DailyProgress.remaining(settings), Scheduler.busy?(), blocked, socket.assigns[:retry_after_ms]))
+    |> assign(:convert_count, StarlightBot.AppSettings.enkephalin_convert_count())
+    |> assign(:outlook, Scheduler.outlook(Scheduler.local_now(), settings, remaining, Scheduler.busy?(), blocked, socket.assigns[:retry_after_ms]))
   end
 
   defp assign_server_status(socket) do
@@ -148,6 +154,18 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
 
   def progress_modules(rows, :done), do: rows |> Enum.map(fn {_label, done, target, _unit, cost} -> min(done, target) * cost end) |> Enum.sum()
   def progress_modules(rows, :target), do: rows |> Enum.map(fn {_label, _done, target, _unit, cost} -> target * cost end) |> Enum.sum()
+
+  def charge_modules, do: @daily_charge_modules
+
+  def lunacy_modules(convert_count), do: convert_count * @modules_per_conversion
+
+  def modules_net(rows, charger, convert_count) do
+    charge = if charger.enabled, do: @daily_charge_modules, else: 0
+    charge + lunacy_modules(convert_count) - progress_modules(rows, :target)
+  end
+
+  def signed(n) when n > 0, do: "+#{n}"
+  def signed(n), do: "#{n}"
 
   def modules_total(terms), do: terms |> Enum.map(fn {_label, runs, cost} -> runs * cost end) |> Enum.sum()
 

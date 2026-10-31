@@ -1,7 +1,7 @@
 <div class="flex flex-col gap-3">
 <div :if={@outlook} class={["alert flex items-center justify-between gap-3 px-3 py-2 text-sm", if(@blocked, do: "alert-warning", else: "alert-info")]}>
   <span class="min-w-0 flex-1 font-medium">{@outlook}</span>
-  <div :if={@settings.enabled || @charger.enabled} class="shrink-0 text-xs"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={@blocked} section={:start} /></div>
+  <div :if={@settings.enabled || @charger.enabled} class="shrink-0 text-xs"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={@blocked} pending={@pending} section={:start} /></div>
 </div>
 <div class="flex flex-col gap-1 bg-base-200 rounded-xl p-3 text-sm">
   <% rows = for {_label, _done, target, _unit, _cost} = row <- progress_rows(@settings, @progress), target > 0, do: row %>
@@ -20,9 +20,35 @@
       </span>
     <% end %>
     <%= if rows != [] do %>
+      <% net = modules_net(rows, @charger, @convert_count) %>
       <span class="col-span-2 border-t border-base-content/10 pt-1 font-semibold">Modules spent</span>
       <span class="flex items-center justify-end gap-1 border-t border-base-content/10 pt-1 font-mono font-semibold">
         <span class="font-normal text-base-content/60">{progress_modules(rows, :done)} /</span> {progress_modules(rows, :target)}
+        <img src={~p"/images/icons/enkephalin.webp"} alt="modules" class="h-4 w-4" />
+      </span>
+      <span class="col-span-2 flex items-center gap-2">
+        <span class="badge badge-sm badge-success badge-soft font-semibold">CHARGE</span>
+        <span :if={!@charger.enabled} class="badge badge-sm badge-warning gap-1 font-semibold">turn on the enkephalin scheduler</span>
+      </span>
+      <span class={["flex items-center justify-end gap-1 font-mono", !@charger.enabled && "text-base-content/30 line-through"]}>
+        +{charge_modules()}
+        <img src={~p"/images/icons/enkephalin.webp"} alt="modules" class={["h-4 w-4", !@charger.enabled && "opacity-30"]} />
+      </span>
+      <%= if @convert_count > 0 do %>
+        <span class="col-span-2 flex items-center gap-2">
+          <span class="badge badge-sm badge-accent badge-soft font-semibold">LUNACY</span>
+          <span class="font-mono text-xs text-base-content/60">{@convert_count}x conversion</span>
+        </span>
+        <span class="flex items-center justify-end gap-1 font-mono">
+          ~+{lunacy_modules(@convert_count)}
+          <img src={~p"/images/icons/enkephalin.webp"} alt="modules" class="h-4 w-4" />
+        </span>
+      <% end %>
+      <span class="col-span-2 border-t border-base-content/10 pt-1 font-semibold">
+        {if net >= 0, do: "Daily surplus", else: "Daily deficit"}
+      </span>
+      <span class={["flex items-center justify-end gap-1 border-t border-base-content/10 pt-1 font-mono font-semibold", if(net >= 0, do: "text-success", else: "text-error")]}>
+        <span :if={@convert_count > 0}>~</span>{signed(net)}
         <img src={~p"/images/icons/enkephalin.webp"} alt="modules" class="h-4 w-4" />
       </span>
     <% end %>
