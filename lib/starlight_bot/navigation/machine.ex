@@ -2,7 +2,7 @@ defmodule StarlightBot.Navigation.Machine do
   @behaviour :gen_statem
 
   alias StarlightBot.Automation.RunMemory
-  alias StarlightBot.Ctx
+  alias StarlightBot.{Ctx, GameWindow}
   alias StarlightBot.Input.{Keyboard, Mouse, Premove}
   alias StarlightBot.Navigation.{Catalog, MachineStatus, Offload, Runner, Screen}
   alias StarlightBot.Vision.{Capture, Frame, HookRegistry, Matcher}
@@ -145,6 +145,11 @@ defmodule StarlightBot.Navigation.Machine do
       Ctx.pause_requested?(data.ctx) ->
         hold(step, data)
 
+      data.ctx.pause_flag != nil and window_misshapen?() ->
+        Ctx.log(data.ctx, :error, "game window is no longer 16:9, pausing")
+        :atomics.put(data.ctx.pause_flag, 1, 1)
+        hold(step, data)
+
       Capture.focused?() ->
         maybe_premove(step, ahead(data), data.ctx)
         exec(step, data)
@@ -157,6 +162,13 @@ defmodule StarlightBot.Navigation.Machine do
       true ->
         Ctx.log(data.ctx, :error, "game window lost focus (alt-tabbed?) — aborting before #{describe(step)}")
         fail_with({:error, :window_not_focused}, data)
+    end
+  end
+
+  defp window_misshapen? do
+    case Capture.window_rect() do
+      {_, _, _, _} = rect -> not GameWindow.aspect_ok?(rect)
+      _ -> false
     end
   end
 

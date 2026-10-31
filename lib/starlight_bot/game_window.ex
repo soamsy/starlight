@@ -7,6 +7,7 @@ defmodule StarlightBot.GameWindow do
   @window_poll_ms 2_000
   @resize_settle_ms 1_500
   @resize_attempts 3
+  @launch_settle_ms 20_000
   @plugin_name "starlight-resize"
 
   def rect do
@@ -106,6 +107,14 @@ defmodule StarlightBot.GameWindow do
   def await_window(timeout_ms) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms
     poll_window(deadline)
+  end
+
+  def await_settled_window(timeout_ms) do
+    with {:ok, _rect} <- await_window(timeout_ms) do
+      Process.sleep(@launch_settle_ms)
+      Capture.refresh_window_rect()
+      rect()
+    end
   end
 
   defp poll_window(deadline) do

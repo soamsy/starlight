@@ -136,6 +136,10 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
   end
 
   @impl true
+  def handle_info({:window_gate_run, params}, %{assigns: %{phase: :idle}} = socket), do: handle_event("run", params, socket)
+  def handle_info({:window_gate_run, _params}, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_info(:countdown_tick, %{assigns: %{pending_action: nil}} = socket) do
     {:noreply, socket}
   end

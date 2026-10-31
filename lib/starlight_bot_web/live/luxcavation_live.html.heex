@@ -136,16 +136,20 @@
           <span class="text-xs text-warning">Mirror dungeon is running. Cancel it there before starting this.</span>
         <% end %>
 
+        <% gate = StarlightBotWeb.Components.WindowGate.gate(assigns) %>
         <%= if @phase == :paused and not @other_running? do %>
           <button
             type="button"
             phx-click="resume"
-            disabled={@countdown != nil}
+            disabled={@countdown != nil or gate == :resize}
             class="btn btn-warning btn-sm">
             Resume
           </button>
+          <StarlightBotWeb.Components.WindowGate.gate_button gate={gate} busy={@game_window_busy} />
         <% else %>
-          <div class="join w-full">
+          <StarlightBotWeb.Components.WindowGate.gate_button :if={gate != :ready} gate={gate} busy={@game_window_busy}
+            disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?} />
+          <div :if={gate == :ready} class="join w-full">
             <button
               type="submit"
               disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}

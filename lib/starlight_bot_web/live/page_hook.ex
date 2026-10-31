@@ -5,6 +5,9 @@ defmodule StarlightBotWeb.Live.PageHook do
   alias StarlightBot.Automation.EnkephalinCharger
   alias StarlightBot.Scheduler.Overview
   alias StarlightBot.Vision.Capture
+  alias StarlightBotWeb.Components.WindowGate
+
+  @gated_pages [:luxcavation, :mirror_dungeon]
 
   @scheduler_clock_ms 30_000
   @settings_tabs ["scheduler", "data"]
@@ -228,7 +231,7 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp handle_window_rect(_msg, socket), do: {:cont, socket}
 
   defp handle_window_event(event, _params, %{assigns: %{game_window_busy: busy}} = socket)
-       when busy != nil and event in ["game_window_resize", "game_window_launch"],
+       when busy != nil and event in ["game_window_resize", "game_window_launch", "run"],
        do: {:halt, socket}
 
   defp handle_window_event("game_window_resize", _params, socket) do
@@ -252,20 +255,42 @@ defmodule StarlightBotWeb.Live.PageHook do
   end
 
   defp handle_window_event("game_window_launch", _params, socket) do
-    settings = Scheduler.get_settings()
+    run_window_action(socket, "launching", launch_action(Scheduler.get_settings(), nil))
+  end
 
-    run_window_action(socket, "launching", fn ->
+  defp handle_window_event("run", params, %{assigns: %{page: page}} = socket) when page in @gated_pages do
+    case WindowGate.gate(socket.assigns) do
+      :ready -> {:cont, socket}
+      :launch -> run_window_action(socket, "launching", launch_action(Scheduler.get_settings(), params))
+      :resize -> {:halt, socket}
+    end
+  end
+
+  defp handle_window_event(_event, _params, socket), do: {:cont, socket}
+
+  defp launch_action(settings, run_params) do
+    lv = self()
+
+    fn ->
       with :ok <- GameWindow.launch(settings),
-           {:ok, {_, _, w, h}} <- GameWindow.await_window(settings.launch_timeout_s * 1000) do
-        {:info, "Limbus window appeared (#{w}x#{h})"}
+           {:ok, {_, _, w, h} = rect} <- GameWindow.await_settled_window(settings.launch_timeout_s * 1000) do
+        cond do
+          not GameWindow.aspect_ok?(rect) ->
+            {:info, "Limbus opened at #{w}x#{h}, resize it to 16:9 to start the run"}
+
+          run_params != nil ->
+            send(lv, {:window_gate_run, run_params})
+            {:info, "Limbus opened (#{w}x#{h}), starting the run"}
+
+          true ->
+            {:info, "Limbus window appeared (#{w}x#{h})"}
+        end
       else
         {:error, :already_running} -> {:error, "Limbus is already running, close it before launching a new copy"}
         {:error, reason} -> {:error, "Launching Limbus failed: #{inspect(reason)}"}
       end
-    end)
+    end
   end
-
-  defp handle_window_event(_event, _params, socket), do: {:cont, socket}
 
   defp run_window_action(socket, label, fun) do
     lv = self()
