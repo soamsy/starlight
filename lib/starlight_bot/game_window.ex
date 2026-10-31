@@ -1,5 +1,5 @@
 defmodule StarlightBot.GameWindow do
-  alias StarlightBot.Native
+  alias StarlightBot.{LogStore, Native, NestedKwin, SteamLaunch}
   alias StarlightBot.Vision.Capture
 
   @target_w 1920
@@ -18,16 +18,35 @@ defmodule StarlightBot.GameWindow do
 
   def aspect_ok?({_x, _y, w, h}), do: h > 0 and abs(w * 9 - h * 16) <= w * 9 * 0.005
 
-  def launch(%{launch_mode: "steam", steam_app_id: app_id}), do: spawn_detached(["steam", "steam://rungameid/#{app_id}"])
-  def launch(%{launch_mode: "exe", exe_path: path}), do: spawn_detached([path])
+  def launch(%{launch_mode: "steam", steam_app_id: app_id}) do
+    LogStore.append(:info, "launch: opening Steam app #{app_id} in a nested KWin")
+
+    with {:ok, %{argv: argv, env: env, cwd: cwd}} <- SteamLaunch.command(app_id),
+         {:ok, kwin_pid} <- NestedKwin.ensure(),
+         :ok <- NestedKwin.lock_frame(kwin_pid) do
+      NestedKwin.spawn(argv, env, cwd)
+    end
+    |> log_failure()
+  end
+
+  def launch(%{launch_mode: "exe", exe_path: path}) do
+    LogStore.append(:info, "launch: opening #{path} in a nested KWin")
+
+    with {:ok, kwin_pid} <- NestedKwin.ensure(),
+         :ok <- NestedKwin.lock_frame(kwin_pid) do
+      NestedKwin.spawn([path])
+    end
+    |> log_failure()
+  end
+
   def launch(%{launch_mode: "none"}), do: {:error, :launch_disabled}
 
-  defp spawn_detached(argv) do
-    case System.cmd("sh", ["-c", ~s(setsid -f "$@" </dev/null >/dev/null 2>&1), "sh" | argv], stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      {out, code} -> {:error, {:launch_failed, code, String.trim(out)}}
-    end
+  defp log_failure({:error, reason} = error) do
+    LogStore.append(:error, "launch: failed: #{inspect(reason)}")
+    error
   end
+
+  defp log_failure(result), do: result
 
   def await_window(timeout_ms) do
     deadline = System.monotonic_time(:millisecond) + timeout_ms
