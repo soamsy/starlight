@@ -1,6 +1,6 @@
 defmodule StarlightBotWeb.Live.SchedulerLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.{RunnerForms, Scheduler}
+  alias StarlightBot.{DailyProgress, Scheduler}
   alias StarlightBot.Scheduler.Server
   alias StarlightBotWeb.Live.LuxcavationLive
 
@@ -11,7 +11,6 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Scheduler.subscribe()
-      RunnerForms.subscribe()
       Process.send_after(self(), :clock_tick, @clock_tick_ms)
     end
 
@@ -22,9 +21,8 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
 
     {:ok,
      socket
-     |> assign_runner_actions()
-     |> assign(:now, Scheduler.local_now())
      |> assign_status(status)
+     |> assign_outlook()
      |> assign(:form, form_values(status.settings))
      |> assign(:save_error, nil)}
   end
@@ -37,27 +35,31 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     do: save_form(socket, Map.put(socket.assigns.form, "steam_app_id", Scheduler.default_steam_app_id()))
 
   @impl true
-  def handle_info({:scheduler_state, status}, socket), do: {:noreply, assign_status(socket, status)}
+  def handle_info({:scheduler_state, status}, socket), do: {:noreply, socket |> assign_status(status) |> assign_outlook()}
 
-  def handle_info({:scheduler_settings, settings}, socket), do: {:noreply, assign(socket, :settings, settings)}
+  def handle_info({:scheduler_settings, settings}, socket), do: {:noreply, socket |> assign(:settings, settings) |> assign_outlook()}
 
-  def handle_info({:runner_form, _runner}, socket), do: {:noreply, assign_runner_actions(socket)}
+  def handle_info(:daily_progress, socket), do: {:noreply, assign_outlook(socket)}
 
   def handle_info(:clock_tick, socket) do
     Process.send_after(self(), :clock_tick, @clock_tick_ms)
-    {:noreply, assign(socket, :now, Scheduler.local_now())}
+    {:noreply, assign_outlook(socket)}
   end
+
+  def handle_info(_msg, socket), do: {:noreply, socket}
 
   defp save_form(socket, form) do
     attrs = %{
       enabled: form["enabled"] == "true",
-      runner: form["runner"],
       window_start: String.slice(form["window_start"], 0, 5),
       window_end: String.slice(form["window_end"], 0, 5),
       launch_mode: form["launch_mode"],
       steam_app_id: String.trim(form["steam_app_id"]),
       exe_path: String.trim(form["exe_path"]),
-      launch_timeout_s: parse_int(form["launch_timeout_s"])
+      launch_timeout_s: parse_int(form["launch_timeout_s"]),
+      exp_waves: parse_int(form["exp_waves"]),
+      thread_waves: parse_int(form["thread_waves"]),
+      md_runs: parse_int(form["md_runs"])
     }
 
     socket = assign(socket, :form, form)
@@ -68,6 +70,17 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     end
   end
 
+  defp assign_outlook(socket) do
+    settings = socket.assigns.settings
+    blocked = Scheduler.blocked()
+
+    socket
+    |> assign(:progress, DailyProgress.completed())
+    |> assign(:now, Scheduler.local_now())
+    |> assign(:blocked, blocked)
+    |> assign(:outlook, Scheduler.outlook(Scheduler.local_now(), settings, DailyProgress.remaining(settings), Scheduler.busy?(), blocked))
+  end
+
   defp assign_status(socket, status) do
     socket
     |> assign(:settings, status.settings)
@@ -75,29 +88,24 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     |> assign(:retry_after_ms, status.retry_after_ms)
   end
 
-  defp assign_runner_actions(socket) do
-    socket
-    |> assign(:md_action, RunnerForms.mirror_dungeon_action())
-    |> assign(:lux_action, RunnerForms.luxcavation_action())
-    |> assign(:lux_then_md?, RunnerForms.luxcavation_then_mirror_dungeon?())
-  end
-
   defp form_values(settings) do
     %{
       "enabled" => to_string(settings.enabled),
-      "runner" => settings.runner,
       "window_start" => settings.window_start,
       "window_end" => settings.window_end,
       "launch_mode" => settings.launch_mode,
       "steam_app_id" => settings.steam_app_id,
       "exe_path" => settings.exe_path || "",
-      "launch_timeout_s" => to_string(settings.launch_timeout_s)
+      "launch_timeout_s" => to_string(settings.launch_timeout_s),
+      "exp_waves" => to_string(settings.exp_waves),
+      "thread_waves" => to_string(settings.thread_waves),
+      "md_runs" => to_string(settings.md_runs)
     }
   end
 
   defp form_params(params) do
     params
-    |> Map.take(~w(runner window_start window_end launch_mode steam_app_id exe_path launch_timeout_s))
+    |> Map.take(~w(window_start window_end launch_mode steam_app_id exe_path launch_timeout_s exp_waves thread_waves md_runs))
     |> Map.put("enabled", Map.get(params, "enabled", "false"))
   end
 
@@ -108,15 +116,8 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     end
   end
 
-  def module_terms(runner, lux_action, md_action, lux_then_md?) do
-    actions =
-      case runner do
-        "luxcavation" -> [lux_action | if(lux_then_md?, do: [md_action], else: [])]
-        "mirror_dungeon" -> [md_action]
-      end
-
-    if Enum.any?(actions, &is_nil/1), do: nil, else: actions |> Enum.flat_map(&action_terms/1) |> Enum.reject(fn {_label, runs, _cost} -> runs == 0 end)
-  end
+  def progress_modules(rows, :done), do: rows |> Enum.map(fn {_label, done, target, _unit, cost} -> min(done, target) * cost end) |> Enum.sum()
+  def progress_modules(rows, :target), do: rows |> Enum.map(fn {_label, _done, target, _unit, cost} -> target * cost end) |> Enum.sum()
 
   def modules_total(terms), do: terms |> Enum.map(fn {_label, runs, cost} -> runs * cost end) |> Enum.sum()
 
@@ -124,23 +125,28 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def term_badge_class("THREAD"), do: "badge-secondary"
   def term_badge_class("MD"), do: "badge-primary"
 
-  defp action_terms({:run_luxcavation, _teams, exp_waves, thread_waves, _xp?, _enkephalin?, _convert}) do
+  def progress_rows(settings, progress) do
     [
-      {"EXP", exp_waves, LuxcavationLive.exp_enkephalin_cost()},
-      {"THREAD", thread_waves, LuxcavationLive.thread_enkephalin_cost()}
+      {"EXP", progress["exp"], settings.exp_waves, "waves", LuxcavationLive.exp_enkephalin_cost()},
+      {"THREAD", progress["thread"], settings.thread_waves, "waves", LuxcavationLive.thread_enkephalin_cost()},
+      {"MD", progress["md"], settings.md_runs, "runs", @md_modules_per_run}
     ]
   end
 
-  defp action_terms({:run_mirror_dungeon, _picks, run_count, _config}), do: [{"MD", run_count, @md_modules_per_run}]
-
-  def plan_label(now, settings) do
-    {date, planned, end_at} = Scheduler.next_planned(now, settings)
-    day = if date == NaiveDateTime.to_date(now), do: "today", else: Calendar.strftime(date, "%a %b %-d")
-
-    if NaiveDateTime.compare(now, planned) == :lt,
-      do: "#{day}: starts at #{clock(planned)}, in #{Scheduler.exact_duration_label(NaiveDateTime.diff(planned, now, :second))} (window ends #{clock(end_at)})",
-      else: "#{day}: due now, until #{clock(end_at)}"
+  def timeline(form, now, blocked) do
+    Scheduler.day_timeline(now, %{window_start: String.slice(form["window_start"], 0, 5), window_end: String.slice(form["window_end"], 0, 5)}, blocked)
   end
 
-  def clock(%NaiveDateTime{} = at), do: Calendar.strftime(at, "%H:%M")
+  def timeline_clock(minute), do: StarlightBotWeb.Layouts.timeline_clock(minute)
+
+  def latest_start_label(form) do
+    settings = %{window_start: String.slice(form["window_start"], 0, 5), window_end: String.slice(form["window_end"], 0, 5)}
+
+    with {:ok, _} <- Scheduler.parse_time(settings.window_start),
+         {:ok, _} <- Scheduler.parse_time(settings.window_end) do
+      Calendar.strftime(Scheduler.latest_start_time(settings), "%-I:%M %p")
+    else
+      _ -> nil
+    end
+  end
 end

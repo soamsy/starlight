@@ -1,6 +1,6 @@
 defmodule StarlightBot.Scheduler.Server do
   use GenServer
-  alias StarlightBot.{GameWindow, LogStore, Scheduler}
+  alias StarlightBot.{DailyProgress, GameWindow, LogStore, Scheduler}
   alias StarlightBot.Automation.Engine
   alias StarlightBot.Navigation.Navigator
 
@@ -10,7 +10,7 @@ defmodule StarlightBot.Scheduler.Server do
   @run_start_confirm_ms 5_000
   @max_events 50
 
-  defstruct settings: nil, task: nil, activity: nil, retry_after: nil, events: []
+  defstruct settings: nil, task: nil, activity: nil, retry_after: nil, last_fire: nil, events: []
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -33,7 +33,7 @@ defmodule StarlightBot.Scheduler.Server do
   end
 
   def handle_info({:scheduler_settings, settings}, state) do
-    state = %{state | settings: settings, retry_after: nil}
+    state = %{state | settings: settings, retry_after: nil, last_fire: nil}
     broadcast(state)
     {:noreply, state}
   end
@@ -55,33 +55,40 @@ defmodule StarlightBot.Scheduler.Server do
   defp maybe_fire(%{settings: %{enabled: false}} = state), do: state
 
   defp maybe_fire(state) do
-    with {:due, date, end_at} <- Scheduler.due(Scheduler.local_now(), state.settings),
+    with {:due, _date, end_at} <- Scheduler.due(Scheduler.local_now(), state.settings),
+         remaining = DailyProgress.remaining(state.settings),
+         true <- DailyProgress.pending?(remaining),
+         nil <- Scheduler.blocked(),
          false <- retry_pending?(state),
-         true <- navigator_idle?() do
-      settings = state.settings
-
-      case Scheduler.runner_action(settings) do
-        nil ->
-          missing = Scheduler.missing_runner_settings(settings.runner)
-          add_event(state, :error, "#{Scheduler.missing_message(missing)}, can't start the scheduled run")
-
-        action ->
-          start_task(state, "starting the scheduled #{runner_label(settings.runner)} run", fn -> fire_task(settings, action, date, end_at) end)
-      end
+         false <- Scheduler.busy?() do
+      fire(state, remaining, end_at)
     else
       _ -> state
     end
   end
 
-  defp retry_pending?(%{retry_after: nil}), do: false
-  defp retry_pending?(%{retry_after: at}), do: System.monotonic_time(:millisecond) < at
+  defp fire(%{last_fire: remaining} = state, remaining, _end_at) do
+    add_event(
+      %{state | last_fire: nil, retry_after: System.monotonic_time(:millisecond) + @retry_after_failure_ms},
+      :error,
+      "the last scheduled run made no progress, trying again in #{div(@retry_after_failure_ms, 60_000)} min"
+    )
+  end
 
-  defp navigator_idle? do
-    case Navigator.status() do
-      %{phase: :idle, run_kind: nil} -> true
-      _ -> false
+  defp fire(state, remaining, end_at) do
+    settings = state.settings
+
+    case Scheduler.runner_action(remaining) do
+      nil ->
+        add_event(state, :error, "the runner pages aren't set up for what's left today, can't start the scheduled run")
+
+      action ->
+        start_task(state, "starting the scheduled run (#{DailyProgress.remaining_label(remaining)})", fn -> fire_task(settings, action, remaining, end_at) end)
     end
   end
+
+  defp retry_pending?(%{retry_after: nil}), do: false
+  defp retry_pending?(%{retry_after: at}), do: System.monotonic_time(:millisecond) < at
 
   defp start_task(state, activity, fun) do
     task = Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fun)
@@ -95,9 +102,8 @@ defmodule StarlightBot.Scheduler.Server do
 
     state =
       case result do
-        {:fired, date, text} ->
-          Scheduler.mark_fired(date)
-          add_event(%{state | retry_after: nil}, :ok, text)
+        {:fired, remaining, text} ->
+          add_event(%{state | retry_after: nil, last_fire: remaining}, :ok, text)
 
         {:ok, text} ->
           add_event(state, :ok, text)
@@ -116,12 +122,12 @@ defmodule StarlightBot.Scheduler.Server do
     state
   end
 
-  defp fire_task(settings, action, date, end_at) do
+  defp fire_task(settings, action, remaining, end_at) do
     with {:ok, rect, launched?} <- ensure_window(settings, end_at),
          :ok <- ensure_aspect(rect, settings.steam_app_id),
          :ok <- if(launched?, do: await_game_ready(end_at), else: :ok),
          :ok <- start_run(action) do
-      {:fired, date, "started the scheduled #{runner_label(settings.runner)} run"}
+      {:fired, remaining, "started the scheduled run (#{DailyProgress.remaining_label(remaining)})"}
     end
   end
 
@@ -226,9 +232,6 @@ defmodule StarlightBot.Scheduler.Server do
   end
 
   defp ms_until(end_at), do: NaiveDateTime.diff(end_at, Scheduler.local_now(), :millisecond)
-
-  def runner_label("mirror_dungeon"), do: "mirror dungeon"
-  def runner_label("luxcavation"), do: "luxcavation"
 
   defp launch_label(%{launch_mode: "steam", steam_app_id: id}), do: "steam app #{id}"
   defp launch_label(%{launch_mode: "exe", exe_path: path}), do: path

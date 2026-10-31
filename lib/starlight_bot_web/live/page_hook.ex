@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.PageHook do
   import Phoenix.Component, only: [assign: 3, assign_new: 3]
   import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1, put_flash: 3]
-  alias StarlightBot.{AppSettings, Data, EnkephalinSchedule, GameWindow, Scheduler}
+  alias StarlightBot.{AppSettings, DailyProgress, Data, EnkephalinSchedule, GameWindow, Scheduler}
   alias StarlightBot.Automation.EnkephalinCharger
   alias StarlightBot.Vision.Capture
 
@@ -123,11 +123,18 @@ defmodule StarlightBotWeb.Live.PageHook do
     {:halt, socket}
   end
 
+  defp handle_settings_event("scheduler_hold", %{"for" => option}, socket) when option in ~w(1 2 4 8 day clear) do
+    Scheduler.hold(option)
+    {:halt, assign_scheduler(socket, Scheduler.get_settings())}
+  end
+
   defp handle_settings_event(_event, _params, socket), do: {:cont, socket}
 
   defp handle_scheduler_message({:scheduler_settings, settings}, socket), do: {:halt, assign_scheduler(socket, settings)}
 
   defp handle_scheduler_message({:scheduler_state, %{settings: settings}}, socket), do: {:halt, assign_scheduler(socket, settings)}
+
+  defp handle_scheduler_message(:daily_progress, socket), do: {:halt, assign_scheduler(socket, socket.assigns.scheduler_settings)}
 
   defp handle_scheduler_message({:enkephalin_schedule, settings}, socket), do: {:halt, assign_enkephalin_schedule(socket, settings)}
 
@@ -143,9 +150,15 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp handle_scheduler_message(_msg, socket), do: {:cont, socket}
 
   defp assign_scheduler(socket, settings) do
+    now = Scheduler.local_now()
+    remaining = DailyProgress.remaining(settings)
+    blocked = Scheduler.blocked()
+
     socket
     |> assign(:scheduler_settings, settings)
-    |> assign(:scheduler_label, Scheduler.next_run_label(Scheduler.local_now(), settings))
+    |> assign(:scheduler_blocked, blocked)
+    |> assign(:scheduler_label, Scheduler.next_run_label(now, settings, remaining, blocked))
+    |> assign(:scheduler_outlook, Scheduler.outlook(now, settings, remaining, Scheduler.busy?(), blocked))
   end
 
   defp save_enkephalin_schedule(socket, params) do

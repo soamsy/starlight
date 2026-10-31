@@ -172,6 +172,14 @@
           </button>
         </div>
         <div class={["mt-2 font-mono", !scheduler_on && "text-base-content/30"]}>{assigns[:scheduler_label]}</div>
+        <div :if={assigns[:scheduler_outlook]} class="mt-1 text-base-content/60">{assigns[:scheduler_outlook]}</div>
+        <div class="mt-2 flex flex-col gap-1">
+          <span class="font-semibold text-base-content/50">Stop scheduling for</span>
+          <div class="flex flex-wrap gap-1">
+            <button :for={{label, value} <- [{"1h", "1"}, {"2h", "2"}, {"4h", "4"}, {"8h", "8"}, {"Rest of day", "day"}]} type="button" phx-click="scheduler_hold" phx-value-for={value} class="btn btn-xs">{label}</button>
+          </div>
+          <button :if={assigns[:scheduler_blocked]} type="button" phx-click="scheduler_hold" phx-value-for="clear" class="btn btn-xs btn-success mt-1">Resume now</button>
+        </div>
       </div>
     </div>
 
@@ -331,7 +339,7 @@
             <div class="flex flex-col gap-1">
               <span class="flex items-center gap-1 text-xs font-semibold text-base-content/50 uppercase tracking-wide">
                 Interval
-                <span class="tooltip tooltip-bottom normal-case font-normal before:w-64 before:whitespace-normal before:text-left" data-tip="Charge once this many hours have passed since the last charge, while the window is open.">
+                <span class="tooltip tooltip-right normal-case font-normal before:w-64 before:whitespace-normal before:text-left" data-tip="Charge once this many hours have passed since the last charge, while the window is open.">
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5 cursor-help">
                   <circle cx="12" cy="12" r="10" />
                   <path d="M12 16v-4" />
@@ -349,7 +357,7 @@
             <div class="flex flex-col gap-1 flex-1">
               <span class="flex items-center gap-1 text-xs font-semibold text-base-content/50 uppercase tracking-wide">
                 Daily window
-                <span class="tooltip tooltip-bottom normal-case font-normal before:w-64 before:whitespace-normal before:text-left" data-tip="Charges only happen inside this window. An end before the start runs past midnight.">
+                <span class="tooltip tooltip-right normal-case font-normal before:w-64 before:whitespace-normal before:text-left" data-tip="Charges only happen inside this window.">
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5 cursor-help">
                   <circle cx="12" cy="12" r="10" />
                   <path d="M12 16v-4" />
