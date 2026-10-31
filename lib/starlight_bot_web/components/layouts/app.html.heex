@@ -13,14 +13,6 @@
            data-tip="Luxcavation Runner">
       <img src={~p"/images/icons/luxcavation.webp"} alt="Luxcavation Runner" class="h-4 w-4 lg:h-5 lg:w-5" style="filter: drop-shadow(1px 0 0 var(--color-primary-content)) drop-shadow(-1px 0 0 var(--color-primary-content)) drop-shadow(0 1px 0 var(--color-primary-content)) drop-shadow(0 -1px 0 var(--color-primary-content));" />
     </.link>
-    <.link navigate={~p"/scheduler"}
-           class={"tooltip tooltip-right btn btn-square btn-xs lg:btn-sm " <> if(assigns[:page] == :scheduler, do: "btn-primary", else: "btn-ghost text-base-content/50")}
-           data-tip="Scheduler">
-      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 7v5l3 2" />
-      </svg>
-    </.link>
 
     <div class="divider my-0 lg:my-1"></div>
 
@@ -148,6 +140,41 @@
 
     <div class="mt-auto"></div>
 
+    <% scheduler_on = assigns[:scheduler_settings] && assigns[:scheduler_settings].enabled %>
+    <div class="dropdown dropdown-right dropdown-end">
+      <div tabindex="0" role="button"
+           class={["btn btn-square btn-xs lg:btn-sm", if(scheduler_on, do: "btn-success", else: "btn-ghost text-base-content/40")]}
+           title={if(scheduler_on, do: "Scheduler on", else: "Scheduler off")}>
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+          <%= unless scheduler_on do %>
+            <path d="M4 4l16 16" />
+          <% end %>
+        </svg>
+      </div>
+      <div tabindex="0" class={["dropdown-content z-50 ml-2 w-56 rounded-lg border bg-base-100 p-3 shadow-lg text-xs", if(scheduler_on, do: "border-success", else: "border-base-300")]}>
+        <div class="flex items-center justify-between gap-2">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" class="toggle toggle-xs toggle-success" checked={scheduler_on} phx-click="scheduler_toggle" />
+            <span class="font-semibold">Scheduler</span>
+          </label>
+          <button type="button" phx-click="settings_open" phx-value-tab="scheduler" onclick="document.activeElement.blur()"
+                  class="btn btn-ghost btn-square btn-xs text-base-content/60">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+              <line x1="4" x2="20" y1="7" y2="7" />
+              <line x1="4" x2="20" y1="12" y2="12" />
+              <line x1="4" x2="20" y1="17" y2="17" />
+              <circle cx="9" cy="7" r="2" fill="var(--color-base-100)" />
+              <circle cx="15" cy="12" r="2" fill="var(--color-base-100)" />
+              <circle cx="8" cy="17" r="2" fill="var(--color-base-100)" />
+            </svg>
+          </button>
+        </div>
+        <div class={["mt-2 font-mono", !scheduler_on && "text-base-content/30"]}>{assigns[:scheduler_label]}</div>
+      </div>
+    </div>
+
     <% status = window_status(assigns[:game_window_rect]) %>
     <% busy = assigns[:game_window_busy] %>
     <div class="dropdown dropdown-right dropdown-end">
@@ -203,11 +230,12 @@
             </button>
           <% else %>
             <div class="text-base-content/70">
-              Launching is off. Set a launch mode in the <.link navigate={~p"/scheduler"} class="link">Scheduler</.link> to open Limbus from here.
+              Launching is off. Set a launch mode in the <button type="button" phx-click="settings_open" phx-value-tab="scheduler" class="link">Scheduler</button> to open Limbus from here.
             </div>
           <% end %>
         <% else %>
           <% {_x, _y, w, h} = @game_window_rect %>
+          <button class="btn btn-primary btn-xs w-full mb-2" disabled>Open Limbus</button>
           <table class="w-full">
             <tbody>
               <tr>
@@ -252,48 +280,61 @@
   </main>
 </div>
 
-<%= if assigns[:settings_open] && assigns[:settings] do %>
+<%= if assigns[:settings_open] && assigns[:app_settings] do %>
   <div class="modal modal-open" phx-window-keydown="settings_close" phx-key="Escape">
     <div class="modal-box max-w-2xl">
-      <h3 class="font-bold text-lg">Settings</h3>
-      <p class="text-xs text-base-content/60 mb-3">Where Starlight keeps your data. Changes apply after restarting Starlight.</p>
+      <h3 class="font-bold text-lg mb-2">Settings</h3>
+      <div role="tablist" class="tabs tabs-bordered mb-3">
+        <button role="tab" phx-click="settings_tab" phx-value-tab="scheduler" class={["tab", @settings_tab == "scheduler" && "tab-active"]}>Scheduler</button>
+        <button role="tab" phx-click="settings_tab" phx-value-tab="data" class={["tab", @settings_tab == "data" && "tab-active"]}>Data</button>
+      </div>
 
-      <form phx-submit="settings_save" class="flex flex-col gap-3">
-        <div :if={StarlightBot.Data.authoring_allowed?()} class="form-control">
-          <span class="label-text text-xs font-semibold mb-1">Mode</span>
-          <label class="flex items-start gap-2 cursor-pointer">
-            <input type="radio" name="mode" value="user" checked={@settings.mode == :user} class="radio radio-sm mt-0.5" />
-            <span class="text-sm">User<span class="block text-xs text-base-content/60">Your teams, plans, hook overrides and run history live in your data folder. Shipped data is read-only.</span></span>
-          </label>
-          <label class="flex items-start gap-2 cursor-pointer mt-1">
-            <input type="radio" name="mode" value="authoring" checked={@settings.mode == :authoring} class="radio radio-sm mt-0.5" />
-            <span class="text-sm">Authoring (development)<span class="block text-xs text-base-content/60">Edits the shipped databases in the repository directly. Run history stays in <span class="font-mono">.starlight-dev/</span>.</span></span>
-          </label>
-        </div>
+      <div class="h-[30rem] overflow-y-auto">
+      <%= if @settings_tab == "scheduler" do %>
+        {live_render(@socket, StarlightBotWeb.Live.SchedulerLive, id: "scheduler-settings")}
+      <% end %>
 
-        <div class="form-control">
-          <label class="label-text text-xs font-semibold mb-1" for="settings-data-dir">Data folder</label>
-          <input id="settings-data-dir" type="text" name="data_dir" value={@settings.config["data_dir"]} placeholder="~/.starlight"
-                 class="input input-bordered input-sm font-mono" />
-        </div>
+      <%= if @settings_tab == "data" do %>
+        <p class="text-xs text-base-content/60 mb-3">Where Starlight keeps your data. Changes apply after restarting Starlight.</p>
 
-        <div class="flex gap-2 justify-end">
-          <button type="button" phx-click="settings_open_folder" class="btn btn-sm btn-ghost">Open data folder</button>
-          <button type="submit" class="btn btn-sm btn-primary">Save</button>
-        </div>
-      </form>
+        <form phx-submit="settings_save" class="flex flex-col gap-3">
+          <div :if={StarlightBot.Data.authoring_allowed?()} class="form-control">
+            <span class="label-text text-xs font-semibold mb-1">Mode</span>
+            <label class="flex items-start gap-2 cursor-pointer">
+              <input type="radio" name="mode" value="user" checked={@app_settings.mode == :user} class="radio radio-sm mt-0.5" />
+              <span class="text-sm">User<span class="block text-xs text-base-content/60">Your teams, plans, hook overrides and run history live in your data folder. Shipped data is read-only.</span></span>
+            </label>
+            <label class="flex items-start gap-2 cursor-pointer mt-1">
+              <input type="radio" name="mode" value="authoring" checked={@app_settings.mode == :authoring} class="radio radio-sm mt-0.5" />
+              <span class="text-sm">Authoring (development)<span class="block text-xs text-base-content/60">Edits the shipped databases in the repository directly. Run history stays in <span class="font-mono">.starlight-dev/</span>.</span></span>
+            </label>
+          </div>
 
-      <div class="divider my-2 text-xs">In use right now ({@settings.mode}, set by {@settings.mode_source})</div>
-      <table class="table table-xs">
-        <tbody>
-          <tr><td class="whitespace-nowrap">Shipped data</td><td class="font-mono text-xs break-all">{@settings.paths.base}</td></tr>
-          <tr><td class="whitespace-nowrap">Your data</td><td class="font-mono text-xs break-all">{@settings.paths.user}</td></tr>
-          <tr><td class="whitespace-nowrap">Run history</td><td class="font-mono text-xs break-all">{@settings.paths.runs}</td></tr>
-          <tr><td class="whitespace-nowrap">Your hook images</td><td class="font-mono text-xs break-all">{@settings.paths.user_hooks_dir}</td></tr>
-          <tr><td class="whitespace-nowrap">Logs</td><td class="font-mono text-xs break-all">{@settings.paths.log_dir}</td></tr>
-          <tr><td class="whitespace-nowrap">Settings file</td><td class="font-mono text-xs break-all">{@settings.config_file}</td></tr>
-        </tbody>
-      </table>
+          <div class="form-control">
+            <label class="label-text text-xs font-semibold mb-1" for="settings-data-dir">Data folder</label>
+            <input id="settings-data-dir" type="text" name="data_dir" value={@app_settings.config["data_dir"]} placeholder="~/.starlight"
+                   class="input input-bordered input-sm font-mono" />
+          </div>
+
+          <div class="flex gap-2 justify-end">
+            <button type="button" phx-click="settings_open_folder" class="btn btn-sm btn-ghost">Open data folder</button>
+            <button type="submit" class="btn btn-sm btn-primary">Save</button>
+          </div>
+        </form>
+
+        <div class="divider my-2 text-xs">In use right now ({@app_settings.mode}, set by {@app_settings.mode_source})</div>
+        <table class="table table-xs">
+          <tbody>
+            <tr><td class="whitespace-nowrap">Shipped data</td><td class="font-mono text-xs break-all">{@app_settings.paths.base}</td></tr>
+            <tr><td class="whitespace-nowrap">Your data</td><td class="font-mono text-xs break-all">{@app_settings.paths.user}</td></tr>
+            <tr><td class="whitespace-nowrap">Run history</td><td class="font-mono text-xs break-all">{@app_settings.paths.runs}</td></tr>
+            <tr><td class="whitespace-nowrap">Your hook images</td><td class="font-mono text-xs break-all">{@app_settings.paths.user_hooks_dir}</td></tr>
+            <tr><td class="whitespace-nowrap">Logs</td><td class="font-mono text-xs break-all">{@app_settings.paths.log_dir}</td></tr>
+            <tr><td class="whitespace-nowrap">Settings file</td><td class="font-mono text-xs break-all">{@app_settings.config_file}</td></tr>
+          </tbody>
+        </table>
+      <% end %>
+      </div>
 
       <div class="modal-action">
         <button phx-click="settings_close" class="btn btn-sm">Close</button>

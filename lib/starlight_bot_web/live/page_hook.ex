@@ -4,6 +4,9 @@ defmodule StarlightBotWeb.Live.PageHook do
   alias StarlightBot.{Data, GameWindow, Scheduler}
   alias StarlightBot.Vision.Capture
 
+  @scheduler_clock_ms 30_000
+  @settings_tabs ["scheduler", "data"]
+
   @pages %{
     StarlightBotWeb.Live.HookEditorLive => :hooks,
     StarlightBotWeb.Live.ScreenshotViewerLive => :screenshots,
@@ -17,10 +20,11 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.LuxcavationLive => :luxcavation,
     StarlightBotWeb.Live.RewardsLive => :rewards,
     StarlightBotWeb.Live.MirrorDungeonLive => :mirror_dungeon,
-    StarlightBotWeb.Live.SchedulerLive => :scheduler,
     StarlightBotWeb.Live.ShopRunnerLive => :shop_runner,
     StarlightBotWeb.Live.LogLive => :log
   }
+
+  def on_mount(:default, _params, _session, %{parent_pid: parent} = socket) when is_pid(parent), do: {:cont, socket}
 
   def on_mount(:default, _params, _session, socket) do
     socket =
@@ -30,12 +34,21 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:game_window_busy, nil)
       |> assign(:game_launch_label, nil)
       |> assign(:settings_open, false)
-      |> assign(:settings, nil)
+      |> assign(:settings_tab, "scheduler")
+      |> assign(:app_settings, nil)
+      |> assign_scheduler(Scheduler.get_settings())
 
     socket =
-      if connected?(socket),
-        do: attach_hook(socket, :settings, :handle_event, &handle_settings_event/3),
-        else: socket
+      if connected?(socket) do
+        Scheduler.subscribe()
+        Process.send_after(self(), :scheduler_clock, @scheduler_clock_ms)
+
+        socket
+        |> attach_hook(:settings, :handle_event, &handle_settings_event/3)
+        |> attach_hook(:scheduler, :handle_info, &handle_scheduler_message/2)
+      else
+        socket
+      end
 
     if connected?(socket) and GenServer.whereis(Capture) do
       Capture.subscribe()
@@ -53,8 +66,20 @@ defmodule StarlightBotWeb.Live.PageHook do
     end
   end
 
-  defp handle_settings_event("settings_open", _params, socket),
-    do: {:halt, socket |> assign(:settings_open, true) |> assign(:settings, Data.settings())}
+  defp handle_settings_event("settings_open", params, socket) do
+    tab = if params["tab"] in @settings_tabs, do: params["tab"], else: "scheduler"
+    {:halt, socket |> assign(:settings_open, true) |> assign(:settings_tab, tab) |> assign(:app_settings, Data.settings())}
+  end
+
+  defp handle_settings_event("settings_tab", %{"tab" => tab}, socket) when tab in @settings_tabs,
+    do: {:halt, assign(socket, :settings_tab, tab)}
+
+  defp handle_settings_event("scheduler_toggle", _params, socket) do
+    case Scheduler.set_enabled(not socket.assigns.scheduler_settings.enabled) do
+      {:ok, settings} -> {:halt, assign_scheduler(socket, settings)}
+      {:error, message} -> {:halt, put_flash(socket, :error, "Scheduler not changed: #{message}")}
+    end
+  end
 
   defp handle_settings_event("settings_close", _params, socket), do: {:halt, assign(socket, :settings_open, false)}
 
@@ -65,7 +90,7 @@ defmodule StarlightBotWeb.Live.PageHook do
       :ok ->
         {:halt,
          socket
-         |> assign(:settings, Data.settings())
+         |> assign(:app_settings, Data.settings())
          |> put_flash(:info, "Saved. Restart Starlight for the new location to take effect.")}
 
       {:error, reason} ->
@@ -81,6 +106,23 @@ defmodule StarlightBotWeb.Live.PageHook do
   end
 
   defp handle_settings_event(_event, _params, socket), do: {:cont, socket}
+
+  defp handle_scheduler_message({:scheduler_settings, settings}, socket), do: {:halt, assign_scheduler(socket, settings)}
+
+  defp handle_scheduler_message({:scheduler_state, %{settings: settings}}, socket), do: {:halt, assign_scheduler(socket, settings)}
+
+  defp handle_scheduler_message(:scheduler_clock, socket) do
+    Process.send_after(self(), :scheduler_clock, @scheduler_clock_ms)
+    {:halt, assign_scheduler(socket, socket.assigns.scheduler_settings)}
+  end
+
+  defp handle_scheduler_message(_msg, socket), do: {:cont, socket}
+
+  defp assign_scheduler(socket, settings) do
+    socket
+    |> assign(:scheduler_settings, settings)
+    |> assign(:scheduler_label, Scheduler.next_run_label(Scheduler.local_now(), settings))
+  end
 
   defp handle_window_rect({:window_rect, rect}, socket),
     do: {:halt, assign(socket, :game_window_rect, rect)}

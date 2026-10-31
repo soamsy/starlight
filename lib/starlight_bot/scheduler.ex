@@ -5,6 +5,7 @@ defmodule StarlightBot.Scheduler do
   @topic "scheduler"
   @runners ~w(luxcavation mirror_dungeon)
   @launch_modes ~w(none steam exe)
+  @default_steam_app_id "1973530"
   @fields [
     :enabled,
     :runner,
@@ -25,6 +26,8 @@ defmodule StarlightBot.Scheduler do
 
   def launch_modes, do: @launch_modes
 
+  def default_steam_app_id, do: @default_steam_app_id
+
   def get_settings do
     from(s in "scheduler_settings", where: s.id == 1, select: map(s, ^@fields))
     |> Repo.one()
@@ -39,6 +42,40 @@ defmodule StarlightBot.Scheduler do
   end
 
   def mark_fired(%Date{} = date), do: update(last_fired_on: Date.to_iso8601(date))
+
+  def set_enabled(enabled?) do
+    get_settings()
+    |> Map.take([:runner, :window_start, :window_end, :launch_mode, :steam_app_id, :exe_path, :launch_timeout_s])
+    |> Map.put(:enabled, enabled?)
+    |> save_settings()
+  end
+
+  def next_run_label(%NaiveDateTime{} = now, settings) do
+    {_date, planned, _end_at} = next_planned(now, settings)
+    name = runner_abbreviation(settings.runner)
+
+    case NaiveDateTime.diff(planned, now, :second) do
+      seconds when seconds <= 0 -> "#{name} due now"
+      seconds -> "#{name} in #{duration_label(seconds)}"
+    end
+  end
+
+  def exact_duration_label(seconds) do
+    total_minutes = max(div(seconds + 59, 60), 1)
+
+    case {div(total_minutes, 60), rem(total_minutes, 60)} do
+      {0, minutes} -> "#{minutes} min"
+      {hours, 0} -> "#{hours}h"
+      {hours, minutes} -> "#{hours}h #{minutes} min"
+    end
+  end
+
+  defp runner_abbreviation("luxcavation"), do: "LUX"
+  defp runner_abbreviation("mirror_dungeon"), do: "MD"
+
+  defp duration_label(seconds) when seconds < 3600, do: "#{max(div(seconds + 59, 60), 1)} min"
+  defp duration_label(seconds) when seconds < 86_400, do: "#{div(seconds + 1800, 3600)}h"
+  defp duration_label(seconds), do: "#{div(seconds, 86_400)}d"
 
   defp update(fields) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)

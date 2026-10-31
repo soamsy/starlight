@@ -16,12 +16,6 @@ defmodule StarlightBot.Scheduler.Server do
 
   def status, do: GenServer.call(__MODULE__, :status)
 
-  def test_launch, do: GenServer.cast(__MODULE__, :test_launch)
-
-  def test_fix_aspect, do: GenServer.cast(__MODULE__, :test_fix_aspect)
-
-  def cancel_test_launch, do: GenServer.cast(__MODULE__, :cancel_test_launch)
-
   @impl true
   def init(_opts) do
     Scheduler.subscribe()
@@ -31,30 +25,6 @@ defmodule StarlightBot.Scheduler.Server do
 
   @impl true
   def handle_call(:status, _from, state), do: {:reply, external(state), state}
-
-  @impl true
-  def handle_cast(:test_launch, %{task: nil} = state) do
-    settings = state.settings
-    {:noreply, start_task(state, "testing launch", fn -> test_launch_task(settings) end)}
-  end
-
-  def handle_cast(:test_fix_aspect, %{task: nil} = state) do
-    app_id = state.settings.steam_app_id
-    {:noreply, start_task(state, "testing aspect ratio fix", fn -> fix_aspect_task(app_id) end)}
-  end
-
-  def handle_cast(:cancel_test_launch, %{task: %Task{} = task, activity: "testing launch"} = state) do
-    Task.shutdown(task, :brutal_kill)
-    state = %{state | task: nil, activity: nil} |> add_event(:info, "launch test cancelled")
-    broadcast(state)
-    {:noreply, state}
-  end
-
-  def handle_cast(:cancel_test_launch, state), do: {:noreply, state}
-
-  def handle_cast(_test, state) do
-    {:noreply, add_event(state, :error, "busy #{state.activity}, try again when it finishes")}
-  end
 
   @impl true
   def handle_info(:tick, state) do
@@ -232,36 +202,6 @@ defmodule StarlightBot.Scheduler.Server do
     end
   end
 
-  defp test_launch_task(settings) do
-    case GameWindow.rect() do
-      {:ok, rect} ->
-        {:ok, "Limbus is already open (#{size_label(rect)}, aspect #{aspect_label(rect)})"}
-
-      {:error, _} ->
-        notify(:info, "launching Limbus (#{launch_label(settings)}), waiting up to #{settings.launch_timeout_s}s for its window")
-
-        with :ok <- GameWindow.launch(settings),
-             {:ok, rect} <- GameWindow.await_window(settings.launch_timeout_s * 1000) do
-          {:ok, "Limbus window appeared (#{size_label(rect)}, aspect #{aspect_label(rect)})"}
-        else
-          {:error, reason} -> {:error, "launch test failed: #{inspect(reason)}"}
-        end
-    end
-  end
-
-  defp fix_aspect_task(steam_app_id) do
-    case GameWindow.fix_aspect(steam_app_id) do
-      {:ok, %{before: before, after: after_rect, buses: buses}} ->
-        {:ok, "resized via #{Enum.join(buses, " + ")} KWin: #{size_label(before)} -> #{size_label(after_rect)}"}
-
-      {:error, {:resize_ignored, %{before: before, after: after_rect, buses: buses}}} ->
-        {:error, "ran the resize script on #{Enum.join(buses, " + ")} KWin but the window stayed #{size_label(after_rect)} (was #{size_label(before)})"}
-
-      {:error, reason} ->
-        {:error, "aspect fix failed: #{inspect(reason)}"}
-    end
-  end
-
   defp notify(kind, text), do: send(__MODULE__, {:scheduler_event, kind, text})
 
   defp add_event(%{events: [%{text: text} | _]} = state, _kind, text), do: state
@@ -294,6 +234,4 @@ defmodule StarlightBot.Scheduler.Server do
   defp launch_label(%{launch_mode: "exe", exe_path: path}), do: path
 
   defp size_label({_x, _y, w, h}), do: "#{w}x#{h}"
-
-  defp aspect_label(rect), do: if(GameWindow.aspect_ok?(rect), do: "16:9", else: "not 16:9")
 end

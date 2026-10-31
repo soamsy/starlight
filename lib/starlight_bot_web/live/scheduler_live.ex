@@ -1,10 +1,11 @@
 defmodule StarlightBotWeb.Live.SchedulerLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.{GameWindow, RunnerForms, Scheduler, Teams}
+  alias StarlightBot.{RunnerForms, Scheduler}
   alias StarlightBot.Scheduler.Server
-  alias StarlightBotWeb.Live.MirrorDungeonLive
+  alias StarlightBotWeb.Live.LuxcavationLive
 
   @clock_tick_ms 30_000
+  @md_modules_per_run 5
 
   @impl true
   def mount(_params, _session, socket) do
@@ -21,55 +22,19 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
 
     {:ok,
      socket
-     |> assign(:teams, Teams.list_teams() |> Enum.reject(&(&1.hooks == [])))
      |> assign_runner_actions()
      |> assign(:now, Scheduler.local_now())
      |> assign_status(status)
-     |> assign(:form, form_values(status.settings))}
+     |> assign(:form, form_values(status.settings))
+     |> assign(:save_error, nil)}
   end
 
   @impl true
-  def handle_event("update_form", params, socket) do
-    {:noreply, assign(socket, :form, Map.merge(socket.assigns.form, form_params(params)))}
-  end
+  def handle_event("update_form", params, socket),
+    do: save_form(socket, Map.merge(socket.assigns.form, form_params(params)))
 
-  def handle_event("save", params, socket) do
-    form = Map.merge(socket.assigns.form, form_params(params))
-
-    attrs = %{
-      enabled: form["enabled"] == "true",
-      runner: form["runner"],
-      window_start: String.slice(form["window_start"], 0, 5),
-      window_end: String.slice(form["window_end"], 0, 5),
-      launch_mode: form["launch_mode"],
-      steam_app_id: String.trim(form["steam_app_id"]),
-      exe_path: String.trim(form["exe_path"]),
-      launch_timeout_s: parse_int(form["launch_timeout_s"])
-    }
-
-    case Scheduler.save_settings(attrs) do
-      {:ok, settings} ->
-        {:noreply, socket |> assign(:settings, settings) |> assign(:form, form_values(settings)) |> put_flash(:info, "Schedule saved")}
-
-      {:error, message} ->
-        {:noreply, socket |> assign(:form, form) |> put_flash(:error, "Not saved: #{message}")}
-    end
-  end
-
-  def handle_event("test_launch", _, socket) do
-    Server.test_launch()
-    {:noreply, socket}
-  end
-
-  def handle_event("cancel_test_launch", _, socket) do
-    Server.cancel_test_launch()
-    {:noreply, socket}
-  end
-
-  def handle_event("test_fix_aspect", _, socket) do
-    Server.test_fix_aspect()
-    {:noreply, socket}
-  end
+  def handle_event("reset_steam_app_id", _params, socket),
+    do: save_form(socket, Map.put(socket.assigns.form, "steam_app_id", Scheduler.default_steam_app_id()))
 
   @impl true
   def handle_info({:scheduler_state, status}, socket), do: {:noreply, assign_status(socket, status)}
@@ -81,6 +46,26 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def handle_info(:clock_tick, socket) do
     Process.send_after(self(), :clock_tick, @clock_tick_ms)
     {:noreply, assign(socket, :now, Scheduler.local_now())}
+  end
+
+  defp save_form(socket, form) do
+    attrs = %{
+      enabled: form["enabled"] == "true",
+      runner: form["runner"],
+      window_start: String.slice(form["window_start"], 0, 5),
+      window_end: String.slice(form["window_end"], 0, 5),
+      launch_mode: form["launch_mode"],
+      steam_app_id: String.trim(form["steam_app_id"]),
+      exe_path: String.trim(form["exe_path"]),
+      launch_timeout_s: parse_int(form["launch_timeout_s"])
+    }
+
+    socket = assign(socket, :form, form)
+
+    case Scheduler.save_settings(attrs) do
+      {:ok, settings} -> {:noreply, socket |> assign(:settings, settings) |> assign(:save_error, nil)}
+      {:error, message} -> {:noreply, assign(socket, :save_error, message)}
+    end
   end
 
   defp assign_status(socket, status) do
@@ -123,30 +108,39 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     end
   end
 
-  def action_label(nil, _teams), do: "not set up yet"
-  def action_label({:run_mirror_dungeon, _, _, _} = action, _teams), do: MirrorDungeonLive.pending_action_label(action)
+  def module_terms(runner, lux_action, md_action, lux_then_md?) do
+    actions =
+      case runner do
+        "luxcavation" -> [lux_action | if(lux_then_md?, do: [md_action], else: [])]
+        "mirror_dungeon" -> [md_action]
+      end
 
-  def action_label({:run_luxcavation, %{exp: exp, thread: thread}, exp_c, exp_r, thread_c, thread_r, _xp?, _enkephalin?, _convert}, teams) do
-    "luxcavation: exp #{exp_r} x #{exp_c} (#{lux_team_name(exp, teams)}), thread #{thread_r} x #{thread_c} (#{lux_team_name(thread, teams)})"
+    if Enum.any?(actions, &is_nil/1), do: nil, else: actions |> Enum.flat_map(&action_terms/1) |> Enum.reject(fn {_label, runs, _cost} -> runs == 0 end)
   end
 
-  defp lux_team_name(nil, _teams), do: "no team"
-  defp lux_team_name(%{id: team_id}, teams), do: Enum.find_value(teams, "team #{team_id}", &(&1.id == team_id && &1.name))
+  def modules_total(terms), do: terms |> Enum.map(fn {_label, runs, cost} -> runs * cost end) |> Enum.sum()
+
+  def term_badge_class("EXP"), do: "badge-info"
+  def term_badge_class("THREAD"), do: "badge-secondary"
+  def term_badge_class("MD"), do: "badge-primary"
+
+  defp action_terms({:run_luxcavation, _teams, exp_consecutive, exp_repeats, thread_consecutive, thread_repeats, _xp?, _enkephalin?, _convert}) do
+    [
+      {"EXP", exp_consecutive * exp_repeats, LuxcavationLive.exp_enkephalin_cost()},
+      {"THREAD", thread_consecutive * thread_repeats, LuxcavationLive.thread_enkephalin_cost()}
+    ]
+  end
+
+  defp action_terms({:run_mirror_dungeon, _picks, run_count, _config}), do: [{"MD", run_count, @md_modules_per_run}]
 
   def plan_label(now, settings) do
     {date, planned, end_at} = Scheduler.next_planned(now, settings)
     day = if date == NaiveDateTime.to_date(now), do: "today", else: Calendar.strftime(date, "%a %b %-d")
 
     if NaiveDateTime.compare(now, planned) == :lt,
-      do: "#{day}: starts at #{clock(planned)} (window ends #{clock(end_at)})",
+      do: "#{day}: starts at #{clock(planned)}, in #{Scheduler.exact_duration_label(NaiveDateTime.diff(planned, now, :second))} (window ends #{clock(end_at)})",
       else: "#{day}: due now, until #{clock(end_at)}"
   end
 
   def clock(%NaiveDateTime{} = at), do: Calendar.strftime(at, "%H:%M")
-
-  def window_label(nil), do: "Limbus window not found"
-
-  def window_label({_x, _y, w, h} = rect),
-    do: "Limbus window #{w}x#{h}" <> if(GameWindow.aspect_ok?(rect), do: " (16:9)", else: " (not 16:9)")
-
 end
