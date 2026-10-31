@@ -31,6 +31,16 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def handle_event("update_form", params, socket),
     do: save_form(socket, Map.merge(socket.assigns.form, form_params(params)))
 
+  def handle_event("scheduler_hold", %{"for" => option}, socket) when option in ~w(1 2 4 8 day clear) do
+    Scheduler.hold(option)
+    {:noreply, assign_outlook(socket)}
+  end
+
+  def handle_event("scheduler_start_now", _params, socket) do
+    Server.start_now()
+    {:noreply, socket}
+  end
+
   def handle_event("reset_steam_app_id", _params, socket),
     do: save_form(socket, Map.put(socket.assigns.form, "steam_app_id", Scheduler.default_steam_app_id()))
 

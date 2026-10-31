@@ -59,6 +59,59 @@ defmodule StarlightBot.EnkephalinSchedule do
     :ok
   end
 
+  def charging?, do: :persistent_term.get({__MODULE__, :charging}, false)
+
+  def set_charging(charging?), do: :persistent_term.put({__MODULE__, :charging}, charging?)
+
+  def next_charge(%NaiveDateTime{} = now, settings, blocked) do
+    base = Enum.max([now, interval_at(now, settings), blocked_until(blocked) || now], NaiveDateTime)
+
+    Enum.find_value(-1..3, fn offset ->
+      {start_at, end_at} = Scheduler.window(Date.add(NaiveDateTime.to_date(now), offset), settings)
+      at = Enum.max([base, start_at], NaiveDateTime)
+      if NaiveDateTime.compare(at, end_at) == :lt, do: at
+    end)
+  end
+
+  def outlook(%NaiveDateTime{} = now, settings, blocked, busy?) do
+    cond do
+      not settings.enabled -> nil
+      charging?() -> "Charging enkephalin now"
+      busy? -> "Waiting for the current run to finish before charging enkephalin"
+      true -> charge_outlook(now, settings, blocked, next_charge(now, settings, blocked))
+    end
+  end
+
+  defp charge_outlook(_now, _settings, _blocked, nil), do: "No charging window left to charge in"
+
+  defp charge_outlook(now, settings, blocked, at) do
+    if NaiveDateTime.compare(at, now) != :gt do
+      "Charging enkephalin now"
+    else
+      "Will charge enkephalin at #{Scheduler.clock12(at)} #{Scheduler.day_word(now, at)}, in #{Scheduler.exact_duration_label(NaiveDateTime.diff(at, now, :second))}" <>
+        waiting_on(now, settings, blocked, at)
+    end
+  end
+
+  defp waiting_on(now, settings, blocked, at) do
+    reasons =
+      [
+        blocked && Scheduler.blocked_reason(blocked),
+        NaiveDateTime.compare(interval_at(now, settings), now) == :gt &&
+          "the #{Scheduler.exact_duration_label(settings.interval_minutes * 60)} interval since the last charge",
+        not in_window?(now, settings) && "the charging window opening at #{Scheduler.clock12(at)}"
+      ]
+      |> Enum.filter(& &1)
+
+    if reasons == [], do: "", else: ". Waiting on " <> Enum.join(reasons, "; ")
+  end
+
+  defp interval_at(now, %{last_converted_at: nil}), do: now
+  defp interval_at(_now, %{last_converted_at: last, interval_minutes: minutes}), do: NaiveDateTime.add(last, minutes * 60)
+
+  defp blocked_until(nil), do: nil
+  defp blocked_until({_reason, until}), do: Scheduler.to_local(until)
+
   def due?(%NaiveDateTime{} = now, settings), do: in_window?(now, settings) and interval_elapsed?(now, settings)
 
   def window_end(%NaiveDateTime{} = now, settings) do

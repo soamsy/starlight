@@ -50,14 +50,6 @@ defmodule StarlightBot.SchedulerTest do
     assert {~D[2026-10-19], _, _} = Scheduler.next_planned(~N[2026-10-18 14:00:00], @settings)
   end
 
-  test "the header label says done once nothing is left" do
-    pending = %{"exp" => 1, "thread" => 0, "md" => 0}
-    done = %{"exp" => 0, "thread" => 0, "md" => 0}
-    assert Scheduler.next_run_label(~N[2026-10-18 08:00:00], @settings, done, nil) == "done today"
-    assert Scheduler.next_run_label(~N[2026-10-18 12:00:00], @settings, pending, nil) == "due now"
-    assert Scheduler.next_run_label(~N[2026-10-18 14:00:00], @settings, pending, nil) =~ ~r/^in \d+h$/
-  end
-
   test "the day timeline gives the window, the start shift span and the current minute" do
     now = ~N[2026-10-18 10:30:00]
     timeline = Scheduler.day_timeline(now, @settings, nil)
@@ -115,7 +107,7 @@ defmodule StarlightBot.SchedulerTest do
       assert Scheduler.outlook(now, %{settings | enabled: false}, remaining, false, nil) =~ "Scheduler is off"
 
       blocked = {:hold, now |> DateTime.from_naive!("Etc/UTC") |> DateTime.add(3600)}
-      assert Scheduler.outlook(now, settings, remaining, false, blocked) =~ "You paused the scheduler until"
+      assert Scheduler.outlook(now, settings, remaining, false, blocked) =~ "You paused the schedulers until"
     end
   end
 

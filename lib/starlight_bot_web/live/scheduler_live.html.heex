@@ -24,6 +24,7 @@
     </div>
     <span :if={rows == []} class="text-xs text-base-content/50">No daily targets set</span>
     <span class="text-xs text-base-content/70 text-right">{@outlook}</span>
+    <div class="text-xs"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={@blocked} /></div>
     <%= if @retry_after_ms do %>
       <span class="text-xs text-warning">Retrying in <%= div(@retry_after_ms, 60_000) + 1 %> min</span>
     <% end %>
@@ -73,7 +74,7 @@
       <div class="flex items-center gap-2">
         <label class="input input-sm input-bordered flex flex-1 min-w-0 items-center gap-1">
           <input type="time" name="window_start" phx-debounce="500" value={@form["window_start"]} class="grow min-w-0" />
-          <span :if={latest_start_label(@form)} class="whitespace-nowrap text-base-content/40">- {latest_start_label(@form)}</span>
+          <span :if={latest_start_label(@form)} class="whitespace-nowrap text-base-content/40">~ {latest_start_label(@form)}</span>
           <span :if={latest_start_label(@form)} class="tooltip tooltip-top normal-case before:w-64 before:whitespace-normal before:text-left" data-tip="The window start shifts later by up to 15 minutes each day, so runs don't begin at exactly the same time.">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5 cursor-help text-base-content/40">
               <circle cx="12" cy="12" r="10" />

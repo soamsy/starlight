@@ -1,6 +1,6 @@
 defmodule StarlightBot.Scheduler do
   import Ecto.Query
-  alias StarlightBot.{AppSettings, DailyProgress, LuxSchedule, Repo, RunHistory, RunnerForms}
+  alias StarlightBot.{AppSettings, DailyProgress, EnkephalinSchedule, LuxSchedule, Repo, RunHistory, RunnerForms}
   alias StarlightBot.Navigation.Navigator
 
   @topic "scheduler"
@@ -49,7 +49,9 @@ defmodule StarlightBot.Scheduler do
     |> save_settings()
   end
 
-  def busy? do
+  def busy?, do: EnkephalinSchedule.charging?() or navigator_busy?()
+
+  defp navigator_busy? do
     GenServer.whereis(Navigator) != nil and
       case Navigator.status() do
         %{phase: :idle, run_kind: nil} -> false
@@ -113,22 +115,6 @@ defmodule StarlightBot.Scheduler do
     end)
   end
 
-  def next_run_label(%NaiveDateTime{} = now, settings, remaining, blocked) do
-    cond do
-      not DailyProgress.pending?(remaining) ->
-        "done today"
-
-      blocked ->
-        "held until #{clock12(to_local(elem(blocked, 1)))}"
-
-      true ->
-        case next_start(now, settings, nil) do
-          nil -> "no window left"
-          start_at -> if NaiveDateTime.compare(start_at, now) != :gt, do: "due now", else: "in #{duration_label(NaiveDateTime.diff(start_at, now, :second))}"
-        end
-    end
-  end
-
   def outlook(%NaiveDateTime{} = now, settings, remaining, busy?, blocked) do
     work = DailyProgress.remaining_label(remaining)
 
@@ -152,8 +138,12 @@ defmodule StarlightBot.Scheduler do
   end
 
   defp blocked_note(nil), do: ""
-  defp blocked_note({:hold, until}), do: ". You paused the scheduler until #{clock12(to_local(until))}"
-  defp blocked_note({:canceled, until}), do: ". A run was canceled recently, waiting until #{clock12(to_local(until))}"
+  defp blocked_note(blocked), do: ". " <> upcase_first(blocked_reason(blocked))
+
+  def blocked_reason({:hold, until}), do: "you paused the schedulers until #{clock12(to_local(until))}"
+  def blocked_reason({:canceled, until}), do: "a run was canceled recently, waiting until #{clock12(to_local(until))}"
+
+  defp upcase_first(<<first::utf8, rest::binary>>), do: String.upcase(<<first::utf8>>) <> rest
 
   def day_timeline(%NaiveDateTime{} = now, settings, blocked) do
     with {:ok, start_time} <- parse_time(settings.window_start),
@@ -190,7 +180,7 @@ defmodule StarlightBot.Scheduler do
 
   def clock12(%NaiveDateTime{} = at), do: Calendar.strftime(at, "%-I:%M %p")
 
-  defp day_word(now, at) do
+  def day_word(now, at) do
     case Date.diff(NaiveDateTime.to_date(at), NaiveDateTime.to_date(now)) do
       0 -> "today"
       1 -> "tomorrow"
@@ -217,9 +207,9 @@ defmodule StarlightBot.Scheduler do
     end
   end
 
-  defp duration_label(seconds) when seconds < 3600, do: "#{max(div(seconds + 59, 60), 1)} min"
-  defp duration_label(seconds) when seconds < 86_400, do: "#{div(seconds + 1800, 3600)}h"
-  defp duration_label(seconds), do: "#{div(seconds, 86_400)}d"
+  def duration_label(seconds) when seconds < 3600, do: "#{max(div(seconds + 59, 60), 1)} min"
+  def duration_label(seconds) when seconds < 86_400, do: "#{div(seconds + 1800, 3600)}h"
+  def duration_label(seconds), do: "#{div(seconds, 86_400)}d"
 
   defp update(fields) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)

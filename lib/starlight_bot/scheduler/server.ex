@@ -9,12 +9,15 @@ defmodule StarlightBot.Scheduler.Server do
   @ready_poll_ms 5_000
   @run_start_confirm_ms 5_000
   @max_events 50
+  @forced_window_s 2 * 3600
 
   defstruct settings: nil, task: nil, activity: nil, retry_after: nil, last_fire: nil, events: []
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   def status, do: GenServer.call(__MODULE__, :status)
+
+  def start_now, do: GenServer.cast(__MODULE__, :start_now)
 
   @impl true
   def init(_opts) do
@@ -25,6 +28,12 @@ defmodule StarlightBot.Scheduler.Server do
 
   @impl true
   def handle_call(:status, _from, state), do: {:reply, external(state), state}
+
+  @impl true
+  def handle_cast(:start_now, state) do
+    Scheduler.hold("clear")
+    {:noreply, start_now_run(%{state | retry_after: nil, last_fire: nil})}
+  end
 
   @impl true
   def handle_info(:tick, state) do
@@ -64,6 +73,18 @@ defmodule StarlightBot.Scheduler.Server do
       fire(state, remaining, end_at)
     else
       _ -> state
+    end
+  end
+
+  defp start_now_run(%{task: %Task{}} = state), do: state
+
+  defp start_now_run(state) do
+    remaining = DailyProgress.remaining(state.settings)
+
+    cond do
+      not DailyProgress.pending?(remaining) -> add_event(state, :info, "start now: today's targets are already done")
+      Scheduler.busy?() -> add_event(state, :info, "start now: a run is already in progress or paused")
+      true -> fire(state, remaining, NaiveDateTime.add(Scheduler.local_now(), @forced_window_s))
     end
   end
 

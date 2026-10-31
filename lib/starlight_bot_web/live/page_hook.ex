@@ -1,8 +1,9 @@
 defmodule StarlightBotWeb.Live.PageHook do
   import Phoenix.Component, only: [assign: 3, assign_new: 3]
   import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1, put_flash: 3]
-  alias StarlightBot.{AppSettings, DailyProgress, Data, EnkephalinSchedule, GameWindow, Scheduler}
+  alias StarlightBot.{AppSettings, Data, EnkephalinSchedule, GameWindow, Scheduler}
   alias StarlightBot.Automation.EnkephalinCharger
+  alias StarlightBot.Scheduler.Overview
   alias StarlightBot.Vision.Capture
 
   @scheduler_clock_ms 30_000
@@ -128,6 +129,18 @@ defmodule StarlightBotWeb.Live.PageHook do
     {:halt, assign_scheduler(socket, Scheduler.get_settings())}
   end
 
+  defp handle_settings_event("enkephalin_toggle", _params, socket) do
+    case EnkephalinSchedule.set_enabled(not socket.assigns.enkephalin_schedule.enabled) do
+      {:ok, settings} -> {:halt, socket |> assign(:enkephalin_form, enkephalin_form_values(settings)) |> assign_enkephalin_schedule(settings)}
+      {:error, message} -> {:halt, put_flash(socket, :error, "Enkephalin scheduler not changed: #{message}")}
+    end
+  end
+
+  defp handle_settings_event("scheduler_start_now", _params, socket) do
+    Scheduler.Server.start_now()
+    {:halt, socket}
+  end
+
   defp handle_settings_event(_event, _params, socket), do: {:cont, socket}
 
   defp handle_scheduler_message({:scheduler_settings, settings}, socket), do: {:halt, assign_scheduler(socket, settings)}
@@ -150,16 +163,12 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp handle_scheduler_message(_msg, socket), do: {:cont, socket}
 
   defp assign_scheduler(socket, settings) do
-    now = Scheduler.local_now()
-    remaining = DailyProgress.remaining(settings)
-    blocked = Scheduler.blocked()
-
     socket
     |> assign(:scheduler_settings, settings)
-    |> assign(:scheduler_blocked, blocked)
-    |> assign(:scheduler_label, Scheduler.next_run_label(now, settings, remaining, blocked))
-    |> assign(:scheduler_outlook, Scheduler.outlook(now, settings, remaining, Scheduler.busy?(), blocked))
+    |> assign_overview()
   end
+
+  defp assign_overview(socket), do: assign(socket, :scheduler_overview, Overview.build())
 
   defp save_enkephalin_schedule(socket, params) do
     form = Map.merge(socket.assigns.enkephalin_form, Map.take(params, @enkephalin_form_keys))
@@ -206,6 +215,7 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp assign_enkephalin_schedule(socket, settings) do
     socket
     |> assign(:enkephalin_schedule, settings)
+    |> assign_overview()
     |> assign(:enkephalin_now, Scheduler.local_now())
     |> assign_new(:enkephalin_schedule_error, fn -> nil end)
     |> assign_new(:enkephalin_form, fn -> enkephalin_form_values(settings) end)

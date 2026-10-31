@@ -27,11 +27,13 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
 
   def handle_info({ref, result}, %{task: %Task{ref: ref}} = state) do
     Process.demonitor(ref, [:flush])
+    EnkephalinSchedule.set_charging(false)
     log_result(result)
     {:noreply, %{state | task: nil}}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{task: %Task{ref: ref}} = state) do
+    EnkephalinSchedule.set_charging(false)
     LogStore.append(:error, "enkephalin scheduler: crashed: #{inspect(reason)}")
     {:noreply, %{state | task: nil}}
   end
@@ -46,11 +48,13 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
 
     with true <- settings.enabled,
          true <- EnkephalinSchedule.due?(now, settings),
+         nil <- Scheduler.blocked(),
          false <- backing_off?(state),
          true <- runners_idle?(),
          {:ok, end_at} <- window_end(now, settings),
          true <- window_ready?(settings) do
       LogStore.append(:info, "enkephalin scheduler: starting a charge")
+      EnkephalinSchedule.set_charging(true)
       task = Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn -> charge(settings, end_at) end)
       %{state | task: task, next_attempt_at: System.monotonic_time(:millisecond) + @attempt_backoff_ms}
     else

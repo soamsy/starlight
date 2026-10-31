@@ -140,7 +140,10 @@
 
     <div class="mt-auto"></div>
 
-    <% scheduler_on = assigns[:scheduler_settings] && assigns[:scheduler_settings].enabled %>
+    <% overview = assigns[:scheduler_overview] %>
+    <% runs_on = overview && overview.runs_on %>
+    <% charger_on = overview && overview.charger_on %>
+    <% scheduler_on = runs_on || charger_on %>
     <div class="dropdown dropdown-right dropdown-end">
       <div tabindex="0" role="button"
            class={["btn btn-square btn-xs lg:btn-sm", if(scheduler_on, do: "btn-success", else: "btn-ghost text-base-content/40")]}
@@ -153,11 +156,11 @@
           <% end %>
         </svg>
       </div>
-      <div tabindex="0" class={["dropdown-content z-50 ml-2 w-56 rounded-lg border bg-base-100 p-3 shadow-lg text-xs", if(scheduler_on, do: "border-success", else: "border-base-300")]}>
+      <div tabindex="0" class={["dropdown-content z-50 ml-2 w-72 rounded-lg border bg-base-100 p-3 shadow-lg text-xs", if(scheduler_on, do: "border-success", else: "border-base-300")]}>
         <div class="flex items-center justify-between gap-2">
           <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" class="toggle toggle-xs toggle-success" checked={scheduler_on} phx-click="scheduler_toggle" />
-            <span class="font-semibold">Scheduler</span>
+            <input type="checkbox" class="toggle toggle-xs toggle-success" checked={runs_on} phx-click="scheduler_toggle" />
+            <span class="font-semibold">Daily runs</span>
           </label>
           <button type="button" phx-click="settings_open" phx-value-tab="scheduler" onclick="document.activeElement.blur()"
                   class="btn btn-ghost btn-square btn-xs text-base-content/60">
@@ -171,15 +174,14 @@
             </svg>
           </button>
         </div>
-        <div class={["mt-2 font-mono", !scheduler_on && "text-base-content/30"]}>{assigns[:scheduler_label]}</div>
-        <div :if={assigns[:scheduler_outlook]} class="mt-1 text-base-content/60">{assigns[:scheduler_outlook]}</div>
-        <div class="mt-2 flex flex-col gap-1">
-          <span class="font-semibold text-base-content/50">Stop scheduling for</span>
-          <div class="flex flex-wrap gap-1">
-            <button :for={{label, value} <- [{"1h", "1"}, {"2h", "2"}, {"4h", "4"}, {"8h", "8"}, {"Rest of day", "day"}]} type="button" phx-click="scheduler_hold" phx-value-for={value} class="btn btn-xs">{label}</button>
-          </div>
-          <button :if={assigns[:scheduler_blocked]} type="button" phx-click="scheduler_hold" phx-value-for="clear" class="btn btn-xs btn-success mt-1">Resume now</button>
-        </div>
+        <label class="mt-2 flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" class="toggle toggle-xs toggle-success" checked={charger_on} phx-click="enkephalin_toggle" />
+          <span class="font-semibold">Enkephalin charger</span>
+        </label>
+        <div class={["mt-2 font-mono", !scheduler_on && "text-base-content/30"]}>{overview && overview.label}</div>
+        <div :if={overview && overview.runs_text} class="mt-1 text-base-content/60"><span class="font-semibold text-base-content/80">Runs:</span> {overview.runs_text}</div>
+        <div :if={overview && overview.charge_text} class="mt-1 text-base-content/60"><span class="font-semibold text-base-content/80">Charger:</span> {overview.charge_text}</div>
+        <div class="mt-2"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={overview && overview.blocked} /></div>
       </div>
     </div>
 
