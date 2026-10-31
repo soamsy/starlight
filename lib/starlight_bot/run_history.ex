@@ -68,6 +68,26 @@ defmodule StarlightBot.RunHistory do
       {:error, Exception.message(e)}
   end
 
+  def record_canceled(kind) when kind in [:luxcavation, :mirror_dungeon] do
+    now = DateTime.utc_now()
+
+    Repo.insert_all("run_logs", [
+      %{result: "canceled", notes: Atom.to_string(kind), started_at: now, ended_at: now, floors_completed: 0, duration_seconds: 0, inserted_at: now, updated_at: now}
+    ])
+
+    Phoenix.PubSub.broadcast(StarlightBot.PubSub, "scheduler", :daily_progress)
+    Phoenix.PubSub.broadcast(StarlightBot.PubSub, @topic, :run_history_changed)
+    :ok
+  end
+
+  def last_canceled_at do
+    Repo.one(from(r in "run_logs", where: r.result == "canceled", order_by: [desc: r.id], limit: 1, select: r.ended_at))
+    |> case do
+      nil -> nil
+      value -> value |> NaiveDateTime.from_iso8601!() |> DateTime.from_naive!("Etc/UTC")
+    end
+  end
+
   def list_runs(limit \\ 50) do
     Repo.all(
       from(r in "run_logs",

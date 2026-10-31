@@ -345,6 +345,7 @@ defmodule StarlightBot.Navigation.Navigator do
 
   @impl true
   def handle_cast(:cancel, state) do
+    if state.run_kind in [:luxcavation, :mirror_dungeon], do: RunHistory.record_canceled(state.run_kind)
     state = cancel_running(state)
     state = %{state | run_memory: %{}}
     state = add_log(state, :info, "Cancelled")
