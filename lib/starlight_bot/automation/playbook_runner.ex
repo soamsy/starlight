@@ -948,6 +948,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
         case Matcher.find_all(frame, hook) do
           [] ->
             Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) not found in the skill tray, #{missing_note} #{profile.name}")
+            save_tray_miss(frame, hook, ctx)
             {:cont, {:ok, acc}}
 
           rects ->
@@ -960,6 +961,17 @@ defmodule StarlightBot.Automation.PlaybookRunner do
         :skip -> {:halt, :skip}
       end
     end)
+  end
+
+  defp save_tray_miss(frame, hook, ctx) do
+    if Application.get_env(:starlight_bot, :save_timeout_frames, false) do
+      stamp = NaiveDateTime.local_now() |> NaiveDateTime.to_string() |> String.replace([" ", ":", "."], "_")
+      dir = Path.join(StarlightBot.Data.log_dir(), "timeouts")
+      File.mkdir_p!(dir)
+      path = Path.expand(Path.join(dir, "#{stamp}_tray_miss_#{hook}.png"))
+      Evision.imwrite(path, frame.mat)
+      Ctx.log(ctx, :info, "saved the screen at the tray miss to #{path}")
+    end
   end
 
   defp tray_groups(tray) do
@@ -1001,6 +1013,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     case Matcher.find_all(frame, hook) do
       [] ->
         Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) not found in the skill tray, skipping")
+        save_tray_miss(frame, hook, ctx)
         :skip
 
       rects ->
