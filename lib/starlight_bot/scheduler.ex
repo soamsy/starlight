@@ -119,7 +119,7 @@ defmodule StarlightBot.Scheduler do
     work = DailyProgress.remaining_label(remaining)
 
     cond do
-      not DailyProgress.pending?(remaining) -> "All of today's targets are done"
+      not DailyProgress.pending?(remaining) -> nil
       not settings.enabled -> "Scheduler is off, #{work} left today"
       busy? -> nil
       true -> start_outlook(now, work, next_start(now, settings, blocked), blocked, retry_after_ms)

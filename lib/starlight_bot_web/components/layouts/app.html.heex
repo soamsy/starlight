@@ -181,7 +181,7 @@
         <div class={["mt-2 font-mono", !scheduler_on && "text-base-content/30"]}>{overview && overview.label}</div>
         <div :if={overview && overview.runs_text} class="mt-1 text-base-content/60"><span class="font-semibold text-base-content/80">Runs:</span> {overview.runs_text}</div>
         <div :if={overview && overview.charge_text} class="mt-1 text-base-content/60"><span class="font-semibold text-base-content/80">Charger:</span> {overview.charge_text}</div>
-        <div class="mt-2"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={overview && overview.blocked} /></div>
+        <div class="mt-2"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={overview && overview.blocked} pending={overview && overview.runs_pending} /></div>
       </div>
     </div>
 
