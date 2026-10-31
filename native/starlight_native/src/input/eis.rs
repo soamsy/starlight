@@ -270,14 +270,24 @@ pub mod linux {
     }
 
     fn nested_eis_socket() -> Option<std::path::PathBuf> {
-        let name = std::env::var("STARLIGHT_EIS_SOCKET").ok().filter(|v| !v.is_empty())?;
-        let path = std::path::PathBuf::from(name);
-        let path = if path.is_absolute() {
-            path
-        } else {
-            std::path::PathBuf::from(std::env::var("XDG_RUNTIME_DIR").ok()?).join(path)
-        };
-        path.exists().then_some(path)
+        let runtime = std::path::PathBuf::from(std::env::var("XDG_RUNTIME_DIR").ok()?);
+        newest_live_gamescope_socket(&runtime)
+    }
+
+    fn newest_live_gamescope_socket(runtime: &std::path::Path) -> Option<std::path::PathBuf> {
+        std::fs::read_dir(runtime)
+            .ok()?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name.strip_prefix("gamescope-")
+                    .and_then(|rest| rest.strip_suffix("-ei"))
+                    .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            })
+            .filter(|entry| UnixStream::connect(entry.path()).is_ok())
+            .max_by_key(|entry| entry.metadata().and_then(|m| m.modified()).ok())
+            .map(|entry| entry.path())
     }
 
     fn nested_kwin_bus_exists() -> bool {
