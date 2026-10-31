@@ -107,7 +107,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     |> assign(:now, Scheduler.local_now())
     |> assign(:blocked, blocked)
     |> assign(:charger, EnkephalinSchedule.get_settings())
-    |> assign(:outlook, Scheduler.outlook(Scheduler.local_now(), settings, DailyProgress.remaining(settings), Scheduler.busy?(), blocked))
+    |> assign(:outlook, Scheduler.outlook(Scheduler.local_now(), settings, DailyProgress.remaining(settings), Scheduler.busy?(), blocked, socket.assigns[:retry_after_ms]))
   end
 
   defp assign_server_status(socket) do

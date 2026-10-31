@@ -115,22 +115,23 @@ defmodule StarlightBot.Scheduler do
     end)
   end
 
-  def outlook(%NaiveDateTime{} = now, settings, remaining, busy?, blocked) do
+  def outlook(%NaiveDateTime{} = now, settings, remaining, busy?, blocked, retry_after_ms \\ nil) do
     work = DailyProgress.remaining_label(remaining)
 
     cond do
       not DailyProgress.pending?(remaining) -> "All of today's targets are done"
       not settings.enabled -> "Scheduler is off, #{work} left today"
       busy? -> nil
-      true -> start_outlook(now, work, next_start(now, settings, blocked), blocked)
+      true -> start_outlook(now, work, next_start(now, settings, blocked), blocked, retry_after_ms)
     end
   end
 
-  defp start_outlook(_now, work, nil, _blocked), do: "Waiting to complete #{work}, no window left to start in"
+  defp start_outlook(_now, work, nil, _blocked, _retry_after_ms), do: "Waiting to complete #{work}, no window left to start in"
 
-  defp start_outlook(now, work, start_at, blocked) do
+  defp start_outlook(now, work, start_at, blocked, retry_after_ms) do
     text =
       cond do
+        NaiveDateTime.compare(start_at, now) != :gt and retry_after_ms && !blocked -> "Retrying #{work} in #{div(retry_after_ms, 60_000) + 1} min"
         NaiveDateTime.compare(start_at, now) != :gt -> "Starting #{work} now"
         blocked_start?(start_at, blocked) -> "Will start #{work} in #{exact_duration_label(NaiveDateTime.diff(start_at, now, :second))}"
         true -> "Will start #{work} at #{clock12(start_at)} #{day_word(now, start_at)}, in #{exact_duration_label(NaiveDateTime.diff(start_at, now, :second))}"

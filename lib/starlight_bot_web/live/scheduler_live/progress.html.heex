@@ -33,9 +33,6 @@
     <span :if={!@charger.enabled}></span>
     <StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={@blocked} section={:hold} />
   </div>
-  <%= if @retry_after_ms && !@blocked do %>
-    <span class="text-xs text-warning">Retrying in <%= div(@retry_after_ms, 60_000) + 1 %> min</span>
-  <% end %>
   <%= if @activity do %>
     <span class="flex items-center gap-1 text-xs text-base-content/60">
       <span class="loading loading-spinner loading-xs"></span>
