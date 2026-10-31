@@ -98,15 +98,22 @@ defmodule StarlightBot.EnkephalinSchedule do
       shown_day = Date.add(first_day, @timeline_days)
       step_s = interval_hours * 3600
 
-      charges =
+      shown =
         first_day
         |> Date.range(shown_day)
         |> Enum.flat_map_reduce(nil, fn date, last -> charges_in_window(Scheduler.window(date, settings), last, step_s) end)
         |> elem(0)
-        |> Enum.filter(&(NaiveDateTime.to_date(&1) == shown_day))
-        |> Enum.map(&minute_of_day/1)
+        |> Enum.chunk_every(2, 1, :discard)
+        |> Enum.filter(fn [_previous, charge] -> NaiveDateTime.to_date(charge) == shown_day end)
 
-      %{windows: window_segments(minute_of_day(start_time), minute_of_day(end_time)), charges: charges}
+      spans =
+        Enum.map(shown, fn [previous, charge] ->
+          gap_minutes = div(NaiveDateTime.diff(charge, previous, :second), 60)
+          to = minute_of_day(charge)
+          Map.merge(%{from: max(to - gap_minutes, 0), to: to, gap_minutes: gap_minutes}, modules_for_minutes(gap_minutes))
+        end)
+
+      %{windows: window_segments(minute_of_day(start_time), minute_of_day(end_time)), charges: Enum.map(spans, & &1.to), spans: spans}
     else
       _ -> nil
     end
@@ -123,8 +130,8 @@ defmodule StarlightBot.EnkephalinSchedule do
   defp window_segments(start_min, end_min) when end_min > start_min, do: [{start_min, end_min}]
   defp window_segments(start_min, end_min), do: [{0, end_min}, {start_min, 1440}]
 
-  def modules_per_charge(interval_hours) do
-    generated = interval_hours * @enkephalin_per_hour
+  def modules_for_minutes(minutes) do
+    generated = div(minutes * @enkephalin_per_hour, 60)
     banked = min(generated, @enkephalin_cap)
     %{generated: generated, banked: banked, capped?: generated > @enkephalin_cap, modules: div(banked, @enkephalin_per_module), leftover: rem(banked, @enkephalin_per_module)}
   end

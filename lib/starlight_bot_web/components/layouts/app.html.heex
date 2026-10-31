@@ -380,8 +380,16 @@
                 <%= for {from, to} <- timeline.windows do %>
                   <div class="absolute inset-y-0 bg-success/20" style={"left: #{from / 14.4}%; width: #{(to - from) / 14.4}%"}></div>
                 <% end %>
-                <%= for minute <- timeline.charges do %>
-                  <div class="absolute inset-y-1 w-1 -ml-0.5 rounded-full bg-success tooltip" style={"left: #{minute / 14.4}%"} data-tip={timeline_clock(minute)}></div>
+                <%= for span <- timeline.spans do %>
+                  <% width = span.to - span.from %>
+                  <div :if={width >= 120} class={["absolute inset-y-0 flex items-center justify-center gap-0.5 overflow-hidden whitespace-nowrap font-mono text-[10px] pointer-events-none", span.capped? && "text-warning"]} style={"left: #{span.from / 14.4}%; width: #{width / 14.4}%"}>
+                    <%= if span.modules > 0 do %>{span.modules}<img src="/images/icons/enkephalin.webp" class="size-3" /><% end %>
+                    <%= if span.modules > 0 and span.leftover > 0 and width >= 300 do %>,<% end %>
+                    <%= if span.leftover > 0 and (span.modules == 0 or width >= 300) do %>{span.leftover}<img src="/images/icons/enkephalin_currency.webp" class="size-3" /><% end %>
+                  </div>
+                <% end %>
+                <%= for span <- timeline.spans do %>
+                  <div class="absolute inset-y-1 w-1 -ml-0.5 rounded-full bg-success tooltip" style={"left: #{span.to / 14.4}%"} data-tip={"#{timeline_clock(span.to)}: #{span.modules} modules, #{span.leftover} enkephalin left over after #{div(span.gap_minutes, 60)}h #{rem(span.gap_minutes, 60)}m#{if span.capped?, do: " (capped at 160)"}"}></div>
                 <% end %>
               </div>
               <div class="relative h-3 text-[10px] text-base-content/50 font-mono">
@@ -392,23 +400,6 @@
               <span class="text-xs text-base-content/60">{length(timeline.charges)} {if length(timeline.charges) == 1, do: "charge", else: "charges"} a day</span>
             </div>
           <% end %>
-          <% interval = form["interval_hours"] |> String.to_integer() |> StarlightBot.EnkephalinSchedule.modules_per_charge() %>
-          <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg bg-base-200 px-3 py-2 text-xs">
-            <span class="flex items-center gap-1 font-mono">
-              {interval.banked}<img src="/images/icons/enkephalin_currency.webp" title="Enkephalin" class="size-4" />
-            </span>
-            <span :if={interval.capped?} class="text-warning">(capped from {interval.generated})</span>
-            <span class="text-base-content/40">=></span>
-            <span class="flex items-center gap-1 font-semibold">
-              {interval.modules}<img src="/images/icons/enkephalin.webp" title="Enkephalin module" class="size-4" /> per charge{if interval.leftover > 0, do: ","}
-            </span>
-            <%= if interval.leftover > 0 do %>
-              <span class="flex items-center gap-1 text-base-content/60">
-                {interval.leftover}<img src="/images/icons/enkephalin_currency.webp" title="Enkephalin" class="size-4" /> left over
-              </span>
-            <% end %>
-          </div>
-
           <StarlightBotWeb.Components.LaunchFields.launch_fields
             launch_mode={form["launch_mode"]}
             steam_app_id={form["steam_app_id"]}

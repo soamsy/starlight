@@ -25,15 +25,16 @@ defmodule StarlightBot.EnkephalinScheduleTest do
   test "day timeline lists charges from the window start every interval and splits overnight windows" do
     assert %{windows: [{480, 1320}], charges: [480, 840, 1200]} = EnkephalinSchedule.day_timeline("08:00", "22:00", 6)
     assert %{windows: [{0, 240}, {1320, 1440}], charges: [0, 120, 1320]} = EnkephalinSchedule.day_timeline("22:00", "04:00", 2)
+    assert %{spans: [%{from: 0, to: 480, gap_minutes: 720, modules: 6}, %{from: 480, to: 840, gap_minutes: 360, modules: 3} | _]} = EnkephalinSchedule.day_timeline("08:00", "22:00", 6)
     assert EnkephalinSchedule.day_timeline("", "22:00", 6) == nil
     assert EnkephalinSchedule.day_timeline("08:00", "08:00", 6) == nil
   end
 
   test "modules per charge follow 10 enkephalin an hour, 20 per module, capped at 160 enkephalin" do
-    assert %{generated: 20, banked: 20, capped?: false, modules: 1} = EnkephalinSchedule.modules_per_charge(2)
-    assert %{generated: 60, modules: 3, leftover: 0} = EnkephalinSchedule.modules_per_charge(6)
-    assert %{generated: 30, modules: 1, leftover: 10} = EnkephalinSchedule.modules_per_charge(3)
-    assert %{generated: 160, capped?: false, modules: 8} = EnkephalinSchedule.modules_per_charge(16)
-    assert %{generated: 240, banked: 160, capped?: true, modules: 8} = EnkephalinSchedule.modules_per_charge(24)
+    assert %{generated: 20, banked: 20, capped?: false, modules: 1} = EnkephalinSchedule.modules_for_minutes(120)
+    assert %{generated: 60, modules: 3, leftover: 0} = EnkephalinSchedule.modules_for_minutes(360)
+    assert %{generated: 30, modules: 1, leftover: 10} = EnkephalinSchedule.modules_for_minutes(180)
+    assert %{generated: 160, capped?: false, modules: 8} = EnkephalinSchedule.modules_for_minutes(960)
+    assert %{generated: 240, banked: 160, capped?: true, modules: 8} = EnkephalinSchedule.modules_for_minutes(1440)
   end
 end
