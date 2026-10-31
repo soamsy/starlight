@@ -15,7 +15,9 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
   @scroll_clicks 4
   @scroll_settle_ms 400
   @tab_load_timeout_ms 1_500
+  @tab_retry_timeout_ms 700
   @tab_poll_ms 50
+  @tab_click_retries 3
   @max_scroll_passes 20
   @min_item_area_px 300
 
@@ -58,18 +60,31 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
     if MapSet.subset?(wanted, picked) do
       {:steps, [call(__MODULE__, :search_tabs, [rest, picked, retries])]}
     else
-      load = call(__MODULE__, :load_tab, [tab, wanted, picked, rest, retries])
+      load = call(__MODULE__, :load_tab, [tab, wanted, picked, rest, retries, @tab_click_retries])
       {:steps, [attempt([click(:"gift_search_#{tab}")], else: []), load]}
     end
   end
 
-  def load_tab(tab, wanted, picked, rest, retries, _frame, ctx) do
+  def load_tab(tab, wanted, picked, rest, retries, clicks_left, _frame, ctx) do
     tab_ids = for gift <- EgoGifts.list_gifts(), GiftPlans.gift_search_tab(gift) == tab, into: MapSet.new(), do: gift.id
 
+    timeout_ms = if clicks_left == @tab_click_retries, do: @tab_load_timeout_ms, else: @tab_retry_timeout_ms
+
     with {:ok, {x, y, w, h}} <- hook_region(@scan_hook, ctx),
-         {:ok, status} <- await_tab_items(tab_ids, {x, y, div(w, 2), div(h, 2)}, System.monotonic_time(:millisecond) + @tab_load_timeout_ms) do
-      if status == :timeout, do: Ctx.log(ctx, :info, "gift search: no #{tab} gift showed up within #{@tab_load_timeout_ms}ms, scanning anyway")
-      scan_pass(tab, wanted, picked, MapSet.new(), 0, rest, retries, nil, ctx)
+         {:ok, status} <- await_tab_items(tab_ids, {x, y, div(w, 2), div(h, 2)}, System.monotonic_time(:millisecond) + timeout_ms) do
+      cond do
+        status == :loaded ->
+          scan_pass(tab, wanted, picked, MapSet.new(), 0, rest, retries, nil, ctx)
+
+        clicks_left > 0 ->
+          Ctx.log(ctx, :info, "gift search: no #{tab} gift showed up within #{timeout_ms}ms, clicking the tab again (#{clicks_left} left)")
+          reload = call(__MODULE__, :load_tab, [tab, wanted, picked, rest, retries, clicks_left - 1])
+          {:steps, [attempt([click(:"gift_search_#{tab}")], else: []), reload]}
+
+        true ->
+          Ctx.log(ctx, :info, "gift search: no #{tab} gift showed up after #{@tab_click_retries} more clicks, scanning anyway")
+          scan_pass(tab, wanted, picked, MapSet.new(), 0, rest, retries, nil, ctx)
+      end
     else
       {:error, reason} ->
         Ctx.log(ctx, :error, "gift search: #{tab} scan failed: #{inspect(reason)}")
