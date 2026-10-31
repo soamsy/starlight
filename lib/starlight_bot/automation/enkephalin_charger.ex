@@ -1,7 +1,7 @@
 defmodule StarlightBot.Automation.EnkephalinCharger do
   import StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.Engine
-  alias StarlightBot.Ctx
+  alias StarlightBot.{Ctx, EnkephalinSchedule}
 
   @max_convert_count 4
 
@@ -86,11 +86,16 @@ defmodule StarlightBot.Automation.EnkephalinCharger do
 
   def at_modules_tab({:ok, modules_tab}, _frame, ctx) do
     Ctx.log(ctx, :info, "making as many enkephalin modules as possible")
-    make = make_modules_steps() ++ [log(:ok, "modules made")]
+    make = make_modules_steps() ++ [log(:ok, "modules made"), call(__MODULE__, :mark_converted, [])]
     {:steps, [attempt(make, else: {__MODULE__, :make_failed, []}), goto(modules_tab, :home)]}
   end
 
   def at_modules_tab({:error, _} = err, _frame, _ctx), do: err
+
+  def mark_converted(_frame, _ctx) do
+    EnkephalinSchedule.mark_converted()
+    {:ok, nil}
+  end
 
   def make_failed({:error, reason}, _frame, ctx) do
     Ctx.log(ctx, :error, "make modules failed: #{inspect(reason)}")

@@ -3,7 +3,7 @@ defmodule StarlightBot.Navigation.Navigator do
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Automation.Scripts.ShopRunner
   alias StarlightBot.{Ctx, LogStore, RunHistory, Teams}
-  alias StarlightBot.Automation.Scripts.{ClaimRewards, LuxcavationRunner, MirrorDungeonRunner, SelectTeamOnScreen}
+  alias StarlightBot.Automation.Scripts.{ClaimRewards, EnkephalinConversion, LuxcavationRunner, MirrorDungeonRunner, SelectTeamOnScreen}
   alias StarlightBot.Navigation.{Catalog, DSL, Machine, RunClock, RunSplits, Runner, ScreenTimes}
 
   @topic "navigation"
@@ -63,6 +63,8 @@ defmodule StarlightBot.Navigation.Navigator do
 
   def queue_after_run({:run_mirror_dungeon, _picks, _run_count, _config} = next),
     do: GenServer.cast(__MODULE__, {:queue_after_run, next})
+
+  def charge_enkephalin(convert_count), do: GenServer.cast(__MODULE__, {:charge_enkephalin, convert_count})
 
   def select_team_on_screen(team_id, hook),
     do: GenServer.cast(__MODULE__, {:select_team_on_screen, team_id, hook})
@@ -212,6 +214,18 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   @impl true
+  def handle_cast({:charge_enkephalin, _count}, %{task_pid: pid} = state) when is_pid(pid),
+    do: refuse_run(state, "enkephalin charge", "another run")
+
+  def handle_cast({:charge_enkephalin, convert_count}, state) do
+    state = cancel_running(state)
+    state = add_log(state, :info, "Charging enkephalin (#{convert_count}x lunacy)")
+    state = launch(state, :run_script, EnkephalinConversion.program(convert_count), nav_ctx(), nil)
+    state = %{state | phase: :running, goal: nil, run_kind: :enkephalin}
+    broadcast(state)
+    {:noreply, state}
+  end
+
   def handle_cast({:run_luxcavation, _, _, _, _, _, _, _, _}, %{run_kind: :mirror_dungeon, task_pid: pid} = state) when is_pid(pid),
     do: refuse_run(state, "luxcavation", "mirror dungeon")
 

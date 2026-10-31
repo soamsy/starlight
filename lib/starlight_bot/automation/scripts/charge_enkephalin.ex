@@ -1,6 +1,6 @@
 defmodule StarlightBot.Automation.Scripts.ChargeEnkephalin do
   use StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.Engine
+  alias StarlightBot.Automation.{Engine, EnkephalinCharger}
   alias StarlightBot.Ctx
   alias StarlightBot.Navigation.Catalog
 
@@ -60,7 +60,7 @@ defmodule StarlightBot.Automation.Scripts.ChargeEnkephalin do
 
   def at_modules_tab({:ok, modules_tab}, _frame, ctx) do
     Ctx.log(ctx, :info, "making as many modules as possible")
-    make = make_modules_steps() ++ [log(:ok, "modules made")]
+    make = make_modules_steps() ++ [log(:ok, "modules made"), call(EnkephalinCharger, :mark_converted, [])]
     {:steps, [attempt(make, else: {__MODULE__, :make_failed, []}), goto(modules_tab, :home)]}
   end
 

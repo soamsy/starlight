@@ -1,12 +1,13 @@
 defmodule StarlightBotWeb.Live.PageHook do
-  import Phoenix.Component, only: [assign: 3]
+  import Phoenix.Component, only: [assign: 3, assign_new: 3]
   import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1, put_flash: 3]
-  alias StarlightBot.{AppSettings, Data, GameWindow, Scheduler}
+  alias StarlightBot.{AppSettings, Data, EnkephalinSchedule, GameWindow, Scheduler}
   alias StarlightBot.Automation.EnkephalinCharger
   alias StarlightBot.Vision.Capture
 
   @scheduler_clock_ms 30_000
   @settings_tabs ["scheduler", "enkephalin", "data"]
+  @enkephalin_form_keys ~w(enabled window_start window_end interval_hours launch_mode steam_app_id exe_path launch_timeout_s)
 
   @pages %{
     StarlightBotWeb.Live.HookEditorLive => :hooks,
@@ -39,10 +40,12 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:app_settings, nil)
       |> assign(:enkephalin_convert_count, AppSettings.enkephalin_convert_count())
       |> assign_scheduler(Scheduler.get_settings())
+      |> assign_enkephalin_schedule(EnkephalinSchedule.get_settings())
 
     socket =
       if connected?(socket) do
         Scheduler.subscribe()
+        EnkephalinSchedule.subscribe()
         Process.send_after(self(), :scheduler_clock, @scheduler_clock_ms)
 
         socket
@@ -90,6 +93,12 @@ defmodule StarlightBotWeb.Live.PageHook do
     end
   end
 
+  defp handle_settings_event("enkephalin_reset_steam_app_id", _params, socket) do
+    save_enkephalin_schedule(socket, %{"steam_app_id" => Scheduler.default_steam_app_id()})
+  end
+
+  defp handle_settings_event("enkephalin_schedule_save", params, socket), do: save_enkephalin_schedule(socket, params)
+
   defp handle_settings_event("settings_close", _params, socket), do: {:halt, assign(socket, :settings_open, false)}
 
   defp handle_settings_event("settings_save", %{"data_dir" => data_dir} = params, socket) do
@@ -120,9 +129,15 @@ defmodule StarlightBotWeb.Live.PageHook do
 
   defp handle_scheduler_message({:scheduler_state, %{settings: settings}}, socket), do: {:halt, assign_scheduler(socket, settings)}
 
+  defp handle_scheduler_message({:enkephalin_schedule, settings}, socket), do: {:halt, assign_enkephalin_schedule(socket, settings)}
+
   defp handle_scheduler_message(:scheduler_clock, socket) do
     Process.send_after(self(), :scheduler_clock, @scheduler_clock_ms)
-    {:halt, assign_scheduler(socket, socket.assigns.scheduler_settings)}
+
+    {:halt,
+     socket
+     |> assign_scheduler(socket.assigns.scheduler_settings)
+     |> assign_enkephalin_schedule(socket.assigns.enkephalin_schedule)}
   end
 
   defp handle_scheduler_message(_msg, socket), do: {:cont, socket}
@@ -131,6 +146,56 @@ defmodule StarlightBotWeb.Live.PageHook do
     socket
     |> assign(:scheduler_settings, settings)
     |> assign(:scheduler_label, Scheduler.next_run_label(Scheduler.local_now(), settings))
+  end
+
+  defp save_enkephalin_schedule(socket, params) do
+    form = Map.merge(socket.assigns.enkephalin_form, Map.take(params, @enkephalin_form_keys))
+
+    attrs = %{
+      enabled: form["enabled"] == "true",
+      window_start: String.slice(form["window_start"], 0, 5),
+      window_end: String.slice(form["window_end"], 0, 5),
+      interval_minutes: parse_int(form["interval_hours"], &(&1 * 60)),
+      launch_mode: form["launch_mode"],
+      steam_app_id: String.trim(form["steam_app_id"]),
+      exe_path: String.trim(form["exe_path"]),
+      launch_timeout_s: parse_int(form["launch_timeout_s"], & &1)
+    }
+
+    socket = assign(socket, :enkephalin_form, form)
+
+    case EnkephalinSchedule.save_settings(attrs) do
+      {:ok, settings} -> {:halt, socket |> assign_enkephalin_schedule(settings) |> assign(:enkephalin_schedule_error, nil)}
+      {:error, message} -> {:halt, assign(socket, :enkephalin_schedule_error, message)}
+    end
+  end
+
+  defp enkephalin_form_values(settings) do
+    %{
+      "enabled" => to_string(settings.enabled),
+      "window_start" => settings.window_start,
+      "window_end" => settings.window_end,
+      "interval_hours" => to_string(div(settings.interval_minutes, 60)),
+      "launch_mode" => settings.launch_mode,
+      "steam_app_id" => settings.steam_app_id,
+      "exe_path" => settings.exe_path,
+      "launch_timeout_s" => to_string(settings.launch_timeout_s)
+    }
+  end
+
+  defp parse_int(value, fun) do
+    case Integer.parse(to_string(value)) do
+      {n, ""} -> fun.(n)
+      _ -> nil
+    end
+  end
+
+  defp assign_enkephalin_schedule(socket, settings) do
+    socket
+    |> assign(:enkephalin_schedule, settings)
+    |> assign(:enkephalin_now, Scheduler.local_now())
+    |> assign_new(:enkephalin_schedule_error, fn -> nil end)
+    |> assign_new(:enkephalin_form, fn -> enkephalin_form_values(settings) end)
   end
 
   defp handle_window_rect({:window_rect, rect}, socket),

@@ -13,6 +13,15 @@ defmodule StarlightBotWeb.Layouts do
   end
   def window_status(_), do: :missing
 
+  def timeline_clock(minute), do: "#{String.pad_leading(to_string(div(minute, 60)), 2, "0")}:#{String.pad_leading(to_string(rem(minute, 60)), 2, "0")}"
+
+  def last_charged_label(nil, _now), do: "last charged: never"
+
+  def last_charged_label(%NaiveDateTime{} = at, %NaiveDateTime{} = now) do
+    minutes = max(div(NaiveDateTime.diff(now, at, :second), 60), 0)
+    "last charged: #{div(minutes, 60)}h #{rem(minutes, 60)}m ago at #{Calendar.strftime(at, "%H:%M")}"
+  end
+
   def window_status_title(:exact), do: "Limbus window is the right size"
   def window_status_title(:scaled), do: "Limbus window is 16:9 but not 1920 × 1080"
   def window_status_title(:bad_aspect), do: "Limbus window is the wrong size"

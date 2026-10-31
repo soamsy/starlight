@@ -25,6 +25,13 @@ defmodule StarlightBot.AppSettings do
     end
   end
 
+  def get(key), do: Repo.one(from_key(key))
+
+  def put(key, value) do
+    Repo.insert_all("app_settings", [%{key: key, value: value}], on_conflict: {:replace, [:value]}, conflict_target: :key)
+    :ok
+  end
+
   defp from_key(key), do: from(s in "app_settings", where: s.key == ^key, select: s.value)
 
   defp parse_count(value) do

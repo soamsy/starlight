@@ -224,13 +224,13 @@
         </div>
         <%= if status == :missing do %>
           <%= if launch = assigns[:game_launch_label] do %>
-            <div class="text-base-content/70 mb-2">Launches <span class="font-mono break-all">{launch}</span> using the Scheduler settings.</div>
+            <div class="text-base-content/70 mb-2">Launches <span class="font-mono break-all">{launch}</span> using the Runners settings.</div>
             <button class="btn btn-primary btn-xs w-full" phx-click="game_window_launch" disabled={busy != nil}>
               <%= if busy, do: String.capitalize(busy) <> "…", else: "Open Limbus" %>
             </button>
           <% else %>
             <div class="text-base-content/70">
-              Launching is off. Set a launch mode in the <button type="button" phx-click="settings_open" phx-value-tab="scheduler" class="link">Scheduler</button> to open Limbus from here.
+              Launching is off. Set a launch mode in the <button type="button" phx-click="settings_open" phx-value-tab="scheduler" class="link">Runners</button> tab to open Limbus from here.
             </div>
           <% end %>
         <% else %>
@@ -285,7 +285,7 @@
     <div class="modal-box max-w-2xl">
       <h3 class="font-bold text-lg mb-2">Settings</h3>
       <div role="tablist" class="tabs tabs-bordered mb-3">
-        <button role="tab" phx-click="settings_tab" phx-value-tab="scheduler" class={["tab", @settings_tab == "scheduler" && "tab-active"]}>Scheduler</button>
+        <button role="tab" phx-click="settings_tab" phx-value-tab="scheduler" class={["tab", @settings_tab == "scheduler" && "tab-active"]}>Runners</button>
         <button role="tab" phx-click="settings_tab" phx-value-tab="enkephalin" class={["tab", @settings_tab == "enkephalin" && "tab-active"]}>Enkephalin</button>
         <button role="tab" phx-click="settings_tab" phx-value-tab="data" class={["tab", @settings_tab == "data" && "tab-active"]}>Data</button>
       </div>
@@ -312,6 +312,105 @@
           </div>
         </form>
         <p class="text-xs text-base-content/60 mt-2">Whenever enkephalin is collected, ensure this much lunacy has been spent</p>
+
+        <% form = @enkephalin_form %>
+        <form phx-change="enkephalin_schedule_save" class="flex flex-col gap-3 mt-5 border-t border-base-300 pt-4">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Enkephalin scheduler</span>
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-2 cursor-pointer text-sm">
+              <input type="hidden" name="enabled" value="false" />
+              <input type="checkbox" name="enabled" value="true" checked={form["enabled"] == "true"} class="toggle toggle-sm toggle-success" />
+              Enabled
+            </label>
+            <span :if={form["enabled"] == "true"} class="text-xs text-base-content/60">
+              {last_charged_label(@enkephalin_schedule.last_converted_at, @enkephalin_now)}
+            </span>
+          </div>
+
+          <div class="flex items-end gap-3">
+            <div class="flex flex-col gap-1">
+              <span class="flex items-center gap-1 text-xs font-semibold text-base-content/50 uppercase tracking-wide">
+                Interval
+                <span class="tooltip tooltip-bottom normal-case font-normal before:w-64 before:whitespace-normal before:text-left" data-tip="Charge once this many hours have passed since the last charge, while the window is open.">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5 cursor-help">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4" />
+                  <path d="M12 8h.01" />
+                </svg>
+                </span>
+              </span>
+              <select name="interval_hours" class="select select-sm select-bordered w-20">
+                <%= for hours <- 2..24 do %>
+                  <option value={hours} selected={form["interval_hours"] == to_string(hours)}>{hours}h</option>
+                <% end %>
+              </select>
+            </div>
+
+            <div class="flex flex-col gap-1 flex-1">
+              <span class="flex items-center gap-1 text-xs font-semibold text-base-content/50 uppercase tracking-wide">
+                Daily window
+                <span class="tooltip tooltip-bottom normal-case font-normal before:w-64 before:whitespace-normal before:text-left" data-tip="Charges only happen inside this window. An end before the start runs past midnight.">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5 cursor-help">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4" />
+                  <path d="M12 8h.01" />
+                </svg>
+                </span>
+              </span>
+              <div class="flex items-center gap-2">
+                <input type="time" name="window_start" value={form["window_start"]} class="input input-sm input-bordered flex-1 min-w-0" />
+                <span class="text-base-content/40">to</span>
+                <input type="time" name="window_end" value={form["window_end"]} class="input input-sm input-bordered flex-1 min-w-0" />
+              </div>
+            </div>
+          </div>
+
+          <% timeline = StarlightBot.EnkephalinSchedule.day_timeline(String.slice(form["window_start"], 0, 5), String.slice(form["window_end"], 0, 5), String.to_integer(form["interval_hours"])) %>
+          <%= if timeline do %>
+            <div class="flex flex-col gap-1">
+              <div class="relative h-6 rounded bg-base-200">
+                <%= for {from, to} <- timeline.windows do %>
+                  <div class="absolute inset-y-0 bg-success/20" style={"left: #{from / 14.4}%; width: #{(to - from) / 14.4}%"}></div>
+                <% end %>
+                <%= for minute <- timeline.charges do %>
+                  <div class="absolute inset-y-1 w-1 -ml-0.5 rounded-full bg-success tooltip" style={"left: #{minute / 14.4}%"} data-tip={timeline_clock(minute)}></div>
+                <% end %>
+              </div>
+              <div class="relative h-3 text-[10px] text-base-content/50 font-mono">
+                <%= for hour <- [0, 6, 12, 18, 24] do %>
+                  <span class={["absolute", hour == 24 && "-translate-x-full", hour not in [0, 24] && "-translate-x-1/2"]} style={"left: #{hour / 0.24}%"}>{String.pad_leading(to_string(hour), 2, "0")}:00</span>
+                <% end %>
+              </div>
+              <span class="text-xs text-base-content/60">{length(timeline.charges)} {if length(timeline.charges) == 1, do: "charge", else: "charges"} a day</span>
+            </div>
+          <% end %>
+          <% interval = form["interval_hours"] |> String.to_integer() |> StarlightBot.EnkephalinSchedule.modules_per_charge() %>
+          <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg bg-base-200 px-3 py-2 text-xs">
+            <span class="flex items-center gap-1 font-mono">
+              {interval.banked}<img src="/images/icons/enkephalin_currency.webp" title="Enkephalin" class="size-4" />
+            </span>
+            <span :if={interval.capped?} class="text-warning">(capped from {interval.generated})</span>
+            <span class="text-base-content/40">=></span>
+            <span class="flex items-center gap-1 font-semibold">
+              {interval.modules}<img src="/images/icons/enkephalin.webp" title="Enkephalin module" class="size-4" /> per charge{if interval.leftover > 0, do: ","}
+            </span>
+            <%= if interval.leftover > 0 do %>
+              <span class="flex items-center gap-1 text-base-content/60">
+                {interval.leftover}<img src="/images/icons/enkephalin_currency.webp" title="Enkephalin" class="size-4" /> left over
+              </span>
+            <% end %>
+          </div>
+
+          <StarlightBotWeb.Components.LaunchFields.launch_fields
+            launch_mode={form["launch_mode"]}
+            steam_app_id={form["steam_app_id"]}
+            exe_path={form["exe_path"]}
+            launch_timeout_s={form["launch_timeout_s"]}
+            reset_event="enkephalin_reset_steam_app_id"
+          />
+
+          <span :if={@enkephalin_schedule_error} class="text-xs text-error">Not saved: {@enkephalin_schedule_error}</span>
+        </form>
       <% end %>
 
       <%= if @settings_tab == "data" do %>
