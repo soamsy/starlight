@@ -55,37 +55,44 @@
         </div>
       <% end %>
 
-      <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-1 shrink-0">
-        <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
-          Ego gift inventory (<%= map_size(ego_gifts(@run_memory)) %>)
-        </span>
-        <%= if map_size(ego_gifts(@run_memory)) == 0 do %>
-          <div class="text-xs text-base-content/30">None picked up yet</div>
-        <% else %>
-          <div class="flex flex-wrap gap-1">
-            <%= for {gift_id, gift} <- ego_gifts(@run_memory) do %>
-              <span class="badge badge-sm badge-outline" title={gift_id}>
-                <%= gift.name %><%= if gift.uptie > 0, do: " UT#{gift.uptie}" %>
-              </span>
-            <% end %>
-          </div>
-        <% end %>
-      </div>
+      <div class="grid grid-cols-2 gap-2 items-start shrink-0">
+        <details id="md-inventory" phx-mounted={JS.ignore_attributes(["open"])} class="group bg-base-200 rounded-xl p-3">
+          <summary class="flex items-center gap-1.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            <span class="text-xs text-base-content/50 group-open:hidden">▶</span>
+            <span class="text-xs text-base-content/50 hidden group-open:inline">▼</span>
+            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Inventory</span>
+            <span class="badge badge-sm ml-auto"><%= map_size(ego_gifts(@run_memory)) %></span>
+          </summary>
+          <%= if map_size(ego_gifts(@run_memory)) == 0 do %>
+            <div class="text-xs text-base-content/30 mt-2">None picked up yet</div>
+          <% else %>
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              <.gift_tile :for={{_gift_id, gift} <- ego_gifts(@run_memory)} owned={gift} gifts_by_name={@gifts_by_name} show_tier />
+            </div>
+          <% end %>
+        </details>
 
-      <%= if @milestones != [] do %>
-        <div class="bg-base-200 rounded-xl p-3 flex flex-col gap-1 shrink-0">
-          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
-            Gift plan milestones (<%= Enum.count(@milestones, & &1.reached?) %>/<%= length(@milestones) %>)
-          </span>
-          <div class="flex flex-wrap gap-1">
+        <details :if={@milestones != []} id="md-milestones" phx-mounted={JS.ignore_attributes(["open"])} class="group bg-base-200 rounded-xl p-3">
+          <summary class="flex items-center gap-1.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            <span class="text-xs text-base-content/50 group-open:hidden">▶</span>
+            <span class="text-xs text-base-content/50 hidden group-open:inline">▼</span>
+            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Milestones</span>
+            <span class="badge badge-sm ml-auto"><%= Enum.count(@milestones, & &1.reached?) %>/<%= length(@milestones) %></span>
+          </summary>
+          <div class="flex flex-col gap-2 mt-2">
             <%= for milestone <- @milestones do %>
-              <span class={"badge badge-sm " <> if(milestone.reached?, do: "badge-success", else: "badge-outline")}>
-                <%= if milestone.reached?, do: "✓ " %><%= milestone.name %>
-              </span>
+              <div class="flex flex-col gap-1">
+                <span class={"badge badge-sm " <> if(milestone.reached?, do: "badge-success", else: "badge-outline")}>
+                  <%= if milestone.reached?, do: "✓ " %><%= milestone.name %>
+                </span>
+                <div class="flex flex-wrap gap-1.5">
+                  <.gift_tile :for={entry <- milestone.gifts} owned={%{name: entry.name, uptie: entry.uptie}} gifts_by_name={@gifts_by_name} show_tier dim={entry.status != :done} />
+                </div>
+              </div>
             <% end %>
           </div>
-        </div>
-      <% end %>
+        </details>
+      </div>
 
       <form
         id="mirror-dungeon-runner-form"

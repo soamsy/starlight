@@ -5,7 +5,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   alias StarlightBot.Navigation.{Navigator, RunSplits, ScreenTimes}
   alias StarlightBot.{EgoGifts, GiftPlans, Plans, RunHistory, RunnerForms, Teams}
   alias StarlightBot.PackPlans.Resolver
-  alias StarlightBotWeb.Live.LuxcavationLive
+  alias StarlightBotWeb.Live.{GiftPlanEditorLive, LuxcavationLive}
 
   @countdown_secs 2
   @clock_tick_ms 1_000
@@ -499,12 +499,43 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
       }
 
       Enum.map(milestones, fn milestone ->
-        %{name: milestone["name"], reached?: data |> GiftPlans.progress(milestone["id"], env) |> GiftPlans.reached?()}
+        progress = GiftPlans.progress(data, milestone["id"], env)
+
+        gifts =
+          progress
+          |> GiftPlans.goal_entries()
+          |> Enum.filter(&is_binary(&1.gift))
+          |> Enum.uniq_by(& &1.gift)
+          |> Enum.map(&%{name: &1.gift, uptie: &1.uptie, status: GiftPlans.status(progress, &1)})
+
+        %{name: milestone["name"], reached?: GiftPlans.reached?(progress), gifts: gifts}
       end)
     else
       _ -> []
     end
   end
+
+  attr :owned, :map, required: true
+  attr :gifts_by_name, :map, required: true
+  attr :show_tier, :boolean, default: false
+  attr :dim, :boolean, default: false
+
+  defp gift_tile(assigns) do
+    assigns = assign(assigns, :gift, assigns.gifts_by_name[assigns.owned.name])
+
+    ~H"""
+    <div class={"relative w-9 h-9 shrink-0 rounded overflow-hidden bg-base-300 ring-1 ring-base-300 " <> if(@dim, do: "opacity-40", else: "")} title={@owned.name}>
+      <img :if={@gift} src={@gift.image_path} class="w-full h-full object-cover" draggable="false" />
+      <span :if={is_nil(@gift)} class="text-[8px] leading-none p-0.5 break-all"><%= @owned.name %></span>
+      <span :if={@show_tier and @gift && @gift.tier} class="absolute top-0 left-0 px-0.5 text-[9px] leading-tight font-bold bg-base-100/80 rounded-br"><%= GiftPlanEditorLive.gift_tier_roman(@gift.tier) %></span>
+      <img :if={@gift && @gift.affinity not in [nil, "none"]} src={GiftPlanEditorLive.gift_affinity_icon(@gift.affinity)} title={@gift.affinity} draggable="false" class="absolute bottom-0 right-0 w-3.5 h-3.5 object-contain drop-shadow" />
+      <span :if={Map.get(@owned, :uptie, 0) > 0} class="absolute top-0 right-0 px-0.5 text-[11px] leading-none font-black rounded-bl bg-base-100/80" style="color: #ffb92e; text-shadow: 0 0 3px rgba(255, 160, 30, 0.9), 0 0 1px #fff3b0;"><%= uptie_marks(@owned.uptie) %></span>
+      <span :if={Map.get(@owned, :count, 1) > 1} class="absolute bottom-0 left-0 px-0.5 text-[9px] leading-tight font-bold bg-base-100/80 rounded-tr">×<%= @owned.count %></span>
+    </div>
+    """
+  end
+
+  defp uptie_marks(level), do: String.duplicate("+", min(level, 2))
 
   def ego_gifts(run_memory), do: Map.get(run_memory, :ego_gifts, %{})
 
