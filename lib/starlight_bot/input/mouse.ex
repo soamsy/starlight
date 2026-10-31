@@ -72,15 +72,15 @@ defmodule StarlightBot.Input.Mouse do
 
   @impl true
   def init(_opts) do
-    Logger.info("Input.Mouse starting — initializing EIS connection", module: __MODULE__)
+    Logger.info("Input.Mouse starting — initializing input", module: __MODULE__)
 
     case Native.init_input(Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany"), StarlightBot.Data.portal_token_path()) do
       :ok ->
-        Logger.info("EIS input device ready", module: __MODULE__)
+        Logger.info("Input device ready (#{Native.input_backend()})", module: __MODULE__)
       {:error, reason} ->
         Logger.error(
-          "EIS input initialization failed: #{inspect(reason)}. " <>
-          "Verify KWin EIS D-Bus interface is available (Plasma 6.0+). " <>
+          "Input initialization failed: #{inspect(reason)}. " <>
+          "Neither libei (KWin EIS, RemoteDesktop portal) nor the Wayland virtual pointer and keyboard is available; run the Linux Checks page. " <>
           "Input injection will not work.",
           module: __MODULE__
         )

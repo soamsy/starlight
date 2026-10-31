@@ -101,6 +101,11 @@ fn is_window_focused<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
     }
 }
 
+#[rustler::nif]
+fn input_backend() -> String {
+    input::backend().to_owned()
+}
+
 #[rustler::nif(schedule = "DirtyIo")]
 fn init_input<'a>(env: Env<'a>, window_title: String, token_path: String) -> Term<'a> {
     match input::init_input(&window_title, &token_path) {

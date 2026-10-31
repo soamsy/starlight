@@ -247,8 +247,8 @@ defmodule StarlightBotWeb.Live.PageHook do
         {:error, :resize_in_progress} ->
           {:error, "A resize is already running"}
 
-        {:error, {:resize_ignored, %{after: {_, _, aw, ah}}}} ->
-          {:error, "KWin ran the resize but the window stayed #{aw}x#{ah}"}
+        {:error, {:resize_ignored, %{after: {_, _, aw, ah}, buses: buses}}} ->
+          {:error, "#{GameWindow.resize_via_label(buses)} ran the resize but the window stayed #{aw}x#{ah}"}
 
         {:error, reason} ->
           {:error, "Resize failed: #{inspect(reason)}"}

@@ -6,6 +6,7 @@ defmodule StarlightBot.NestedGamescope do
   @ready_timeout_ms 20_000
   @poll_ms 100
   @ei_socket ~r/^gamescope-\d+-ei$/
+  @cursor_flags ["--force-grab-cursor", "--hide-cursor-delay", "3600000"]
 
   def spawn(backend, argv, extra_env \\ [], cwd \\ File.cwd!()) when backend in ["headless", "wayland"] do
     case System.find_executable("gamescope") do
@@ -20,7 +21,7 @@ defmodule StarlightBot.NestedGamescope do
     File.chmod!(dir, 0o700)
     log_path = Path.join(dir, "gamescope.log")
     before = ei_sockets()
-    args = ["--backend", backend, "-w", "#{@width}", "-h", "#{@height}", "-W", "#{@width}", "-H", "#{@height}", "--"] ++ argv
+    args = ["--backend", backend, "-w", "#{@width}", "-h", "#{@height}", "-W", "#{@width}", "-H", "#{@height}"] ++ @cursor_flags ++ extra_flags() ++ ["--"] ++ argv
     log("starting gamescope #{backend} at #{@width}x#{@height}, its log is #{log_path}")
     log("spawning detached: #{Enum.join(args, " ")}")
 
@@ -29,6 +30,8 @@ defmodule StarlightBot.NestedGamescope do
       {out, code} -> {:error, {:launch_failed, code, String.trim(out)}}
     end
   end
+
+  defp extra_flags, do: String.split(System.get_env("STARLIGHT_GAMESCOPE_FLAGS") || "")
 
   defp backend_env("headless"), do: [{"WAYLAND_DISPLAY", nil}]
   defp backend_env("wayland"), do: []

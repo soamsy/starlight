@@ -1,5 +1,5 @@
 defmodule StarlightBot.LinuxCheck do
-  alias StarlightBot.{Data, Native}
+  alias StarlightBot.{Data, GameWindow, Native, Scheduler}
 
   @target_title "starlight-target"
   @cmd_timeout_ms 5_000
@@ -13,9 +13,10 @@ defmodule StarlightBot.LinuxCheck do
     %{id: :protocols, group: "Environment", title: "Wayland protocols", active?: false},
     %{id: :uinput, group: "Environment", title: "uinput access", active?: false},
     %{id: :x_displays, group: "Environment", title: "X displays and game window", active?: false},
+    %{id: :resize, group: "Game window", title: "Resize game window to 1920x1080", active?: true},
     %{id: :target, group: "Input and capture", title: "Open test window", active?: true},
     %{id: :capture, group: "Input and capture", title: "Capture test window", active?: true},
-    %{id: :eis, group: "Input and capture", title: "Connect libei input", active?: true},
+    %{id: :eis, group: "Input and capture", title: "Connect input", active?: true},
     %{id: :cursor, group: "Input and capture", title: "Cursor control", active?: true},
     %{id: :click, group: "Input and capture", title: "Move and click", active?: true},
     %{id: :keyboard, group: "Input and capture", title: "Type a key", active?: true},
@@ -188,6 +189,29 @@ defmodule StarlightBot.LinuxCheck do
     end
   end
 
+  defp check(:resize, log) do
+    case GameWindow.rect() do
+      {:ok, {_, _, w, h}} ->
+        log.(:info, "#{Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany")} client area is #{w}x#{h}")
+
+        case GameWindow.fix_aspect(Scheduler.get_settings().steam_app_id) do
+          {:ok, %{after: {_, _, aw, ah}, buses: buses}} ->
+            log.(:ok, "resized to #{aw}x#{ah} through #{GameWindow.resize_via_label(buses)}")
+            :ok
+
+          {:error, {:resize_ignored, %{after: {_, _, aw, ah}, buses: buses}}} ->
+            fail(log, "#{GameWindow.resize_via_label(buses)} ran the resize but the window stayed #{aw}x#{ah}")
+
+          {:error, reason} ->
+            fail(log, "resize failed: #{inspect(reason)}")
+        end
+
+      {:error, reason} ->
+        log.(:info, "game window not found (#{inspect(reason)}); start Limbus first")
+        :warn
+    end
+  end
+
   defp check(:target, log) do
     stop_target()
     File.rm(target_log())
@@ -219,7 +243,7 @@ defmodule StarlightBot.LinuxCheck do
 
   defp check(:eis, log) do
     with :ok <- ensure_input(log) do
-      log.(:ok, "libei connection ready")
+      log.(:ok, "input ready through #{Native.input_backend()}")
       :ok
     end
   end
@@ -654,7 +678,7 @@ defmodule StarlightBot.LinuxCheck do
 
   defp expected_input(:kde), do: "libei straight from KWin"
   defp expected_input(compositor) when compositor in [:gnome, :cosmic], do: "libei through the RemoteDesktop portal"
-  defp expected_input(compositor) when compositor in [:niri, :hyprland], do: "libei through the RemoteDesktop portal once the portal backend supports it, otherwise uinput"
-  defp expected_input(compositor) when compositor in [:sway, :labwc, :wayfire], do: "no libei; needs the virtual pointer protocols or uinput"
+  defp expected_input(compositor) when compositor in [:niri, :hyprland, :sway, :labwc, :wayfire],
+    do: "libei through the RemoteDesktop portal if the backend offers it, otherwise the Wayland virtual pointer and keyboard protocols"
   defp expected_input(_), do: "unknown"
 end

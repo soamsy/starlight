@@ -46,6 +46,9 @@ defmodule StarlightBot.Native do
 
   # --- Input ---
 
+  @doc "Name of the input backend in use: libei, or the Wayland virtual pointer and keyboard."
+  def input_backend(), do: nif_err()
+
   @doc """
   Initialize the libei EIS client for whichever display the game window is on.
   Locates `window_title` across every X display first: if it's on a nested

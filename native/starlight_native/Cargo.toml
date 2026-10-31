@@ -26,6 +26,11 @@ futures-lite = "2"
 # KWin scripting D-Bus bridge for cursor-position queries (KDE only; see input/cursor.rs)
 zbus = "5"
 tempfile = "3"
+# Wayland virtual pointer and keyboard for compositors without a RemoteDesktop portal (Hyprland, Sway, ...)
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
 
 [profile.release]
 opt-level = 3

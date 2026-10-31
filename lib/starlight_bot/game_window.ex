@@ -175,6 +175,69 @@ defmodule StarlightBot.GameWindow do
   end
 
   defp resize_window(steam_app_id) do
+    case resize_hyprland(steam_app_id) do
+      :ok -> {:ok, [:hyprland]}
+      :skip -> resize_via_kwin_or_x11(steam_app_id)
+    end
+  end
+
+  def resize_via_label(buses) do
+    buses
+    |> Enum.map(fn
+      :hyprland -> "Hyprland"
+      :x11 -> "X11"
+      _kwin -> "KWin"
+    end)
+    |> Enum.uniq()
+    |> Enum.join(" and ")
+  end
+
+  defp resize_hyprland(steam_app_id) do
+    with signature when is_binary(signature) <- System.get_env("HYPRLAND_INSTANCE_SIGNATURE"),
+         {out, 0} <- System.cmd("hyprctl", ["clients", "-j"], stderr_to_stdout: true),
+         {:ok, clients} <- Jason.decode(out),
+         %{"address" => address, "floating" => floating, "fullscreen" => fullscreen} <- Enum.find(clients, &hyprland_match?(&1, steam_app_id)) do
+      target = "address:#{address}"
+
+      if fullscreen != 0 do
+        hyprland_dispatch(
+          ~s|hl.dsp.window.fullscreen({ mode = "fullscreen", action = "unset", window = "#{target}" })|,
+          [["focuswindow", target], ["fullscreen", "0"]]
+        )
+      end
+
+      if not floating do
+        hyprland_dispatch(~s|hl.dsp.window.float({ action = "enable", window = "#{target}" })|, [["setfloating", target]])
+      end
+
+      hyprland_dispatch(
+        ~s|hl.dsp.window.resize({ x = #{@target_w}, y = #{@target_h}, window = "#{target}" })|,
+        [["resizewindowpixel", "exact #{@target_w} #{@target_h},#{target}"]]
+      )
+
+      :ok
+    else
+      _ -> :skip
+    end
+  end
+
+  defp hyprland_dispatch(lua, legacy_commands) do
+    case System.cmd("hyprctl", ["dispatch", lua], stderr_to_stdout: true) do
+      {"ok" <> _, 0} ->
+        :ok
+
+      _ ->
+        for command <- legacy_commands, do: System.cmd("hyprctl", ["dispatch" | command], stderr_to_stdout: true)
+        :ok
+    end
+  end
+
+  defp hyprland_match?(client, steam_app_id) do
+    class = String.downcase(client["class"] || "")
+    client["title"] == window_title() or class == String.downcase(window_class()) or class == "steam_app_#{steam_app_id}"
+  end
+
+  defp resize_via_kwin_or_x11(steam_app_id) do
     case run_resize_script(steam_app_id) do
       {:ok, buses} ->
         {:ok, buses}
