@@ -94,7 +94,10 @@ defmodule StarlightBotWeb.Live.PageHook do
 
   defp handle_settings_event("enkephalin_save", %{"enkephalin_convert_count" => count}, socket) do
     case AppSettings.put_enkephalin_convert_count(count) do
-      {:ok, count} -> {:halt, assign(socket, :enkephalin_convert_count, count)}
+      {:ok, count} ->
+        EnkephalinSchedule.broadcast({:enkephalin_schedule, EnkephalinSchedule.get_settings()})
+        {:halt, assign(socket, :enkephalin_convert_count, count)}
+
       :error -> {:halt, put_flash(socket, :error, "Conversions must be a number from 0 to #{EnkephalinCharger.max_convert_count()}")}
     end
   end
