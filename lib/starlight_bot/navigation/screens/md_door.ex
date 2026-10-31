@@ -32,7 +32,7 @@ defmodule StarlightBot.Navigation.Screens.MdDoor do
     end
   end
   screen :md_door_session_expired, identity: :mirror_dungeon_door_session_expired_confirm, refines: :md_door do
-    transition to: :exploration_reward, do: [reclick_until_gone(:mirror_dungeon_door_session_expired_confirm)]
+    transition to: :exploration_reward, do: confirm_enter(:mirror_dungeon_door_session_expired_confirm)
   end
   screen :md_door_unknown, identity: nil, refines: :md_door, settle: false do
     transition to: :home_drive, do: [key(:esc)]
