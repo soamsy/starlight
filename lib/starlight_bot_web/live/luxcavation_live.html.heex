@@ -102,15 +102,15 @@
         </div>
 
         <label class="flex items-center gap-2">
-          <input type="checkbox" name="collect_enkephalin" value="true" checked={@collect_enkephalin}
-                 class="checkbox checkbox-sm" />
-          <span class="text-sm">Collect enkephalin modules at start</span>
-        </label>
-
-        <label class="flex items-center gap-2">
           <input type="checkbox" name="collect_xp" value="true" checked={@collect_xp}
                  class="checkbox checkbox-sm" />
           <span class="text-sm">Collect battle pass xp at end</span>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="collect_enkephalin" value="true" checked={@collect_enkephalin}
+                 class="checkbox checkbox-sm" />
+          <span class="text-sm">Charge <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-5 inline-block align-text-bottom" /> at start</span>
         </label>
 
         <%= if @collect_enkephalin do %>
@@ -159,13 +159,15 @@
                   <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                 </svg>
               </div>
-              <div tabindex="0" class="dropdown-content z-10 mt-1 w-64 rounded-box bg-base-100 p-3 shadow flex flex-col gap-1">
-                <label class="flex items-center gap-2">
-                  <input type="checkbox" name="then" value="mirror_dungeon" checked={@then_md} disabled={is_nil(@md_next)}
-                         class="checkbox checkbox-sm" />
-                  <span class="text-sm">Run mirror dungeon after</span>
-                </label>
-                <span :if={is_nil(@md_next)} class="text-xs text-base-content/50">Set up a mirror dungeon run on its page first.</span>
+              <div tabindex="0" class="dropdown-content z-10 mt-1 w-64 rounded-box bg-base-100 p-3 shadow">
+                <div class="flex flex-col gap-1">
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" name="then" value="mirror_dungeon" checked={@then_md} disabled={is_nil(@md_next)}
+                           class="checkbox checkbox-sm" />
+                    <span class="text-sm">Run mirror dungeon after</span>
+                  </label>
+                  <span :if={is_nil(@md_next)} class="text-xs text-base-content/50">Set up a mirror dungeon run on its page first.</span>
+                </div>
               </div>
             </div>
           </div>

@@ -170,22 +170,25 @@
         </label>
 
         <label class="flex items-center gap-2">
-          <input type="checkbox" name="collect_enkephalin" value="true" checked={@collect_enkephalin}
-                 class="checkbox checkbox-sm" />
-          <span class="text-sm">Collect enkephalin modules before each run</span>
-        </label>
-
-        <label class="flex items-center gap-2">
           <input type="checkbox" name="collect_xp" value="true" checked={@collect_xp}
                  class="checkbox checkbox-sm" />
           <span class="text-sm">Collect battle pass xp after all runs</span>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="collect_enkephalin" value="true" checked={@collect_enkephalin}
+                 class="checkbox checkbox-sm" />
+          <span class="text-sm">Charge <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-5 inline-block align-text-bottom" /> before each run</span>
         </label>
 
         <%= if @collect_enkephalin do %>
           <div class="flex flex-col gap-1">
             <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lunacy → enkephalin conversions</span>
             <div class="flex items-center gap-2">
-              <span class="text-sm flex-1 min-w-0"><%= @enkephalin_convert_count %>x (<%= LuxcavationLive.enkephalin_cumulative_cost(@enkephalin_convert_count) %> lunacy)</span>
+              <img src="/images/icons/lunacy.webp" title="Lunacy" class="size-6 shrink-0" />
+              <span class="text-base-content/50">→</span>
+              <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-6 shrink-0" />
+              <span class="text-sm flex-1 min-w-0"><%= @enkephalin_convert_count %>x (<%= LuxcavationLive.enkephalin_cumulative_cost(@enkephalin_convert_count) %> lunacy, <%= LuxcavationLive.enkephalin_cumulative_cost(@enkephalin_convert_count) * 7 %>/week)</span>
               <button type="button" phx-click="settings_open" phx-value-tab="enkephalin" class="tooltip tooltip-left btn btn-ghost btn-square btn-sm text-base-content/60" data-tip="Change in settings">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
                   <path d="M15 3h6v6" />
