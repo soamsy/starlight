@@ -256,6 +256,7 @@ defmodule StarlightBotWeb.Live.PageHook do
            {:ok, {_, _, w, h}} <- GameWindow.await_window(settings.launch_timeout_s * 1000) do
         {:info, "Limbus window appeared (#{w}x#{h})"}
       else
+        {:error, :already_running} -> {:error, "Limbus is already running, close it before launching a new copy"}
         {:error, reason} -> {:error, "Launching Limbus failed: #{inspect(reason)}"}
       end
     end)

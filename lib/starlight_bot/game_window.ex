@@ -21,7 +21,8 @@ defmodule StarlightBot.GameWindow do
   def launch(%{launch_mode: "steam", steam_app_id: app_id}) do
     LogStore.append(:info, "launch: opening Steam app #{app_id} in a nested KWin")
 
-    with {:ok, %{argv: argv, env: env, cwd: cwd}} <- SteamLaunch.command(app_id),
+    with :ok <- ensure_not_running(window_class() <> ".exe"),
+         {:ok, %{argv: argv, env: env, cwd: cwd}} <- SteamLaunch.command(app_id),
          {:ok, kwin_pid} <- NestedKwin.ensure(),
          :ok <- NestedKwin.lock_frame(kwin_pid) do
       NestedKwin.spawn(argv, env, cwd)
@@ -32,7 +33,8 @@ defmodule StarlightBot.GameWindow do
   def launch(%{launch_mode: "exe", exe_path: path}) do
     LogStore.append(:info, "launch: opening #{path} in a nested KWin")
 
-    with {:ok, kwin_pid} <- NestedKwin.ensure(),
+    with :ok <- ensure_not_running(Path.basename(path)),
+         {:ok, kwin_pid} <- NestedKwin.ensure(),
          :ok <- NestedKwin.lock_frame(kwin_pid) do
       NestedKwin.spawn([path])
     end
@@ -40,6 +42,23 @@ defmodule StarlightBot.GameWindow do
   end
 
   def launch(%{launch_mode: "none"}), do: {:error, :launch_disabled}
+
+  defp ensure_not_running(exe) do
+    case System.cmd("pgrep", ["-f", exe], stderr_to_stdout: true) do
+      {out, 0} ->
+        pids = out |> String.split() |> Enum.join(", ")
+
+        LogStore.append(
+          :error,
+          "launch: #{exe} is already running (pid #{pids}); Proton would wait for it to exit before starting a second copy, so close it first"
+        )
+
+        {:error, :already_running}
+
+      _ ->
+        :ok
+    end
+  end
 
   defp log_failure({:error, reason} = error) do
     LogStore.append(:error, "launch: failed: #{inspect(reason)}")
