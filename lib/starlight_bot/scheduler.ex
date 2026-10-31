@@ -19,7 +19,8 @@ defmodule StarlightBot.Scheduler do
     :launch_timeout_s,
     :exp_waves,
     :thread_waves,
-    :md_runs
+    :md_runs,
+    :close_game_when_done
   ]
 
   def subscribe, do: Phoenix.PubSub.subscribe(StarlightBot.PubSub, @topic)
@@ -34,6 +35,7 @@ defmodule StarlightBot.Scheduler do
     from(s in "scheduler_settings", where: s.id == 1, select: map(s, ^@fields))
     |> Repo.one()
     |> Map.update!(:enabled, &(&1 in [true, 1]))
+    |> Map.update!(:close_game_when_done, &(&1 in [true, 1]))
   end
 
   def save_settings(attrs) do
@@ -44,7 +46,7 @@ defmodule StarlightBot.Scheduler do
 
   def set_enabled(enabled?) do
     get_settings()
-    |> Map.take([:window_start, :window_end, :launch_mode, :steam_app_id, :exe_path, :launch_timeout_s, :exp_waves, :thread_waves, :md_runs])
+    |> Map.take([:window_start, :window_end, :launch_mode, :steam_app_id, :exe_path, :launch_timeout_s, :exp_waves, :thread_waves, :md_runs, :close_game_when_done])
     |> Map.put(:enabled, enabled?)
     |> save_settings()
   end
@@ -246,7 +248,8 @@ defmodule StarlightBot.Scheduler do
          launch_timeout_s: attrs.launch_timeout_s,
          exp_waves: attrs.exp_waves,
          thread_waves: attrs.thread_waves,
-         md_runs: attrs.md_runs
+         md_runs: attrs.md_runs,
+         close_game_when_done: if(attrs.close_game_when_done, do: 1, else: 0)
        ]}
     else
       {:error, _} = error -> error

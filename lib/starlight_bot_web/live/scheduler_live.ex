@@ -9,7 +9,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   @modules_per_conversion 7
   @daily_charge_modules 12
   @launch_keys ~w(launch_mode steam_app_id exe_path launch_timeout_s)
-  @runner_keys ~w(window_start window_end exp_waves thread_waves md_runs)
+  @runner_keys ~w(window_start window_end exp_waves thread_waves md_runs close_game_when_done)
 
   embed_templates "scheduler_live/*"
 
@@ -93,7 +93,8 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
       launch_timeout_s: parse_int(form["launch_timeout_s"]),
       exp_waves: parse_int(form["exp_waves"]),
       thread_waves: parse_int(form["thread_waves"]),
-      md_runs: parse_int(form["md_runs"])
+      md_runs: parse_int(form["md_runs"]),
+      close_game_when_done: form["close_game_when_done"] == "true"
     }
 
     socket = assign(socket, :form, form)
@@ -144,7 +145,8 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
       "launch_timeout_s" => to_string(settings.launch_timeout_s),
       "exp_waves" => to_string(settings.exp_waves),
       "thread_waves" => to_string(settings.thread_waves),
-      "md_runs" => to_string(settings.md_runs)
+      "md_runs" => to_string(settings.md_runs),
+      "close_game_when_done" => to_string(settings.close_game_when_done)
     }
   end
 

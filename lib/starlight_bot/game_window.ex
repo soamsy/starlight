@@ -80,6 +80,13 @@ defmodule StarlightBot.GameWindow do
   defp launcher_label("gamescope_window"), do: "a gamescope window"
   defp launcher_label(_kwin), do: "a nested KWin"
 
+  def close do
+    case System.cmd("pkill", ["-TERM", "-f", window_class() <> ".exe"], stderr_to_stdout: true) do
+      {_, 0} -> :ok
+      _ -> {:error, :not_running}
+    end
+  end
+
   defp ensure_not_running(exe) do
     case System.cmd("pgrep", ["-f", exe], stderr_to_stdout: true) do
       {out, 0} ->

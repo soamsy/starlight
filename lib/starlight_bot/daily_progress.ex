@@ -1,15 +1,33 @@
 defmodule StarlightBot.DailyProgress do
   import Ecto.Query
   alias StarlightBot.{LuxSchedule, RunsRepo}
+  alias StarlightBot.Navigation.Navigator
 
   @kinds ~w(exp thread md)
 
   def kinds, do: @kinds
 
   def record(kind, amount, %DateTime{} = at \\ DateTime.utc_now()) when kind in @kinds and is_integer(amount) and amount > 0 do
-    RunsRepo.insert_all("daily_progress", [%{kind: kind, amount: amount, completed_at: DateTime.to_iso8601(DateTime.truncate(at, :second))}])
+    RunsRepo.insert_all("daily_progress", [%{kind: kind, amount: amount, completed_at: DateTime.to_iso8601(DateTime.truncate(at, :second)), source: source()}])
     Phoenix.PubSub.broadcast(StarlightBot.PubSub, "scheduler", :daily_progress)
     :ok
+  end
+
+  def latest(%DateTime{} = now \\ DateTime.utc_now()) do
+    since = DateTime.to_iso8601(LuxSchedule.day_start(now))
+
+    RunsRepo.one(
+      from(p in "daily_progress",
+        where: p.completed_at >= ^since,
+        order_by: [desc: p.id],
+        limit: 1,
+        select: %{id: p.id, source: p.source}
+      )
+    )
+  end
+
+  defp source do
+    if GenServer.whereis(Navigator), do: Atom.to_string(Navigator.origin()), else: "manual"
   end
 
   def completed(%DateTime{} = now \\ DateTime.utc_now()) do

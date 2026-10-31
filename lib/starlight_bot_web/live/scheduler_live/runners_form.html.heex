@@ -71,5 +71,11 @@
     </div>
   <% end %>
 
+  <label class="flex cursor-pointer items-center gap-2 text-sm">
+    <input type="hidden" name="close_game_when_done" value="false" />
+    <input type="checkbox" name="close_game_when_done" value="true" checked={@form["close_game_when_done"] == "true"} class="toggle toggle-sm toggle-primary" />
+    <span>Close Limbus (Alt-F4) when goals are met</span>
+  </label>
+
   <span :if={@save_error} class="text-xs text-error">Not saved: {@save_error}</span>
 </form>

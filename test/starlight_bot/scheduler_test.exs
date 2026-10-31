@@ -129,7 +129,8 @@ defmodule StarlightBot.SchedulerTest do
       launch_timeout_s: 900,
       exp_waves: 2,
       thread_waves: 3,
-      md_runs: 0
+      md_runs: 0,
+      close_game_when_done: false
     }
 
     @lux_form %{"exp_team_ids" => List.duplicate("7", 4), "thread_team_ids" => List.duplicate("7", 7), "exp_waves" => "9", "thread_waves" => "9", "collect_xp" => "true", "collect_enkephalin" => "false"}

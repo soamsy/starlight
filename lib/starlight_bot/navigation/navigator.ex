@@ -18,6 +18,7 @@ defmodule StarlightBot.Navigation.Navigator do
     task_pid: nil,
     run_memory_agent: nil,
     run_kind: nil,
+    origin: :manual,
     pause_flag: nil,
     run_clock: nil,
     run_splits: [],
@@ -58,6 +59,10 @@ defmodule StarlightBot.Navigation.Navigator do
   def run_mirror_dungeon(picks, run_count, config),
     do: GenServer.cast(__MODULE__, {:run_mirror_dungeon, picks, run_count, config})
 
+  def run_scheduled(action), do: GenServer.cast(__MODULE__, {:scheduled, action})
+
+  def origin, do: GenServer.call(__MODULE__, :origin)
+
   def queue_after_run({:run_mirror_dungeon, _picks, _run_count, _config} = next),
     do: GenServer.cast(__MODULE__, {:queue_after_run, next})
 
@@ -84,6 +89,8 @@ defmodule StarlightBot.Navigation.Navigator do
   def init(_opts), do: {:ok, %__MODULE__{}}
 
   @impl true
+  def handle_call(:origin, _from, state), do: {:reply, state.origin, state}
+
   def handle_call(:status, _from, state) do
     {:reply, external(state), state}
   end
@@ -221,6 +228,12 @@ defmodule StarlightBot.Navigation.Navigator do
     state = %{state | phase: :running, goal: nil, run_kind: :enkephalin}
     broadcast(state)
     {:noreply, state}
+  end
+
+  def handle_cast({:scheduled, action}, state) do
+    idle? = state.task_pid == nil
+    {:noreply, started} = handle_cast(action, state)
+    {:noreply, if(idle? and started.task_pid != nil, do: %{started | origin: :scheduler}, else: started)}
   end
 
   def handle_cast({:run_luxcavation, _, _, _, _, _, _}, %{run_kind: :mirror_dungeon, task_pid: pid} = state) when is_pid(pid),
@@ -525,16 +538,18 @@ defmodule StarlightBot.Navigation.Navigator do
 
     case {next, result} do
       {nil, _} ->
-        localize_after_script(state)
+        localize_after_script(%{state | origin: :manual})
 
       {next, {:ok, _}} ->
         state = add_log(state, :info, "Starting the queued #{next_run_label(next)}")
         broadcast(state)
-        handle_cast(next, state)
+        origin = state.origin
+        {:noreply, state} = handle_cast(next, state)
+        {:noreply, %{state | origin: origin}}
 
       {next, _} ->
         state = add_log(state, :error, "Skipping the queued #{next_run_label(next)} because the run before it didn't finish")
-        localize_after_script(state)
+        localize_after_script(%{state | origin: :manual})
     end
   end
 
@@ -575,6 +590,7 @@ defmodule StarlightBot.Navigation.Navigator do
       |> Map.put(:run_kind, nil)
       |> Map.put(:pause_flag, nil)
       |> Map.put(:next_run, nil)
+      |> Map.put(:origin, :manual)
       |> update_clock(&RunClock.stop/2)
       |> add_log(:error, "Run crashed: #{inspect(reason)}")
 
@@ -644,12 +660,12 @@ defmodule StarlightBot.Navigation.Navigator do
     {:noreply, state}
   end
 
-  defp cancel_running(%{task_pid: nil} = state), do: update_clock(%{state | phase: :idle, run_kind: nil, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
+  defp cancel_running(%{task_pid: nil} = state), do: update_clock(%{state | phase: :idle, run_kind: nil, origin: :manual, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
 
   defp cancel_running(%{task_pid: pid} = state) do
     DynamicSupervisor.terminate_child(StarlightBot.MachineSupervisor, pid)
     state = state |> release_run() |> persist_last_run("interrupted")
-    update_clock(%{state | task_pid: nil, phase: :idle, run_kind: nil, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
+    update_clock(%{state | task_pid: nil, phase: :idle, run_kind: nil, origin: :manual, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
   end
 
   defp track_split(%{run_kind: :mirror_dungeon, run_clock: %RunClock{} = clock} = state, %{run_progress: %{current: run}, floor: floor} = snapshot) do

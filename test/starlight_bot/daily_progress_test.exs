@@ -27,6 +27,19 @@ defmodule StarlightBot.DailyProgressTest do
     assert DailyProgress.completed(next_day) == %{"exp" => 0, "thread" => 0, "md" => 0}
   end
 
+  test "latest returns the newest row of the game day with its source" do
+    now = ~U[2026-10-19 20:30:00Z]
+    assert DailyProgress.latest(now) == nil
+
+    DailyProgress.record("exp", 1, ~U[2026-10-18 20:00:00Z])
+    assert DailyProgress.latest(now) == nil
+
+    DailyProgress.record("exp", 2, ~U[2026-10-19 08:00:00Z])
+    DailyProgress.record("md", 1, ~U[2026-10-19 09:00:00Z])
+    assert %{id: id, source: "manual"} = DailyProgress.latest(now)
+    assert id == DailyProgress.latest(now).id
+  end
+
   test "remaining never goes negative and nothing is pending once targets are met" do
     DailyProgress.record("exp", 9, ~U[2026-10-19 08:00:00Z])
     remaining = DailyProgress.remaining(%{exp_waves: 5, thread_waves: 0, md_runs: 0}, ~U[2026-10-19 09:00:00Z])

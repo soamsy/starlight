@@ -1,6 +1,6 @@
 defmodule StarlightBot.Scheduler.Server do
   use GenServer
-  alias StarlightBot.{DailyProgress, GameWindow, LogStore, Scheduler}
+  alias StarlightBot.{AppSettings, DailyProgress, GameWindow, LogStore, Scheduler}
   alias StarlightBot.Automation.Engine
   alias StarlightBot.Navigation.Navigator
 
@@ -10,6 +10,7 @@ defmodule StarlightBot.Scheduler.Server do
   @run_start_confirm_ms 5_000
   @max_events 50
   @forced_window_s 2 * 3600
+  @closed_after_row_key "scheduler_closed_after_row"
 
   defstruct settings: nil, task: nil, activity: nil, retry_after: nil, last_fire: nil, events: []
 
@@ -38,7 +39,7 @@ defmodule StarlightBot.Scheduler.Server do
   @impl true
   def handle_info(:tick, state) do
     Process.send_after(self(), :tick, @tick_ms)
-    {:noreply, state |> forget_while_blocked() |> maybe_fire()}
+    {:noreply, state |> forget_while_blocked() |> maybe_fire() |> maybe_close()}
   end
 
   def handle_info({:scheduler_settings, settings}, state) do
@@ -46,6 +47,8 @@ defmodule StarlightBot.Scheduler.Server do
     broadcast(state)
     {:noreply, state}
   end
+
+  def handle_info(:daily_progress, state), do: {:noreply, maybe_close(state)}
 
   def handle_info({:scheduler_event, kind, text}, state), do: {:noreply, add_event(state, kind, text)}
 
@@ -80,6 +83,25 @@ defmodule StarlightBot.Scheduler.Server do
     end
   end
 
+  defp maybe_close(%{task: nil, settings: %{close_game_when_done: true} = settings} = state) do
+    with false <- DailyProgress.pending?(DailyProgress.remaining(settings)),
+         false <- Scheduler.busy?(),
+         %{id: id, source: "scheduler"} <- DailyProgress.latest(),
+         true <- id > closed_after_row() do
+      result = GameWindow.close()
+      AppSettings.put(@closed_after_row_key, Integer.to_string(id))
+
+      case result do
+        :ok -> add_event(state, :ok, "goals met, closed Limbus")
+        {:error, reason} -> add_event(state, :error, "goals met, but closing Limbus failed: #{inspect(reason)}")
+      end
+    else
+      _ -> state
+    end
+  end
+
+  defp maybe_close(state), do: state
+
   defp start_now_run(%{task: %Task{}} = state), do: state
 
   defp start_now_run(state) do
@@ -109,6 +131,13 @@ defmodule StarlightBot.Scheduler.Server do
 
       action ->
         start_task(state, "starting the scheduled run (#{DailyProgress.remaining_label(remaining)})", fn -> fire_task(settings, action, remaining, end_at) end)
+    end
+  end
+
+  defp closed_after_row do
+    case Integer.parse(AppSettings.get(@closed_after_row_key) || "") do
+      {id, ""} -> id
+      _ -> 0
     end
   end
 
@@ -219,10 +248,7 @@ defmodule StarlightBot.Scheduler.Server do
     confirm_run_started()
   end
 
-  defp request_run({:run_mirror_dungeon, picks, run_count, config}), do: Navigator.run_mirror_dungeon(picks, run_count, config)
-
-  defp request_run({:run_luxcavation, team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, convert}),
-    do: Navigator.run_luxcavation(team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, convert)
+  defp request_run(action), do: Navigator.run_scheduled(action)
 
   defp confirm_run_started do
     Process.sleep(@run_start_confirm_ms)
