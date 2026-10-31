@@ -24,7 +24,8 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.RewardsLive => :rewards,
     StarlightBotWeb.Live.MirrorDungeonLive => :mirror_dungeon,
     StarlightBotWeb.Live.ShopRunnerLive => :shop_runner,
-    StarlightBotWeb.Live.LogLive => :log
+    StarlightBotWeb.Live.LogLive => :log,
+    StarlightBotWeb.Live.LinuxChecksLive => :linux_checks
   }
 
   def on_mount(:default, _params, _session, %{parent_pid: parent} = socket) when is_pid(parent), do: {:cont, socket}

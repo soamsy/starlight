@@ -1,0 +1,41 @@
+<div class="flex h-full min-h-0 gap-3 overflow-hidden">
+  <div class="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto">
+    <h2 class="text-lg font-semibold">Linux checks</h2>
+
+    <div class="flex flex-col gap-2">
+      <button class="btn btn-sm btn-primary" phx-click="run_passive" disabled={@busy != nil}>Run diagnostics</button>
+      <button class="btn btn-sm btn-warning" phx-click="run_active" disabled={@busy != nil}>Run input tests</button>
+      <p class="text-xs text-base-content/60">
+        Input tests open a small window, then move your real mouse and press a key. Stop the bot first.
+      </p>
+    </div>
+
+    <div :for={{group, checks} <- groups(@checks)} class="flex flex-col gap-1">
+      <div class="text-xs font-semibold uppercase tracking-wide text-base-content/50">{group}</div>
+      <div :for={check <- checks} class="flex items-center gap-2 rounded-lg bg-base-200 px-2 py-1.5 text-sm">
+        <span class={"h-2.5 w-2.5 shrink-0 rounded-full #{status_class(@results[check.id])}"}></span>
+        <span class="flex-1 truncate">{check.title}</span>
+        <span :if={@running == check.id} class="loading loading-spinner loading-xs"></span>
+        <button class="btn btn-xs btn-ghost" phx-click="run" phx-value-id={check.id} disabled={@busy != nil}>Run</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex min-w-0 flex-1 flex-col gap-2 overflow-hidden">
+    <div class="flex shrink-0 items-center gap-3">
+      <span class="badge badge-ghost badge-sm font-mono">{@count} lines</span>
+      <button class="btn btn-xs" phx-click="clear" disabled={@busy != nil}>Clear</button>
+    </div>
+    <div class="relative min-h-0 flex-1 overflow-hidden rounded-xl">
+      <div class="log-pane opacity-92 pointer-events-none absolute inset-0 rounded-xl"></div>
+      <div id="linux-check-lines" phx-update="stream" phx-hook="ScrollToBottom"
+           class="relative flex h-full flex-col overflow-y-auto p-2 font-mono text-xs">
+        <div :for={{dom_id, entry} <- @streams.entries} id={dom_id}
+             class={"flex gap-2 border-l-2 py-px pl-2 leading-snug #{line_class(entry.kind)}"}>
+          <span class="shrink-0 tabular-nums text-base-content/40">{short_time(entry.at)}</span>
+          <span class="select-text whitespace-pre-wrap break-all">{entry.text}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

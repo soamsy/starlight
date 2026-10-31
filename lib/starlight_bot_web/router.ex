@@ -29,6 +29,7 @@ defmodule StarlightBotWeb.Router do
       live "/shop-runner", Live.ShopRunnerLive
       live "/rewards", Live.RewardsLive
       live "/log", Live.LogLive
+      live "/linux-checks", Live.LinuxChecksLive
     end
   end
 

@@ -126,6 +126,16 @@
         <path d="M16.5 8a2.5 2.5 0 0 0 0-5C13 3 12 8 12 8" />
       </svg>
     </.link>
+    <.link navigate={~p"/linux-checks"}
+           class={"tooltip tooltip-right btn btn-square btn-xs lg:btn-sm " <> if(assigns[:page] == :linux_checks, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Linux Checks">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
+        <rect x="2" y="3" width="20" height="14" rx="2" />
+        <path d="M8 21h8" />
+        <path d="M12 17v4" />
+        <path d="m9 10 2 2 4-4" />
+      </svg>
+    </.link>
     <% end %>
     <.link navigate={~p"/log"}
            class={"tooltip tooltip-right btn btn-square btn-xs lg:btn-sm " <> if(assigns[:page] == :log, do: "btn-primary", else: "btn-ghost text-base-content/50")}
