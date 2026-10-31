@@ -269,6 +269,12 @@ pub mod linux {
         Ok(format!("unix:path={runtime}/starlight-nested/bus"))
     }
 
+    fn nested_kwin_bus_exists() -> bool {
+        nested_bus_address()
+            .map(|address| std::path::Path::new(address.trim_start_matches("unix:path=")).exists())
+            .unwrap_or(false)
+    }
+
     async fn connect_via_kwin_dbus(address: &str) -> Result<(ei::Context, zbus::Connection), NativeError> {
         const KEYBOARD_AND_POINTER: i32 = 1 | 2;
 
@@ -312,13 +318,13 @@ pub mod linux {
 
     fn connect(mut display: Option<String>) -> Result<EisClient, NativeError> {
         let (ctx, mut session, mut kwin_bus) = match &display {
-            Some(name) => {
+            Some(name) if nested_kwin_bus_exists() => {
                 eprintln!("[eis] game is on nested display {name}, connecting to its KWin");
                 let address = nested_bus_address()?;
                 let (ctx, bus) = futures_lite::future::block_on(connect_via_kwin_dbus(&address))?;
                 (ctx, None, Some(bus))
             }
-            None => match reis::ei::Context::connect_to_env() {
+            _ => match reis::ei::Context::connect_to_env() {
                 Ok(Some(ctx)) => (ctx, None, None),
                 Ok(None) => {
                     let (ctx, s) = futures_lite::future::block_on(connect_via_portal())?;

@@ -215,16 +215,26 @@ fn class(d: &Display, window: Window) -> String {
         .unwrap_or_default()
 }
 
+fn root_children(d: &Display) -> Vec<Window> {
+    d.conn
+        .wait_for_reply(d.conn.send_request(&x::QueryTree { window: d.root }))
+        .map(|tree| tree.children().to_vec())
+        .unwrap_or_default()
+}
+
 fn find_on(d: &Arc<Display>, query_lower: &str) -> Option<Located> {
-    let clients = property(d, d.root, d.client_list, x::ATOM_WINDOW)?;
-    clients
-        .value::<Window>()
-        .iter()
-        .find(|&&w| {
+    let listed = property(d, d.root, d.client_list, x::ATOM_WINDOW)
+        .map(|r| r.value::<Window>().to_vec())
+        .filter(|windows| !windows.is_empty());
+    let candidates = listed.unwrap_or_else(|| root_children(d));
+
+    candidates
+        .into_iter()
+        .find(|&w| {
             title(d, w).to_lowercase().contains(query_lower)
                 || class(d, w).to_lowercase().contains(query_lower)
         })
-        .map(|&window| Located { display: d.clone(), window })
+        .map(|window| Located { display: d.clone(), window })
 }
 
 fn alive(located: &Located) -> bool {
