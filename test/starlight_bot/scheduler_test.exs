@@ -111,6 +111,40 @@ defmodule StarlightBot.SchedulerTest do
     end
   end
 
+  describe "close_after_goals?" do
+    @on %{close_game_when_done: true}
+    @done %{"exp" => 0, "thread" => 0, "md" => 0}
+    @by_bot %{id: 10, source: "scheduler"}
+
+    test "closes when the bot's work completed the goals and nothing has been closed since" do
+      assert Scheduler.close_after_goals?(@on, @done, false, @by_bot, 0)
+      assert Scheduler.close_after_goals?(@on, @done, false, @by_bot, 9)
+    end
+
+    test "never closes with the setting off" do
+      refute Scheduler.close_after_goals?(%{close_game_when_done: false}, @done, false, @by_bot, 0)
+    end
+
+    test "waits while goals are pending or something is running" do
+      refute Scheduler.close_after_goals?(@on, %{@done | "md" => 1}, false, @by_bot, 0)
+      refute Scheduler.close_after_goals?(@on, @done, true, @by_bot, 0)
+    end
+
+    test "does not close goals the user finished or extended by hand" do
+      refute Scheduler.close_after_goals?(@on, @done, false, nil, 0)
+      refute Scheduler.close_after_goals?(@on, @done, false, %{id: 10, source: "manual"}, 0)
+      refute Scheduler.close_after_goals?(@on, @done, false, %{id: 11, source: "manual"}, 10)
+    end
+
+    test "does not close again after reopening with no new bot work" do
+      refute Scheduler.close_after_goals?(@on, @done, false, @by_bot, 10)
+    end
+
+    test "closes a second time once the bot completes raised goals" do
+      assert Scheduler.close_after_goals?(@on, @done, false, %{id: 14, source: "scheduler"}, 10)
+    end
+  end
+
   describe "settings" do
     setup do
       :ok = StarlightBot.TestDB.checkout()
@@ -155,6 +189,15 @@ defmodule StarlightBot.SchedulerTest do
       assert {:error, _} = Scheduler.save_settings(%{@attrs | steam_app_id: "limbus"})
       assert {:error, _} = Scheduler.save_settings(%{@attrs | launch_mode: "exe", exe_path: "/nope/LimbusCompany.exe"})
       assert {:error, _} = Scheduler.save_settings(%{@attrs | launch_timeout_s: nil})
+    end
+
+    test "close_game_when_done is stored, read back, and kept by set_enabled" do
+      RunnerForms.put("luxcavation", @lux_form)
+      refute Scheduler.get_settings().close_game_when_done
+
+      assert {:ok, %{close_game_when_done: true}} = Scheduler.save_settings(%{@attrs | close_game_when_done: true})
+      assert {:ok, %{close_game_when_done: true, enabled: false}} = Scheduler.set_enabled(false)
+      assert {:ok, %{close_game_when_done: false}} = Scheduler.save_settings(%{@attrs | close_game_when_done: false})
     end
 
     test "scheduled runs use the runner pages' forms with the waves and runs left today" do

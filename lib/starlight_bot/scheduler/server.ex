@@ -84,19 +84,18 @@ defmodule StarlightBot.Scheduler.Server do
   end
 
   defp maybe_close(%{task: nil, settings: %{close_game_when_done: true} = settings} = state) do
-    with false <- DailyProgress.pending?(DailyProgress.remaining(settings)),
-         false <- Scheduler.busy?(),
-         %{id: id, source: "scheduler"} <- DailyProgress.latest(),
-         true <- id > closed_after_row() do
+    latest = DailyProgress.latest()
+
+    if Scheduler.close_after_goals?(settings, DailyProgress.remaining(settings), Scheduler.busy?(), latest, closed_after_row()) do
       result = GameWindow.close()
-      AppSettings.put(@closed_after_row_key, Integer.to_string(id))
+      AppSettings.put(@closed_after_row_key, Integer.to_string(latest.id))
 
       case result do
         :ok -> add_event(state, :ok, "goals met, closed Limbus")
         {:error, reason} -> add_event(state, :error, "goals met, but closing Limbus failed: #{inspect(reason)}")
       end
     else
-      _ -> state
+      state
     end
   end
 

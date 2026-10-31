@@ -1,9 +1,50 @@
 defmodule StarlightBot.EnkephalinScheduleTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias StarlightBot.EnkephalinSchedule
 
   @settings %{window_start: "09:00", window_end: "13:00", interval_minutes: 120, last_converted_at: nil}
+
+  describe "close_game_after_charge" do
+    setup do
+      :ok = StarlightBot.TestDB.checkout()
+    end
+
+    test "is stored, read back, and kept by set_enabled" do
+      refute EnkephalinSchedule.get_settings().close_game_after_charge
+
+      attrs = EnkephalinSchedule.get_settings() |> Map.put(:close_game_after_charge, true)
+      assert {:ok, %{close_game_after_charge: true}} = EnkephalinSchedule.save_settings(attrs)
+      assert {:ok, %{close_game_after_charge: true, enabled: true}} = EnkephalinSchedule.set_enabled(true)
+      assert {:ok, %{close_game_after_charge: false}} = EnkephalinSchedule.save_settings(%{attrs | close_game_after_charge: false})
+    end
+  end
+
+  describe "close_after_charge?" do
+    @on %{close_game_after_charge: true}
+    @clean %{kind: :enkephalin, ok?: true}
+    @done %{"exp" => 0, "thread" => 0, "md" => 0}
+    @pending %{"exp" => 2, "thread" => 0, "md" => 0}
+
+    test "closes after a clean charge" do
+      assert EnkephalinSchedule.close_after_charge?(@on, %{enabled: true}, @done, @clean)
+      assert EnkephalinSchedule.close_after_charge?(@on, %{enabled: false}, @pending, @clean)
+    end
+
+    test "never closes with the setting off" do
+      refute EnkephalinSchedule.close_after_charge?(%{close_game_after_charge: false}, %{enabled: false}, @done, @clean)
+    end
+
+    test "does not close after a cancelled, failed or different run" do
+      refute EnkephalinSchedule.close_after_charge?(@on, %{enabled: false}, @done, nil)
+      refute EnkephalinSchedule.close_after_charge?(@on, %{enabled: false}, @done, %{kind: :enkephalin, ok?: false})
+      refute EnkephalinSchedule.close_after_charge?(@on, %{enabled: false}, @done, %{kind: :mirror_dungeon, ok?: true})
+    end
+
+    test "leaves the game open when the goals scheduler still has work to relaunch for" do
+      refute EnkephalinSchedule.close_after_charge?(@on, %{enabled: true}, @pending, @clean)
+    end
+  end
 
   test "due only inside the window and once the interval has passed" do
     assert EnkephalinSchedule.due?(~N[2026-10-18 09:00:00], @settings)

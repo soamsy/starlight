@@ -1,5 +1,5 @@
 defmodule StarlightBot.EnkephalinSchedule do
-  alias StarlightBot.{AppSettings, Scheduler}
+  alias StarlightBot.{AppSettings, DailyProgress, Scheduler}
 
   @topic "enkephalin_schedule"
   @max_interval_minutes 7 * 24 * 60
@@ -49,6 +49,11 @@ defmodule StarlightBot.EnkephalinSchedule do
     AppSettings.put("enkephalin_last_converted_at", NaiveDateTime.to_iso8601(NaiveDateTime.truncate(at, :second)))
     broadcast({:enkephalin_schedule, get_settings()})
     :ok
+  end
+
+  def close_after_charge?(charge_settings, scheduler_settings, remaining, last_run) do
+    charge_settings.close_game_after_charge and match?(%{kind: :enkephalin, ok?: true}, last_run) and
+      not (scheduler_settings.enabled and DailyProgress.pending?(remaining))
   end
 
   def charging?, do: :persistent_term.get({__MODULE__, :charging}, false)
