@@ -1062,6 +1062,92 @@ const GiftPopup = {
   }
 }
 
+const WindowDrag = {
+  mounted() {
+    this.el.addEventListener("pointerdown", (e) => {
+      const target = eventElement(e)?.closest("[data-handle]")
+      const form = this.el.closest("form")
+      if (!target || e.button !== 0 || !form) return
+      e.preventDefault()
+      const startInput = form.querySelector('input[name="window_start"]')
+      const endInput = form.querySelector('input[name="window_end"]')
+      const start0 = this.minutes(startInput.value)
+      const end0 = this.minutes(endInput.value)
+      if (start0 === null || end0 === null) return
+      const handle = target.dataset.handle
+      const rect = this.el.getBoundingClientRect()
+      const toMinutes = (x) => Math.round(((x - rect.left) / rect.width) * 288) * 5
+      const wrap = (m) => ((m % 1440) + 1440) % 1440
+      this.dragging = true
+
+      const onMove = (ev) => {
+        if (handle === "start") startInput.value = this.clock(wrap(toMinutes(ev.clientX)))
+        else endInput.value = this.clock(wrap(toMinutes(ev.clientX)))
+        this.preview(this.minutes(startInput.value), this.minutes(endInput.value))
+        this.placeHandles()
+      }
+      const onUp = () => {
+        this.dragging = false
+        window.removeEventListener("pointermove", onMove)
+        window.removeEventListener("pointerup", onUp)
+        const changed = [startInput, endInput].filter((input) => input.value !== (input === startInput ? this.clock(start0) : this.clock(end0)))
+        if (changed.length === 0) {
+          this.clearPreview()
+          this.pending = null
+        }
+        changed.forEach((input) => input.dispatchEvent(new Event("input", { bubbles: true })))
+      }
+      window.addEventListener("pointermove", onMove)
+      window.addEventListener("pointerup", onUp)
+    })
+    this.placeHandles()
+  },
+  updated() {
+    if (this.dragging) return
+    if (this.pending && this.el.dataset.start === this.pending.start && this.el.dataset.end === this.pending.end) this.clearPreview()
+    this.placeHandles()
+  },
+  preview(start, end) {
+    this.clearPreview()
+    const pieces = start <= end ? [[start, end]] : [[0, end], [start, 1440]]
+    const layer = document.createElement("div")
+    layer.className = "pointer-events-none absolute inset-0 rounded bg-base-200"
+    for (const [from, to] of pieces) {
+      const piece = document.createElement("div")
+      piece.className = "absolute inset-y-0 bg-success/20"
+      piece.style.left = `${from / 14.4}%`
+      piece.style.width = `${(to - from) / 14.4}%`
+      layer.appendChild(piece)
+    }
+    const windows = this.el.querySelectorAll("[data-window]")
+    const anchor = windows[windows.length - 1]
+    if (anchor) anchor.insertAdjacentElement("afterend", layer)
+    else this.el.prepend(layer)
+    this.layer = layer
+    this.pending = { start: this.clock(start), end: this.clock(end) }
+  },
+  clearPreview() {
+    this.layer?.remove()
+    this.layer = null
+  },
+  minutes(value) {
+    const match = /^(\d{2}):(\d{2})/.exec(value || "")
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null
+  },
+  clock(minutes) {
+    return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`
+  },
+  placeHandles() {
+    const form = this.el.closest("form")
+    if (!form) return
+    for (const [name, handle] of [["window_start", "start"], ["window_end", "end"]]) {
+      const minutes = this.minutes(form.querySelector(`input[name="${name}"]`)?.value)
+      const el = this.el.querySelector(`[data-handle="${handle}"]`)
+      if (el && minutes !== null) el.style.left = `${minutes / 14.4}%`
+    }
+  }
+}
+
 const FocusSelect = {
   mounted() {
     this.el.focus()
@@ -1240,7 +1326,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag }
 })
 
 liveSocket.connect()

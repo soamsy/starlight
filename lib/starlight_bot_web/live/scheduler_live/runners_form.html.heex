@@ -47,9 +47,9 @@
   <% timeline = timeline(@form, @now, @blocked) %>
   <%= if timeline do %>
     <div class="flex flex-col gap-1">
-      <div class="relative h-6 rounded bg-base-200">
+      <div id="window-drag-runners" phx-hook="WindowDrag" data-start={String.slice(@form["window_start"], 0, 5)} data-end={String.slice(@form["window_end"], 0, 5)} class="relative h-6 rounded bg-base-200 touch-none select-none">
         <%= for {from, to} <- timeline.windows do %>
-          <div class="absolute inset-y-0 bg-success/20 tooltip" style={"left: #{from / 14.4}%; width: #{(to - from) / 14.4}%"} data-tip={"Window #{String.slice(@form["window_start"], 0, 5)} to #{String.slice(@form["window_end"], 0, 5)}"}></div>
+          <div data-window class="absolute inset-y-0 bg-success/20 tooltip" style={"left: #{from / 14.4}%; width: #{(to - from) / 14.4}%"} data-tip={"Window #{String.slice(@form["window_start"], 0, 5)} to #{String.slice(@form["window_end"], 0, 5)}"}></div>
         <% end %>
         <% {span_from, span_to} = timeline.start_span %>
         <div class="absolute inset-y-0 bg-success/50 tooltip" style={"left: #{span_from / 14.4}%; width: #{(span_to - span_from) / 14.4}%"} data-tip={"Start shifts between #{timeline_clock(span_from)} and #{timeline_clock(rem(span_to, 1440))}"}></div>
@@ -59,6 +59,8 @@
         <% end %>
         <div class="absolute inset-y-1 w-1 -ml-0.5 rounded-full bg-success tooltip" style={"left: #{timeline.planned / 14.4}%"} data-tip={"Today's start #{timeline_clock(timeline.planned)}"}></div>
         <div class="absolute inset-y-0 w-px border-l border-dashed border-base-content/40 tooltip" style={"left: #{timeline.reset / 14.4}%"} data-tip={"Game day resets #{timeline_clock(timeline.reset)} (9 PM UTC)"}></div>
+        <div data-handle="start" class="absolute -inset-y-0.5 z-10 w-2 -ml-1 cursor-ew-resize rounded bg-success/70 hover:bg-success"></div>
+        <div data-handle="end" class="absolute -inset-y-0.5 z-10 w-2 -ml-1 cursor-ew-resize rounded bg-success/70 hover:bg-success"></div>
         <div class="absolute -inset-y-0.5 w-0.5 -ml-px bg-primary tooltip" style={"left: #{timeline.now / 14.4}%"} data-tip={"Now #{timeline_clock(timeline.now)}"}></div>
       </div>
       <div class="relative h-3 text-[10px] text-base-content/50 font-mono">

@@ -405,9 +405,9 @@
             <% timeline = StarlightBot.EnkephalinSchedule.day_timeline(String.slice(form["window_start"], 0, 5), String.slice(form["window_end"], 0, 5), String.to_integer(form["interval_hours"])) %>
             <%= if timeline do %>
               <div class="flex flex-col gap-1">
-                <div class="relative h-6 rounded bg-base-200">
+                <div id="window-drag-enkephalin" phx-hook="WindowDrag" data-start={String.slice(form["window_start"], 0, 5)} data-end={String.slice(form["window_end"], 0, 5)} class="relative h-6 rounded bg-base-200 touch-none select-none">
                   <%= for {from, to} <- timeline.windows do %>
-                    <div class="absolute inset-y-0 bg-success/20" style={"left: #{from / 14.4}%; width: #{(to - from) / 14.4}%"}></div>
+                    <div data-window class="absolute inset-y-0 bg-success/20" style={"left: #{from / 14.4}%; width: #{(to - from) / 14.4}%"}></div>
                   <% end %>
                   <%= for span <- timeline.spans do %>
                     <% width = span.to - span.from %>
@@ -418,8 +418,10 @@
                     </div>
                   <% end %>
                   <%= for span <- timeline.spans do %>
-                    <div class="absolute inset-y-1 w-1 -ml-0.5 rounded-full bg-success" style={"left: #{span.to / 14.4}%"}></div>
+                    <div class="absolute inset-y-1 w-1 -ml-0.5 rounded-full bg-success pointer-events-none" style={"left: #{span.to / 14.4}%"}></div>
                   <% end %>
+                  <div data-handle="start" class="absolute -inset-y-0.5 z-10 w-2 -ml-1 cursor-ew-resize rounded bg-success/70 hover:bg-success"></div>
+                  <div data-handle="end" class="absolute -inset-y-0.5 z-10 w-2 -ml-1 cursor-ew-resize rounded bg-success/70 hover:bg-success"></div>
                 </div>
                 <div class="relative h-3 text-[10px] text-base-content/50 font-mono">
                   <%= for hour <- [0, 6, 12, 18, 24] do %>
