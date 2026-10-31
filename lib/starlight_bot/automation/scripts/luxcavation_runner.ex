@@ -3,7 +3,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   alias StarlightBot.Automation.{BattleLoop, Engine, EnkephalinCharger, Recovery, RunMemory}
   alias StarlightBot.Automation.Scripts.SelectTeamOnScreen
   alias StarlightBot.Automation.SeasonPassCollector
-  alias StarlightBot.Ctx
+  alias StarlightBot.{Ctx, DailyProgress}
 
   @max_consecutive 10
   @max_navigation_retries 10
@@ -117,8 +117,13 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
 
   def at_battle(lux, kind, size, queue, errors, error, frame, ctx), do: battle_done(lux, kind, size, queue, errors, error, frame, ctx)
 
-  def battle_done(lux, _kind, _size, queue, _errors, {:ok, screen}, frame, ctx) do
-    if RunMemory.give_up?(ctx), do: gave_up(ctx), else: post_battle(lux, queue, screen, @post_battle_settle_tries, frame, ctx)
+  def battle_done(lux, kind, size, queue, _errors, {:ok, screen}, frame, ctx) do
+    if RunMemory.give_up?(ctx) do
+      gave_up(ctx)
+    else
+      DailyProgress.record(Atom.to_string(kind), size)
+      post_battle(lux, queue, screen, @post_battle_settle_tries, frame, ctx)
+    end
   end
 
   def battle_done(lux, kind, size, queue, _errors, {:error, :window_not_focused}, _frame, _ctx),

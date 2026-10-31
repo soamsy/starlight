@@ -5,7 +5,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   alias StarlightBot.Automation.SeasonPassCollector
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.Ctx
-  alias StarlightBot.{GiftPlans, RunnerForms, Teams}
+  alias StarlightBot.{DailyProgress, GiftPlans, RunnerForms, Teams}
   alias StarlightBot.Navigation.{Catalog, Runner, Screen}
   alias StarlightBot.PackPlans.Resolver
   alias StarlightBot.Navigation.Screens.Shop
@@ -122,6 +122,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   def dispatched(run, :run_complete, _frame, ctx) do
     Ctx.log(ctx, :ok, "mirror dungeon run complete — #{run.count - 1} remaining")
     RunnerForms.advance_mirror_dungeon_start()
+    DailyProgress.record("md", 1)
     finish_run(run, true, ctx)
   end
 

@@ -12,8 +12,12 @@ defmodule StarlightBot.LuxSchedule do
 
   def today, do: today(DateTime.utc_now())
 
-  def today(%DateTime{} = now) do
-    now |> DateTime.add(@reset_offset_secs) |> DateTime.to_date() |> Date.day_of_week() |> rem(7)
+  def today(%DateTime{} = now), do: now |> game_date() |> Date.day_of_week() |> rem(7)
+
+  def game_date(%DateTime{} = now), do: now |> DateTime.add(@reset_offset_secs) |> DateTime.to_date()
+
+  def day_start(%DateTime{} = now) do
+    now |> game_date() |> DateTime.new!(~T[00:00:00], "Etc/UTC") |> DateTime.add(-@reset_offset_secs)
   end
 
   def exp_slot_count, do: length(@exp_slots)
