@@ -1,6 +1,6 @@
 defmodule StarlightBotWeb.Live.SchedulerLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.{DailyProgress, EnkephalinSchedule, Scheduler}
+  alias StarlightBot.{AppSettings, DailyProgress, EnkephalinSchedule, Scheduler}
   alias StarlightBot.Scheduler.Server
   alias StarlightBotWeb.Live.LuxcavationLive
 
@@ -37,10 +37,16 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
      |> assign_status(status)
      |> assign_outlook()
      |> assign(:form, form_values(status.settings))
-     |> assign(:save_error, nil)}
+     |> assign(:save_error, nil)
+     |> assign(:game_launcher, AppSettings.launcher())}
   end
 
   @impl true
+  def handle_event("game_launcher_set", %{"launcher" => launcher}, socket) when launcher in ["direct", "kwin", "gamescope", "gamescope_window"] do
+    AppSettings.put_launcher(launcher)
+    {:noreply, assign(socket, :game_launcher, launcher)}
+  end
+
   def handle_event("update_form", params, socket),
     do: save_form(socket, Map.merge(socket.assigns.form, form_params(params)))
 

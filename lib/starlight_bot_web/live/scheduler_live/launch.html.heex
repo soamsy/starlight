@@ -5,6 +5,8 @@
     exe_path={@form["exe_path"]}
     launch_timeout_s={@form["launch_timeout_s"]}
     reset_event="reset_steam_app_id"
+    launcher={@game_launcher}
+    requirements={StarlightBot.LauncherDeps.requirements(@game_launcher, @form["launch_mode"])}
   />
 
   <span :if={@save_error} class="text-xs text-error">Not saved: {@save_error}</span>

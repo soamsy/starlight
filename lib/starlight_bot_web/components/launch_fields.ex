@@ -7,10 +7,26 @@ defmodule StarlightBotWeb.Components.LaunchFields do
   attr :exe_path, :string, required: true
   attr :launch_timeout_s, :any, required: true
   attr :reset_event, :string, required: true
+  attr :launcher, :string, default: "kwin"
+  attr :requirements, :list, default: []
 
   def launch_fields(assigns) do
     ~H"""
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+      <span class="text-base-content/50">Needs:</span>
+      <span :if={@requirements == []} class="text-base-content/60">nothing extra</span>
+      <span :for={req <- @requirements} class={["font-mono", req.found? && "text-success", !req.found? && "text-error"]}>
+        {req.name} {if req.found?, do: "detected", else: "not found"}
+      </span>
+    </div>
     <div class="flex flex-wrap items-end gap-3">
+      <label class="flex flex-col gap-1">
+        <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Limbus launcher</span>
+        <select name="launcher" phx-change="game_launcher_set" class="select select-sm select-bordered">
+          <option :for={{id, label} <- StarlightBot.LauncherDeps.launchers()} value={id} selected={@launcher == id}>{label}</option>
+        </select>
+      </label>
+
       <label class="flex flex-col gap-1">
         <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">If Limbus isn't open</span>
         <select name="launch_mode" class="select select-sm select-bordered">
@@ -53,6 +69,7 @@ defmodule StarlightBotWeb.Components.LaunchFields do
         <input type="number" name="launch_timeout_s" phx-debounce="500" min="1" value={@launch_timeout_s} class="input input-sm input-bordered w-24" />
       </label>
     </div>
+    <p class="max-w-prose text-xs text-base-content/60">{StarlightBot.LauncherDeps.description(@launcher)}</p>
     """
   end
 end

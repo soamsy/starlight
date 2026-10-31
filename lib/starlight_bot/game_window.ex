@@ -1,5 +1,5 @@
 defmodule StarlightBot.GameWindow do
-  alias StarlightBot.{AppSettings, LogStore, Native, NestedGamescope, NestedKwin, SteamLaunch}
+  alias StarlightBot.{AppSettings, LauncherDeps, LogStore, Native, NestedGamescope, NestedKwin, SteamLaunch}
   alias StarlightBot.Vision.Capture
 
   @target_w 1920
@@ -20,7 +20,25 @@ defmodule StarlightBot.GameWindow do
 
   def launch(settings, launcher \\ AppSettings.launcher())
 
-  def launch(%{launch_mode: "steam", steam_app_id: app_id}, launcher) do
+  def launch(%{launch_mode: "none"}, _launcher), do: {:error, :launch_disabled}
+
+  def launch(%{launch_mode: mode} = settings, launcher) do
+    case LauncherDeps.missing(launcher, mode) do
+      [] -> launch_with(settings, launcher)
+      missing -> log_failure({:error, {:missing_dependencies, missing}})
+    end
+  end
+
+  defp launch_with(%{launch_mode: "steam", steam_app_id: app_id}, "direct") do
+    LogStore.append(:info, "launch: opening Steam app #{app_id}")
+
+    with :ok <- ensure_not_running(window_class() <> ".exe") do
+      start("direct", ["steam", "steam://rungameid/#{app_id}"], [], File.cwd!())
+    end
+    |> log_failure()
+  end
+
+  defp launch_with(%{launch_mode: "steam", steam_app_id: app_id}, launcher) do
     LogStore.append(:info, "launch: opening Steam app #{app_id} in #{launcher_label(launcher)}")
 
     with :ok <- ensure_not_running(window_class() <> ".exe"),
@@ -30,7 +48,7 @@ defmodule StarlightBot.GameWindow do
     |> log_failure()
   end
 
-  def launch(%{launch_mode: "exe", exe_path: path}, launcher) do
+  defp launch_with(%{launch_mode: "exe", exe_path: path}, launcher) do
     LogStore.append(:info, "launch: opening #{path} in #{launcher_label(launcher)}")
 
     with :ok <- ensure_not_running(Path.basename(path)) do
@@ -39,9 +57,15 @@ defmodule StarlightBot.GameWindow do
     |> log_failure()
   end
 
-  def launch(%{launch_mode: "none"}, _launcher), do: {:error, :launch_disabled}
+  defp start("direct", argv, env, cwd) do
+    case System.cmd("sh", ["-c", ~s(setsid -f "$@" </dev/null >/dev/null 2>&1), "sh" | argv], stderr_to_stdout: true, env: env, cd: cwd) do
+      {_, 0} -> :ok
+      {out, code} -> {:error, {:launch_failed, code, String.trim(out)}}
+    end
+  end
 
-  defp start("gamescope", argv, env, cwd), do: NestedGamescope.spawn(argv, env, cwd)
+  defp start("gamescope", argv, env, cwd), do: NestedGamescope.spawn("headless", argv, env, cwd)
+  defp start("gamescope_window", argv, env, cwd), do: NestedGamescope.spawn("wayland", argv, env, cwd)
 
   defp start(_kwin, argv, env, cwd) do
     with {:ok, kwin_pid} <- NestedKwin.ensure(),
@@ -50,7 +74,9 @@ defmodule StarlightBot.GameWindow do
     end
   end
 
+  defp launcher_label("direct"), do: "a native window"
   defp launcher_label("gamescope"), do: "a headless gamescope"
+  defp launcher_label("gamescope_window"), do: "a gamescope window"
   defp launcher_label(_kwin), do: "a nested KWin"
 
   defp ensure_not_running(exe) do
