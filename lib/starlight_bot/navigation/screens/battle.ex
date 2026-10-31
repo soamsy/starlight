@@ -72,7 +72,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   screen :battle_turn_or_over, identity: nil, catch_all: true
 
   screen :battle_over_confirm, identity: :battle_over_black_confirm do
-    transition to: :battle_turn_or_over, do: [reclick_until_gone(:battle_over_black_confirm)]
+    transition to: :battle_turn_or_over, do: [reclick_until_gone(:battle_over_black_confirm), call(PlaybookRunner, :battle_confirmed)]
   end
 
   defp wait_for_user_input_state do
@@ -129,6 +129,6 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   end
 
   defp confirm_battle_clause do
-    {:battle_over_black_confirm, [reclick_until_gone(:battle_over_black_confirm)]}
+    {:battle_over_black_confirm, [reclick_until_gone(:battle_over_black_confirm), call(PlaybookRunner, :battle_confirmed)]}
   end
 end

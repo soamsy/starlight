@@ -82,6 +82,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
 
   def batch(lux, kind, size, queue, screen, errors, _frame, ctx) do
     RunMemory.put_team(ctx, Map.fetch!(lux.teams, kind))
+    RunMemory.put(ctx, :battle_confirmed, false)
 
     cond do
       RunMemory.give_up?(ctx) and not Engine.in_battle?(screen) ->
@@ -121,7 +122,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
     if RunMemory.give_up?(ctx) do
       gave_up(ctx)
     else
-      DailyProgress.record(Atom.to_string(kind), size)
+      record_batch(kind, size, ctx)
       post_battle(lux, queue, screen, @post_battle_settle_tries, frame, ctx)
     end
   end
@@ -187,6 +188,11 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
       0 -> full
       rest -> full ++ [rest]
     end
+  end
+
+  defp record_batch(kind, size, ctx) do
+    if RunMemory.get(ctx, :battle_confirmed, false), do: DailyProgress.record(Atom.to_string(kind), size)
+    RunMemory.put(ctx, :battle_confirmed, false)
   end
 
   defp recover(_lux, _kind, _size, _queue, errors, error, _frame, ctx) when errors >= @max_navigation_retries do

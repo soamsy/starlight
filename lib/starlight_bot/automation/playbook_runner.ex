@@ -102,6 +102,11 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
+  def battle_confirmed(last_frame, ctx) do
+    RunMemory.put(ctx, :battle_confirmed, true)
+    {:ok, last_frame}
+  end
+
   def new_battle(last_frame, ctx) do
     RunMemory.put_battle_turn(ctx, 1)
     {:ok, last_frame}
