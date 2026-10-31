@@ -1,3 +1,8 @@
+<div class="flex flex-col gap-3">
+<div class={["alert flex items-center justify-between gap-3 px-3 py-2 text-sm", if(@blocked, do: "alert-warning", else: "alert-info")]}>
+  <span class="min-w-0 flex-1 font-medium">{@outlook}</span>
+  <div :if={@settings.enabled || @charger.enabled} class="shrink-0 text-xs"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={@blocked} section={:start} /></div>
+</div>
 <div class="flex flex-col gap-1 bg-base-200 rounded-xl p-3 text-sm">
   <% rows = for {_label, _done, target, _unit, _cost} = row <- progress_rows(@settings, @progress), target > 0, do: row %>
   <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Today's progress</span>
@@ -23,9 +28,11 @@
     <% end %>
   </div>
   <span :if={@settings.enabled && rows == []} class="text-xs text-base-content/50">No daily targets set</span>
-  <span :if={@charger.enabled} class="text-xs text-base-content/60">Enkephalin {StarlightBotWeb.Layouts.last_charged_label(@charger.last_converted_at, @now)}</span>
-  <span class="text-xs text-base-content/70 text-right">{@outlook}</span>
-  <div :if={@settings.enabled || @charger.enabled} class="text-xs"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={@blocked} /></div>
+  <div :if={@settings.enabled || @charger.enabled} class="flex items-end justify-between gap-3 text-xs">
+    <span :if={@charger.enabled} class="text-base-content/60">Enkephalin {StarlightBotWeb.Layouts.last_charged_label(@charger.last_converted_at, @now)}</span>
+    <span :if={!@charger.enabled}></span>
+    <StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={@blocked} section={:hold} />
+  </div>
   <%= if @retry_after_ms && !@blocked do %>
     <span class="text-xs text-warning">Retrying in <%= div(@retry_after_ms, 60_000) + 1 %> min</span>
   <% end %>
@@ -35,4 +42,5 @@
       <%= @activity %>
     </span>
   <% end %>
+</div>
 </div>

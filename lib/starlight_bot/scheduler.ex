@@ -130,12 +130,17 @@ defmodule StarlightBot.Scheduler do
 
   defp start_outlook(now, work, start_at, blocked) do
     text =
-      if NaiveDateTime.compare(start_at, now) != :gt,
-        do: "Starting #{work} now",
-        else: "Will start #{work} at #{clock12(start_at)} #{day_word(now, start_at)}, in #{exact_duration_label(NaiveDateTime.diff(start_at, now, :second))}"
+      cond do
+        NaiveDateTime.compare(start_at, now) != :gt -> "Starting #{work} now"
+        blocked_start?(start_at, blocked) -> "Will start #{work} in #{exact_duration_label(NaiveDateTime.diff(start_at, now, :second))}"
+        true -> "Will start #{work} at #{clock12(start_at)} #{day_word(now, start_at)}, in #{exact_duration_label(NaiveDateTime.diff(start_at, now, :second))}"
+      end
 
     text <> blocked_note(blocked)
   end
+
+  defp blocked_start?(_start_at, nil), do: false
+  defp blocked_start?(start_at, {_kind, until}), do: NaiveDateTime.compare(start_at, to_local(until)) == :eq
 
   defp blocked_note(nil), do: ""
   defp blocked_note(blocked), do: ". " <> upcase_first(blocked_reason(blocked))

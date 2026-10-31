@@ -3,15 +3,15 @@
     <div class="grid grid-cols-3 gap-2">
       <label class="join w-full" title="EXP waves">
         <span class="join-item flex items-center justify-center px-2 bg-info text-info-content text-xs font-semibold"><img src={~p"/images/icons/exp.webp"} alt="EXP" class="size-5" /></span>
-        <input type="number" min="0" name="exp_waves" phx-debounce="500" value={@form["exp_waves"]} class="input input-sm input-bordered join-item w-full" />
+        <span class="input input-sm input-bordered join-item flex w-full min-w-0 items-center gap-1"><input type="number" min="0" name="exp_waves" phx-debounce="500" value={@form["exp_waves"]} class="grow min-w-0 w-full" /><span class="whitespace-nowrap text-base-content/40">waves</span></span>
       </label>
       <label class="join w-full" title="Thread waves">
         <span class="join-item flex items-center justify-center px-2 bg-secondary text-secondary-content text-xs font-semibold"><img src={~p"/images/icons/thread.webp"} alt="Thread" class="size-5" /></span>
-        <input type="number" min="0" name="thread_waves" phx-debounce="500" value={@form["thread_waves"]} class="input input-sm input-bordered join-item w-full" />
+        <span class="input input-sm input-bordered join-item flex w-full min-w-0 items-center gap-1"><input type="number" min="0" name="thread_waves" phx-debounce="500" value={@form["thread_waves"]} class="grow min-w-0 w-full" /><span class="whitespace-nowrap text-base-content/40">waves</span></span>
       </label>
       <label class="join w-full" title="MD runs">
         <span class="join-item flex items-center justify-center px-2 bg-primary text-primary-content text-xs font-semibold">MD</span>
-        <input type="number" min="0" name="md_runs" phx-debounce="500" value={@form["md_runs"]} class="input input-sm input-bordered join-item w-full" />
+        <span class="input input-sm input-bordered join-item flex w-full min-w-0 items-center gap-1"><input type="number" min="0" name="md_runs" phx-debounce="500" value={@form["md_runs"]} class="grow min-w-0 w-full" /><span class="whitespace-nowrap text-base-content/40">runs</span></span>
       </label>
     </div>
   </div>
