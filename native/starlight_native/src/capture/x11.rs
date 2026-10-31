@@ -276,7 +276,63 @@ pub fn nested_display_name() -> Option<String> {
     located_display_name().filter(|name| Some(name) != host_display_name().as_ref())
 }
 
-pub fn rect(located: &Located) -> Result<(i32, i32, u32, u32), NativeError> {
+pub fn resize(located: &Located, width: u32, height: u32) -> Result<(), NativeError> {
+    let d = &located.display;
+    let wm_state = intern(&d.conn, "_NET_WM_STATE")?;
+    let fullscreen = intern(&d.conn, "_NET_WM_STATE_FULLSCREEN")?;
+    let leave_fullscreen = x::ClientMessageEvent::new(
+        located.window,
+        wm_state,
+        x::ClientMessageData::Data32([0, fullscreen.resource_id(), 0, 1, 0]),
+    );
+    d.conn
+        .send_and_check_request(&x::SendEvent {
+            propagate: false,
+            destination: x::SendEventDest::Window(d.root),
+            event_mask: x::EventMask::SUBSTRUCTURE_REDIRECT | x::EventMask::SUBSTRUCTURE_NOTIFY,
+            event: &leave_fullscreen,
+        })
+        .map_err(xerr)?;
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let g = geometry(located)?;
+    let (frame_w, frame_h) = (g.window.0 - g.client.2, g.window.1 - g.client.3);
+    d.conn
+        .send_and_check_request(&x::ConfigureWindow {
+            window: located.window,
+            value_list: &[x::ConfigWindow::Width(width + frame_w), x::ConfigWindow::Height(height + frame_h)],
+        })
+        .map_err(xerr)
+}
+
+struct Geometry {
+    origin: (i32, i32),
+    window: (u32, u32),
+    client: (u32, u32, u32, u32),
+}
+
+fn client_area(located: &Located, win_w: u32, win_h: u32) -> (u32, u32, u32, u32) {
+    let whole = (0, 0, win_w, win_h);
+    let conn = &located.display.conn;
+    let Ok(tree) = conn.wait_for_reply(conn.send_request(&x::QueryTree { window: located.window })) else {
+        return whole;
+    };
+    let cookies: Vec<_> = tree
+        .children()
+        .iter()
+        .map(|&child| conn.send_request(&x::GetGeometry { drawable: Drawable::Window(child) }))
+        .collect();
+
+    cookies
+        .into_iter()
+        .filter_map(|cookie| conn.wait_for_reply(cookie).ok())
+        .filter(|g| g.x() >= 0 && g.y() >= 0)
+        .map(|g| (g.x() as u32, g.y() as u32, g.width() as u32, g.height() as u32))
+        .filter(|&(x, y, w, h)| x + w <= win_w && y + h <= win_h && w * h * 10 >= win_w * win_h * 8)
+        .max_by_key(|&(_, _, w, h)| w * h)
+        .unwrap_or(whole)
+}
+
+fn geometry(located: &Located) -> Result<Geometry, NativeError> {
     let conn = &located.display.conn;
     let geometry = conn.send_request(&x::GetGeometry {
         drawable: Drawable::Window(located.window),
@@ -289,13 +345,70 @@ pub fn rect(located: &Located) -> Result<(i32, i32, u32, u32), NativeError> {
     });
     let geometry = conn.wait_for_reply(geometry).map_err(xerr)?;
     let translate = conn.wait_for_reply(translate).map_err(xerr)?;
+    let window = (geometry.width() as u32, geometry.height() as u32);
 
-    Ok((
-        translate.dst_x() as i32,
-        translate.dst_y() as i32,
-        geometry.width() as u32,
-        geometry.height() as u32,
-    ))
+    Ok(Geometry {
+        origin: (translate.dst_x() as i32, translate.dst_y() as i32),
+        window,
+        client: client_area(located, window.0, window.1),
+    })
+}
+
+pub fn rect(located: &Located) -> Result<(i32, i32, u32, u32), NativeError> {
+    let g = geometry(located)?;
+    let (cx, cy, cw, ch) = g.client;
+    Ok((g.origin.0 + cx as i32, g.origin.1 + cy as i32, cw, ch))
+}
+
+pub fn details(located: &Located) -> Result<Vec<String>, NativeError> {
+    let d = &located.display;
+    let g = geometry(located)?;
+    let mut lines = vec![
+        format!("display {}", d.name),
+        format!("window {:#x}", located.window.resource_id()),
+        format!("window geometry {}x{} at {},{}", g.window.0, g.window.1, g.origin.0, g.origin.1),
+        format!("client area {}x{} at +{}+{} inside the window", g.client.2, g.client.3, g.client.0, g.client.1),
+    ];
+
+    let cookie = d.conn.send_request(&x::QueryTree { window: located.window });
+    if let Ok(tree) = d.conn.wait_for_reply(cookie) {
+        lines.push(format!(
+            "parent {}",
+            if tree.parent() == d.root { "root".to_string() } else { format!("{:#x}", tree.parent().resource_id()) }
+        ));
+        lines.push(format!("children {}", tree.children().len()));
+    }
+
+    for name in ["_NET_WM_STATE", "_MOTIF_WM_HINTS", "_NET_FRAME_EXTENTS", "_GTK_FRAME_EXTENTS", "WM_CLASS", "_NET_WM_WINDOW_TYPE"] {
+        let atom = intern(&d.conn, name)?;
+        let value = property(d, located.window, atom, x::ATOM_ANY)
+            .map(|r| {
+                if r.r#type() == x::ATOM_ATOM {
+                    r.value::<x::Atom>()
+                        .iter()
+                        .map(|a| {
+                            d.conn
+                                .wait_for_reply(d.conn.send_request(&x::GetAtomName { atom: *a }))
+                                .map(|n| n.name().to_utf8().into_owned())
+                                .unwrap_or_default()
+                        })
+                        .collect::<Vec<_>>()
+                        .join(",")
+                } else if r.format() == 32 {
+                    r.value::<u32>().iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",")
+                } else {
+                    String::from_utf8_lossy(r.value::<u8>()).replace('\0', " ").trim().to_string()
+                }
+            })
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| "(none)".to_string());
+        lines.push(format!("{name} {value}"));
+    }
+
+    let wm_check = intern(&d.conn, "_NET_SUPPORTING_WM_CHECK")?;
+    let has_wm = property(d, d.root, wm_check, x::ATOM_WINDOW).is_some_and(|r| r.value::<u32>().len() == 1);
+    lines.push(format!("X window manager present {has_wm}"));
+    Ok(lines)
 }
 
 pub fn focused(located: &Located) -> Result<bool, NativeError> {
@@ -482,15 +595,16 @@ pub fn with_bgrx_all<T>(
     regions: &[Area],
     mut f: impl FnMut(usize, &[u8], u32, u32) -> T,
 ) -> Result<Vec<T>, NativeError> {
-    let (_, _, win_w, win_h) = rect(located)?;
+    let (cx, cy, win_w, win_h) = geometry(located)?.client;
     let areas = regions
         .iter()
         .map(|&r| clamp_area(r, win_w, win_h))
         .collect::<Result<Vec<_>, _>>()?;
+    let source: Vec<Area> = areas.iter().map(|&(x, y, w, h)| (x + cx, y + cy, w, h)).collect();
 
     let conn = &located.display.conn;
     if let Some(mut shm) = located.display.shm.as_ref().and_then(|m| m.lock().ok()) {
-        if let Ok(images) = shm_capture(conn, &mut shm, located.window, &areas) {
+        if let Ok(images) = shm_capture(conn, &mut shm, located.window, &source) {
             return Ok(images
                 .into_iter()
                 .zip(&areas)
@@ -500,7 +614,7 @@ pub fn with_bgrx_all<T>(
         }
     }
 
-    Ok(socket_capture(conn, located.window, &areas)?
+    Ok(socket_capture(conn, located.window, &source)?
         .iter()
         .zip(&areas)
         .enumerate()

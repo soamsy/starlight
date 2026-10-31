@@ -72,6 +72,25 @@ fn get_window_rect<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
+fn window_details<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
+    match capture::window_details(&class_name) {
+        Ok(lines) => (ok(), lines).encode(env),
+        Err(e) => (error(), e.to_atom(env)).encode(env),
+    }
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
+fn resize_window<'a>(env: Env<'a>, class_name: String, width: u32, height: u32) -> Term<'a> {
+    match capture::resize_window(&class_name, width, height) {
+        Ok(()) => ok().encode(env),
+        Err(e) => {
+            eprintln!("[starlight_native] resize_window error: {e}");
+            (error(), e.to_atom(env)).encode(env)
+        }
+    }
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
 fn is_window_focused<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
     match capture::is_window_focused(&class_name) {
         Ok(focused) => (ok(), focused).encode(env),

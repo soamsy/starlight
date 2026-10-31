@@ -9,12 +9,20 @@ pub fn get_window_rect(class_name: &str) -> Result<(i32, i32, u32, u32), NativeE
     x11::rect(&x11::locate(class_name)?)
 }
 
+pub fn resize_window(class_name: &str, width: u32, height: u32) -> Result<(), NativeError> {
+    x11::resize(&x11::locate(class_name)?, width, height)
+}
+
 /// Whether the window has OS input focus right now — reads `_NET_ACTIVE_WINDOW`
 /// off the root window of whichever X display the game is on and compares ids,
 /// two XCB round trips (window validation + property), same cost class as
 /// `get_window_rect`. Not cached: callers
 /// gating input injection need this fresh at the moment of the check, not
 /// whatever it was as of some earlier poll.
+pub fn window_details(class_name: &str) -> Result<Vec<String>, NativeError> {
+    x11::details(&x11::locate(class_name)?)
+}
+
 pub fn is_window_focused(class_name: &str) -> Result<bool, NativeError> {
     x11::focused(&x11::locate(class_name)?)
 }

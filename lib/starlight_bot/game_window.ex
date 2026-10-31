@@ -86,7 +86,7 @@ defmodule StarlightBot.GameWindow do
   end
 
   defp fix_aspect(steam_app_id, before, attempts_left) do
-    with {:ok, buses} <- run_resize_script(steam_app_id) do
+    with {:ok, buses} <- resize_window(steam_app_id) do
       Process.sleep(@resize_settle_ms)
       Capture.refresh_window_rect()
 
@@ -100,6 +100,19 @@ defmodule StarlightBot.GameWindow do
           {:error, {:resize_ignored, %{before: before, after: after_rect, buses: buses}}}
         error -> error
       end
+    end
+  end
+
+  defp resize_window(steam_app_id) do
+    case run_resize_script(steam_app_id) do
+      {:ok, buses} ->
+        {:ok, buses}
+
+      {:error, {:kwin_unreachable, _}} ->
+        case Native.resize_window(window_class(), @target_w, @target_h) do
+          :ok -> {:ok, [:x11]}
+          {:error, reason} -> {:error, reason}
+        end
     end
   end
 

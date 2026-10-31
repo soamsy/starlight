@@ -30,6 +30,12 @@ defmodule StarlightBot.Native do
 
   def forget_window(), do: nif_err()
 
+  @doc "Describe the located window as a list of text lines: display, geometry, inner client area, WM hints. Returns {:ok, lines} or {:error, atom}."
+  def window_details(_class_name), do: nif_err()
+
+  @doc "Take the window out of fullscreen and resize it through plain X11 requests. Returns :ok or {:error, atom}."
+  def resize_window(_class_name, _width, _height), do: nif_err()
+
   @doc """
   Whether the window currently has OS input focus (reads _NET_ACTIVE_WINDOW).
   Deliberately uncached — call this right before injecting input, not on a
