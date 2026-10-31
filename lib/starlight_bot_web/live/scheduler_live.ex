@@ -1,16 +1,26 @@
 defmodule StarlightBotWeb.Live.SchedulerLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.{DailyProgress, Scheduler}
+  alias StarlightBot.{DailyProgress, EnkephalinSchedule, Scheduler}
   alias StarlightBot.Scheduler.Server
   alias StarlightBotWeb.Live.LuxcavationLive
 
   @clock_tick_ms 30_000
   @md_modules_per_run 5
+  @launch_keys ~w(launch_mode steam_app_id exe_path launch_timeout_s)
+  @runner_keys ~w(window_start window_end exp_waves thread_waves md_runs)
+
+  embed_templates "scheduler_live/*"
 
   @impl true
-  def mount(_params, _session, socket) do
+  def render(%{part: "progress"} = assigns), do: progress(assigns)
+  def render(%{part: "launch"} = assigns), do: launch(assigns)
+  def render(assigns), do: runners_form(assigns)
+
+  @impl true
+  def mount(_params, session, socket) do
     if connected?(socket) do
       Scheduler.subscribe()
+      EnkephalinSchedule.subscribe()
       Process.send_after(self(), :clock_tick, @clock_tick_ms)
     end
 
@@ -21,6 +31,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
 
     {:ok,
      socket
+     |> assign(:part, session["part"])
      |> assign_status(status)
      |> assign_outlook()
      |> assign(:form, form_values(status.settings))
@@ -51,6 +62,8 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
 
   def handle_info(:daily_progress, socket), do: {:noreply, assign_outlook(socket)}
 
+  def handle_info({:enkephalin_schedule, _settings}, socket), do: {:noreply, assign_outlook(socket)}
+
   def handle_info(:clock_tick, socket) do
     Process.send_after(self(), :clock_tick, @clock_tick_ms)
     {:noreply, socket |> assign_server_status() |> assign_outlook()}
@@ -59,8 +72,10 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   defp save_form(socket, form) do
+    form = Map.merge(form_values(socket.assigns.settings), Map.take(form, form_keys(socket.assigns.part)))
+
     attrs = %{
-      enabled: form["enabled"] == "true",
+      enabled: socket.assigns.settings.enabled,
       window_start: String.slice(form["window_start"], 0, 5),
       window_end: String.slice(form["window_end"], 0, 5),
       launch_mode: form["launch_mode"],
@@ -80,6 +95,9 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     end
   end
 
+  defp form_keys("launch"), do: @launch_keys
+  defp form_keys(_part), do: @runner_keys
+
   defp assign_outlook(socket) do
     settings = socket.assigns.settings
     blocked = Scheduler.blocked()
@@ -88,6 +106,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     |> assign(:progress, DailyProgress.completed())
     |> assign(:now, Scheduler.local_now())
     |> assign(:blocked, blocked)
+    |> assign(:charger, EnkephalinSchedule.get_settings())
     |> assign(:outlook, Scheduler.outlook(Scheduler.local_now(), settings, DailyProgress.remaining(settings), Scheduler.busy?(), blocked))
   end
 
@@ -104,7 +123,6 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
 
   defp form_values(settings) do
     %{
-      "enabled" => to_string(settings.enabled),
       "window_start" => settings.window_start,
       "window_end" => settings.window_end,
       "launch_mode" => settings.launch_mode,
@@ -118,9 +136,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   end
 
   defp form_params(params) do
-    params
-    |> Map.take(~w(window_start window_end launch_mode steam_app_id exe_path launch_timeout_s exp_waves thread_waves md_runs))
-    |> Map.put("enabled", Map.get(params, "enabled", "false"))
+    Map.take(params, @launch_keys ++ @runner_keys)
   end
 
   defp parse_int(value) do

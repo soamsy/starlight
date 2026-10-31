@@ -1,0 +1,11 @@
+<form id="scheduler-launch-form" phx-submit="update_form" phx-change="update_form" class="flex flex-col gap-3">
+  <StarlightBotWeb.Components.LaunchFields.launch_fields
+    launch_mode={@form["launch_mode"]}
+    steam_app_id={@form["steam_app_id"]}
+    exe_path={@form["exe_path"]}
+    launch_timeout_s={@form["launch_timeout_s"]}
+    reset_event="reset_steam_app_id"
+  />
+
+  <span :if={@save_error} class="text-xs text-error">Not saved: {@save_error}</span>
+</form>

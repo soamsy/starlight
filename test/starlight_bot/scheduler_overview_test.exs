@@ -24,12 +24,12 @@ defmodule StarlightBot.Scheduler.OverviewTest do
     end
 
     test "waits out the interval and a hold, and reports both" do
-      charger = %{@charger | last_converted_at: ~N[2026-10-18 09:30:00]}
-      assert EnkephalinSchedule.next_charge(@now, charger, nil) == ~N[2026-10-18 12:30:00]
+      charger = %{@charger | last_converted_at: ~N[2026-10-18 10:30:00]}
+      assert EnkephalinSchedule.next_charge(@now, charger, nil) == ~N[2026-10-18 13:30:00]
 
-      blocked = {:canceled, DateTime.add(@later, 36_000)}
+      blocked = {:canceled, DateTime.add(@later, 72_000)}
       at = EnkephalinSchedule.next_charge(@now, charger, blocked)
-      assert NaiveDateTime.compare(at, ~N[2026-10-18 12:30:00]) == :gt
+      assert NaiveDateTime.compare(at, ~N[2026-10-18 13:30:00]) == :gt
       assert EnkephalinSchedule.outlook(@now, charger, blocked, false) =~ "a run was canceled recently"
     end
 

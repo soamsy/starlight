@@ -7,8 +7,8 @@ defmodule StarlightBotWeb.Live.PageHook do
   alias StarlightBot.Vision.Capture
 
   @scheduler_clock_ms 30_000
-  @settings_tabs ["scheduler", "enkephalin", "data"]
-  @enkephalin_form_keys ~w(enabled window_start window_end interval_hours launch_mode steam_app_id exe_path launch_timeout_s)
+  @settings_tabs ["scheduler", "data"]
+  @enkephalin_form_keys ~w(enabled window_start window_end interval_hours)
 
   @pages %{
     StarlightBotWeb.Live.HookEditorLive => :hooks,
@@ -38,6 +38,7 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:game_launch_label, nil)
       |> assign(:settings_open, false)
       |> assign(:settings_tab, "scheduler")
+      |> assign(:scheduler_view, "runners")
       |> assign(:app_settings, nil)
       |> assign(:enkephalin_convert_count, AppSettings.enkephalin_convert_count())
       |> assign_scheduler(Scheduler.get_settings())
@@ -74,8 +75,12 @@ defmodule StarlightBotWeb.Live.PageHook do
 
   defp handle_settings_event("settings_open", params, socket) do
     tab = if params["tab"] in @settings_tabs, do: params["tab"], else: "scheduler"
+    socket = if params["tab"] == "enkephalin", do: assign(socket, :scheduler_view, "enkephalin"), else: socket
     {:halt, socket |> assign(:settings_open, true) |> assign(:settings_tab, tab) |> assign(:app_settings, Data.settings())}
   end
+
+  defp handle_settings_event("scheduler_view", %{"view" => view}, socket) when view in ["runners", "enkephalin"],
+    do: {:halt, assign(socket, :scheduler_view, view)}
 
   defp handle_settings_event("settings_tab", %{"tab" => tab}, socket) when tab in @settings_tabs,
     do: {:halt, assign(socket, :settings_tab, tab)}
@@ -92,10 +97,6 @@ defmodule StarlightBotWeb.Live.PageHook do
       {:ok, count} -> {:halt, assign(socket, :enkephalin_convert_count, count)}
       :error -> {:halt, put_flash(socket, :error, "Conversions must be a number from 0 to #{EnkephalinCharger.max_convert_count()}")}
     end
-  end
-
-  defp handle_settings_event("enkephalin_reset_steam_app_id", _params, socket) do
-    save_enkephalin_schedule(socket, %{"steam_app_id" => Scheduler.default_steam_app_id()})
   end
 
   defp handle_settings_event("enkephalin_schedule_save", params, socket), do: save_enkephalin_schedule(socket, params)
@@ -177,11 +178,7 @@ defmodule StarlightBotWeb.Live.PageHook do
       enabled: form["enabled"] == "true",
       window_start: String.slice(form["window_start"], 0, 5),
       window_end: String.slice(form["window_end"], 0, 5),
-      interval_minutes: parse_int(form["interval_hours"], &(&1 * 60)),
-      launch_mode: form["launch_mode"],
-      steam_app_id: String.trim(form["steam_app_id"]),
-      exe_path: String.trim(form["exe_path"]),
-      launch_timeout_s: parse_int(form["launch_timeout_s"], & &1)
+      interval_minutes: parse_int(form["interval_hours"], &(&1 * 60))
     }
 
     socket = assign(socket, :enkephalin_form, form)
@@ -197,11 +194,7 @@ defmodule StarlightBotWeb.Live.PageHook do
       "enabled" => to_string(settings.enabled),
       "window_start" => settings.window_start,
       "window_end" => settings.window_end,
-      "interval_hours" => to_string(div(settings.interval_minutes, 60)),
-      "launch_mode" => settings.launch_mode,
-      "steam_app_id" => settings.steam_app_id,
-      "exe_path" => settings.exe_path,
-      "launch_timeout_s" => to_string(settings.launch_timeout_s)
+      "interval_hours" => to_string(div(settings.interval_minutes, 60))
     }
   end
 
@@ -216,7 +209,6 @@ defmodule StarlightBotWeb.Live.PageHook do
     socket
     |> assign(:enkephalin_schedule, settings)
     |> assign_overview()
-    |> assign(:enkephalin_now, Scheduler.local_now())
     |> assign_new(:enkephalin_schedule_error, fn -> nil end)
     |> assign_new(:enkephalin_form, fn -> enkephalin_form_values(settings) end)
   end

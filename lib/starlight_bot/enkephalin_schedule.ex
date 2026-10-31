@@ -11,37 +11,27 @@ defmodule StarlightBot.EnkephalinSchedule do
 
   def broadcast(message), do: Phoenix.PubSub.broadcast(StarlightBot.PubSub, @topic, message)
 
+  @launch_fields [:launch_mode, :steam_app_id, :exe_path, :launch_timeout_s]
+
   def get_settings do
-    %{
+    Map.merge(Map.take(Scheduler.get_settings(), @launch_fields), %{
       enabled: AppSettings.get("enkephalin_schedule_enabled") == "true",
       window_start: AppSettings.get("enkephalin_schedule_window_start"),
       window_end: AppSettings.get("enkephalin_schedule_window_end"),
       interval_minutes: String.to_integer(AppSettings.get("enkephalin_schedule_interval_minutes")),
-      launch_mode: AppSettings.get("enkephalin_schedule_launch_mode"),
-      steam_app_id: AppSettings.get("enkephalin_schedule_steam_app_id"),
-      exe_path: AppSettings.get("enkephalin_schedule_exe_path"),
-      launch_timeout_s: String.to_integer(AppSettings.get("enkephalin_schedule_launch_timeout_s")),
       last_converted_at: parse_datetime(AppSettings.get("enkephalin_last_converted_at"))
-    }
+    })
   end
 
   def save_settings(attrs) do
     with {:ok, _} <- Scheduler.parse_time(attrs.window_start),
          {:ok, _} <- Scheduler.parse_time(attrs.window_end),
          true <- attrs.window_start != attrs.window_end || {:error, "start and end can't be the same time"},
-         true <- (is_integer(attrs.interval_minutes) and attrs.interval_minutes in 1..@max_interval_minutes) || {:error, "interval must be between 1 minute and 7 days"},
-         true <- attrs.launch_mode in Scheduler.launch_modes() || {:error, "unknown launch mode"},
-         true <- attrs.launch_mode != "steam" or Regex.match?(~r/^\d+$/, attrs.steam_app_id) || {:error, "Steam app id must be a number"},
-         true <- attrs.launch_mode != "exe" or File.regular?(attrs.exe_path) || {:error, "executable path doesn't point at a file"},
-         true <- (is_integer(attrs.launch_timeout_s) and attrs.launch_timeout_s > 0) || {:error, "launch timeout must be a positive number of seconds"} do
+         true <- (is_integer(attrs.interval_minutes) and attrs.interval_minutes in 1..@max_interval_minutes) || {:error, "interval must be between 1 minute and 7 days"} do
       AppSettings.put("enkephalin_schedule_enabled", to_string(attrs.enabled))
       AppSettings.put("enkephalin_schedule_window_start", attrs.window_start)
       AppSettings.put("enkephalin_schedule_window_end", attrs.window_end)
       AppSettings.put("enkephalin_schedule_interval_minutes", Integer.to_string(attrs.interval_minutes))
-      AppSettings.put("enkephalin_schedule_launch_mode", attrs.launch_mode)
-      AppSettings.put("enkephalin_schedule_steam_app_id", attrs.steam_app_id)
-      AppSettings.put("enkephalin_schedule_exe_path", attrs.exe_path)
-      AppSettings.put("enkephalin_schedule_launch_timeout_s", Integer.to_string(attrs.launch_timeout_s))
       settings = get_settings()
       broadcast({:enkephalin_schedule, settings})
       {:ok, settings}
@@ -64,11 +54,9 @@ defmodule StarlightBot.EnkephalinSchedule do
   def set_charging(charging?), do: :persistent_term.put({__MODULE__, :charging}, charging?)
 
   def next_charge(%NaiveDateTime{} = now, settings, blocked) do
-    base = Enum.max([now, interval_at(now, settings), blocked_until(blocked) || now], NaiveDateTime)
-
     Enum.find_value(-1..3, fn offset ->
       {start_at, end_at} = Scheduler.window(Date.add(NaiveDateTime.to_date(now), offset), settings)
-      at = Enum.max([base, start_at], NaiveDateTime)
+      at = Enum.max([now, start_at, interval_gate(start_at, settings), blocked_until(blocked) || now], NaiveDateTime)
       if NaiveDateTime.compare(at, end_at) == :lt, do: at
     end)
   end
@@ -97,7 +85,7 @@ defmodule StarlightBot.EnkephalinSchedule do
     reasons =
       [
         blocked && Scheduler.blocked_reason(blocked),
-        NaiveDateTime.compare(interval_at(now, settings), now) == :gt &&
+        interval_pending?(now, at, settings) &&
           "the #{Scheduler.exact_duration_label(settings.interval_minutes * 60)} interval since the last charge",
         not in_window?(now, settings) && "the charging window opening at #{Scheduler.clock12(at)}"
       ]
@@ -106,37 +94,44 @@ defmodule StarlightBot.EnkephalinSchedule do
     if reasons == [], do: "", else: ". Waiting on " <> Enum.join(reasons, "; ")
   end
 
-  defp interval_at(now, %{last_converted_at: nil}), do: now
-  defp interval_at(_now, %{last_converted_at: last, interval_minutes: minutes}), do: NaiveDateTime.add(last, minutes * 60)
+  defp interval_gate(window_start, %{last_converted_at: last, interval_minutes: minutes}) do
+    if last && NaiveDateTime.compare(last, window_start) != :lt, do: NaiveDateTime.add(last, minutes * 60), else: window_start
+  end
 
-  defp blocked_until(nil), do: nil
-  defp blocked_until({_reason, until}), do: Scheduler.to_local(until)
+  defp interval_pending?(now, at, settings) do
+    case {settings.last_converted_at, current_window(at, settings)} do
+      {nil, _} -> false
+      {_, nil} -> false
+      {_, {start_at, _end_at}} -> NaiveDateTime.compare(interval_gate(start_at, settings), now) == :gt and NaiveDateTime.compare(interval_gate(start_at, settings), start_at) == :gt
+    end
+  end
 
-  def due?(%NaiveDateTime{} = now, settings), do: in_window?(now, settings) and interval_elapsed?(now, settings)
-
-  def window_end(%NaiveDateTime{} = now, settings) do
+  defp current_window(%NaiveDateTime{} = now, settings) do
     today = NaiveDateTime.to_date(now)
 
     [Date.add(today, -1), today]
     |> Enum.map(&Scheduler.window(&1, settings))
-    |> Enum.find_value(fn {start_at, end_at} ->
-      if NaiveDateTime.compare(now, start_at) != :lt and NaiveDateTime.compare(now, end_at) == :lt, do: end_at
-    end)
+    |> Enum.find(fn {start_at, end_at} -> NaiveDateTime.compare(now, start_at) != :lt and NaiveDateTime.compare(now, end_at) == :lt end)
   end
 
-  def in_window?(%NaiveDateTime{} = now, settings) do
-    today = NaiveDateTime.to_date(now)
+  defp blocked_until(nil), do: nil
+  defp blocked_until({_reason, until}), do: Scheduler.to_local(until)
 
-    Enum.any?([Date.add(today, -1), today], fn date ->
-      {start_at, end_at} = Scheduler.window(date, settings)
-      NaiveDateTime.compare(now, start_at) != :lt and NaiveDateTime.compare(now, end_at) == :lt
-    end)
+  def due?(%NaiveDateTime{} = now, settings) do
+    case current_window(now, settings) do
+      {start_at, _end_at} -> NaiveDateTime.compare(now, interval_gate(start_at, settings)) != :lt
+      nil -> false
+    end
   end
 
-  def interval_elapsed?(_now, %{last_converted_at: nil}), do: true
+  def window_end(%NaiveDateTime{} = now, settings) do
+    case current_window(now, settings) do
+      {_start_at, end_at} -> end_at
+      nil -> nil
+    end
+  end
 
-  def interval_elapsed?(now, %{last_converted_at: last, interval_minutes: minutes}),
-    do: NaiveDateTime.diff(now, last, :second) >= minutes * 60
+  def in_window?(%NaiveDateTime{} = now, settings), do: current_window(now, settings) != nil
 
   @timeline_days 30
 
@@ -154,8 +149,7 @@ defmodule StarlightBot.EnkephalinSchedule do
       shown =
         first_day
         |> Date.range(shown_day)
-        |> Enum.flat_map_reduce(nil, fn date, last -> charges_in_window(Scheduler.window(date, settings), last, step_s) end)
-        |> elem(0)
+        |> Enum.flat_map(&charges_in_window(Scheduler.window(&1, settings), step_s))
         |> Enum.chunk_every(2, 1, :discard)
         |> Enum.filter(fn [_previous, charge] -> NaiveDateTime.to_date(charge) == shown_day end)
 
@@ -172,10 +166,8 @@ defmodule StarlightBot.EnkephalinSchedule do
     end
   end
 
-  defp charges_in_window({start_at, end_at}, last, step_s) do
-    first = if last, do: Enum.max([start_at, NaiveDateTime.add(last, step_s)], NaiveDateTime), else: start_at
-    times = Stream.iterate(first, &NaiveDateTime.add(&1, step_s)) |> Enum.take_while(&(NaiveDateTime.compare(&1, end_at) == :lt))
-    {times, List.last(times) || last}
+  defp charges_in_window({start_at, end_at}, step_s) do
+    Stream.iterate(start_at, &NaiveDateTime.add(&1, step_s)) |> Enum.take_while(&(NaiveDateTime.compare(&1, end_at) == :lt))
   end
 
   defp minute_of_day(%{hour: hour, minute: minute}), do: hour * 60 + minute

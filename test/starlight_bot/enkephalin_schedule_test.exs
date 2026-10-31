@@ -15,6 +15,13 @@ defmodule StarlightBot.EnkephalinScheduleTest do
     assert EnkephalinSchedule.due?(~N[2026-10-18 11:30:00], recent)
   end
 
+  test "the first charge of every window ignores the interval since the last window's charge" do
+    settings = %{window_start: "05:00", window_end: "01:00", interval_minutes: 540, last_converted_at: ~N[2026-10-18 23:00:00]}
+
+    assert EnkephalinSchedule.due?(~N[2026-10-19 05:00:00], settings)
+    assert EnkephalinSchedule.next_charge(~N[2026-10-19 01:30:00], settings, nil) == ~N[2026-10-19 05:00:00]
+  end
+
   test "an overnight window stays open past midnight" do
     settings = %{@settings | window_start: "22:00", window_end: "04:00"}
 
@@ -28,6 +35,10 @@ defmodule StarlightBot.EnkephalinScheduleTest do
     assert %{spans: [%{from: 0, to: 480, gap_minutes: 720, modules: 6}, %{from: 480, to: 840, gap_minutes: 360, modules: 3} | _]} = EnkephalinSchedule.day_timeline("08:00", "22:00", 6)
     assert EnkephalinSchedule.day_timeline("", "22:00", 6) == nil
     assert EnkephalinSchedule.day_timeline("08:00", "08:00", 6) == nil
+  end
+
+  test "a window with a 9h interval charges at 5, 14 and 23 every day for 12 modules in total" do
+    assert %{spans: [%{modules: 3}, %{modules: 4}, %{modules: 4}]} = EnkephalinSchedule.day_timeline("05:00", "01:00", 9)
   end
 
   test "modules per charge follow 10 enkephalin an hour, 20 per module, capped at 160 enkephalin" do
