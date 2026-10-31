@@ -35,7 +35,7 @@ defmodule StarlightBot.Repo.Migrations.InitUser do
     """
 
     execute ~S"""
-    CREATE TABLE "scheduler_settings" ("id" INTEGER PRIMARY KEY, "enabled" INTEGER DEFAULT false NOT NULL, "runner" TEXT DEFAULT 'mirror_dungeon' NOT NULL, "window_start" TEXT DEFAULT '09:00' NOT NULL, "window_end" TEXT DEFAULT '12:00' NOT NULL, "launch_mode" TEXT DEFAULT 'steam' NOT NULL, "steam_app_id" TEXT DEFAULT '1973530' NOT NULL, "exe_path" TEXT, "launch_timeout_s" INTEGER DEFAULT 600 NOT NULL, "last_fired_on" TEXT, "updated_at" TEXT NOT NULL)
+    CREATE TABLE "scheduler_settings" ("id" INTEGER PRIMARY KEY, "enabled" INTEGER DEFAULT false NOT NULL, "runner" TEXT DEFAULT 'mirror_dungeon' NOT NULL, "window_start" TEXT DEFAULT '15:30' NOT NULL, "window_end" TEXT DEFAULT '17:00' NOT NULL, "launch_mode" TEXT DEFAULT 'steam' NOT NULL, "steam_app_id" TEXT DEFAULT '1973530' NOT NULL, "exe_path" TEXT, "launch_timeout_s" INTEGER DEFAULT 300 NOT NULL, "last_fired_on" TEXT, "updated_at" TEXT NOT NULL)
     """
 
     execute ~S"""
