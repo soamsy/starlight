@@ -450,10 +450,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       Mouse.click(cx, cy)
       Process.sleep(@ego_reclick_wait_ms)
 
-      unless await(DSL.not_hook(@ego_menu), 0) do
-        Ctx.log(ctx, :info, "playbook: EGO menu still open after the first click, clicking the card again")
-        Mouse.click(cx, cy)
-      end
+      unless await(DSL.not_hook(@ego_menu), 0), do: Mouse.click(cx, cy)
 
       unless await(DSL.not_hook(@ego_menu), @ego_close_timeout_ms) do
         close_ego_menu(ctx, "EGO choice didn't take (not enough resources?)")
