@@ -414,16 +414,26 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp target_after_ego(_tray, _column, _action, _ctx), do: :ok
 
-  defp use_ego({sx, sy}, action, ctx) do
+  defp use_ego({sx, sy} = point, action, ctx, retry? \\ true) do
     Mouse.move_to(sx, sy)
     Mouse.mouse_down()
     opened? = await(@ego_menu, @ego_menu_timeout_ms)
     Mouse.mouse_up()
 
-    if opened? do
-      pick_ego_card(action, ctx)
-    else
-      Ctx.log(ctx, :error, "playbook: EGO menu didn't open, skipping")
+    cond do
+      opened? ->
+        pick_ego_card(action, ctx)
+
+      retry? ->
+        Ctx.log(ctx, :info, "playbook: EGO menu didn't open, clicking battle_safe_click_spot and trying again")
+
+        case Runner.run_steps([DSL.click(:battle_safe_click_spot), DSL.sleep(@key_gap_ms)], ctx) do
+          {:ok, _} -> use_ego(point, action, ctx, false)
+          {:error, _} -> Ctx.log(ctx, :error, "playbook: EGO menu didn't open, skipping")
+        end
+
+      true ->
+        Ctx.log(ctx, :error, "playbook: EGO menu didn't open, skipping")
     end
   end
 
