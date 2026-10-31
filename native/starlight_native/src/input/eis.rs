@@ -48,6 +48,7 @@ pub mod linux {
         /// events to actually commit, not on the pointer's device.
         proto_device_kb: Option<ei::Device>,
         scroll: Option<ei::Scroll>,
+        absolute: Option<AbsoluteHandles>,
         serial: u32,
         serial_kb: u32,
         converter: EiEventConverter,
@@ -101,6 +102,21 @@ pub mod linux {
 
     type PointerHandles = (ei::Pointer, ei::Button, Option<ei::Scroll>, ei::Device, u32);
     type KeyboardHandles = (ei::Keyboard, ei::Device, u32);
+    type AbsoluteHandles = (ei::PointerAbsolute, ei::Device, u32, Vec<(f32, f32, f32, f32)>);
+
+    fn acquire_absolute(resumed: &DeviceResumed, connection: &Connection) -> Option<AbsoluteHandles> {
+        let absolute = resumed.device.interface::<ei::PointerAbsolute>()?;
+        let device = resumed.device.device();
+        device.start_emulating(resumed.serial, 1);
+        let _ = connection.flush();
+        let regions = resumed
+            .device
+            .regions()
+            .iter()
+            .map(|r| (r.x as f32, r.y as f32, r.width as f32, r.height as f32))
+            .collect();
+        Some((absolute, device.clone(), resumed.serial, regions))
+    }
 
     fn acquire(
         resumed: &DeviceResumed,
@@ -156,6 +172,9 @@ pub mod linux {
                             r.serial
                         );
                         let (pointer, keyboard) = acquire(&r, &self.connection);
+                        if let Some(absolute) = acquire_absolute(&r, &self.connection) {
+                            self.absolute = Some(absolute);
+                        }
                         if let Some((pointer, button, scroll, device, serial)) = pointer {
                             self.pointer = pointer;
                             self.button = button;
@@ -328,6 +347,7 @@ pub mod linux {
 
         let mut found_keyboard: Option<KeyboardHandles> = None;
         let mut found_pointer: Option<PointerHandles> = None;
+        let mut found_absolute: Option<AbsoluteHandles> = None;
         let mut pointer_ready_at: Option<Instant> = None;
 
         let client: EisClient = 'outer: loop {
@@ -386,6 +406,9 @@ pub mod linux {
                             r.device.interface::<ei::Scroll>().is_some(),
                         );
                         let (pointer, keyboard) = acquire(&r, &connection);
+                        if let Some(absolute) = acquire_absolute(&r, &connection) {
+                            found_absolute = Some(absolute);
+                        }
                         if found_keyboard.is_none() && keyboard.is_some() {
                             eprintln!("[eis] keyboard device acquired (serial={})", r.serial);
                             found_keyboard = keyboard;
@@ -429,6 +452,7 @@ pub mod linux {
                         keyboard,
                         proto_device_kb,
                         scroll,
+                        absolute: found_absolute.take(),
                         serial,
                         serial_kb,
                         converter,
@@ -476,6 +500,23 @@ pub mod linux {
         with_client(|c| {
             c.pointer.motion_relative(dx, dy);
             c.proto_device.frame(c.serial, now_us());
+            c.connection
+                .flush()
+                .map_err(|e| NativeError::EisConnectFailed(e.to_string()))
+        })
+    }
+
+    pub fn move_absolute(x: f32, y: f32) -> Result<(), NativeError> {
+        with_client(|c| {
+            let (absolute, device, serial, regions) = c.absolute.as_ref().ok_or(NativeError::EisNoDevice)?;
+            let inside = regions
+                .iter()
+                .any(|&(rx, ry, rw, rh)| x >= rx && y >= ry && x < rx + rw && y < ry + rh);
+            if !inside {
+                return Err(NativeError::EisNoDevice);
+            }
+            absolute.motion_absolute(x, y);
+            device.frame(*serial, now_us());
             c.connection
                 .flush()
                 .map_err(|e| NativeError::EisConnectFailed(e.to_string()))
@@ -559,6 +600,10 @@ pub mod linux {
     pub fn init_input(_window_title: &str, _token_path: &str) -> Result<(), NativeError> {
         Err(NativeError::EisNotAvailable)
     }
+    pub fn move_absolute(_x: f32, _y: f32) -> Result<(), NativeError> {
+        Err(NativeError::EisNotAvailable)
+    }
+
     pub fn move_relative(_dx: f32, _dy: f32) -> Result<(), NativeError> {
         Err(NativeError::EisNotAvailable)
     }

@@ -86,6 +86,7 @@ defmodule StarlightBot.Input.Mouse do
         )
     end
 
+    :persistent_term.put({__MODULE__, :absolute}, match?({:error, _}, Native.get_cursor_pos()))
     {:ok, %__MODULE__{}}
   end
 
@@ -205,9 +206,7 @@ defmodule StarlightBot.Input.Mouse do
 
       [{wx, wy, t} = waypoint | rest] ->
         {px, py, prev_t} = pm.last
-        dx = wx - px
-        dy = wy - py
-        if abs(dx) > 0.1 or abs(dy) > 0.1, do: Native.move_relative(dx, dy)
+        step({px, py}, {wx, wy})
         Process.send_after(self(), {:premove_tick, ref}, max(round(t - prev_t), 0))
         {:noreply, %{state | premove: %{pm | remaining: rest, prev: pm.last, last: waypoint}}}
     end
@@ -219,7 +218,7 @@ defmodule StarlightBot.Input.Mouse do
     if System.monotonic_time(:millisecond) < pm.hover_until and game_focused?() do
       {lx, ly, _} = pm.last
       {hx, hy} = hover_point(pm.target, pm.within)
-      Native.move_relative(hx - lx, hy - ly)
+      step({lx, ly}, {hx, hy})
       Process.send_after(self(), {:hover_tick, ref}, hover_interval_ms())
       {:noreply, %{state | premove: %{pm | last: {hx, hy, 0.0}}}}
     else
@@ -319,7 +318,33 @@ defmodule StarlightBot.Input.Mouse do
     {new_state, waypoints}
   end
 
-  defp start_pos(state) do
+  defp absolute?, do: :persistent_term.get({__MODULE__, :absolute}, false)
+
+  defp step({px, py}, {wx, wy}) do
+    with true <- absolute?(),
+         :ok <- Native.move_absolute(wx * 1.0, wy * 1.0) do
+      :ok
+    else
+      _ -> step_relative({px, py}, {wx, wy})
+    end
+  end
+
+  defp step_relative({px, py}, {wx, wy}) do
+    dx = wx - px
+    dy = wy - py
+    if abs(dx) > 0.1 or abs(dy) > 0.1, do: Native.move_relative(dx, dy)
+    :ok
+  end
+
+  defp start_pos(%{current_pos: {x, y}} = state) do
+    if absolute?() do
+      {x * 1.0, y * 1.0}
+    else
+      read_cursor(state)
+    end
+  end
+
+  defp read_cursor(state) do
     case Native.get_cursor_pos() do
       {:ok, x, y} ->
         {x * 1.0, y * 1.0}
@@ -339,11 +364,7 @@ defmodule StarlightBot.Input.Mouse do
   defp play_trajectory(start_pos, waypoints, start_t) do
     {sx, sy} = start_pos
     Enum.reduce(waypoints, {sx * 1.0, sy * 1.0, start_t}, fn {wx, wy, t_ms}, {px, py, prev_t} ->
-      dx = wx - px
-      dy = wy - py
-      if abs(dx) > 0.1 or abs(dy) > 0.1 do
-        Native.move_relative(dx, dy)
-      end
+      step({px, py}, {wx, wy})
       delay = round(t_ms - prev_t)
       if delay > 0, do: :timer.sleep(delay)
       {wx, wy, t_ms}

@@ -94,6 +94,14 @@ fn init_input<'a>(env: Env<'a>, window_title: String, token_path: String) -> Ter
 }
 
 #[rustler::nif]
+fn move_absolute<'a>(env: Env<'a>, x: f64, y: f64) -> Term<'a> {
+    match input::move_absolute(x as f32, y as f32) {
+        Ok(()) => ok().encode(env),
+        Err(e) => (error(), e.to_atom(env)).encode(env),
+    }
+}
+
+#[rustler::nif]
 fn move_relative<'a>(env: Env<'a>, dx: f64, dy: f64) -> Term<'a> {
     match input::move_relative(dx as f32, dy as f32) {
         Ok(()) => ok().encode(env),

@@ -57,6 +57,9 @@ defmodule StarlightBot.Native do
   @doc "Inject relative mouse motion (screen pixels). Returns :ok or {:error, atom}."
   def move_relative(_dx, _dy), do: nif_err()
 
+  @doc "Move the pointer to an absolute position in compositor coordinates. Returns :ok or {:error, atom}; :eis_no_device when the compositor offers no absolute pointer or the point is off every screen."
+  def move_absolute(_x, _y), do: nif_err()
+
   @doc "Inject mouse button event. code: 0x110=left, 0x111=right, 0x112=middle. Returns :ok or {:error, atom}."
   def button_event(_code, _pressed), do: nif_err()
 
