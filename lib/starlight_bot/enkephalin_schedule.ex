@@ -19,6 +19,7 @@ defmodule StarlightBot.EnkephalinSchedule do
       window_start: AppSettings.get("enkephalin_schedule_window_start"),
       window_end: AppSettings.get("enkephalin_schedule_window_end"),
       interval_minutes: String.to_integer(AppSettings.get("enkephalin_schedule_interval_minutes")),
+      close_game_after_charge: AppSettings.get("enkephalin_schedule_close_game") == "true",
       last_converted_at: parse_datetime(AppSettings.get("enkephalin_last_converted_at"))
     })
   end
@@ -32,6 +33,7 @@ defmodule StarlightBot.EnkephalinSchedule do
       AppSettings.put("enkephalin_schedule_window_start", attrs.window_start)
       AppSettings.put("enkephalin_schedule_window_end", attrs.window_end)
       AppSettings.put("enkephalin_schedule_interval_minutes", Integer.to_string(attrs.interval_minutes))
+      AppSettings.put("enkephalin_schedule_close_game", to_string(attrs.close_game_after_charge))
       settings = get_settings()
       broadcast({:enkephalin_schedule, settings})
       {:ok, settings}

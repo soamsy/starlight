@@ -11,7 +11,7 @@ defmodule StarlightBotWeb.Live.PageHook do
 
   @scheduler_clock_ms 30_000
   @settings_tabs ["scheduler", "data"]
-  @enkephalin_form_keys ~w(enabled window_start window_end interval_hours)
+  @enkephalin_form_keys ~w(enabled window_start window_end interval_hours close_game_after_charge)
 
   @pages %{
     StarlightBotWeb.Live.HookEditorLive => :hooks,
@@ -187,7 +187,8 @@ defmodule StarlightBotWeb.Live.PageHook do
       enabled: form["enabled"] == "true",
       window_start: String.slice(form["window_start"], 0, 5),
       window_end: String.slice(form["window_end"], 0, 5),
-      interval_minutes: parse_int(form["interval_hours"], &(&1 * 60))
+      interval_minutes: parse_int(form["interval_hours"], &(&1 * 60)),
+      close_game_after_charge: form["close_game_after_charge"] == "true"
     }
 
     socket = assign(socket, :enkephalin_form, form)
@@ -203,7 +204,8 @@ defmodule StarlightBotWeb.Live.PageHook do
       "enabled" => to_string(settings.enabled),
       "window_start" => settings.window_start,
       "window_end" => settings.window_end,
-      "interval_hours" => to_string(div(settings.interval_minutes, 60))
+      "interval_hours" => to_string(div(settings.interval_minutes, 60)),
+      "close_game_after_charge" => to_string(settings.close_game_after_charge)
     }
   end
 

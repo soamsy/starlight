@@ -460,6 +460,11 @@
                 <span class="text-xs text-base-content/60">{length(timeline.charges)} {if length(timeline.charges) == 1, do: "charge", else: "charges"} a day</span>
               </div>
             <% end %>
+            <label class="flex cursor-pointer items-center gap-2 text-sm">
+              <input type="hidden" name="close_game_after_charge" value="false" />
+              <input type="checkbox" name="close_game_after_charge" value="true" checked={form["close_game_after_charge"] == "true"} class="toggle toggle-sm toggle-primary" />
+              <span>Close Limbus after opening it for a charge</span>
+            </label>
             <span :if={@enkephalin_schedule_error} class="text-xs text-error">Not saved: {@enkephalin_schedule_error}</span>
           </form>
           <% end %>

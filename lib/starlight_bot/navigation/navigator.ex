@@ -19,6 +19,7 @@ defmodule StarlightBot.Navigation.Navigator do
     run_memory_agent: nil,
     run_kind: nil,
     origin: :manual,
+    last_run: nil,
     pause_flag: nil,
     run_clock: nil,
     run_splits: [],
@@ -520,6 +521,7 @@ defmodule StarlightBot.Navigation.Navigator do
 
   @impl true
   def handle_info({:nav_result, :run_script, result}, state) do
+    finished = %{kind: state.run_kind, ok?: match?({:ok, _}, result)}
     state = persist_last_run(state, if(match?({:ok, _}, result), do: "success", else: "failure"))
 
     state =
@@ -531,6 +533,7 @@ defmodule StarlightBot.Navigation.Navigator do
       |> Map.put(:phase, :idle)
       |> Map.put(:task_pid, nil)
       |> Map.put(:run_kind, nil)
+      |> Map.put(:last_run, finished)
       |> Map.put(:pause_flag, nil)
       |> update_clock(&RunClock.stop/2)
 
@@ -591,6 +594,7 @@ defmodule StarlightBot.Navigation.Navigator do
       |> Map.put(:pause_flag, nil)
       |> Map.put(:next_run, nil)
       |> Map.put(:origin, :manual)
+      |> Map.put(:last_run, nil)
       |> update_clock(&RunClock.stop/2)
       |> add_log(:error, "Run crashed: #{inspect(reason)}")
 
@@ -660,12 +664,12 @@ defmodule StarlightBot.Navigation.Navigator do
     {:noreply, state}
   end
 
-  defp cancel_running(%{task_pid: nil} = state), do: update_clock(%{state | phase: :idle, run_kind: nil, origin: :manual, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
+  defp cancel_running(%{task_pid: nil} = state), do: update_clock(%{state | phase: :idle, run_kind: nil, origin: :manual, last_run: nil, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
 
   defp cancel_running(%{task_pid: pid} = state) do
     DynamicSupervisor.terminate_child(StarlightBot.MachineSupervisor, pid)
     state = state |> release_run() |> persist_last_run("interrupted")
-    update_clock(%{state | task_pid: nil, phase: :idle, run_kind: nil, origin: :manual, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
+    update_clock(%{state | task_pid: nil, phase: :idle, run_kind: nil, origin: :manual, last_run: nil, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
   end
 
   defp track_split(%{run_kind: :mirror_dungeon, run_clock: %RunClock{} = clock} = state, %{run_progress: %{current: run}, floor: floor} = snapshot) do
@@ -744,6 +748,7 @@ defmodule StarlightBot.Navigation.Navigator do
       log: state.log,
       run_memory: state.run_memory,
       run_kind: state.run_kind,
+      last_run: state.last_run,
       next_run: state.next_run,
       pause_requested: pause_requested?(state),
       run_clock: state.run_clock && %{elapsed_ms: RunClock.elapsed_ms(state.run_clock, now_ms()), running?: RunClock.running?(state.run_clock)},

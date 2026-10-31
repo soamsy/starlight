@@ -1,6 +1,6 @@
 defmodule StarlightBot.EnkephalinSchedule.Server do
   use GenServer
-  alias StarlightBot.{AppSettings, EnkephalinSchedule, GameWindow, LogStore, Scheduler}
+  alias StarlightBot.{AppSettings, DailyProgress, EnkephalinSchedule, GameWindow, LogStore, Scheduler}
   alias StarlightBot.Automation.Engine
   alias StarlightBot.Navigation.Navigator
 
@@ -9,7 +9,7 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
   @ready_poll_ms 5_000
   @charge_start_confirm_ms 5_000
 
-  defstruct next_attempt_at: nil, task: nil
+  defstruct next_attempt_at: nil, task: nil, close_after: false
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -22,20 +22,20 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
   @impl true
   def handle_info(:tick, state) do
     Process.send_after(self(), :tick, @tick_ms)
-    {:noreply, maybe_charge(state)}
+    {:noreply, state |> maybe_charge() |> maybe_close()}
   end
 
   def handle_info({ref, result}, %{task: %Task{ref: ref}} = state) do
     Process.demonitor(ref, [:flush])
     EnkephalinSchedule.set_charging(false)
     log_result(result)
-    {:noreply, %{state | task: nil}}
+    {:noreply, %{state | task: nil, close_after: result == {:started, true}}}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{task: %Task{ref: ref}} = state) do
     EnkephalinSchedule.set_charging(false)
     LogStore.append(:error, "enkephalin scheduler: crashed: #{inspect(reason)}")
-    {:noreply, %{state | task: nil}}
+    {:noreply, %{state | task: nil, close_after: false}}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -72,18 +72,18 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
   defp window_ready?(settings), do: match?({:ok, _}, GameWindow.rect()) or settings.launch_mode != "none"
 
   defp charge(settings, end_at) do
-    with {:ok, rect} <- ensure_window(settings, end_at),
+    with {:ok, rect, launched?} <- ensure_window(settings, end_at),
          :ok <- ensure_aspect(rect, settings.steam_app_id),
          :ok <- await_game_ready(end_at),
          :ok <- start_charge() do
-      :started
+      {:started, launched?}
     end
   end
 
   defp ensure_window(settings, end_at) do
     case GameWindow.rect() do
       {:ok, rect} ->
-        {:ok, rect}
+        {:ok, rect, false}
 
       {:error, _} ->
         LogStore.append(:info, "enkephalin scheduler: Limbus isn't open, launching it (#{launch_label(settings)})")
@@ -91,7 +91,7 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
 
         with :ok <- GameWindow.launch(settings),
              {:ok, rect} <- GameWindow.await_window(timeout_ms) do
-          {:ok, rect}
+          {:ok, rect, true}
         else
           {:error, reason} -> {:error, "launching Limbus failed: #{inspect(reason)}"}
         end
@@ -134,8 +134,35 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
     end
   end
 
-  defp log_result(:started), do: :ok
+  defp log_result({:started, _launched?}), do: :ok
   defp log_result({:error, text}), do: LogStore.append(:error, "enkephalin scheduler: #{text}")
+
+  defp maybe_close(%{close_after: true, task: nil} = state) do
+    if runners_idle?() do
+      state = %{state | close_after: false}
+      if close_wanted?(state), do: close_game()
+      state
+    else
+      state
+    end
+  end
+
+  defp maybe_close(state), do: state
+
+  defp close_wanted?(_state) do
+    settings = Scheduler.get_settings()
+
+    EnkephalinSchedule.get_settings().close_game_after_charge and
+      match?(%{last_run: %{kind: :enkephalin, ok?: true}}, Navigator.status()) and
+      not (settings.enabled and DailyProgress.pending?(DailyProgress.remaining(settings)))
+  end
+
+  defp close_game do
+    case GameWindow.close() do
+      :ok -> LogStore.append(:ok, "enkephalin scheduler: charged without interruption, closed Limbus")
+      {:error, reason} -> LogStore.append(:error, "enkephalin scheduler: charged, but closing Limbus failed: #{inspect(reason)}")
+    end
+  end
 
   defp backing_off?(%{next_attempt_at: nil}), do: false
   defp backing_off?(%{next_attempt_at: at}), do: System.monotonic_time(:millisecond) < at
