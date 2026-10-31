@@ -258,6 +258,7 @@ defmodule StarlightBot.LinuxCheck do
       case last_event("press") do
         [_, "LeftButton", lx, ly] ->
           log.(:ok, "click landed at window #{lx},#{ly}, expected about #{div(w, 2)},#{div(h, 2)}")
+          log_origin(log)
           verify_flip(log)
 
         _ ->
@@ -447,6 +448,23 @@ defmodule StarlightBot.LinuxCheck do
     offset = (div(h, 2) * w + div(w, 2)) * 3
     <<b, g, r>> = binary_part(bin, offset, 3)
     {b, g, r}
+  end
+
+  defp log_origin(log) do
+    case File.read(target_log()) do
+      {:ok, text} ->
+        text
+        |> String.split("\n", trim: true)
+        |> Enum.filter(&String.starts_with?(&1, "origin "))
+        |> List.last()
+        |> case do
+          nil -> :ok
+          line -> log.(:info, "the window saw the click from " <> String.replace_prefix(line, "origin ", ""))
+        end
+
+      _ ->
+        :ok
+    end
   end
 
   defp last_event(kind) do

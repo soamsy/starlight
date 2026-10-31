@@ -6,6 +6,14 @@ from PySide6.QtWidgets import QApplication, QWidget
 LOG = sys.argv[1]
 
 
+def origin(e):
+    device = e.pointingDevice() if hasattr(e, "pointingDevice") else e.device()
+    name = device.name() if device else "none"
+    kind = device.type().name if device and hasattr(device, "type") else "none"
+    source = e.source().name if hasattr(e, "source") else "none"
+    log(f"origin device={name!r} kind={kind} source={source}")
+
+
 def log(line):
     with open(LOG, "a") as f:
         f.write(line + "\n")
@@ -25,6 +33,7 @@ class Target(QWidget):
     def mousePressEvent(self, e):
         self.on = not self.on
         log(f"press {e.button().name} {int(e.position().x())} {int(e.position().y())}")
+        origin(e)
         self.update()
 
     def mouseMoveEvent(self, e):
