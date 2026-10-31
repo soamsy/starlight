@@ -15,6 +15,11 @@ defmodule StarlightBot.Scheduler.OverviewTest do
     :ok = StarlightBot.TestDB.checkout()
   end
 
+  defp hold_until(local) do
+    base = DateTime.from_naive!(local, "Etc/UTC")
+    DateTime.add(base, -NaiveDateTime.diff(Scheduler.to_local(base), local))
+  end
+
   describe "charger" do
     test "waits for its window and says so" do
       assert EnkephalinSchedule.next_charge(@now, @charger, nil) == ~N[2026-10-18 10:00:00]
@@ -23,14 +28,22 @@ defmodule StarlightBot.Scheduler.OverviewTest do
       assert text =~ "Waiting on the charging window opening at 10:00 AM"
     end
 
-    test "waits out the interval and a hold, and reports both" do
+    test "reports the interval when it outlasts a hold" do
       charger = %{@charger | last_converted_at: ~N[2026-10-18 10:30:00]}
-      assert EnkephalinSchedule.next_charge(@now, charger, nil) == ~N[2026-10-18 13:30:00]
+      blocked = {:canceled, hold_until(~N[2026-10-18 12:00:00])}
+      assert EnkephalinSchedule.next_charge(@now, charger, blocked) == ~N[2026-10-18 13:30:00]
+      text = EnkephalinSchedule.outlook(@now, charger, blocked, false)
+      assert text =~ "interval since the last charge"
+      refute text =~ "canceled"
+    end
 
-      blocked = {:canceled, DateTime.add(@later, 72_000)}
-      at = EnkephalinSchedule.next_charge(@now, charger, blocked)
-      assert NaiveDateTime.compare(at, ~N[2026-10-18 13:30:00]) == :gt
-      assert EnkephalinSchedule.outlook(@now, charger, blocked, false) =~ "a run was canceled recently"
+    test "reports the hold when it outlasts the interval" do
+      charger = %{@charger | last_converted_at: ~N[2026-10-18 10:30:00]}
+      blocked = {:canceled, hold_until(~N[2026-10-18 15:00:00])}
+      assert EnkephalinSchedule.next_charge(@now, charger, blocked) == ~N[2026-10-18 15:00:00]
+      text = EnkephalinSchedule.outlook(@now, charger, blocked, false)
+      assert text =~ "a run was canceled recently"
+      refute text =~ "interval since the last charge"
     end
 
     test "says nothing when off, and defers to a running job" do

@@ -77,17 +77,20 @@ defmodule StarlightBot.EnkephalinSchedule do
       "Charging enkephalin now"
     else
       "Will charge enkephalin at #{Scheduler.clock12(at)} #{Scheduler.day_word(now, at)}, in #{Scheduler.exact_duration_label(NaiveDateTime.diff(at, now, :second))}" <>
-        waiting_on(now, settings, blocked, at)
+        waiting_on(settings, blocked, at)
     end
   end
 
-  defp waiting_on(now, settings, blocked, at) do
+  defp waiting_on(settings, blocked, at) do
+    {start_at, _end_at} = current_window(at, settings)
+    gate = interval_gate(start_at, settings)
+
     reasons =
       [
-        blocked && Scheduler.blocked_reason(blocked),
-        interval_pending?(now, at, settings) &&
+        blocked && NaiveDateTime.compare(blocked_until(blocked), at) == :eq && Scheduler.blocked_reason(blocked),
+        NaiveDateTime.compare(gate, start_at) == :gt && NaiveDateTime.compare(gate, at) == :eq &&
           "the #{Scheduler.exact_duration_label(settings.interval_minutes * 60)} interval since the last charge",
-        not in_window?(now, settings) && "the charging window opening at #{Scheduler.clock12(at)}"
+        NaiveDateTime.compare(start_at, at) == :eq && "the charging window opening at #{Scheduler.clock12(at)}"
       ]
       |> Enum.filter(& &1)
 
@@ -96,14 +99,6 @@ defmodule StarlightBot.EnkephalinSchedule do
 
   defp interval_gate(window_start, %{last_converted_at: last, interval_minutes: minutes}) do
     if last && NaiveDateTime.compare(last, window_start) != :lt, do: NaiveDateTime.add(last, minutes * 60), else: window_start
-  end
-
-  defp interval_pending?(now, at, settings) do
-    case {settings.last_converted_at, current_window(at, settings)} do
-      {nil, _} -> false
-      {_, nil} -> false
-      {_, {start_at, _end_at}} -> NaiveDateTime.compare(interval_gate(start_at, settings), now) == :gt and NaiveDateTime.compare(interval_gate(start_at, settings), start_at) == :gt
-    end
   end
 
   defp current_window(%NaiveDateTime{} = now, settings) do
