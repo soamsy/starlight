@@ -300,7 +300,7 @@
         <button role="tab" phx-click="settings_tab" phx-value-tab="data" class={["tab", @settings_tab == "data" && "tab-active"]}>Data</button>
       </div>
 
-      <div class="h-[30rem] overflow-y-auto">
+      <div class="h-[30rem] overflow-y-auto overflow-x-hidden">
       <%= if @settings_tab == "scheduler" do %>
         {live_render(@socket, StarlightBotWeb.Live.SchedulerLive, id: "scheduler-settings")}
       <% end %>
@@ -391,7 +391,7 @@
                   </div>
                 <% end %>
                 <%= for span <- timeline.spans do %>
-                  <div class="absolute inset-y-1 w-1 -ml-0.5 rounded-full bg-success tooltip" style={"left: #{span.to / 14.4}%"} data-tip={"#{timeline_clock(span.to)}: #{span.modules} modules, #{span.leftover} enkephalin left over after #{div(span.gap_minutes, 60)}h #{rem(span.gap_minutes, 60)}m#{if span.capped?, do: " (capped at 160)"}"}></div>
+                  <div class={["absolute inset-y-1 w-1 -ml-0.5 rounded-full bg-success tooltip", span.to > 720 && "tooltip-left"]} style={"left: #{span.to / 14.4}%"} data-tip={"#{timeline_clock(span.to)}: #{span.modules} modules, #{span.leftover} enkephalin left over after #{div(span.gap_minutes, 60)}h #{rem(span.gap_minutes, 60)}m#{if span.capped?, do: " (capped at 160)"}"}></div>
                 <% end %>
               </div>
               <div class="relative h-3 text-[10px] text-base-content/50 font-mono">
