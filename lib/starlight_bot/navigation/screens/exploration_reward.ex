@@ -20,9 +20,19 @@ defmodule StarlightBot.Navigation.Screens.ExplorationReward do
     end
 
     transition to: :give_up_rewards do
-      [click(:exploration_reward_give_up)] ++
-        confirm_either(:exploration_reward_give_up_confirm, :exploration_reward_give_up_confirm_2, @confirm_timeout) ++
-        [wait_until(not_hook(:exploration_reward), timeout: 5_000)]
+      [
+        click(:exploration_reward_give_up),
+        branch(
+          [
+            {any_of([:exploration_reward_give_up_confirm, :exploration_reward_give_up_confirm_2]),
+             confirm_either(:exploration_reward_give_up_confirm, :exploration_reward_give_up_confirm_2, @confirm_timeout)},
+            {not_hook(:exploration_reward), []},
+            default: []
+          ],
+          wait: @confirm_timeout
+        ),
+        wait_until(not_hook(:exploration_reward), timeout: 5_000)
+      ]
     end
 
     transition to: :exploration_reward_to_window_done do
