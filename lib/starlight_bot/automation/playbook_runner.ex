@@ -382,9 +382,10 @@ defmodule StarlightBot.Automation.PlaybookRunner do
           true
 
         kind == "focused" and attempt < @focused_key_tries ->
-          Ctx.log(ctx, :info, "playbook: #{inspect(condition)} not reached, clicking battle_safe_click_spot and retrying")
+          spot = if attempt + 1 == @focused_key_tries, do: :safe_corner, else: :battle_safe_click_spot
+          Ctx.log(ctx, :info, "playbook: #{inspect(condition)} not reached, clicking #{spot} and retrying")
 
-          case Runner.run_steps([DSL.click(:battle_safe_click_spot), DSL.sleep(@key_gap_ms)], ctx) do
+          case Runner.run_steps([DSL.click(spot), DSL.sleep(@key_gap_ms)], ctx) do
             {:ok, _} -> press_until(keys, condition, timeout_ms, kind, ctx, attempt + 1)
             {:error, _} -> false
           end
