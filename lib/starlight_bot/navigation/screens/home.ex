@@ -20,7 +20,7 @@ defmodule StarlightBot.Navigation.Screens.Home do
     transition to: :home_theater, do: [reclick_until_arrived(:home_theater_unselected)]
     transition to: :home_extract, do: [reclick_until_arrived(:home_extract_unselected)]
     transition to: :home_dispense, do: [reclick_until_arrived(:home_dispense_unselected)]
-    transition to: :lux, do: [reclick_until_arrived(:home_drive_lux)]
+    transition to: :lux, do: [reclick_until_arrived(:home_drive_lux, every: 1500, timeout: 5000)]
     transition to: :md_door, do: [reclick_until_arrived(:home_drive_mirror_dungeon)]
   end
 
