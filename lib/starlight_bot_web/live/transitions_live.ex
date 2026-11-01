@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.TransitionsLive do
   use StarlightBotWeb, :live_view
   alias StarlightBot.{Hooks, Input.Keyboard}
-  alias StarlightBot.Vision.{Capture, Frame, HookRegistry, Matcher}
+  alias StarlightBot.Vision.{Capture, Frame, HookRegistry, ImageB64, Matcher}
   alias StarlightBot.Navigation.{Catalog, Navigator}
   alias StarlightBot.Automation.Scripts
 
@@ -22,7 +22,6 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
     end
 
     nav = Navigator.status()
-    base = "/tmp/_starlight_tl_hook_#{System.unique_integer([:positive])}"
 
     {:ok,
      socket
@@ -40,8 +39,6 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
      |> assign(:hook_filter, "")
      |> assign(:hook_test_results, %{})
      |> assign(:focused_hook, nil)
-     |> assign(:tmp_hook_template, base <> ".template.jpg")
-     |> assign(:tmp_hook_region, base <> ".region.jpg")
      |> assign(:scripts, Scripts.all())}
   end
 
@@ -103,7 +100,7 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
     case Capture.grab_frame() do
       {:ok, frame} ->
         result =
-          match_hook(frame, name, socket.assigns.tmp_hook_template, socket.assigns.tmp_hook_region)
+          match_hook(frame, name)
 
         {:noreply,
          socket
@@ -187,15 +184,9 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
     {:noreply, socket}
   end
 
-  @impl true
-  def terminate(_reason, socket) do
-    for key <- [:tmp_hook_template, :tmp_hook_region], do: File.rm(socket.assigns[key])
-    :ok
-  end
-
   # --- Hook testing ---
 
-  defp match_hook(frame, hook_name, tmp_template, tmp_region) do
+  defp match_hook(frame, hook_name) do
     hook_atom = String.to_existing_atom(hook_name)
 
     case Matcher.find_with_score(frame, hook_atom) do
@@ -203,8 +194,8 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
         %{
           matched: match != :not_found,
           score: Float.round(score, 3),
-          template_b64: encode_hook_template(hook_atom, tmp_template),
-          actual_b64: encode_searched_region(frame.mat, hook_atom, tmp_region)
+          template_b64: encode_hook_template(hook_atom),
+          actual_b64: encode_searched_region(frame.mat, hook_atom)
         }
 
       _ ->
@@ -214,18 +205,10 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
     _ -> %{matched: false, score: 0.0, template_b64: nil, actual_b64: nil}
   end
 
-  defp encode_hook_template(hook_atom, tmp) do
+  defp encode_hook_template(hook_atom) do
     case HookRegistry.find(hook_atom) do
-      {:ok, hook} ->
-        Evision.imwrite(tmp, hook.mat)
-
-        case File.read(tmp) do
-          {:ok, jpeg} -> Base.encode64(jpeg)
-          _ -> nil
-        end
-
-      _ ->
-        nil
+      {:ok, hook} -> ImageB64.jpeg(hook.mat)
+      _ -> nil
     end
   rescue
     _ -> nil
@@ -234,7 +217,7 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
   # "Searched region" — scan_region when set (the wider area actually
   # scanned), else the plain region, matching Matcher's own search_region
   # resolution — so the popup shows what the matcher actually looked at.
-  defp encode_searched_region(mat, hook_atom, tmp) do
+  defp encode_searched_region(mat, hook_atom) do
     case HookRegistry.find(hook_atom) do
       {:ok, hook} ->
         region = hook.scan_region || hook.region
@@ -245,12 +228,7 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
             {rx, ry, rw, rh} -> Frame.crop(mat, {rx, ry, rw, rh})
           end
 
-        Evision.imwrite(tmp, region_mat)
-
-        case File.read(tmp) do
-          {:ok, jpeg} -> Base.encode64(jpeg)
-          _ -> nil
-        end
+        ImageB64.jpeg(region_mat)
 
       _ ->
         nil
@@ -262,16 +240,9 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
   defp update_frame(socket) do
     case Capture.grab_frame() do
       {:ok, %Frame{mat: mat}} ->
-        thumb = Evision.resize(mat, {@thumb_w, @thumb_h})
-        tmp = "/tmp/_starlight_tl_thumb.jpg"
-        Evision.imwrite(tmp, thumb)
-
-        case File.read(tmp) do
-          {:ok, jpeg} ->
-            assign(socket, :frame_b64, Base.encode64(jpeg))
-
-          _ ->
-            socket
+        case ImageB64.thumb(mat, @thumb_w, @thumb_h) do
+          nil -> socket
+          b64 -> assign(socket, :frame_b64, b64)
         end
 
       _ ->

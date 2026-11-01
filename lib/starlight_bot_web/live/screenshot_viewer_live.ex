@@ -1,6 +1,6 @@
 defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.{Hooks, Vision.Capture, Vision.Frame, Vision.HookRegistry, Vision.Matcher}
+  alias StarlightBot.{Hooks, Vision.Capture, Vision.Frame, Vision.HookRegistry, Vision.ImageB64, Vision.Matcher}
 
   @max_frames 40
   @tick_ms 500
@@ -11,7 +11,7 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    base = "/tmp/_starlight_sv_#{System.unique_integer([:positive])}"
+    session_id = System.unique_integer([:positive])
 
     {:ok,
      socket
@@ -21,11 +21,8 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
      |> assign(:frame_counter, 0)
      |> assign(:status, :waiting)
      |> assign(:current_frame, nil)
-     |> assign(:current_full_b64, nil)
-     |> assign(:base, base)
-     |> assign(:tmp_thumb, base <> ".thumb.jpg")
-     |> assign(:tmp_region, base <> ".region.jpg")
-     |> assign(:tmp_template, base <> ".template.jpg")
+     |> assign(:session_id, session_id)
+     |> assign(:current_full_src, nil)
      |> assign(:focused_hook, nil)
      |> assign(:focused_hook_template_b64, nil)
      |> assign(:all_hooks, Hooks.list_hooks())
@@ -70,7 +67,7 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
   @impl true
   def handle_event("select_hook_cell", %{"id" => id_str, "hook" => hook_name}, socket) do
     id = String.to_integer(id_str)
-    template_b64 = encode_template(hook_name, socket.assigns.tmp_template)
+    template_b64 = encode_template(hook_name)
 
     {:noreply,
      socket
@@ -118,18 +115,15 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
   end
 
   @impl true
-  def terminate(_reason, socket) do
+  def terminate(_reason, _socket) do
     for {_id, path} <- Process.get(:sv_full_frames, %{}), do: File.rm(path)
-    for key <- [:tmp_thumb, :tmp_region, :tmp_template] do
-      File.rm(socket.assigns[key])
-    end
     :ok
   end
 
   defp do_tick(socket) do
     counter = socket.assigns.frame_counter + 1
 
-    case capture_frame(socket.assigns.tmp_thumb, socket.assigns.base, counter) do
+    case capture_frame(socket.assigns.session_id, counter) do
       {:ok, thumb_b64, full_path, mat} ->
         frame = %{id: counter, thumb_b64: thumb_b64}
         frames = [frame | socket.assigns.frames] |> Enum.take(@max_frames)
@@ -137,7 +131,7 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
         store_full_path(counter, full_path, frames)
 
         hook_results =
-          run_hooks(socket.assigns.selected_hooks, mat, counter, socket.assigns.hook_results, socket.assigns.tmp_region)
+          run_hooks(socket.assigns.selected_hooks, mat, counter, socket.assigns.hook_results)
 
         socket
         |> assign(:frames, frames)
@@ -153,17 +147,18 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
 
   # Write the full-res 1920×1080 JPEG to a per-frame file on disk.
   # The process dict holds only the path (~50 bytes); no bitmaps in memory.
-  defp capture_frame(tmp_thumb, base, counter) do
+  def full_path(session_id, frame_id), do: "/tmp/_starlight_sv_#{session_id}_full_#{frame_id}.png"
+
+  defp capture_frame(session_id, counter) do
     case Capture.grab_frame() do
       {:ok, %Frame{mat: mat}} ->
-        full_path = "#{base}_full_#{counter}.png"
+        full_path = full_path(session_id, counter)
 
         Evision.imwrite(full_path, mat)
-        Evision.imwrite(tmp_thumb, Evision.resize(mat, {@thumb_w, @thumb_h}))
 
-        case File.read(tmp_thumb) do
-          {:ok, thumb_jpeg} -> {:ok, Base.encode64(thumb_jpeg), full_path, mat}
-          _ -> :error
+        case ImageB64.thumb(mat, @thumb_w, @thumb_h) do
+          nil -> :error
+          thumb_b64 -> {:ok, thumb_b64, full_path, mat}
         end
 
       _ ->
@@ -200,25 +195,16 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
         {frames, id} -> Enum.find(frames, hd(frames), &(&1.id == id))
       end
 
-    full_b64 =
-      case current && get_full_path(current.id) do
-        nil -> nil
-        path -> case File.read(path) do
-          {:ok, jpeg} -> Base.encode64(jpeg)
-          _ -> nil
-        end
-      end
-
     socket
     |> assign(:current_frame, current)
-    |> assign(:current_full_b64, full_b64)
+    |> assign(:current_full_src, current && get_full_path(current.id) && "/screenshots/frame/#{socket.assigns.session_id}/#{current.id}.png")
   end
 
-  defp run_hooks(selected_hooks, _mat, _frame_id, hook_results, _tmp_region)
+  defp run_hooks(selected_hooks, _mat, _frame_id, hook_results)
        when map_size(selected_hooks) == 0,
        do: hook_results
 
-  defp run_hooks(selected_hooks, mat, frame_id, hook_results, tmp_region) do
+  defp run_hooks(selected_hooks, mat, frame_id, hook_results) do
     frame_struct = %Frame{
       binary: nil,
       mat: mat,
@@ -228,18 +214,18 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
     }
 
     Enum.reduce(selected_hooks, hook_results, fn hook_name, acc ->
-      entry = match_one_hook(frame_struct, hook_name, frame_id, tmp_region)
+      entry = match_one_hook(frame_struct, hook_name, frame_id)
       existing = Map.get(acc, hook_name, [])
       Map.put(acc, hook_name, [entry | existing] |> Enum.take(@max_frames))
     end)
   end
 
-  defp match_one_hook(frame, hook_name, frame_id, tmp_region) do
+  defp match_one_hook(frame, hook_name, frame_id) do
     hook_atom = String.to_existing_atom(hook_name)
 
     case Matcher.find_with_score(frame, hook_atom) do
       {:ok, score, match} ->
-        region_b64 = encode_hook_region(frame.mat, hook_atom, tmp_region)
+        region_b64 = encode_hook_region(frame.mat, hook_atom)
         %{id: frame_id, score: Float.round(score, 3), matched: match != :not_found, region_b64: region_b64}
 
       _ ->
@@ -249,26 +235,18 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
     _ -> %{id: frame_id, score: 0.0, matched: false, region_b64: nil}
   end
 
-  defp encode_template(hook_name, tmp) do
+  defp encode_template(hook_name) do
     hook_atom = String.to_existing_atom(hook_name)
 
     case HookRegistry.find(hook_atom) do
-      {:ok, hook} ->
-        Evision.imwrite(tmp, hook.mat)
-
-        case File.read(tmp) do
-          {:ok, jpeg} -> Base.encode64(jpeg)
-          _ -> nil
-        end
-
-      _ ->
-        nil
+      {:ok, hook} -> ImageB64.jpeg(hook.mat)
+      _ -> nil
     end
   rescue
     _ -> nil
   end
 
-  defp encode_hook_region(mat, hook_atom, tmp) do
+  defp encode_hook_region(mat, hook_atom) do
     case HookRegistry.find(hook_atom) do
       {:ok, hook} ->
         region_mat =
@@ -277,12 +255,7 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
             {rx, ry, rw, rh} -> Frame.crop(mat, {rx, ry, rw, rh})
           end
 
-        Evision.imwrite(tmp, region_mat)
-
-        case File.read(tmp) do
-          {:ok, jpeg} -> Base.encode64(jpeg)
-          _ -> nil
-        end
+        ImageB64.jpeg(region_mat)
 
       _ ->
         nil

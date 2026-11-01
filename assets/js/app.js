@@ -467,6 +467,86 @@ const PreserveScroll = {
   }
 }
 
+const STREAM_TARGET_MS = 500
+const STREAM_MAX_BACKOFF_MS = 5000
+
+const GameStream = {
+  mounted() {
+    this.img = this.el.querySelector("[data-stream-img]")
+    this.onBtn = this.el.querySelector("[data-stream-on]")
+    this.offBtn = this.el.querySelector("[data-stream-off]")
+    this.status = this.el.querySelector("[data-stream-status]")
+    this.active = false
+    this.failures = 0
+    this.onVisibility = () => {
+      if (this.active && !document.hidden && !this.inflight) this.schedule(0)
+    }
+    this.onBtn.addEventListener("click", () => this.start())
+    this.offBtn.addEventListener("click", () => this.stop())
+    document.addEventListener("visibilitychange", this.onVisibility)
+  },
+  destroyed() {
+    this.stop()
+    document.removeEventListener("visibilitychange", this.onVisibility)
+  },
+  start() {
+    this.active = true
+    this.failures = 0
+    this.onBtn.classList.add("hidden")
+    this.offBtn.classList.remove("hidden")
+    this.schedule(0)
+  },
+  stop() {
+    this.active = false
+    clearTimeout(this.timer)
+    if (this.controller) this.controller.abort()
+    this.releaseImage()
+    this.img.classList.add("hidden")
+    this.status.classList.add("hidden")
+    this.offBtn.classList.add("hidden")
+    this.onBtn.classList.remove("hidden")
+  },
+  releaseImage() {
+    if (this.blobUrl) URL.revokeObjectURL(this.blobUrl)
+    this.blobUrl = null
+    this.img.removeAttribute("src")
+  },
+  schedule(delay) {
+    clearTimeout(this.timer)
+    this.timer = setTimeout(() => this.fetchFrame(), delay)
+  },
+  async fetchFrame() {
+    if (!this.active || document.hidden) return
+    this.inflight = true
+    this.controller = new AbortController()
+    const started = performance.now()
+    try {
+      const res = await fetch(`${this.el.dataset.src}?t=${Date.now()}`, { cache: "no-store", signal: this.controller.signal })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const url = URL.createObjectURL(await res.blob())
+      if (!this.active) { URL.revokeObjectURL(url); return }
+      if (this.blobUrl) URL.revokeObjectURL(this.blobUrl)
+      this.blobUrl = url
+      this.img.src = url
+      this.img.classList.remove("hidden")
+      this.status.classList.add("hidden")
+      this.failures = 0
+    } catch (err) {
+      if (err.name === "AbortError") return
+      this.failures += 1
+      this.status.classList.remove("hidden")
+    } finally {
+      this.inflight = false
+    }
+    if (!this.active) return
+    const took = performance.now() - started
+    const delay = this.failures > 0
+      ? Math.min(STREAM_MAX_BACKOFF_MS, 1000 * 2 ** (this.failures - 1))
+      : Math.max(STREAM_TARGET_MS - took, took)
+    this.schedule(delay)
+  }
+}
+
 const SCROLL_PIN_THRESHOLD_PX = 60
 
 const ScrollToBottom = {
@@ -1326,7 +1406,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
 })
 
 liveSocket.connect()

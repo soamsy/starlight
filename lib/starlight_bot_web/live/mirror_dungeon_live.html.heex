@@ -235,6 +235,7 @@
         <button type="button" phx-click="toggle_screen_times" class="btn btn-ghost btn-xs">By screen</button>
       </div>
       <.run_times runs={run_times(@run_splits, @run_clock, @now_ms, @run_memory)} live_last?={@run_clock != nil and @run_clock.running?} />
+      <StarlightBotWeb.Components.GameStream.game_stream id="md-game-stream" class="mt-auto pt-2" />
     </div>
 
     <.screen_times

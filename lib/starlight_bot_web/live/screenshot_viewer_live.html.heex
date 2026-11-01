@@ -41,9 +41,9 @@
 
       <%!-- Viewer --%>
       <div class="flex-1 min-h-0 flex items-center justify-center bg-base-200 rounded-xl overflow-hidden">
-        <%= if @current_full_b64 do %>
+        <%= if @current_full_src do %>
           <img
-            src={"data:image/jpeg;base64,#{@current_full_b64}"}
+            src={@current_full_src}
             class="max-w-full max-h-full object-contain"
             alt="Screenshot" />
         <% else %>

@@ -239,6 +239,7 @@
         runs={MirrorDungeonLive.run_times(@run_splits, @run_clock, @now_ms, %{})}
         live_last?={@run_clock != nil and @run_clock.running?}
       />
+      <StarlightBotWeb.Components.GameStream.game_stream id="lux-game-stream" class="mt-auto pt-2" />
     </div>
 
   </div>

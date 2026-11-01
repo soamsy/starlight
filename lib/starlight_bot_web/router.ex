@@ -35,6 +35,8 @@ defmodule StarlightBotWeb.Router do
 
   scope "/", StarlightBotWeb do
     get "/hooks/:name/thumb.png", HookThumbController, :show
+    get "/stream/frame.jpg", GameFrameController, :show
+    get "/screenshots/frame/:session_id/:frame_id", ScreenshotFrameController, :show
   end
 
   if Mix.env() == :dev do
