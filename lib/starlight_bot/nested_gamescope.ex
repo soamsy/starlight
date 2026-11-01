@@ -1,5 +1,5 @@
 defmodule StarlightBot.NestedGamescope do
-  alias StarlightBot.{LogStore, NestedKwin}
+  alias StarlightBot.{AppSettings, LogStore, NestedKwin}
 
   @width 1920
   @height 1080
@@ -21,8 +21,9 @@ defmodule StarlightBot.NestedGamescope do
     File.chmod!(dir, 0o700)
     log_path = Path.join(dir, "gamescope.log")
     before = ei_sockets()
-    args = ["--backend", backend, "-w", "#{@width}", "-h", "#{@height}", "-W", "#{@width}", "-H", "#{@height}"] ++ @cursor_flags ++ extra_flags() ++ ["--"] ++ argv
-    log("starting gamescope #{backend} at #{@width}x#{@height}, its log is #{log_path}")
+    [inner_w, inner_h] = String.split(AppSettings.gamescope_resolution(), "x")
+    args = ["--backend", backend, "-w", inner_w, "-h", inner_h, "-W", "#{@width}", "-H", "#{@height}"] ++ @cursor_flags ++ extra_flags() ++ ["--"] ++ argv
+    log("starting gamescope #{backend} at #{inner_w}x#{inner_h} inside #{@width}x#{@height}, its log is #{log_path}")
     log("spawning detached: #{Enum.join(args, " ")}")
 
     # WSI must stay off: with it on, MIT-SHM captures come back as black frames
@@ -32,7 +33,7 @@ defmodule StarlightBot.NestedGamescope do
     end
   end
 
-  defp extra_flags, do: String.split(System.get_env("STARLIGHT_GAMESCOPE_FLAGS") || "")
+  defp extra_flags, do: String.split(AppSettings.gamescope_flags())
 
   defp backend_env("headless"), do: [{"WAYLAND_DISPLAY", nil}]
   defp backend_env("wayland"), do: [{"gamescope_cursor_composite", "2"}]

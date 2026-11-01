@@ -39,13 +39,25 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
      |> assign_outlook()
      |> assign(:form, form_values(status.settings))
      |> assign(:save_error, nil)
-     |> assign(:game_launcher, AppSettings.launcher())}
+     |> assign(:game_launcher, AppSettings.launcher())
+     |> assign(:gamescope_resolution, AppSettings.gamescope_resolution())
+     |> assign(:gamescope_flags, AppSettings.gamescope_flags())}
   end
 
   @impl true
   def handle_event("game_launcher_set", %{"launcher" => launcher}, socket) when launcher in ["direct", "kwin", "gamescope", "gamescope_window"] do
     AppSettings.put_launcher(launcher)
     {:noreply, assign(socket, :game_launcher, launcher)}
+  end
+
+  def handle_event("gamescope_resolution_set", %{"gamescope_resolution" => resolution}, socket) when resolution in ["1920x1080", "1280x720"] do
+    AppSettings.put_gamescope_resolution(resolution)
+    {:noreply, assign(socket, :gamescope_resolution, resolution)}
+  end
+
+  def handle_event("gamescope_flags_set", %{"gamescope_flags" => flags}, socket) do
+    AppSettings.put_gamescope_flags(flags)
+    {:noreply, assign(socket, :gamescope_flags, AppSettings.gamescope_flags())}
   end
 
   def handle_event("update_form", params, socket),

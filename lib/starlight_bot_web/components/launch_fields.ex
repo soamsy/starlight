@@ -8,6 +8,8 @@ defmodule StarlightBotWeb.Components.LaunchFields do
   attr :launch_timeout_s, :any, required: true
   attr :reset_event, :string, required: true
   attr :launcher, :string, default: "kwin"
+  attr :gamescope_resolution, :string, default: "1920x1080"
+  attr :gamescope_flags, :string, default: ""
   attr :requirements, :list, default: []
 
   def launch_fields(assigns) do
@@ -67,6 +69,18 @@ defmodule StarlightBotWeb.Components.LaunchFields do
       <label class="flex flex-col gap-1">
         <span class="text-xs text-base-content/40">Timeout (seconds)</span>
         <input type="number" name="launch_timeout_s" phx-debounce="500" min="1" value={@launch_timeout_s} class="input input-sm input-bordered w-24" />
+      </label>
+    </div>
+    <div :if={@launcher in ["gamescope", "gamescope_window"]} class="flex flex-wrap items-end gap-3">
+      <label class="flex flex-col gap-1">
+        <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Gamescope internal resolution</span>
+        <select name="gamescope_resolution" phx-change="gamescope_resolution_set" class="select select-sm select-bordered">
+          <option :for={resolution <- StarlightBot.AppSettings.gamescope_resolutions()} value={resolution} selected={@gamescope_resolution == resolution}>{resolution}</option>
+        </select>
+      </label>
+      <label class="flex min-w-72 flex-1 flex-col gap-1">
+        <span class="text-xs text-base-content/40">Extra gamescope flags</span>
+        <input type="text" name="gamescope_flags" phx-change="gamescope_flags_set" phx-debounce="500" value={@gamescope_flags} placeholder="--debug-hud -r 60" class="input input-sm input-bordered w-full font-mono" />
       </label>
     </div>
     <p class="max-w-prose text-xs text-base-content/60">{StarlightBot.LauncherDeps.description(@launcher)}</p>
