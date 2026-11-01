@@ -24,6 +24,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     :team_selector_md, :grace, :grace_confirm, :cabinet_ego_gifts, :gift_search, :ego_gift_get, :theme_pack, :dungeon_graph, :dungeon_graph_superposition_popup, :dungeon_graph_danger_zone_skip, :adversities,
     :event, :shop, :shop_super, :cabinet_reward, :mounting_trials, :encounter_reward, :battle_over_confirm
   ] ++ @team_select_screens ++ @shop_popup_screens
+  @own_run_screens [:dungeon_graph, :event, :shop, :shop_super]
   @recovery_kept_screens @in_dungeon_screens ++ [:md_door_unknown, :md_door_enter_popup, :md_door_progress, :md_door_forfeit]
   @dungeon_graph_floor_hooks 15..1//-1 |> Enum.reject(&(&1 == 13)) |> Enum.map(&:"dungeon_graph_floor_#{&1}")
   @clear_graph_timeout_ms 8_000
@@ -54,7 +55,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     RunMemory.put_context(ctx, :mirror_dungeon)
     RunMemory.put_floor(ctx, 1)
     RunMemory.put(ctx, :run_progress, %{current: min(1, run_count), total: run_count})
-    run = %{count: run_count, run_state: %{own_run?: first_screen not in @door_family}, iterations: 0, errors: 0, cycle: cycle, config: config}
+    run = %{count: run_count, run_state: %{own_run?: false}, iterations: 0, errors: 0, cycle: cycle, config: config}
     {:steps, [loop(run, nil)]}
   end
 
@@ -668,7 +669,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   defp continue_after({:error, _} = err, _run_state), do: err
 
   defp sync_state(run_state, screen) do
-    if screen in @in_dungeon_screens or Engine.in_battle?(screen),
+    if screen in @own_run_screens,
       do: %{run_state | own_run?: true},
       else: run_state
   end
