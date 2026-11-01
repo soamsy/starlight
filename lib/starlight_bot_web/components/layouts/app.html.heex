@@ -260,7 +260,9 @@
           <% end %>
         <% else %>
           <% {_x, _y, w, h} = @game_window_rect %>
-          <button class="btn btn-primary btn-xs w-full mb-2" disabled>Open Limbus</button>
+          <button :if={!assigns[:run_live]} class="btn btn-error btn-outline btn-xs w-full mb-2" phx-click="game_window_close" data-confirm="Close Limbus? Any unsaved progress in the game will be lost." disabled={busy != nil}>
+            Close Limbus
+          </button>
           <table class="w-full">
             <tbody>
               <tr>

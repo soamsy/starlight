@@ -4,10 +4,21 @@ defmodule StarlightBotWeb.Live.PageHook do
   alias StarlightBot.{AppSettings, Data, EnkephalinSchedule, GameWindow, LauncherDeps, Scheduler}
   alias StarlightBot.Automation.EnkephalinCharger
   alias StarlightBot.Scheduler.Overview
+  alias StarlightBot.Navigation.Navigator
   alias StarlightBot.Vision.Capture
   alias StarlightBotWeb.Components.WindowGate
 
   @gated_pages [:luxcavation, :mirror_dungeon]
+
+  @self_subscribed_views [
+    StarlightBotWeb.Live.MirrorDungeonLive,
+    StarlightBotWeb.Live.TeamEditorLive,
+    StarlightBotWeb.Live.LuxcavationLive,
+    StarlightBotWeb.Live.TransitionsLive,
+    StarlightBotWeb.Live.BattleInspectorLive,
+    StarlightBotWeb.Live.ShopRunnerLive,
+    StarlightBotWeb.Live.RewardsLive
+  ]
 
   @scheduler_clock_ms 30_000
   @settings_tabs ["scheduler", "data"]
@@ -39,6 +50,7 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:page, Map.get(@pages, socket.view))
       |> assign(:game_window_rect, nil)
       |> assign(:game_window_busy, nil)
+      |> assign(:run_live, false)
       |> assign(:game_launch_label, nil)
       |> assign(:game_launcher_label, nil)
       |> assign(:game_launcher_missing, [])
@@ -65,10 +77,12 @@ defmodule StarlightBotWeb.Live.PageHook do
 
     if connected?(socket) and GenServer.whereis(Capture) do
       Capture.subscribe()
+      if socket.view not in @self_subscribed_views, do: Navigator.subscribe()
 
       socket =
         socket
         |> assign(:game_window_rect, Capture.window_rect())
+        |> assign(:run_live, Scheduler.busy?())
         |> assign_launch()
         |> attach_hook(:game_window_rect, :handle_info, &handle_window_rect/2)
         |> attach_hook(:game_window_actions, :handle_event, &handle_window_event/3)
@@ -227,13 +241,15 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp handle_window_rect({:window_rect, rect}, socket),
     do: {:halt, assign(socket, :game_window_rect, rect)}
 
+  defp handle_window_rect({:nav_state, _}, socket), do: {:cont, assign(socket, :run_live, Scheduler.busy?())}
+
   defp handle_window_rect({:game_window_result, kind, msg}, socket),
     do: {:halt, socket |> assign(:game_window_busy, nil) |> put_flash(kind, msg)}
 
   defp handle_window_rect(_msg, socket), do: {:cont, socket}
 
   defp handle_window_event(event, _params, %{assigns: %{game_window_busy: busy}} = socket)
-       when busy != nil and event in ["game_window_resize", "game_window_launch", "run"],
+       when busy != nil and event in ["game_window_resize", "game_window_launch", "game_window_close", "run"],
        do: {:halt, socket}
 
   defp handle_window_event("game_window_resize", _params, socket) do
@@ -258,6 +274,18 @@ defmodule StarlightBotWeb.Live.PageHook do
 
   defp handle_window_event("game_window_launch", _params, socket) do
     run_window_action(socket, "launching", launch_action(Scheduler.get_settings(), nil))
+  end
+
+  defp handle_window_event("game_window_close", _params, %{assigns: %{run_live: true}} = socket),
+    do: {:halt, put_flash(socket, :error, "A run is live, stop it before closing Limbus")}
+
+  defp handle_window_event("game_window_close", _params, socket) do
+    run_window_action(socket, "closing", fn ->
+      case GameWindow.close() do
+        :ok -> {:info, "Sent close signal to Limbus"}
+        {:error, :not_running} -> {:error, "Limbus is not running"}
+      end
+    end)
   end
 
   defp handle_window_event("run", params, %{assigns: %{page: page}} = socket) when page in @gated_pages do
