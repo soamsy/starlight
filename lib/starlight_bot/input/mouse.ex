@@ -156,7 +156,7 @@ defmodule StarlightBot.Input.Mouse do
   def handle_call({:double_click, x, y, opts}, _from, state) do
     {new_state, _waypoints} = execute_move(state, x, y, opts)
     do_click(:left)
-    :timer.sleep(80)
+    :timer.sleep(MouseProfile.double_click_gap_ms())
     do_click(:left)
     {:reply, :ok, new_state}
   end
@@ -225,10 +225,10 @@ defmodule StarlightBot.Input.Mouse do
       [] ->
         {:noreply, %{state | premove: begin_wander(pm)}}
 
-      [{wx, wy, t} = waypoint | rest] ->
-        {px, py, prev_t} = pm.last
+      [{wx, wy, _t} = waypoint | rest] ->
+        {px, py, _} = pm.last
         step({px, py}, {wx, wy})
-        Process.send_after(self(), {:premove_tick, ref}, max(round(t - prev_t), 0))
+        Process.send_after(self(), {:premove_tick, ref}, next_tick_delay(pm.started, rest, System.monotonic_time(:millisecond)))
         {:noreply, %{state | premove: %{pm | remaining: rest, prev: pm.last, last: waypoint}}}
     end
   end
@@ -252,6 +252,9 @@ defmodule StarlightBot.Input.Mouse do
   end
 
   def handle_info({:wander_tick, _stale_ref}, state), do: {:noreply, state}
+
+  defp next_tick_delay(_started, [], _now), do: 0
+  defp next_tick_delay(started, [{_, _, t} | _], now), do: max(round(started + t - now), 0)
 
   defp still_focused(pm, now), do: now - pm.focus_at < @wander_focus_check_ms or game_focused?()
 
@@ -329,6 +332,7 @@ defmodule StarlightBot.Input.Mouse do
       wander_until: nil,
       focus_at: nil,
       remaining: waypoints,
+      started: System.monotonic_time(:millisecond),
       prev: nil,
       last: {fx, fy, 0.0}
     }
@@ -508,11 +512,12 @@ defmodule StarlightBot.Input.Mouse do
   defp play_trajectory(_prev_pos, [], _start_t), do: :ok
   defp play_trajectory(start_pos, waypoints, start_t) do
     {sx, sy} = start_pos
-    Enum.reduce(waypoints, {sx * 1.0, sy * 1.0, start_t}, fn {wx, wy, t_ms}, {px, py, prev_t} ->
-      step({px, py}, {wx, wy})
-      delay = round(t_ms - prev_t)
+    started = System.monotonic_time(:millisecond)
+    Enum.reduce(waypoints, {sx * 1.0, sy * 1.0}, fn {wx, wy, t_ms}, {px, py} ->
+      delay = round(started + t_ms - start_t - System.monotonic_time(:millisecond))
       if delay > 0, do: :timer.sleep(delay)
-      {wx, wy, t_ms}
+      step({px, py}, {wx, wy})
+      {wx, wy}
     end)
     :ok
   end

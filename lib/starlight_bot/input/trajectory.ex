@@ -1,22 +1,40 @@
 defmodule StarlightBot.Input.Trajectory do
-  @jitter_sigma 1.5
-  @corrective_jitter_sigma 0.6
-  @jitter_phi 0.65
-  @bow_bias_fraction 1.08
-  @primary_t_peak 0.42
-  @momentum_carry_ms 40.0
-  @momentum_carry_fraction_cap 0.25
-  @wobble_amp_scale 1.00
-  @wobble_amp_max 100.0
-  @wobble_knot_span 40.0
-  @wobble_max_interior_knots 8
-  @ease_sharpness 6.0
-  @noise_floor 0.25
-  @noise_ceiling 2.0
-  @undershoot_bias 0.5
-  @landing_cross_ratio 0.6
-  @ease_peak_point_sigma 0.04
-  @ease_peak_point_max_offset 0.1
+  @step_ms 8.0
+  @step_jitter_ms 0.7
+  @momentum_ms 40.0
+  @momentum_cap_fraction 0.25
+  @bow_median_fraction 0.09
+  @bow_short_boost 0.06
+  @bow_short_scale_px 200.0
+  @bow_max_fraction 0.2
+  @bow_sigma 0.4
+  @bow_max_px 130.0
+  @s_curve_fraction 0.012
+  @asym_min 0.75
+  @asym_max 1.3
+  @drift_fraction 0.006
+  @drift_max_px 4.0
+  @drift_hz_min 1.2
+  @drift_hz_max 3.0
+  @skew_min 0.58
+  @skew_max 0.68
+  @tremor_amp_px 0.25
+  @tremor_hz_min 8.0
+  @tremor_hz_max 12.0
+  @undershoot_bias 0.6
+  @landing_cross_ratio 0.5
+  @approach_floor 0.03
+  @approach_slope 0.01
+  @approach_quad 0.0004
+  @approach_grid 240
+  @approach_max_speedup 1.5
+  @approach_softening [1.0, 1.3, 1.7, 2.2, 3.0, 4.0, 6.0, 10.0, 30.0, 1000.0]
+  @approach_min_dist 30.0
+  @primary_share 0.85
+  @correction_start_min 0.78
+  @correction_start_max 0.95
+
+  @flat %{bow: 0.0, s_curve: 0.0, asym: 1.0, drift: 0.0, drift_hz: 2.0, drift_phase: 0.0}
 
   @type point :: {float, float}
   @type waypoint :: {float, float, float}
@@ -33,180 +51,216 @@ defmodule StarlightBot.Input.Trajectory do
   defp human_trajectory(from, to, vel_in, base_duration) do
     dist = distance(from, to)
 
-    cond do
-      dist < 1.0 ->
-        {tx, ty} = to
-        [{tx, ty, 0.0}]
+    if dist < 1.0 do
+      {tx, ty} = to
+      [{tx, ty, 0.0}]
+    else
+      duration = base_duration.(dist)
 
-      :rand.uniform() < correction_probability(dist) ->
-        build_two_phase(from, to, vel_in, dist, base_duration.(dist))
+      submovements =
+        if :rand.uniform() < correction_probability(dist) do
+          landing = biased_landing(from, to, landing_sigma(dist))
+          primary_duration = duration * @primary_share
+          start = primary_duration * (@correction_start_min + :rand.uniform() * (@correction_start_max - @correction_start_min))
 
-      true ->
-        build_single_phase(from, to, vel_in, base_duration.(dist))
+          [
+            submovement(from, landing, 0.0, primary_duration, shape(dist)),
+            submovement(landing, to, start, corrective_duration_ms(distance(landing, to)), @flat)
+          ]
+        else
+          [from |> submovement(to, 0.0, duration, shape(dist)) |> with_approach()]
+        end
+
+      sample(from, to, vel_in, submovements)
     end
   end
 
-  defp build_single_phase(from, to, vel_in, duration_ms) do
-    draw_curve(from, to, vel_in, duration_ms, @jitter_sigma, 1.0, @primary_t_peak)
-    |> force_exact_end(to)
+  defp submovement(from, to, start_ms, duration_ms, shape) do
+    Map.merge(shape, %{from: from, to: to, start: start_ms, duration: duration_ms, skew: @skew_min + :rand.uniform() * (@skew_max - @skew_min)})
   end
 
-  defp build_two_phase(from, to, vel_in, dist, duration_ms) do
-    landing = biased_landing(from, to, overshoot_sigma(dist))
-    primary_duration = duration_ms * 0.82
-
-    primary = draw_curve(from, landing, vel_in, primary_duration, @jitter_sigma, 1.0, @primary_t_peak)
-
-    {lx, ly, _} = List.last(primary)
-    pause = pause_ms()
-    pause_wp = {lx, ly, primary_duration + pause}
-
-    remaining = distance({lx, ly}, to)
-    corrective_duration = corrective_duration_ms(remaining)
-    carry_vel = terminal_velocity(primary)
-
-    corrective =
-      draw_curve({lx, ly}, to, carry_vel, corrective_duration, @corrective_jitter_sigma, 0.4, 0.5)
-      |> offset_time(primary_duration + pause)
-      |> force_exact_end(to)
-
-    primary ++ [pause_wp] ++ corrective
-  end
-
-  defp draw_curve(from, to, vel_in, duration_ms, jitter_sigma, bow_scale, t_peak) do
+  defp with_approach(%{from: from, to: to} = m) do
     dist = distance(from, to)
-    n_controls = if dist < 200.0, do: 1, else: 2
-    perp_std = dist * 0.12 * bow_scale
-    controls = sample_control_points(from, to, vel_in, n_controls, perp_std)
-
-    n_steps = max(2, ceil(duration_ms / 8.0))
-    jitter_x = correlated_jitter(n_steps + 1, jitter_sigma, @jitter_phi)
-    jitter_y = correlated_jitter(n_steps + 1, jitter_sigma, @jitter_phi)
-    {perp_x, perp_y} = perpendicular(from, to)
-    wobble = wobble_knots(dist)
-    ease = sample_ease(t_peak)
-
-    0..n_steps
-    |> Enum.zip(Enum.zip(jitter_x, jitter_y))
-    |> Enum.map(fn {i, {jx0, jy0}} ->
-      t = i / n_steps
-      ease_t = ease_progress(ease, t)
-      speed = signal_noise_scale(ease, i, n_steps)
-      jx = jx0 * speed
-      jy = jy0 * speed
-      {x, y} = bezier_point(from, to, controls, ease_t)
-      w = wobble_at(wobble, ease_t)
-      {x + jx + w * perp_x, y + jy + w * perp_y, t * duration_ms}
-    end)
+    if dist < @approach_min_dist, do: m, else: Map.put(m, :table, approach_table(m, dist))
   end
 
-  defp signal_noise_scale(_ease, 0, _n_steps), do: @noise_floor
-
-  defp signal_noise_scale(ease, i, n_steps) do
-    speed = (ease_progress(ease, i / n_steps) - ease_progress(ease, (i - 1) / n_steps)) * n_steps
-    speed |> max(@noise_floor) |> min(@noise_ceiling)
-  end
-
-  defp wobble_knots(dist) do
-    sigma = min(dist * @wobble_amp_scale, @wobble_amp_max)
-    n_interior = 1 + min(@wobble_max_interior_knots, trunc(dist / @wobble_knot_span))
-
-    interior =
-      for i <- 1..n_interior do
-        t = i / (n_interior + 1)
-        {t, :rand.normal(0.0, sigma) * :math.sin(:math.pi() * t)}
+  defp approach_table(m, dist) do
+    grid =
+      for i <- 0..@approach_grid do
+        tau = i / @approach_grid
+        x = :math.pow(tau, m.skew)
+        slope = if tau == 0.0, do: 0.0, else: 30.0 * x * x * (1.0 - x) * (1.0 - x) * m.skew * :math.pow(tau, m.skew - 1.0)
+        s = min_jerk(x)
+        {s, slope, approach_cap((1.0 - s) * dist) / dist}
       end
 
-    [{0.0, 0.0}] ++ interior ++ [{1.0, 0.0}]
+    times = fn a, soften ->
+      Enum.scan(grid, {0.0, 0.0}, fn {_, slope, cap}, {_, prev} -> {0.0, prev + max(m.duration / a, slope / (cap * soften)) / @approach_grid} end)
+    end
+
+    total = fn a, soften -> times.(a, soften) |> List.last() |> elem(1) end
+    soften = Enum.find(@approach_softening, List.last(@approach_softening), &(total.(@approach_max_speedup, &1) <= m.duration))
+    a = bisect_speed(&total.(&1, soften), m.duration, 0.3, @approach_max_speedup, 40)
+    cumulative = times.(a, soften) |> Enum.map(&elem(&1, 1))
+    {List.to_tuple(cumulative), grid |> Enum.map(&elem(&1, 0)) |> List.to_tuple()}
   end
 
-  defp wobble_at(knots, t) do
-    [{t0, v0}, {t1, v1}] =
-      knots
-      |> Enum.chunk_every(2, 1, :discard)
-      |> Enum.find(fn [{a, _}, {b, _}] -> t >= a and t <= b end)
+  defp bisect_speed(_total, _target, lo, hi, 0), do: (lo + hi) / 2
 
-    if t1 == t0, do: v0, else: v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+  defp bisect_speed(total, target, lo, hi, n) do
+    mid = (lo + hi) / 2
+    if total.(mid) > target, do: bisect_speed(total, target, mid, hi, n - 1), else: bisect_speed(total, target, lo, mid, n - 1)
   end
 
-  defp sample_duration(dist) do
-    mu = 0.1 + 0.28 * :math.log2(1.0 + (dist + 80.0) / 50.0)
-    sigma = max(0.07, 0.13 * (1.0 - :math.exp(-dist / 350.0)))
+  defp approach_cap(rem_px), do: @approach_floor + @approach_slope * rem_px + @approach_quad * rem_px * rem_px
 
-    noise = :math.exp(:rand.normal(0.0, sigma))
-    duration_s = (mu * noise) |> max(0.35) |> min(2.0)
-    duration_s * 1000.0 / 5.0
-  end
+  defp table_progress({times, progress}, t) do
+    last = tuple_size(times) - 1
 
-  defp corrective_duration_ms(remaining_dist) do
-    (60.0 + remaining_dist * 3.0) |> max(60.0) |> min(220.0)
-  end
-
-  defp pause_ms, do: 30.0 + :rand.uniform() * 50.0
-
-  defp overshoot_sigma(dist), do: (dist * 0.025) |> max(1.5) |> min(14.0)
-  defp correction_probability(dist), do: (dist / 600.0) |> max(0.05) |> min(0.9)
-
-  defp sample_control_points({fx, fy}, {tx, ty}, vel_in, n, perp_std) do
-    chord_len = distance({fx, fy}, {tx, ty})
-    {perp_x, perp_y} = perpendicular({fx, fy}, {tx, ty})
-    {mx, my} = momentum_offset(vel_in, chord_len)
-    bias = perp_std * @bow_bias_fraction
-
-    for i <- 0..(n - 1) do
-      t = if n == 1, do: 0.5, else: 0.3 + 0.4 * (i / max(n - 1, 1))
-      base_x = fx + t * (tx - fx)
-      base_y = fy + t * (ty - fy)
-      offset = bias + :rand.normal(0.0, perp_std)
-      cx = base_x + offset * perp_x
-      cy = base_y + offset * perp_y
-
-      if i == 0, do: {cx + mx, cy + my}, else: {cx, cy}
+    if t >= elem(times, last) do
+      1.0
+    else
+      i = find_segment(times, t, 0, last)
+      t0 = elem(times, i)
+      t1 = elem(times, i + 1)
+      s0 = elem(progress, i)
+      s0 + (elem(progress, i + 1) - s0) * (t - t0) / max(t1 - t0, 1.0e-9)
     end
   end
 
-  defp momentum_offset({vx, vy}, dist) do
+  defp find_segment(_times, _t, lo, hi) when hi - lo <= 1, do: lo
+
+  defp find_segment(times, t, lo, hi) do
+    mid = div(lo + hi, 2)
+    if elem(times, mid) <= t, do: find_segment(times, t, mid, hi), else: find_segment(times, t, lo, mid)
+  end
+
+  defp sample(from, {tx, ty} = to, vel_in, submovements) do
+    total = submovements |> Enum.map(&(&1.start + &1.duration)) |> Enum.max()
+    n_steps = max(2, ceil(total / @step_ms))
+    tremor = new_tremor()
+    {fx, fy} = from
+    {mx, my} = momentum(vel_in, distance(from, to))
+    primary = hd(submovements)
+
+    times =
+      0..n_steps
+      |> Enum.map(fn i -> i * total / n_steps end)
+      |> jitter_times()
+
+    Enum.map(times, fn t ->
+      {dx, dy} =
+        Enum.reduce(submovements, {0.0, 0.0}, fn m, {ax, ay} ->
+          {x, y} = displacement(m, t)
+          {ax + x, ay + y}
+        end)
+
+      carry = momentum_decay(t, primary)
+      {tmx, tmy} = tremor_at(tremor, t, edge_weight(t, total))
+      {fx + dx + mx * carry + tmx, fy + dy + my * carry + tmy, t}
+    end)
+    |> List.update_at(-1, fn {_, _, t} -> {tx, ty, t} end)
+  end
+
+  defp displacement(%{from: {fx, fy}, to: {tx, ty}} = m, t) do
+    tau = (t - m.start) / m.duration
+
+    if tau <= 0.0 do
+      {0.0, 0.0}
+    else
+      s =
+        case m do
+          %{table: table} -> table_progress(table, t - m.start)
+          _ -> min_jerk(:math.pow(min(tau, 1.0), m.skew))
+        end
+
+      {px, py} = perpendicular({fx, fy}, {tx, ty})
+      lateral =
+        m.bow * :math.sin(:math.pi() * :math.pow(s, m.asym)) +
+          m.s_curve * :math.sin(2.0 * :math.pi() * s) +
+          m.drift * :math.sin(:math.pi() * s) * :math.sin(2.0 * :math.pi() * m.drift_hz * t / 1000.0 + m.drift_phase)
+      {(tx - fx) * s + lateral * px, (ty - fy) * s + lateral * py}
+    end
+  end
+
+  defp min_jerk(tau), do: tau * tau * tau * (10.0 - 15.0 * tau + 6.0 * tau * tau)
+
+  defp momentum_decay(t, primary) do
+    tau = min(t / primary.duration, 1.0)
+    @momentum_ms * (1.0 - :math.exp(-t / @momentum_ms)) * (1.0 - min_jerk(tau))
+  end
+
+  defp momentum({vx, vy}, dist) do
     speed = :math.sqrt(vx * vx + vy * vy)
 
     if speed < 0.01 do
       {0.0, 0.0}
     else
-      carry = min(speed * @momentum_carry_ms, dist * @momentum_carry_fraction_cap)
-      {vx / speed * carry, vy / speed * carry}
+      capped = min(speed, dist * @momentum_cap_fraction / @momentum_ms)
+      {vx / speed * capped, vy / speed * capped}
     end
   end
 
-  @doc false
-  def bezier_point(from, to, controls, t) do
-    [from | controls]
-    |> Kernel.++([to])
-    |> de_casteljau(t)
+  defp jitter_times(times) do
+    last = length(times) - 1
+
+    times
+    |> Enum.with_index()
+    |> Enum.map(fn
+      {t, i} when i == 0 or i == last -> t
+      {t, _} -> max(t + :rand.normal(0.0, @step_jitter_ms), 0.0)
+    end)
+    |> Enum.scan(fn t, prev -> max(t, prev + 1.0) end)
   end
 
-  defp de_casteljau([point], _t), do: point
-
-  defp de_casteljau(points, t) do
-    points
-    |> Enum.chunk_every(2, 1, :discard)
-    |> Enum.map(fn [{x0, y0}, {x1, y1}] -> {x0 + t * (x1 - x0), y0 + t * (y1 - y0)} end)
-    |> de_casteljau(t)
+  defp new_tremor do
+    for _axis <- 1..2 do
+      %{
+        hz: @tremor_hz_min + :rand.uniform() * (@tremor_hz_max - @tremor_hz_min),
+        phase: :rand.uniform() * 2 * :math.pi()
+      }
+    end
   end
 
-  defp sample_ease(t_peak) do
-    peak_point =
-      (0.5 + :rand.normal(0.0, @ease_peak_point_sigma))
-      |> max(0.5 - @ease_peak_point_max_offset)
-      |> min(0.5 + @ease_peak_point_max_offset)
-
-    skew = :math.sqrt(peak_point * (1.0 - t_peak) / ((1.0 - peak_point) * t_peak))
-    {t_peak, peak_point, max(@ease_sharpness / skew, 1.0), max(@ease_sharpness * skew, 1.0)}
+  defp tremor_at([x, y], t_ms, weight) do
+    s = t_ms / 1000.0
+    amp = @tremor_amp_px * weight
+    {amp * :math.sin(2 * :math.pi() * x.hz * s + x.phase), amp * :math.sin(2 * :math.pi() * y.hz * s + y.phase)}
   end
 
-  defp ease_progress({t_peak, peak_point, p_in, _}, t) when t < t_peak,
-    do: peak_point * :math.pow(t / t_peak, p_in)
+  defp edge_weight(t, total) do
+    u = t / total
+    min(1.0, 4.0 * min(u, 1.0 - u))
+  end
 
-  defp ease_progress({t_peak, peak_point, _, p_out}, t),
-    do: 1.0 - (1.0 - peak_point) * :math.pow((1.0 - t) / (1.0 - t_peak), p_out)
+  defp sample_duration(dist) do
+    mu = 0.14 + 0.08 * :math.log2(1.0 + dist / 40.0)
+    sigma = max(0.07, 0.13 * (1.0 - :math.exp(-dist / 350.0)))
+    noise = :math.exp(:rand.normal(0.0, sigma)) |> max(0.85) |> min(1.35)
+    (mu * noise) |> max(0.12) |> min(1.4) |> Kernel.*(1000.0)
+  end
+
+  defp corrective_duration_ms(remaining_dist) do
+    (70.0 + remaining_dist * 4.0) |> min(200.0)
+  end
+
+  defp bow_fraction(dist), do: @bow_median_fraction + @bow_short_boost * :math.exp(-dist / @bow_short_scale_px)
+
+  defp shape(dist) do
+    sign = if :rand.uniform() < 0.5, do: -1.0, else: 1.0
+
+    %{
+      bow: sign * min(dist * bow_fraction(dist) * :math.exp(:rand.normal(0.0, @bow_sigma)), min(@bow_max_px, dist * @bow_max_fraction)),
+      s_curve: :rand.normal(0.0, dist * @s_curve_fraction),
+      asym: @asym_min + :rand.uniform() * (@asym_max - @asym_min),
+      drift: min(dist * @drift_fraction, @drift_max_px),
+      drift_hz: @drift_hz_min + :rand.uniform() * (@drift_hz_max - @drift_hz_min),
+      drift_phase: :rand.uniform() * 2 * :math.pi()
+    }
+  end
+
+  defp landing_sigma(dist), do: (dist * 0.03) |> max(1.5) |> min(12.0)
+  defp correction_probability(dist), do: (dist / 600.0) |> max(0.05) |> min(0.9)
 
   defp biased_landing({fx, fy}, {tx, ty}, sigma) do
     {perp_x, perp_y} = perpendicular({fx, fy}, {tx, ty})
@@ -217,42 +271,12 @@ defmodule StarlightBot.Input.Trajectory do
     {tx + along * ux + cross * perp_x, ty + along * uy + cross * perp_y}
   end
 
-  defp correlated_jitter(n, sigma, _phi) when n <= 1, do: [:rand.normal(0.0, sigma)]
-
-  defp correlated_jitter(n, sigma, phi) do
-    eps_sigma = sigma * :math.sqrt(max(1.0 - phi * phi, 0.0001))
-    seed = :rand.normal(0.0, sigma)
-
-    1..(n - 1)
-    |> Enum.reduce([seed], fn _, [prev | _] = acc -> [phi * prev + :rand.normal(0.0, eps_sigma) | acc] end)
-    |> Enum.reverse()
-  end
-
-  defp offset_time(waypoints, offset_ms) do
-    Enum.map(waypoints, fn {x, y, t} -> {x, y, t + offset_ms} end)
-  end
-
-  defp force_exact_end(waypoints, {ex, ey}) do
-    List.update_at(waypoints, -1, fn {_, _, t} -> {ex, ey, t} end)
-  end
-
-  defp terminal_velocity(waypoints) do
-    case Enum.slice(waypoints, -2, 2) do
-      [{x0, y0, t0}, {x1, y1, t1}] ->
-        dt = max(t1 - t0, 1.0)
-        {(x1 - x0) / dt, (y1 - y0) / dt}
-
-      _ ->
-        {0.0, 0.0}
-    end
-  end
-
   defp distance({x0, y0}, {x1, y1}) do
     :math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0))
   end
 
   defp perpendicular({fx, fy}, {tx, ty}) do
-    chord_len = distance({fx, fy}, {tx, ty})
+    chord_len = max(distance({fx, fy}, {tx, ty}), 1.0e-6)
     {-(ty - fy) / chord_len, (tx - fx) / chord_len}
   end
 end
