@@ -4,6 +4,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   alias StarlightBot.Ctx
   alias StarlightBot.EgoGifts
   alias StarlightBot.GiftPlans
+  alias StarlightBot.Input.Leeway
   alias StarlightBot.Teams
   alias StarlightBot.Vision.{Capture, EgoGiftDetector, Frame, HookRegistry, Matcher, NumberScanner}
 
@@ -108,6 +109,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @shelf_settle_timeout_ms 1_000
   @fuse_dismiss_offset_px 15
   @fuse_item_click_settle_ms 130
+  @fuse_rise_min_px 1
   @fuse_slots_filled_ms 1_000
   @fuse_confirm_steady_ms 120
   @fuse_confirm_steady_timeout_ms 1_500
@@ -1035,29 +1037,44 @@ defmodule StarlightBot.Automation.Shop.Ops do
       end,
       fn row -> {:cont, row, []} end
     )
-    |> Enum.flat_map(fn row -> Enum.sort_by(row, &(-&1.x)) end)
+    |> Enum.map(fn row -> Enum.sort_by(row, &(-&1.x)) end)
   end
 
   defp click_item_rect(item, ctx) do
     RewardHelpers.click_rect({round(item.x), round(item.y), round(item.w), round(item.h)}, ctx)
   end
 
+  defp click_item_rising(item, index, count, prev_y, ctx) do
+    {cx, cy} = Leeway.in_rect({item.x, item.y, item.w, item.h})
+    ramp = ((count - 1) / 2 - index) * item.h / (count * 6)
+    y = min(cy + ramp, (prev_y || cy + ramp) - @fuse_rise_min_px)
+    y = y |> max(item.y + 1) |> min(item.y + item.h - 1)
+    RewardHelpers.click_point({cx, y}, ctx)
+    y
+  end
+
   defp click_matching_fuse_items({:strict, needed, clicked}, gifts, ctx) do
-    ordered = bottom_up_right_to_left(gifts)
-    visible = Enum.frequencies_by(ordered, & &1.gift_id)
+    rows = bottom_up_right_to_left(gifts)
+    visible = rows |> List.flatten() |> Enum.frequencies_by(& &1.gift_id)
 
     takeable =
       for {id, n} <- needed, not Map.has_key?(clicked, id), Map.get(visible, id, 0) >= n, into: %{}, do: {id, n}
 
-    clicked_after =
-      Enum.reduce(ordered, clicked, fn item, acc ->
-        if Map.get(acc, item.gift_id, 0) < Map.get(takeable, item.gift_id, 0) do
-          click_item_rect(item, ctx)
-          Engine.act([sleep(@fuse_item_click_settle_ms)], ctx)
-          Map.update(acc, item.gift_id, 1, &(&1 + 1))
-        else
-          acc
-        end
+    {clicked_after, _} =
+      Enum.reduce(rows, {clicked, nil}, fn row, {acc, _prev_y} ->
+        count = length(row)
+
+        row
+        |> Enum.with_index()
+        |> Enum.reduce({acc, nil}, fn {item, index}, {acc, prev_y} ->
+          if Map.get(acc, item.gift_id, 0) < Map.get(takeable, item.gift_id, 0) do
+            y = click_item_rising(item, index, count, prev_y, ctx)
+            Engine.act([sleep(@fuse_item_click_settle_ms)], ctx)
+            {Map.update(acc, item.gift_id, 1, &(&1 + 1)), y}
+          else
+            {acc, prev_y}
+          end
+        end)
       end)
 
     {:strict, needed, clicked_after}
