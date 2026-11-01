@@ -1,9 +1,9 @@
 defmodule StarlightBot.LauncherDeps do
   @launchers [
     {"direct", "Open native window"},
-    {"kwin", "Nested KWin"},
     {"gamescope_window", "Gamescope window"},
-    {"gamescope", "Headless gamescope"}
+    {"gamescope", "Headless gamescope"},
+    {"kwin", "Nested KWin"}
   ]
 
   def launchers, do: @launchers
