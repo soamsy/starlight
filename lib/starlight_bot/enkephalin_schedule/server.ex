@@ -8,6 +8,7 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
   @attempt_backoff_ms 10 * 60_000
   @ready_poll_ms 5_000
   @charge_start_confirm_ms 5_000
+  @charge_poll_ms 50
 
   defstruct next_attempt_at: nil, task: nil, close_after: false
 
@@ -135,11 +136,21 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
 
   defp start_charge do
     Navigator.charge_enkephalin(AppSettings.enkephalin_convert_count())
-    Process.sleep(@charge_start_confirm_ms)
+    await_charge_started(@charge_start_confirm_ms)
+  end
 
+  defp await_charge_started(remaining_ms) when remaining_ms <= 0 do
+    {:error, "the navigator didn't start the charge, check the runner log"}
+  end
+
+  defp await_charge_started(remaining_ms) do
     case Navigator.status() do
-      %{run_kind: kind} when kind != nil -> :ok
-      _ -> {:error, "the navigator didn't start the charge, check the runner log"}
+      %{run_kind: kind} when kind != nil ->
+        :ok
+
+      _ ->
+        Process.sleep(@charge_poll_ms)
+        await_charge_started(remaining_ms - @charge_poll_ms)
     end
   end
 
