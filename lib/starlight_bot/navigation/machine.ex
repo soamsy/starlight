@@ -380,10 +380,6 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   defp exec_internal({:__retry_after__, loop, attempt}, data) do
-    if loop.steps != [] and Enum.all?(loop.steps, &self_positioning_step?/1) do
-      premove_toward(loop.hook, loop.ahead, data.ctx)
-    end
-
     start_poll({:retry_window, loop, attempt + 1}, loop.every_ms, data)
   end
 
@@ -574,6 +570,11 @@ defmodule StarlightBot.Navigation.Machine do
 
       true ->
         Ctx.log(data.ctx, :step, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: #{inspect(loop.retry_if)} gone, waiting instead of retrying")
+
+        if loop.steps != [] and Enum.all?(loop.steps, &self_positioning_step?/1) do
+          premove_toward(loop.hook, loop.ahead, data.ctx)
+        end
+
         start_poll({:retry_window, loop, attempt + 1}, loop.every_ms, data)
     end
   end
