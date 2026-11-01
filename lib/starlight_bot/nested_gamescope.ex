@@ -6,7 +6,7 @@ defmodule StarlightBot.NestedGamescope do
   @ready_timeout_ms 20_000
   @poll_ms 100
   @ei_socket ~r/^gamescope-\d+-ei$/
-  @cursor_flags ["--force-grab-cursor", "--hide-cursor-delay", "3600000"]
+  @cursor_flags ["--hide-cursor-delay", "3600000"]
 
   def spawn(backend, argv, extra_env \\ [], cwd \\ File.cwd!()) when backend in ["headless", "wayland"] do
     case System.find_executable("gamescope") do
