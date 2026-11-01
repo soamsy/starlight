@@ -134,6 +134,8 @@ defmodule StarlightBot.Navigation.DSL do
 
   def sleep(ms) when is_integer(ms), do: {:sleep, ms}
 
+  def sleep_up_to(max_ms) when is_integer(max_ms) and max_ms >= 0, do: {:sleep_up_to, max_ms}
+
   def call(mod, fun, args \\ []) when is_atom(mod) and is_atom(fun) and is_list(args), do: {:call, {mod, fun, args}}
 
   def invoke(mod, fun, args \\ []) when is_atom(mod) and is_atom(fun) and is_list(args), do: {:invoke, {mod, fun, args}}

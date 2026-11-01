@@ -1,6 +1,6 @@
 defmodule StarlightBot.Automation.EventAdvantage do
   alias StarlightBot.Ctx
-  alias StarlightBot.Input.Mouse
+  alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.Vision.{Capture, Matcher}
 
@@ -43,8 +43,9 @@ defmodule StarlightBot.Automation.EventAdvantage do
   end
 
   defp click_center(x, y, w, h, ctx) do
-    case Runner.to_screen_point({x + div(w, 2), y + div(h, 2)}) do
-      {:ok, {sx, sy}} -> Mouse.click(sx, sy)
+    case Runner.to_screen_point(Leeway.in_rect({x, y, w, h})) do
+      {:ok, {sx, sy}} ->
+        Mouse.click(sx, sy)
       {:error, reason} -> Ctx.log(ctx, :error, "event_advantage: click failed: #{inspect(reason)}")
     end
   end

@@ -3,7 +3,7 @@ defmodule StarlightBot.Automation.RewardHelpers do
   alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Ctx
   alias StarlightBot.EgoGifts
-  alias StarlightBot.Input.Mouse
+  alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.Vision.{Capture, EgoGiftDetector, HookRegistry, Matcher}
 
@@ -186,8 +186,8 @@ defmodule StarlightBot.Automation.RewardHelpers do
     end)
   end
 
-  def click_rect({x, y, w, h}, ctx) do
-    case Runner.to_screen_point({x + div(w, 2), y + div(h, 2)}) do
+  def click_rect(rect, ctx) do
+    case Runner.to_screen_point(Leeway.in_rect(rect)) do
       {:ok, {sx, sy}} ->
         Mouse.click(sx, sy, settle_ms: 70)
         {:ok, nil}

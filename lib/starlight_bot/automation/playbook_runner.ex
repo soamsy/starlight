@@ -2,7 +2,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   alias StarlightBot.Automation.{BattleChain, RunMemory, SlotPlan, TrayWatch}
   alias StarlightBot.{BattlePlans, Conditions, Ctx, SinnerProfiles}
   alias StarlightBot.BattlePlans.Resolver
-  alias StarlightBot.Input.Mouse
+  alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.Navigation.{DSL, Runner}
   alias StarlightBot.Vision.{Capture, EnemyTargets, HookRegistry, Matcher, SinColor, SkillTray}
 
@@ -444,7 +444,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
     with {:ok, {x, _y, w, _h}} <- await_still_card(hook, nil, deadline),
          {:ok, %{region: {_wx, wy, _ww, wh}}} <- HookRegistry.find(@ego_warning),
-         {:ok, {cx, cy}} <- Runner.to_screen_point({x + w / 2, wy + wh / 2}) do
+         {:ok, card_point} <- Runner.to_screen_point({x + w / 2, wy + wh / 2}),
+         {cx, cy} = Leeway.click(card_point) do
       if action["corrode"], do: overclock(cx, cy, ctx)
 
       Mouse.click(cx, cy)
@@ -756,7 +757,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
     case Runner.to_screen_point(point) do
       {:ok, point} ->
-        {:ok, point}
+        {:ok, Leeway.click(point)}
 
       {:error, reason} ->
         Ctx.log(ctx, :error, "playbook: can't map slot #{column + 1} to the screen: #{inspect(reason)}")
@@ -791,7 +792,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp slot_point(tray, column, ctx) do
     case Runner.to_screen_point({SkillTray.slot_x(tray, column), tray.sinner_action_y}) do
       {:ok, point} ->
-        {:ok, point}
+        {:ok, Leeway.click(point)}
 
       {:error, reason} ->
         Ctx.log(ctx, :error, "playbook: can't map slot #{column + 1} to the screen: #{inspect(reason)}")

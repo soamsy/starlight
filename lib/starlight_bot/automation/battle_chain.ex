@@ -1,7 +1,7 @@
 defmodule StarlightBot.Automation.BattleChain do
   alias StarlightBot.Automation.ChainStreak
   alias StarlightBot.Ctx
-  alias StarlightBot.Input.Mouse
+  alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.Vision.{Capture, Matcher, SinColor, SkillTray}
 
@@ -37,7 +37,8 @@ defmodule StarlightBot.Automation.BattleChain do
   end
 
   defp click_and_release({gx, gy, gw, gh}) do
-    with {:ok, {sx, sy}} <- Runner.to_screen_point({gx + gw / 2, gy + gh / 2}) do
+    with {:ok, point} <- Runner.to_screen_point({gx + gw / 2, gy + gh / 2}) do
+      {sx, sy} = Leeway.click(point)
       Mouse.move_to(sx, sy)
       Mouse.mouse_down()
       Process.sleep(@preview_settle_ms)
@@ -88,7 +89,7 @@ defmodule StarlightBot.Automation.BattleChain do
   defp to_screen_points(points) do
     Enum.reduce_while(points, {:ok, []}, fn {x, y}, {:ok, acc} ->
       case Runner.to_screen_point({x, y}) do
-        {:ok, point} -> {:cont, {:ok, [point | acc]}}
+        {:ok, point} -> {:cont, {:ok, [Leeway.click(point) | acc]}}
         {:error, _} = err -> {:halt, err}
       end
     end)

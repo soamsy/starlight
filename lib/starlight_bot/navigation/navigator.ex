@@ -664,6 +664,7 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   defp release_run(state) do
+    StarlightBot.Input.Mouse.halt_wander()
     if state.run_memory_agent && Process.alive?(state.run_memory_agent), do: Agent.stop(state.run_memory_agent)
     %{state | run_memory_agent: nil}
   end

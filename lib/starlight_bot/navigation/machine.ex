@@ -175,6 +175,7 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp hold(step, data) do
     report(:paused, nil, data)
+    Mouse.halt_wander()
     Ctx.log(data.ctx, :info, "paused before #{describe(step)}, waiting for resume")
     Ctx.pause(data.ctx)
     {:next_state, :paused, %{data | stack: [step | data.stack], poll: nil}, [{:state_timeout, @resume_poll_ms, :check}]}
@@ -263,6 +264,8 @@ defmodule StarlightBot.Navigation.Machine do
   defp exec({:invoke, {_mod, _fun, args} = mfa}, data), do: offload(:invoke, mfa, args ++ [data.ctx], data)
 
   defp exec({:call, {_mod, _fun, args} = mfa}, data), do: offload(:call, mfa, args ++ [outward(data.frame), data.ctx], data)
+
+  defp exec({:sleep_up_to, max_ms}, data), do: exec({:sleep, :rand.uniform(max_ms + 1) - 1}, data)
 
   defp exec({:sleep, ms}, data) do
     Ctx.log(data.ctx, :step, "sleep #{ms}ms")
@@ -779,7 +782,7 @@ defmodule StarlightBot.Navigation.Machine do
   defp retry_allowed?(nil), do: true
   defp retry_allowed?(retry_if), do: elem(hook_visible?(retry_if, nil), 0)
 
-  defp self_positioning_step?(step), do: elem(step, 0) in [:click, :move_to, :drag, :key, :type, :sleep]
+  defp self_positioning_step?(step), do: elem(step, 0) in [:click, :move_to, :drag, :key, :type, :sleep, :sleep_up_to]
 
   defp retry_exhausted?({:tries, max_tries}, attempt), do: attempt >= max_tries
   defp retry_exhausted?({:deadline, deadline}, _attempt), do: mono() >= deadline
@@ -806,9 +809,11 @@ defmodule StarlightBot.Navigation.Machine do
     end
   end
 
-  defp do_move_to(hook_atom, last_frame, ctx) do
-    with {:ok, {sx, sy}} <- resolve_screen_point(hook_atom, last_frame, ctx) do
-      Mouse.move_to(sx, sy)
+  defp do_move_to(hook_atom, last_frame, _ctx) do
+    with {:ok, region} <- resolve_target_region(hook_atom, last_frame),
+         {:ok, {sx, sy}} <- Runner.to_screen_point(sample_target_point(region)),
+         {:ok, box} <- to_screen_box(region) do
+      Mouse.move_to(sx, sy, anchor: box)
       :ok
     end
   end
@@ -854,6 +859,7 @@ defmodule StarlightBot.Navigation.Machine do
   defp premove_window({:retry_until, spec, [], _timeout, _every, _tries}), do: {:ok, spec}
   defp premove_window({:retry_until, spec, [], _timeout, _every, _tries, _retry_if}), do: {:ok, spec}
   defp premove_window({:sleep, _ms}), do: {:ok, nil}
+  defp premove_window({:sleep_up_to, _ms}), do: {:ok, nil}
   defp premove_window(_step), do: :none
 
   defp premove_toward(watched, ahead, ctx) do
@@ -884,7 +890,7 @@ defmodule StarlightBot.Navigation.Machine do
   defp next_target([{:retry_until, _spec, [_ | _] = steps, _, _, _, _} | rest]), do: next_target(steps ++ rest)
   defp next_target([{:branch, [{_spec, steps} | _], _default} | _]), do: next_target(steps)
   defp next_target([{:branch, [{_spec, steps} | _], _default, _wait_ms} | _]), do: next_target(steps)
-  defp next_target([{kind, _} | rest]) when kind in [:key, :type, :sleep, :__mark__, :__verify__], do: next_target(rest)
+  defp next_target([{kind, _} | rest]) when kind in [:key, :type, :sleep, :sleep_up_to, :__mark__, :__verify__], do: next_target(rest)
   defp next_target(_steps), do: :none
 
   defp fixed_region(hook) do

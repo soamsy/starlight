@@ -4,7 +4,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
   alias StarlightBot.Ctx
   alias StarlightBot.EgoGifts
   alias StarlightBot.GiftPlans
-  alias StarlightBot.Input.Mouse
+  alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.Vision.{Capture, HookRegistry, Matcher}
 
@@ -123,10 +123,10 @@ defmodule StarlightBot.Navigation.Screens.Event do
     gift = gifts |> prefer_no_advantage(frame, ctx) |> List.first()
 
     case gift do
-      {_rect, {x, y}} ->
+      {rect, {_x, y}} ->
         Ctx.log(ctx, :info, "event choice: clicking event_text_ego_gift at y=#{y}")
 
-        with {:ok, {sx, sy}} <- Runner.to_screen_point({x, y}) do
+        with {:ok, {sx, sy}} <- Runner.to_screen_point(Leeway.in_rect(rect)) do
           Mouse.click(sx, sy)
           {:ok, y}
         end

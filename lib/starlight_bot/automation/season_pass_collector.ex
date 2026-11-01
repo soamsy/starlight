@@ -2,7 +2,7 @@ defmodule StarlightBot.Automation.SeasonPassCollector do
   import StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.Engine
   alias StarlightBot.Ctx
-  alias StarlightBot.Input.Mouse
+  alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.Vision.{Capture, Matcher}
 
@@ -82,9 +82,10 @@ defmodule StarlightBot.Automation.SeasonPassCollector do
     end
   end
 
-  defp click_rect({x, y, w, h}, ctx) do
-    case Runner.to_screen_point({x + div(w, 2), y + div(h, 2)}) do
-      {:ok, {sx, sy}} -> Mouse.click(sx, sy)
+  defp click_rect(rect, ctx) do
+    case Runner.to_screen_point(Leeway.in_rect(rect)) do
+      {:ok, {sx, sy}} ->
+        Mouse.click(sx, sy)
       {:error, reason} -> Ctx.log(ctx, :error, "season_pass_collector: click failed: #{inspect(reason)}")
     end
   end

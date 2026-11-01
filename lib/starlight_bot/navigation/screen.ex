@@ -34,6 +34,7 @@ defmodule StarlightBot.Navigation.Transition do
     | {:branch, [{Screen.hook_spec(), [step()]}], [step()]}
     | {:branch, [{Screen.hook_spec(), [step()]}], [step()], pos_integer()}
     | {:sleep, pos_integer()}
+    | {:sleep_up_to, pos_integer()}
     | {:retry_until, Screen.hook_spec(), [step()], pos_integer(), pos_integer()}
     | {:retry_until, Screen.hook_spec(), [step()], pos_integer(), pos_integer(), pos_integer() | nil, Screen.hook_spec()}
 

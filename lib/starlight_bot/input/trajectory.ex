@@ -11,6 +11,10 @@ defmodule StarlightBot.Input.Trajectory do
   @wobble_knot_span 40.0
   @wobble_max_interior_knots 8
   @ease_sharpness 6.0
+  @noise_floor 0.25
+  @noise_ceiling 2.0
+  @undershoot_bias 0.5
+  @landing_cross_ratio 0.6
   @ease_peak_point_sigma 0.04
   @ease_peak_point_max_offset 0.1
 
@@ -48,7 +52,7 @@ defmodule StarlightBot.Input.Trajectory do
   end
 
   defp build_two_phase(from, to, vel_in, dist, duration_ms) do
-    landing = biased_landing(to, overshoot_sigma(dist))
+    landing = biased_landing(from, to, overshoot_sigma(dist))
     primary_duration = duration_ms * 0.82
 
     primary = draw_curve(from, landing, vel_in, primary_duration, @jitter_sigma, 1.0, @primary_t_peak)
@@ -84,13 +88,23 @@ defmodule StarlightBot.Input.Trajectory do
 
     0..n_steps
     |> Enum.zip(Enum.zip(jitter_x, jitter_y))
-    |> Enum.map(fn {i, {jx, jy}} ->
+    |> Enum.map(fn {i, {jx0, jy0}} ->
       t = i / n_steps
       ease_t = ease_progress(ease, t)
+      speed = signal_noise_scale(ease, i, n_steps)
+      jx = jx0 * speed
+      jy = jy0 * speed
       {x, y} = bezier_point(from, to, controls, ease_t)
       w = wobble_at(wobble, ease_t)
       {x + jx + w * perp_x, y + jy + w * perp_y, t * duration_ms}
     end)
+  end
+
+  defp signal_noise_scale(_ease, 0, _n_steps), do: @noise_floor
+
+  defp signal_noise_scale(ease, i, n_steps) do
+    speed = (ease_progress(ease, i / n_steps) - ease_progress(ease, (i - 1) / n_steps)) * n_steps
+    speed |> max(@noise_floor) |> min(@noise_ceiling)
   end
 
   defp wobble_knots(dist) do
@@ -194,8 +208,13 @@ defmodule StarlightBot.Input.Trajectory do
   defp ease_progress({t_peak, peak_point, _, p_out}, t),
     do: 1.0 - (1.0 - peak_point) * :math.pow((1.0 - t) / (1.0 - t_peak), p_out)
 
-  defp biased_landing({tx, ty}, sigma) do
-    {tx + :rand.normal(0.0, sigma), ty + :rand.normal(0.0, sigma)}
+  defp biased_landing({fx, fy}, {tx, ty}, sigma) do
+    {perp_x, perp_y} = perpendicular({fx, fy}, {tx, ty})
+    along = :rand.normal(-@undershoot_bias * sigma, sigma)
+    cross = :rand.normal(0.0, sigma * @landing_cross_ratio)
+    chord = distance({fx, fy}, {tx, ty})
+    {ux, uy} = {(tx - fx) / chord, (ty - fy) / chord}
+    {tx + along * ux + cross * perp_x, ty + along * uy + cross * perp_y}
   end
 
   defp correlated_jitter(n, sigma, _phi) when n <= 1, do: [:rand.normal(0.0, sigma)]

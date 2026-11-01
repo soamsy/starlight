@@ -5,7 +5,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.PackPlans.Resolver
   alias StarlightBot.Vision.{Capture, Frame, HookRegistry, Matcher}
-  alias StarlightBot.Input.Mouse
+  alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.{Plans, Teams, ThemePacks}
 
   @mode_poll_budget_ms 400
@@ -19,6 +19,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   @drag_x_offsets [20, 60, 100]
   @pull_y 540
   @drag_distance 450
+  @drop_radius_px 20
   @drag_confirm_poll_tries 15
   @drag_confirm_poll_every_ms 100
   @scan_poll_every_ms 100
@@ -577,8 +578,8 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     end
   end
 
-  defp click_rect_center(frame, {x, y, w, h}) do
-    {sx, sy} = Frame.to_screen_coords(frame, {x + w / 2, y + h / 2})
+  defp click_rect_center(frame, rect) do
+    {sx, sy} = Frame.to_screen_coords(frame, Leeway.in_rect(rect))
     Mouse.click(sx, sy)
   end
 
@@ -756,7 +757,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
          {:ok, true_x} <- recheck_x(hook, x + w / 2, ctx),
          {:ok, frame} <- Capture.grab_frame() do
       from = Frame.to_screen_coords(frame, {true_x + dx, @pull_y})
-      to = Frame.to_screen_coords(frame, {true_x + dx, @pull_y + @drag_distance})
+      to = frame |> Frame.to_screen_coords({true_x + dx, @pull_y + @drag_distance}) |> Leeway.point(@drop_radius_px)
       Mouse.drag(from, to, settle_ms: 150, mouse_down_settle_ms: 10, release_settle_ms: 200)
 
       if await_moved_away(ctx), do: :ok, else: try_pulls(rest, span, hook, ctx)
