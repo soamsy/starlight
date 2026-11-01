@@ -34,7 +34,7 @@ defmodule StarlightBot.NestedGamescope do
   defp extra_flags, do: String.split(System.get_env("STARLIGHT_GAMESCOPE_FLAGS") || "")
 
   defp backend_env("headless"), do: [{"WAYLAND_DISPLAY", nil}]
-  defp backend_env("wayland"), do: []
+  defp backend_env("wayland"), do: [{"gamescope_cursor_composite", "2"}]
 
   defp await_ei_socket(before, deadline) do
     case ei_sockets() -- before do
