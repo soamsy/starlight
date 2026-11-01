@@ -1,7 +1,7 @@
 defmodule StarlightBot.Input.Mouse do
   use GenServer
   require Logger
-  alias StarlightBot.{LogStore, Native, Input.MouseProfile, Input.Trajectory}
+  alias StarlightBot.{AppSettings, LogStore, Native, Input.MouseProfile, Input.Trajectory}
 
   @btn_left 0x110
   @btn_right 0x111
@@ -19,8 +19,10 @@ defmodule StarlightBot.Input.Mouse do
   @hover_radius_px 10
   @hover_min_interval_ms 220
   @hover_interval_spread_ms 60
+  @resync_idle_ms 60_000
+  @resync_every_moves 25
 
-  defstruct current_pos: {960, 540}, last_velocity: {0.0, 0.0}, held: MapSet.new(), premove: nil
+  defstruct current_pos: {960, 540}, last_velocity: {0.0, 0.0}, held: MapSet.new(), premove: nil, last_move_at: nil, moves_since_sync: 0
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -241,6 +243,7 @@ defmodule StarlightBot.Input.Mouse do
   end
 
   defp start_premove(state, tx, ty, within) do
+    state = sync(state)
     {fx, fy} = start_pos(state)
     waypoints = Trajectory.build({fx * 1.0, fy * 1.0}, {tx * 1.0, ty * 1.0}, state.last_velocity, MouseProfile.move_duration_mult())
     ref = make_ref()
@@ -302,6 +305,7 @@ defmodule StarlightBot.Input.Mouse do
   defp inside?({x, y}, {bx, by, bw, bh}), do: x >= bx and x <= bx + bw and y >= by and y <= by + bh
 
   defp execute_move(state, tx, ty, opts) do
+    state = sync(state)
     {fx, fy} = from_pos = start_pos(state)
     {vx, vy} = state.last_velocity
     profile =
@@ -319,9 +323,28 @@ defmodule StarlightBot.Input.Mouse do
   end
 
   defp absolute?, do: :persistent_term.get({__MODULE__, :absolute}, false)
+  defp relative?, do: :persistent_term.get({__MODULE__, :relative}, false)
+
+  defp sync(state) do
+    relative = AppSettings.launcher() in ["gamescope", "gamescope_window", "kwin"]
+    :persistent_term.put({__MODULE__, :relative}, relative)
+    now = System.monotonic_time(:millisecond)
+
+    if relative and absolute?() and resync?(state, now) do
+      {x, y} = state.current_pos
+      Native.move_absolute(x * 1.0, y * 1.0)
+      %{state | last_move_at: now, moves_since_sync: 0}
+    else
+      %{state | last_move_at: now, moves_since_sync: state.moves_since_sync + 1}
+    end
+  end
+
+  defp resync?(%{last_move_at: nil}, _now), do: true
+  defp resync?(state, now), do: now - state.last_move_at > @resync_idle_ms or state.moves_since_sync >= @resync_every_moves
 
   defp step({px, py}, {wx, wy}) do
     with true <- absolute?(),
+         false <- relative?(),
          :ok <- Native.move_absolute(wx * 1.0, wy * 1.0) do
       :ok
     else
