@@ -25,6 +25,7 @@ defmodule StarlightBot.NestedGamescope do
     log("starting gamescope #{backend} at #{@width}x#{@height}, its log is #{log_path}")
     log("spawning detached: #{Enum.join(args, " ")}")
 
+    # WSI must stay off: with it on, MIT-SHM captures come back as black frames
     case System.cmd("sh", ["-c", ~s(setsid -f "$@" </dev/null >"$0" 2>&1), log_path, gamescope | args], stderr_to_stdout: true, env: backend_env(backend) ++ [{"ENABLE_GAMESCOPE_WSI", "0"} | extra_env], cd: cwd) do
       {_, 0} -> await_ei_socket(before, System.monotonic_time(:millisecond) + @ready_timeout_ms)
       {out, code} -> {:error, {:launch_failed, code, String.trim(out)}}
