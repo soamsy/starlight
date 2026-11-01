@@ -10,6 +10,13 @@
       <input type="checkbox" class="toggle toggle-xs toggle-error" checked={@errors_only} phx-click="toggle_errors" /> errors only
     </label>
 
+    <form :if={not @embedded?} phx-change="select_log">
+      <select name="path" class="select select-xs font-mono">
+        <option value="" selected={@viewing == nil}>current session</option>
+        <option :for={path <- @log_files} :if={path != @file_path} value={path} selected={path == @viewing}>{log_label(path)}</option>
+      </select>
+    </form>
+
     <%= if @machine_filter do %>
       <span class="badge badge-primary badge-outline gap-1 font-mono max-w-xs">
         <span class="truncate">only {@machine_filter_label}</span>
@@ -22,8 +29,8 @@
     <% end %>
 
     <span :if={not @embedded?} class="ml-auto text-xs text-base-content/50 font-mono select-all truncate">
-      <%= if @file_path do %>
-        {@file_path}
+      <%= if @viewing || @file_path do %>
+        {@viewing || @file_path}
       <% else %>
         not writing to a file
       <% end %>

@@ -4,6 +4,7 @@ defmodule StarlightBotWeb.Live.LogLive do
   alias StarlightBot.Navigation.MachineStatus
 
   @page_size 2000
+  @file_limit 20_000
   @embedded_lines 300
   @machine_refresh_ms 500
 
@@ -23,6 +24,8 @@ defmodule StarlightBotWeb.Live.LogLive do
      |> assign(:max_lines, Map.get(session, "max_lines", @page_size))
      |> assign(:machines, machine_rows())
      |> assign(:file_path, LogStore.file_path())
+     |> assign(:log_files, LogStore.files())
+     |> assign(:viewing, nil)
      |> assign(:memory_limit, LogStore.memory_limit())
      |> assign(:show_steps, false)
      |> assign(:errors_only, false)
@@ -46,6 +49,13 @@ defmodule StarlightBotWeb.Live.LogLive do
      |> stream(:entries, Enum.reverse(visible), at: 0)}
   end
 
+  def handle_event("select_log", %{"path" => path}, socket) do
+    files = LogStore.files()
+    viewing = if path in files and path != socket.assigns.file_path, do: path
+
+    {:noreply, socket |> assign(log_files: files, viewing: viewing) |> reload()}
+  end
+
   def handle_event("toggle_steps", _, socket), do: {:noreply, socket |> update(:show_steps, &(not &1)) |> reload()}
 
   def handle_event("toggle_errors", _, socket), do: {:noreply, socket |> update(:errors_only, &(not &1)) |> reload()}
@@ -64,6 +74,8 @@ defmodule StarlightBotWeb.Live.LogLive do
   def handle_info(:refresh_machines, socket), do: {:noreply, assign(socket, :machines, machine_rows())}
 
   @impl true
+  def handle_info({:log_entry, _entry}, %{assigns: %{viewing: viewing}} = socket) when viewing != nil, do: {:noreply, socket}
+
   def handle_info({:log_entry, entry}, socket) do
     socket = update(socket, :oldest_seq, &(&1 || entry.seq))
 
@@ -83,7 +95,12 @@ defmodule StarlightBotWeb.Live.LogLive do
   end
 
   defp reload(socket) do
-    entries = LogStore.recent(socket.assigns.max_lines)
+    entries =
+      case socket.assigns.viewing do
+        nil -> LogStore.recent(socket.assigns.max_lines)
+        path -> LogStore.read_file(path, @file_limit)
+      end
+
     visible = Enum.filter(entries, &visible?(&1, socket.assigns))
 
     socket
@@ -149,6 +166,8 @@ defmodule StarlightBotWeb.Live.LogLive do
       first -> first < oldest_seq
     end
   end
+
+  def log_label(path), do: path |> Path.basename() |> String.replace_prefix("starlight_", "") |> String.replace_suffix(".log", "")
 
   def trimmed?(oldest_seq), do: oldest_seq != nil and not older_available?(oldest_seq) and oldest_seq > 1
 

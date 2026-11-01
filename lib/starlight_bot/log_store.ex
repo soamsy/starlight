@@ -39,6 +39,36 @@ defmodule StarlightBot.LogStore do
 
   def file_path, do: GenServer.call(__MODULE__, :file_path)
 
+  def files do
+    case StarlightBot.Data.log_dir() do
+      nil -> []
+      dir -> dir |> Path.join("starlight_*.log") |> Path.wildcard() |> Enum.map(&Path.expand/1) |> Enum.sort(:desc)
+    end
+  end
+
+  def read_file(path, limit) do
+    path
+    |> File.read!()
+    |> String.split("\n", trim: true)
+    |> Enum.reduce([], &parse_line/2)
+    |> Enum.take(limit)
+    |> Enum.reverse()
+    |> Enum.with_index(1)
+    |> Enum.map(fn {entry, seq} -> Map.put(entry, :seq, seq) end)
+  end
+
+  defp parse_line(line, acc) do
+    with [_, stamp, kind, text] <- Regex.run(~r/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?) \[(\w+)\] (.*)$/, line),
+         {:ok, at} <- NaiveDateTime.from_iso8601(stamp) do
+      [%{at: at, kind: String.to_atom(kind), text: text, lineage: []} | acc]
+    else
+      _ -> continue_entry(line, acc)
+    end
+  end
+
+  defp continue_entry(line, [head | rest]), do: [%{head | text: head.text <> "\n" <> line} | rest]
+  defp continue_entry(_line, []), do: []
+
   def format(entry), do: "#{format_time(entry.at)} [#{entry.kind}] #{entry.text}"
 
   def format_time(at), do: at |> NaiveDateTime.truncate(:millisecond) |> NaiveDateTime.to_string()
