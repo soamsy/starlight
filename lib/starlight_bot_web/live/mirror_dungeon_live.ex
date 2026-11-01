@@ -31,8 +31,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:run_memory, nav.run_memory)
      |> assign(:gifts_by_name, Map.new(EgoGifts.list_gifts(), &{&1.name, &1}))
      |> assign_milestones()
-     |> assign_clock(nav.run_clock)
-     |> assign(:run_splits, nav.run_splits)
+     |> assign_clock(times_clock(nav, :mirror_dungeon))
+     |> assign(:run_splits, times_splits(nav, :mirror_dungeon))
      |> assign(:screen_times, nav.screen_times)
      |> assign(:show_screen_times, false)
      |> assign(:screen_view, "breakdown")
@@ -244,8 +244,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:other_running?, nav.run_kind == :luxcavation)
      |> assign(:run_memory, nav.run_memory)
      |> assign_milestones()
-     |> assign_clock(nav.run_clock)
-     |> assign(:run_splits, nav.run_splits)
+     |> assign_clock(times_clock(nav, :mirror_dungeon))
+     |> assign(:run_splits, times_splits(nav, :mirror_dungeon))
      |> assign(:screen_times, nav.screen_times)}
   end
 
@@ -280,6 +280,12 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 
+  def times_clock(%{run_times_kind: kind, run_clock: clock}, kind), do: clock
+  def times_clock(_nav, _kind), do: nil
+
+  def times_splits(%{run_times_kind: kind, run_splits: splits}, kind), do: splits
+  def times_splits(_nav, _kind), do: []
+
   def elapsed_ms(nil, _now_ms), do: nil
   def elapsed_ms(%{running?: true, elapsed_ms: ms, received_ms: at}, now_ms), do: ms + max(now_ms - at, 0)
   def elapsed_ms(%{elapsed_ms: ms}, _now_ms), do: ms
@@ -298,6 +304,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   attr :runs, :list, required: true
   attr :live_last?, :boolean, required: true
+  attr :kind, :atom, default: :mirror_dungeon
 
   def run_times(assigns) do
     ~H"""
@@ -308,7 +315,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
         <div class={"flex flex-col gap-0.5 rounded-lg p-1.5 " <> if(@live_last? and index == length(@runs), do: "bg-primary/10", else: "bg-base-100/50")}>
           <div class="flex items-center justify-between text-xs font-semibold">
             <span class="flex items-center gap-1 min-w-0">
-              Run <%= run.run %>
+              <%= run_label(@kind, run.run) %>
               <span :if={run.team} class="font-normal text-base-content/60 truncate"><%= run.team %></span>
               <span :if={run.failed?} class="badge badge-error badge-xs">failed</span>
             </span>
@@ -316,7 +323,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
           </div>
           <div :for={floor <- run.floors} class="flex items-center justify-between gap-2 text-[11px] text-base-content/60 pl-2">
             <span class="flex items-center gap-1 min-w-0">
-              <span class="shrink-0">Floor <%= floor.floor %></span>
+              <span class="shrink-0"><%= floor_label(floor.floor) %></span>
               <span :if={floor.pack} class="text-base-content/40 truncate" title={floor.pack}><%= floor.pack %></span>
             </span>
             <span class="font-mono"><%= format_elapsed(floor.ms) %></span>
@@ -330,6 +337,13 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     <% end %>
     """
   end
+
+  defp run_label(:luxcavation, _run), do: "Luxcavation"
+  defp run_label(_kind, run), do: "Run #{run}"
+
+  defp floor_label(:exp), do: "EXP"
+  defp floor_label(:thread), do: "Thread"
+  defp floor_label(floor), do: "Floor #{floor}"
 
   def screen_segments("live", screen_times, _history_segments, run_clock, now_ms),
     do: ScreenTimes.segments(screen_times, elapsed_ms(run_clock, now_ms) || 0)

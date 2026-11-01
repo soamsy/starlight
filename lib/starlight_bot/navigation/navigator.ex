@@ -23,6 +23,7 @@ defmodule StarlightBot.Navigation.Navigator do
     pause_flag: nil,
     run_clock: nil,
     run_splits: [],
+    run_times_kind: nil,
     screen_times: %ScreenTimes{},
     next_run: nil
   ]
@@ -294,9 +295,20 @@ defmodule StarlightBot.Navigation.Navigator do
         enkephalin_convert_count
       )
 
-    ctx = nav_ctx(paused_to: {self(), :nav_paused}, pause_flag: pause_flag)
-    state = launch(state, :run_script, program, ctx, [])
-    state = %{state | phase: :running, goal: nil, run_kind: :luxcavation, pause_flag: pause_flag}
+    ctx = nav_ctx(paused_to: {self(), :nav_paused}, pause_flag: pause_flag, run_memory_to: {self(), :nav_run_memory})
+    state = launch(%{state | run_memory: %{}}, :run_script, program, ctx, [])
+
+    state = %{
+      state
+      | phase: :running,
+        goal: nil,
+        run_kind: :luxcavation,
+        pause_flag: pause_flag,
+        run_clock: RunClock.start(now_ms()),
+        run_splits: [],
+        run_times_kind: :luxcavation
+    }
+
     broadcast(state)
     {:noreply, state}
   end
@@ -310,7 +322,7 @@ defmodule StarlightBot.Navigation.Navigator do
     ctx = nav_ctx(paused_to: {self(), :nav_paused}, pause_flag: pause_flag, run_memory_to: {self(), :nav_run_memory})
     state = launch(state, :run_script, MirrorDungeonRunner.program(picks, run_count, config), ctx, [])
 
-    state = %{state | phase: :running, goal: nil, run_kind: :mirror_dungeon, pause_flag: pause_flag, run_clock: RunClock.start(now_ms()), run_splits: [], screen_times: ScreenTimes.track(%ScreenTimes{}, %{run: 1}, 0, DateTime.utc_now())}
+    state = %{state | phase: :running, goal: nil, run_kind: :mirror_dungeon, pause_flag: pause_flag, run_clock: RunClock.start(now_ms()), run_splits: [], run_times_kind: :mirror_dungeon, screen_times: ScreenTimes.track(%ScreenTimes{}, %{run: 1}, 0, DateTime.utc_now())}
     broadcast(state)
     {:noreply, state}
   end
@@ -395,7 +407,7 @@ defmodule StarlightBot.Navigation.Navigator do
   @impl true
   def handle_cast(:resume_luxcavation, %{phase: :paused, task_pid: pid} = state) when is_pid(pid) do
     clear_pause_request(state)
-    state = %{state | phase: :running}
+    state = %{state | phase: :running} |> update_clock(&RunClock.start/2)
     broadcast(state)
     {:noreply, state}
   end
@@ -703,6 +715,10 @@ defmodule StarlightBot.Navigation.Navigator do
     %{state | run_splits: RunSplits.track(state.run_splits, run, floor, RunClock.elapsed_ms(clock, now_ms()), team)}
   end
 
+  defp track_split(%{run_kind: :luxcavation, run_clock: %RunClock{} = clock} = state, %{lux_kind: kind}) do
+    %{state | run_splits: RunSplits.track(state.run_splits, 1, kind, RunClock.elapsed_ms(clock, now_ms()))}
+  end
+
   defp track_split(state, _snapshot), do: state
 
   defp track_screen(%{run_kind: :mirror_dungeon, run_clock: %RunClock{} = clock} = state, snapshot) do
@@ -779,6 +795,7 @@ defmodule StarlightBot.Navigation.Navigator do
       pause_requested: pause_requested?(state),
       run_clock: state.run_clock && %{elapsed_ms: RunClock.elapsed_ms(state.run_clock, now_ms()), running?: RunClock.running?(state.run_clock)},
       run_splits: state.run_splits,
+      run_times_kind: state.run_times_kind,
       screen_times: state.screen_times
     }
   end

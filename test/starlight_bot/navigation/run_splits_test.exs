@@ -15,6 +15,12 @@ defmodule StarlightBot.Navigation.RunSplitsTest do
     assert splits == [%{run: 1, floor: 1, start_ms: 0}, %{run: 1, floor: 2, start_ms: 60_000}, %{run: 2, floor: 1, start_ms: 90_000}]
   end
 
+  test "track accepts exp and thread as luxcavation rows" do
+    splits = [] |> RunSplits.track(1, :exp, 500) |> RunSplits.track(1, :exp, 9_000) |> RunSplits.track(1, :thread, 40_000)
+
+    assert splits == [%{run: 1, floor: :exp, start_ms: 0}, %{run: 1, floor: :thread, start_ms: 40_000}]
+  end
+
   test "summary splits elapsed time into runs and floors that add up to it" do
     splits = [%{run: 1, floor: 1, start_ms: 0}, %{run: 1, floor: 2, start_ms: 60_000}, %{run: 2, floor: 1, start_ms: 90_000}]
 

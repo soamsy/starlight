@@ -232,6 +232,15 @@
     <%!-- Right: log --%>
     <StarlightBotWeb.Live.LogLive.panel socket={@socket} id="luxcavation-log" class="flex-1 min-h-80 lg:min-h-0" />
 
+    <div class="w-full lg:w-56 shrink-0 bg-base-200 rounded-xl p-3 flex flex-col gap-2 lg:min-h-0 lg:overflow-y-auto">
+      <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Run times</span>
+      <MirrorDungeonLive.run_times
+        kind={:luxcavation}
+        runs={MirrorDungeonLive.run_times(@run_splits, @run_clock, @now_ms, %{})}
+        live_last?={@run_clock != nil and @run_clock.running?}
+      />
+    </div>
+
   </div>
 
 </div>

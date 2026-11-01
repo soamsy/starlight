@@ -216,6 +216,27 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     assert html =~ "01:15"
   end
 
+  test "the run times sidebar shows a luxcavation run with exp and thread rows" do
+    splits = [%{run: 1, floor: :exp, start_ms: 0}, %{run: 1, floor: :thread, start_ms: 40_000}]
+    runs = Live.run_times(splits, %{elapsed_ms: 70_000, running?: false, received_ms: 0}, 0, %{})
+    html = %{runs: runs, live_last?: false, kind: :luxcavation} |> Live.run_times() |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
+
+    assert html =~ "Luxcavation"
+    assert html =~ "EXP"
+    assert html =~ "Thread"
+    assert html =~ "00:30"
+    assert html =~ "01:10"
+  end
+
+  test "times_clock and times_splits only apply to the kind that produced them" do
+    nav = %{run_times_kind: :luxcavation, run_clock: %{elapsed_ms: 1}, run_splits: [:x]}
+
+    assert Live.times_clock(nav, :luxcavation) == %{elapsed_ms: 1}
+    assert Live.times_clock(nav, :mirror_dungeon) == nil
+    assert Live.times_splits(nav, :luxcavation) == [:x]
+    assert Live.times_splits(nav, :mirror_dungeon) == []
+  end
+
   @segments [
     %{screen: :battle, task: nil, step: "→ battle_playing", run: 1, floor: 1, start_ms: 0, end_ms: 30_000},
     %{screen: nil, task: nil, step: nil, run: 1, floor: 1, start_ms: 30_000, end_ms: 35_000},

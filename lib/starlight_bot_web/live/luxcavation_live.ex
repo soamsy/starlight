@@ -7,6 +7,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
 
   @countdown_secs 2
   @day_tick_ms 60_000
+  @clock_tick_ms 1_000
   @exp_enkephalin_cost 3
   @thread_enkephalin_cost 2
 
@@ -16,6 +17,7 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
       Navigator.subscribe()
       RunnerForms.subscribe()
       Process.send_after(self(), :day_tick, @day_tick_ms)
+      Process.send_after(self(), :clock_tick, @clock_tick_ms)
     end
 
     nav = Navigator.status()
@@ -27,6 +29,8 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:phase, nav.phase)
      |> assign(:pause_requested, nav.pause_requested)
      |> assign(:other_running?, nav.run_kind == :mirror_dungeon)
+     |> assign_clock(MirrorDungeonLive.times_clock(nav, :luxcavation))
+     |> assign(:run_splits, MirrorDungeonLive.times_splits(nav, :luxcavation))
      |> assign(:teams, teams)
      |> assign(:today, LuxSchedule.today())
      |> assign(:exp_pin, nil)
@@ -169,12 +173,28 @@ defmodule StarlightBotWeb.Live.LuxcavationLive do
      |> assign(:current_screen, nav.current_screen)
      |> assign(:phase, nav.phase)
      |> assign(:pause_requested, nav.pause_requested)
-     |> assign(:other_running?, nav.run_kind == :mirror_dungeon)}
+     |> assign(:other_running?, nav.run_kind == :mirror_dungeon)
+     |> assign_clock(MirrorDungeonLive.times_clock(nav, :luxcavation))
+     |> assign(:run_splits, MirrorDungeonLive.times_splits(nav, :luxcavation))}
   end
 
   @impl true
   def handle_info({:runner_form, "mirror_dungeon"}, socket), do: {:noreply, assign(socket, :md_next, RunnerForms.mirror_dungeon_action())}
   def handle_info({:runner_form, _runner}, socket), do: {:noreply, socket}
+
+  def handle_info(:clock_tick, socket) do
+    Process.send_after(self(), :clock_tick, @clock_tick_ms)
+
+    case socket.assigns.run_clock do
+      %{running?: true} -> {:noreply, assign(socket, :now_ms, System.monotonic_time(:millisecond))}
+      _ -> {:noreply, socket}
+    end
+  end
+
+  defp assign_clock(socket, run_clock) do
+    now = System.monotonic_time(:millisecond)
+    socket |> assign(:run_clock, run_clock && Map.put(run_clock, :received_ms, now)) |> assign(:now_ms, now)
+  end
 
   defp assign_picks(socket, params) do
     teams = socket.assigns.teams

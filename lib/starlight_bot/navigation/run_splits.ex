@@ -1,9 +1,9 @@
 defmodule StarlightBot.Navigation.RunSplits do
   def track(splits, run, floor, at_ms, team \\ nil)
 
-  def track([], run, floor, _at_ms, team) when is_integer(run) and is_integer(floor), do: [split(run, floor, 0, team)]
+  def track([], run, floor, _at_ms, team) when is_integer(run) and (is_integer(floor) or floor in [:exp, :thread]), do: [split(run, floor, 0, team)]
 
-  def track(splits, run, floor, at_ms, team) when is_integer(run) and is_integer(floor) do
+  def track(splits, run, floor, at_ms, team) when is_integer(run) and (is_integer(floor) or floor in [:exp, :thread]) do
     case List.last(splits) do
       %{run: ^run, floor: ^floor} -> splits
       _ -> splits ++ [split(run, floor, at_ms, team)]

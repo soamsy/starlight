@@ -81,6 +81,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   def next(lux, [{:batch, kind, size} | queue], screen, frame, ctx), do: batch(lux, kind, size, queue, screen, 0, frame, ctx)
 
   def batch(lux, kind, size, queue, screen, errors, _frame, ctx) do
+    RunMemory.put(ctx, :lux_kind, kind)
     RunMemory.put_team(ctx, Map.fetch!(lux.teams, kind))
     RunMemory.put(ctx, :battle_confirmed, false)
 
