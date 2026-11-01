@@ -65,7 +65,9 @@ fn get_window_rect<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
     match capture::get_window_rect(&class_name) {
         Ok((wx, wy, w, h)) => (ok(), wx, wy, w, h).encode(env),
         Err(e) => {
-            eprintln!("[starlight_native] get_window_rect error: {e}");
+            if !matches!(e, crate::error::NativeError::WindowNotFound) {
+                eprintln!("[starlight_native] get_window_rect error: {e}");
+            }
             (error(), e.to_atom(env)).encode(env)
         }
     }

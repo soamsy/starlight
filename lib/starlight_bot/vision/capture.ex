@@ -189,7 +189,10 @@ defmodule StarlightBot.Vision.Capture do
         %{s | refresh_interval_ms: @refresh_interval_ms}
 
       {:error, reason} ->
-        Logger.warning("Window rect refresh failed: #{inspect(reason)}", module: __MODULE__)
+        if state.window_rect do
+          Logger.warning("Window rect refresh failed: #{inspect(reason)}", module: __MODULE__)
+        end
+
         next_interval = min(state.refresh_interval_ms * 2, @max_refresh_interval_ms)
         %{put_rect(state, nil) | refresh_interval_ms: next_interval}
     end
