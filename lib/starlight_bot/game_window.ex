@@ -59,6 +59,21 @@ defmodule StarlightBot.GameWindow do
     |> log_failure()
   end
 
+  def launch_program(%{launch_mode: "steam", steam_app_id: app_id} = settings, launcher, exe, args) do
+    LogStore.append(:info, "launch: opening #{Path.basename(exe)} in #{launcher_label(launcher)} through Steam app #{app_id}")
+
+    with [] <- LauncherDeps.missing(launcher, settings.launch_mode),
+         :ok <- ensure_not_running(window_class() <> ".exe"),
+         {:ok, %{argv: argv, env: env, cwd: cwd}} <- SteamLaunch.command(app_id, exe: exe, args: args) do
+      start(launcher, argv, env, cwd)
+    else
+      [_ | _] = missing -> log_failure({:error, {:missing_dependencies, missing}})
+      other -> log_failure(other)
+    end
+  end
+
+  def launch_program(_settings, _launcher, _exe, _args), do: {:error, :steam_launch_mode_required}
+
   defp pin_resolution(launcher, env) when launcher in ["gamescope", "gamescope_window"] do
     with {_, data_path} <- List.keyfind(env, "STEAM_COMPAT_DATA_PATH", 0),
          reg_path = Path.join([data_path, "pfx", "user.reg"]),

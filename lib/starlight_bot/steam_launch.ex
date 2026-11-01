@@ -5,7 +5,7 @@ defmodule StarlightBot.SteamLaunch do
   @exe "LimbusCompany.exe"
   @system_tool_dirs ["/usr/share/steam/compatibilitytools.d", "/usr/local/share/steam/compatibilitytools.d"]
 
-  def command(app_id) do
+  def command(app_id, opts \\ []) do
     app_id = to_string(app_id)
 
     with {:ok, root} <- steam_root(),
@@ -24,7 +24,7 @@ defmodule StarlightBot.SteamLaunch do
 
       argv =
         [Path.join(root, "ubuntu12_32/reaper"), "SteamLaunch", "AppId=#{app_id}", "--"] ++
-          runtime_cmd ++ tool_cmd ++ [exe]
+          runtime_cmd ++ tool_cmd ++ [Keyword.get(opts, :exe, exe) | Keyword.get(opts, :args, [])]
 
       tool_paths = Enum.join([tool_dir | runtime_paths(runtime)], ":")
 

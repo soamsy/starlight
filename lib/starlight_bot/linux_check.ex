@@ -1,10 +1,14 @@
 defmodule StarlightBot.LinuxCheck do
-  alias StarlightBot.{Data, GameWindow, Native, Scheduler}
+  alias StarlightBot.{Data, GameWindow, Native, Scheduler, WinProbe}
 
   @target_title "starlight-target"
   @cmd_timeout_ms 5_000
   @key_a 30
   @btn_left 0x110
+  @btn_right 0x111
+  @key_esc 1
+  @injected_probe_duration_s 120
+  @hardware_probe_duration_s 25
 
   @checks [
     %{id: :session, group: "Environment", title: "Session and compositor", active?: false},
@@ -20,7 +24,14 @@ defmodule StarlightBot.LinuxCheck do
     %{id: :cursor, group: "Input and capture", title: "Cursor control", active?: true},
     %{id: :click, group: "Input and capture", title: "Move and click", active?: true},
     %{id: :keyboard, group: "Input and capture", title: "Type a key", active?: true},
-    %{id: :close, group: "Input and capture", title: "Close test window", active?: true}
+    %{id: :close, group: "Input and capture", title: "Close test window", active?: true},
+    %{id: :winprobe_direct, group: "Windows input", title: "Injected input, native window", active?: true, manual?: true},
+    %{id: :winprobe_kwin, group: "Windows input", title: "Injected input, nested KWin", active?: true, manual?: true},
+    %{id: :winprobe_gamescope_window, group: "Windows input", title: "Injected input, gamescope window", active?: true, manual?: true},
+    %{id: :winprobe_gamescope, group: "Windows input", title: "Injected input, headless gamescope", active?: true, manual?: true},
+    %{id: :winprobe_hardware_direct, group: "Windows input", title: "Real hardware baseline, native window", active?: true, manual?: true},
+    %{id: :winprobe_hardware_kwin, group: "Windows input", title: "Real hardware baseline, nested KWin", active?: true, manual?: true},
+    %{id: :winprobe_hardware_gamescope_window, group: "Windows input", title: "Real hardware baseline, gamescope window", active?: true, manual?: true}
   ]
 
   @tools [
@@ -58,7 +69,7 @@ defmodule StarlightBot.LinuxCheck do
 
   def checks, do: @checks
   def passive_ids, do: for(%{active?: false, id: id} <- @checks, do: id)
-  def active_ids, do: for(%{active?: true, id: id} <- @checks, do: id)
+  def active_ids, do: for(%{active?: true, id: id} = check <- @checks, not Map.get(check, :manual?, false), do: id)
   def target_title, do: @target_title
 
   def run(id, log) when is_atom(id) do
@@ -320,11 +331,153 @@ defmodule StarlightBot.LinuxCheck do
     end
   end
 
+  defp check(:winprobe_direct, log), do: run_probe(:injected, "direct", log)
+  defp check(:winprobe_kwin, log), do: run_probe(:injected, "kwin", log)
+  defp check(:winprobe_gamescope_window, log), do: run_probe(:injected, "gamescope_window", log)
+  defp check(:winprobe_gamescope, log), do: run_probe(:injected, "gamescope", log)
+  defp check(:winprobe_hardware_direct, log), do: run_probe(:hardware, "direct", log)
+  defp check(:winprobe_hardware_kwin, log), do: run_probe(:hardware, "kwin", log)
+  defp check(:winprobe_hardware_gamescope_window, log), do: run_probe(:hardware, "gamescope_window", log)
+
   defp check(:close, log) do
     stop_target()
     Native.get_window_rect(Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany"))
     log.(:ok, "test window closed")
     :ok
+  end
+
+  defp run_probe(mode, launcher, log) do
+    settings = Scheduler.get_settings()
+    dir = Path.join(Data.paths().root, "winprobe")
+    exe = Path.join(dir, "winprobe.exe")
+    stamp = Calendar.strftime(NaiveDateTime.local_now(), "%Y%m%d-%H%M%S")
+    out = Path.join(dir, "winprobe-#{mode}-#{launcher}-#{stamp}.log")
+    duration = if mode == :injected, do: @injected_probe_duration_s, else: @hardware_probe_duration_s
+
+    with :ok <- install_probe(dir, exe, log) do
+      log.(:info, "launcher #{launcher} (this check overrides the saved launcher setting), launch mode #{settings.launch_mode}, raw event log #{out}")
+
+      case GameWindow.launch_program(settings, launcher, exe, ["--out=" <> out, "--duration=#{duration}"]) do
+        :ok ->
+          result = probe_session(mode, out, duration, log)
+          System.cmd("pkill", ["-f", "winprobe.exe"], stderr_to_stdout: true)
+          Native.forget_window()
+          result
+
+        {:error, :already_running} ->
+          log.(:info, "close Limbus first; Proton would hold the probe until the game exits")
+          :warn
+
+        {:error, :steam_launch_mode_required} ->
+          fail(log, "the probe starts through Steam's Proton, so the scheduler launch mode must be steam")
+
+        {:error, reason} ->
+          fail(log, "could not start the probe: #{inspect(reason)}")
+      end
+    end
+  end
+
+  defp install_probe(dir, exe, log) do
+    with true <- File.regular?(WinProbe.exe_path()) || {:error, missing_probe_message()},
+         :ok <- File.mkdir_p(dir),
+         :ok <- File.cp(WinProbe.exe_path(), exe) do
+      :ok
+    else
+      {:error, reason} when is_binary(reason) -> fail(log, reason)
+      {:error, reason} -> fail(log, "could not install the probe: #{inspect(reason)}")
+    end
+  end
+
+  defp missing_probe_message do
+    zig = if System.find_executable("zig"), do: "zig is installed", else: "zig is not installed, install it first"
+    "#{WinProbe.exe_path()} is missing, so there is nothing to run inside Proton. Build it with priv/linux_checks/build_winprobe.sh (#{zig})"
+  end
+
+  defp probe_session(mode, out, duration, log) do
+    with :ok <- wait_for(fn -> WinProbe.ready?(read_probe(out)) end, 120_000, "the probe never started; check the launch log for Proton errors"),
+         {:ok, {x, y, w, h} = rect} <- wait_for_rect(20_000, WinProbe.title()) do
+      log.(:ok, "probe running, client area #{w}x#{h} at #{x},#{y}")
+      drive_probe(mode, rect, duration, log)
+
+      case wait_for(fn -> WinProbe.finished?(read_probe(out)) end, 15_000 + duration * 1_000, "the probe did not finish") do
+        :ok -> WinProbe.report(WinProbe.parse(read_probe(out)), mode, log)
+        {:error, message} ->
+          log.(:error, message)
+          WinProbe.report(WinProbe.parse(read_probe(out)), mode, log)
+          :error
+      end
+    else
+      {:error, message} -> fail(log, message)
+    end
+  end
+
+  defp read_probe(path) do
+    case File.read(path) do
+      {:ok, text} -> text
+      _ -> ""
+    end
+  end
+
+  defp drive_probe(:injected, {x, y, w, h}, _duration, log) do
+    center = {x + div(w, 2), y + div(h, 2)}
+
+    with :ok <- Native.init_input(WinProbe.title(), Data.portal_token_path()) do
+      log.(:info, "input connected through #{Native.input_backend()}")
+      reach(center, log)
+      Process.sleep(500)
+      sweep(center, log)
+      Process.sleep(200)
+      tap_button(@btn_left, 60)
+      tap_button(@btn_left, 20)
+      tap_button(@btn_right, 40)
+      Native.scroll(0, 120)
+      Process.sleep(200)
+      tap_key(@key_a, 40)
+      tap_key(@key_a, 120)
+      Process.sleep(300)
+      tap_key(@key_esc, 40)
+      log.(:info, "sent a relative sweep, an absolute sweep, 2 left clicks, 1 right click, 1 wheel notch, 2 presses of A and Escape")
+    else
+      {:error, reason} -> log.(:error, "libei connection failed: #{inspect(reason)}")
+    end
+  end
+
+  defp drive_probe(:hardware, _rect, duration, log) do
+    log.(:info, "use your real mouse and keyboard on the probe window now: move around, left and right click, scroll, type A; press Escape to finish, or it closes after #{duration} s")
+    log.(:info, "this only works when the probe window is visible on your desktop (native window or gamescope window launcher)")
+  end
+
+  defp sweep({cx, cy}, log) do
+    sweep_steps("relative", log, fn _ -> Native.move_relative(4.0, 2.0) end)
+    sweep_steps("absolute", log, fn i -> Native.move_absolute((cx + 160 - i * 4) * 1.0, (cy + 80 - i * 2) * 1.0) end)
+  end
+
+  defp sweep_steps(label, log, move) do
+    log.(:info, "sweeping the pointer in 40 steps with #{label} moves")
+
+    failure =
+      Enum.find_value(1..40, fn i ->
+        result = move.(i)
+        Process.sleep(8)
+        if result != :ok, do: result
+      end)
+
+    if failure, do: log.(:info, "#{label} moves reported #{inspect(failure)}")
+    Process.sleep(150)
+  end
+
+  defp tap_button(code, hold_ms) do
+    Native.button_event(code, true)
+    Process.sleep(hold_ms)
+    Native.button_event(code, false)
+    Process.sleep(150)
+  end
+
+  defp tap_key(code, hold_ms) do
+    Native.key_event(code, true)
+    Process.sleep(hold_ms)
+    Native.key_event(code, false)
+    Process.sleep(150)
   end
 
   defp game_window_verdict(title, lines, log) do
@@ -539,15 +692,15 @@ defmodule StarlightBot.LinuxCheck do
     end
   end
 
-  defp wait_for_rect(timeout_ms) do
+  defp wait_for_rect(timeout_ms, title \\ @target_title) do
     result =
       wait_for(
-        fn -> match?({:ok, _, _, _, _}, Native.get_window_rect(@target_title)) end,
+        fn -> match?({:ok, _, _, _, _}, Native.get_window_rect(title)) end,
         timeout_ms,
-        "the test window opened but could not be located on any X display"
+        "the #{title} window opened but could not be located on any X display"
       )
 
-    with :ok <- result, {:ok, x, y, w, h} <- Native.get_window_rect(@target_title), do: {:ok, {x, y, w, h}}
+    with :ok <- result, {:ok, x, y, w, h} <- Native.get_window_rect(title), do: {:ok, {x, y, w, h}}
   end
 
   defp find(nil, message), do: {:error, message}

@@ -14,7 +14,7 @@
       <div class="text-xs font-semibold uppercase tracking-wide text-base-content/50">{group}</div>
       <div :for={check <- checks} class="flex items-center gap-2 rounded-lg bg-base-200 px-2 py-1.5 text-sm">
         <span class={"h-2.5 w-2.5 shrink-0 rounded-full #{status_class(@results[check.id])}"}></span>
-        <span class="flex-1 truncate">{check.title}</span>
+        <span class="line-clamp-2 min-w-0 flex-1 leading-snug" title={check.title}>{check.title}</span>
         <span :if={@running == check.id} class="loading loading-spinner loading-xs"></span>
         <button class="btn btn-xs btn-ghost" phx-click="run" phx-value-id={check.id} disabled={@busy != nil}>Run</button>
       </div>

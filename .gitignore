@@ -61,3 +61,5 @@ master.db*
 /apps/starlight/
 /md_guide/
 /priv/static/images/bg/kit_sources
+
+/priv/linux_checks/winprobe.exe
