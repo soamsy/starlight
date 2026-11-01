@@ -156,9 +156,9 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   def post_battle(lux, queue, :lux_unknown, tries, _frame, _ctx),
     do: {:steps, [sleep(@post_battle_settle_ms), locate_screen(then: {__MODULE__, :post_battle_located, [lux, queue, tries - 1]})]}
 
-  def post_battle(_lux, _queue, screen, _tries, _frame, ctx) do
-    Ctx.log(ctx, :error, "landed on #{screen} after battle, expected :lux_exp/:lux_thread — stopping")
-    {:error, {:unexpected_post_battle_screen, screen}}
+  def post_battle(lux, queue, screen, _tries, frame, ctx) do
+    Ctx.log(ctx, :info, "landed on #{screen} after battle, routing from there")
+    next(lux, queue, screen, frame, ctx)
   end
 
   def post_battle_located(lux, queue, tries, {:ok, screen}, frame, ctx), do: post_battle(lux, queue, screen, tries, frame, ctx)
