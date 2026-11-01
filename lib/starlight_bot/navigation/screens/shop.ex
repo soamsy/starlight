@@ -39,7 +39,7 @@ defmodule StarlightBot.Navigation.Screens.Shop do
       [
         click(:shop_leave),
         branch([{:shop_leave_confirm, []}], wait: 1_500),
-        retry_until(:dungeon_graph, [branch([{:shop_leave_confirm, [key(:enter)]}, {:shop, [click(:shop_leave)]}])], every: 400, timeout: 8_000)
+        retry_until(:dungeon_graph, [branch([{:shop_leave_confirm, [key(:enter)]}, {:shop, [click(:shop_leave)]}])], every: 1000, timeout: 8_000)
       ]
     end
 
