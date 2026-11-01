@@ -11,6 +11,7 @@ defmodule StarlightBot.Input.Mouse do
   @mouse_down_settle_ms 30
   @release_settle_ms 50
   @click_settle_ms 2
+  @min_hover_ms 70
   @land_check_delay_ms 5
   @land_tolerance_px 3
   @land_attempts 3
@@ -141,7 +142,7 @@ defmodule StarlightBot.Input.Mouse do
     new_state = state |> execute_move(x, y, opts) |> elem(0)
     new_state = land(new_state, x, y, within, opts, @land_attempts)
 
-    :timer.sleep(MouseProfile.hesitation_ms())
+    :timer.sleep(max(MouseProfile.hesitation_ms(), @min_hover_ms))
     do_click(button)
     {:reply, :ok, new_state}
   end
