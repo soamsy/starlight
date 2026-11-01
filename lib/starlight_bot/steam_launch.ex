@@ -47,7 +47,6 @@ defmodule StarlightBot.SteamLaunch do
       ] ++ user_env()
 
       log("command: #{Enum.join(argv, " ")}")
-      log("env: " <> Enum.map_join(env, " ", fn {k, v} -> "#{k}=#{v}" end))
       {:ok, %{argv: argv, env: env, exe: exe, cwd: Path.dirname(exe)}}
     end
   end

@@ -71,7 +71,6 @@ defmodule StarlightBot.NestedKwin do
     {:ok, kwin_pid} = pid()
     nested_env = env()
     env = nested_env ++ extra_env ++ [{"STARLIGHT_KWIN_PID", to_string(kwin_pid)}]
-    log("nested session env: " <> Enum.map_join(nested_env, " ", fn {k, v} -> "#{k}=#{v}" end))
     log("spawning detached, kwin pid #{kwin_pid} is killed when it exits: #{Enum.join(argv, " ")}")
 
     case System.cmd("sh", ["-c", ~s(setsid -f sh -c '"$@"; kill "$STARLIGHT_KWIN_PID"' sh "$@" </dev/null >/dev/null 2>&1), "sh" | argv], stderr_to_stdout: true, env: env, cd: cwd) do
