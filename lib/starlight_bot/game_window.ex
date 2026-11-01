@@ -44,6 +44,7 @@ defmodule StarlightBot.GameWindow do
 
     with :ok <- ensure_not_running(window_class() <> ".exe"),
          {:ok, %{argv: argv, env: env, cwd: cwd}} <- SteamLaunch.command(app_id) do
+      pin_resolution(launcher, env)
       start(launcher, argv, env, cwd)
     end
     |> log_failure()
@@ -56,6 +57,28 @@ defmodule StarlightBot.GameWindow do
       start(launcher, [path], [], File.cwd!())
     end
     |> log_failure()
+  end
+
+  defp pin_resolution(launcher, env) when launcher in ["gamescope", "gamescope_window"] do
+    with {_, data_path} <- List.keyfind(env, "STEAM_COMPAT_DATA_PATH", 0),
+         reg_path = Path.join([data_path, "pfx", "user.reg"]),
+         {:ok, reg} <- File.read(reg_path) do
+      pinned =
+        reg
+        |> pin_dword(~r/^("Screenmanager Resolution (?:Window )?Width_h\d+"=dword:)[0-9a-f]{8}/m, @target_w)
+        |> pin_dword(~r/^("Screenmanager Resolution (?:Window )?Height_h\d+"=dword:)[0-9a-f]{8}/m, @target_h)
+
+      if pinned != reg, do: File.write!(reg_path, pinned)
+    end
+
+    :ok
+  end
+
+  defp pin_resolution(_launcher, _env), do: :ok
+
+  defp pin_dword(reg, pattern, value) do
+    hex = value |> Integer.to_string(16) |> String.downcase() |> String.pad_leading(8, "0")
+    Regex.replace(pattern, reg, fn _, prefix -> prefix <> hex end)
   end
 
   defp start("direct", argv, env, cwd) do
