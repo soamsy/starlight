@@ -22,6 +22,7 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
   @impl true
   def handle_info(:tick, state) do
     Process.send_after(self(), :tick, @tick_ms)
+    revoke_if_closed()
     {:noreply, state |> maybe_charge() |> maybe_close()}
   end
 
@@ -29,7 +30,7 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
     Process.demonitor(ref, [:flush])
     EnkephalinSchedule.set_charging(false)
     log_result(result)
-    {:noreply, %{state | task: nil, close_after: result == {:started, true}}}
+    {:noreply, %{state | task: nil, close_after: match?({:started, _}, result) and EnkephalinSchedule.owned?()}}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{task: %Task{ref: ref}} = state) do
@@ -73,11 +74,19 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
 
   defp charge(settings, end_at) do
     with {:ok, rect, launched?} <- ensure_window(settings, end_at),
+         :ok <- claim_launch(launched?),
          :ok <- ensure_aspect(rect, settings.steam_app_id),
          :ok <- await_game_ready(end_at),
          :ok <- start_charge() do
       {:started, launched?}
     end
+  end
+
+  defp claim_launch(true), do: EnkephalinSchedule.own_launch()
+  defp claim_launch(false), do: :ok
+
+  defp revoke_if_closed do
+    if EnkephalinSchedule.owned?() and match?({:error, _}, GameWindow.rect()), do: EnkephalinSchedule.revoke(:closed)
   end
 
   defp ensure_window(settings, end_at) do
@@ -141,6 +150,7 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
     if runners_idle?() do
       state = %{state | close_after: false}
       if close_wanted?(state), do: close_game()
+      if clean_charge?(), do: EnkephalinSchedule.release()
       state
     else
       state
@@ -149,14 +159,22 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
 
   defp maybe_close(state), do: state
 
+  defp clean_charge?, do: match?(%{kind: :enkephalin, ok?: true}, Navigator.status().last_run)
+
   defp close_wanted?(_state) do
+    EnkephalinSchedule.owned?() and close_conditions_met?()
+  end
+
+  defp close_conditions_met? do
     settings = Scheduler.get_settings()
     EnkephalinSchedule.close_after_charge?(EnkephalinSchedule.get_settings(), settings, DailyProgress.remaining(settings), Navigator.status().last_run)
   end
 
   defp close_game do
     case GameWindow.close() do
-      :ok -> LogStore.append(:ok, "enkephalin scheduler: charged without interruption, closed Limbus")
+      :ok ->
+        EnkephalinSchedule.release()
+        LogStore.append(:ok, "enkephalin scheduler: charged without interruption, closed Limbus")
       {:error, reason} -> LogStore.append(:error, "enkephalin scheduler: charged, but closing Limbus failed: #{inspect(reason)}")
     end
   end

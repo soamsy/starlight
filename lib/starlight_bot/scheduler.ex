@@ -87,6 +87,7 @@ defmodule StarlightBot.Scheduler do
 
   def hold(option) when option in @hold_hours or option in ["day", "clear"] do
     now = DateTime.utc_now()
+    EnkephalinSchedule.revoke(:hold)
 
     case option do
       "clear" ->

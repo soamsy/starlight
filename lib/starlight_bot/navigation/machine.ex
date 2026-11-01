@@ -2,7 +2,7 @@ defmodule StarlightBot.Navigation.Machine do
   @behaviour :gen_statem
 
   alias StarlightBot.Automation.RunMemory
-  alias StarlightBot.{Ctx, GameWindow}
+  alias StarlightBot.{Ctx, EnkephalinSchedule, GameWindow}
   alias StarlightBot.Input.{Keyboard, Mouse, Premove}
   alias StarlightBot.Navigation.{Catalog, MachineStatus, Offload, Runner, Screen}
   alias StarlightBot.Vision.{Capture, Frame, HookRegistry, Matcher}
@@ -156,6 +156,7 @@ defmodule StarlightBot.Navigation.Machine do
 
       data.ctx.pause_flag != nil ->
         Ctx.log(data.ctx, :error, "game window lost focus (alt-tabbed?), pausing")
+        EnkephalinSchedule.revoke(:pause)
         :atomics.put(data.ctx.pause_flag, 1, 1)
         hold(step, data)
 

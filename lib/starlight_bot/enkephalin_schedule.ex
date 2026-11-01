@@ -1,11 +1,21 @@
 defmodule StarlightBot.EnkephalinSchedule do
   alias StarlightBot.{AppSettings, DailyProgress, Scheduler}
+  alias StarlightBot.Navigation.Navigator
 
   @topic "enkephalin_schedule"
   @max_interval_minutes 7 * 24 * 60
   @enkephalin_per_hour 10
   @enkephalin_cap 160
   @enkephalin_per_module 20
+
+  @revoked_reasons %{
+    hold: "the schedulers were paused",
+    cancel: "a run was cancelled",
+    manual_run: "a run was started by hand",
+    pause: "a run was paused",
+    disabled: "the charger was turned off",
+    closed: "the game was closed"
+  }
 
   def subscribe, do: Phoenix.PubSub.subscribe(StarlightBot.PubSub, @topic)
 
@@ -34,6 +44,7 @@ defmodule StarlightBot.EnkephalinSchedule do
       AppSettings.put("enkephalin_schedule_window_end", attrs.window_end)
       AppSettings.put("enkephalin_schedule_interval_minutes", Integer.to_string(attrs.interval_minutes))
       AppSettings.put("enkephalin_schedule_close_game", to_string(attrs.close_game_after_charge))
+      if not attrs.enabled, do: revoke(:disabled)
       settings = get_settings()
       broadcast({:enkephalin_schedule, settings})
       {:ok, settings}
@@ -56,6 +67,40 @@ defmodule StarlightBot.EnkephalinSchedule do
       not (scheduler_settings.enabled and DailyProgress.pending?(remaining))
   end
 
+  def ownership, do: :persistent_term.get({__MODULE__, :ownership}, nil)
+
+  def owned?, do: ownership() == :owned
+
+  def own_launch, do: put_ownership(:owned)
+
+  def release, do: put_ownership(nil)
+
+  def revoke(reason) do
+    if owned?(), do: put_ownership({:revoked, reason}), else: :ok
+  end
+
+  defp put_ownership(value) do
+    :persistent_term.put({__MODULE__, :ownership}, value)
+    broadcast({:enkephalin_schedule, get_settings()})
+    :ok
+  end
+
+  def close_note(charge_settings, scheduler_settings, remaining) do
+    case {charge_settings.close_game_after_charge, ownership()} do
+      {false, _} -> "Won't close Limbus, closing is off"
+      {true, nil} -> "Won't close Limbus, it was already open"
+      {true, {:revoked, reason}} -> "Won't close Limbus, #{Map.fetch!(@revoked_reasons, reason)}"
+      {true, :owned} ->
+        if scheduler_settings.enabled and DailyProgress.pending?(remaining),
+          do: "Won't close Limbus, daily goals are still pending",
+          else: "Will close Limbus when the charge finishes"
+    end
+  end
+
+  defp charge_run_active? do
+    GenServer.whereis(Navigator) != nil and match?(%{run_kind: :enkephalin}, Navigator.status())
+  end
+
   def charging?, do: :persistent_term.get({__MODULE__, :charging}, false)
 
   def set_charging(charging?), do: :persistent_term.put({__MODULE__, :charging}, charging?)
@@ -71,10 +116,15 @@ defmodule StarlightBot.EnkephalinSchedule do
   def outlook(%NaiveDateTime{} = now, settings, blocked, busy?) do
     cond do
       not settings.enabled -> nil
-      charging?() -> "Charging enkephalin now"
+      charging?() or charge_run_active?() -> "Charging enkephalin now. " <> current_close_note()
       busy? -> "Waiting for the current run to finish before charging enkephalin"
       true -> charge_outlook(now, settings, blocked, next_charge(now, settings, blocked))
     end
+  end
+
+  defp current_close_note do
+    scheduler_settings = Scheduler.get_settings()
+    close_note(get_settings(), scheduler_settings, DailyProgress.remaining(scheduler_settings))
   end
 
   defp charge_outlook(_now, _settings, _blocked, nil), do: "No charging window left to charge in"

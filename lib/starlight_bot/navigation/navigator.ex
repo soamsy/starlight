@@ -2,7 +2,7 @@ defmodule StarlightBot.Navigation.Navigator do
   use GenServer
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Automation.Scripts.ShopRunner
-  alias StarlightBot.{Ctx, LogStore, RunHistory, Teams}
+  alias StarlightBot.{Ctx, EnkephalinSchedule, LogStore, RunHistory, Teams}
   alias StarlightBot.Automation.Scripts.{ClaimRewards, EnkephalinConversion, LuxcavationRunner, MirrorDungeonRunner, SelectTeamOnScreen}
   alias StarlightBot.Navigation.{Catalog, DSL, Machine, RunClock, RunSplits, Runner, ScreenTimes}
 
@@ -35,13 +35,13 @@ defmodule StarlightBot.Navigation.Navigator do
 
   def localize, do: GenServer.cast(__MODULE__, :localize)
 
-  def run_to(screen_name), do: GenServer.cast(__MODULE__, {:run_to, screen_name})
+  def run_to(screen_name), do: manual({:run_to, screen_name})
 
-  def run_action(action_name), do: GenServer.cast(__MODULE__, {:run_action, action_name})
+  def run_action(action_name), do: manual({:run_action, action_name})
 
-  def run_transition(transition_name), do: GenServer.cast(__MODULE__, {:run_transition, transition_name})
+  def run_transition(transition_name), do: manual({:run_transition, transition_name})
 
-  def run_script(script_name), do: GenServer.cast(__MODULE__, {:run_script, script_name})
+  def run_script(script_name), do: manual({:run_script, script_name})
 
   def run_luxcavation(
         team,
@@ -52,13 +52,12 @@ defmodule StarlightBot.Navigation.Navigator do
         enkephalin_convert_count
       ),
       do:
-        GenServer.cast(
-          __MODULE__,
+        manual(
           {:run_luxcavation, team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count}
         )
 
   def run_mirror_dungeon(picks, run_count, config),
-    do: GenServer.cast(__MODULE__, {:run_mirror_dungeon, picks, run_count, config})
+    do: manual({:run_mirror_dungeon, picks, run_count, config})
 
   def run_scheduled(action), do: GenServer.cast(__MODULE__, {:scheduled, action})
 
@@ -70,21 +69,32 @@ defmodule StarlightBot.Navigation.Navigator do
   def charge_enkephalin(convert_count), do: GenServer.cast(__MODULE__, {:charge_enkephalin, convert_count})
 
   def select_team_on_screen(team_id, hook),
-    do: GenServer.cast(__MODULE__, {:select_team_on_screen, team_id, hook})
+    do: manual({:select_team_on_screen, team_id, hook})
 
-  def run_shop_dry_run(team, floor), do: GenServer.cast(__MODULE__, {:run_shop_dry_run, team, floor})
+  def run_shop_dry_run(team, floor), do: manual({:run_shop_dry_run, team, floor})
 
-  def run_shop(team, floor), do: GenServer.cast(__MODULE__, {:run_shop, team, floor})
+  def run_shop(team, floor), do: manual({:run_shop, team, floor})
 
-  def claim_rewards(config), do: GenServer.cast(__MODULE__, {:claim_rewards, config})
+  def claim_rewards(config), do: manual({:claim_rewards, config})
 
-  def cancel, do: GenServer.cast(__MODULE__, :cancel)
+  def cancel do
+    EnkephalinSchedule.revoke(:cancel)
+    GenServer.cast(__MODULE__, :cancel)
+  end
 
-  def pause, do: GenServer.cast(__MODULE__, :pause)
+  def pause do
+    EnkephalinSchedule.revoke(:pause)
+    GenServer.cast(__MODULE__, :pause)
+  end
 
   def resume_luxcavation, do: GenServer.cast(__MODULE__, :resume_luxcavation)
 
   def resume_mirror_dungeon, do: GenServer.cast(__MODULE__, :resume_mirror_dungeon)
+
+  defp manual(message) do
+    EnkephalinSchedule.revoke(:manual_run)
+    GenServer.cast(__MODULE__, message)
+  end
 
   @impl true
   def init(_opts), do: {:ok, %__MODULE__{}}

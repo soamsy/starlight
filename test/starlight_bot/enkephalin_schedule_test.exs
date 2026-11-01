@@ -5,6 +5,48 @@ defmodule StarlightBot.EnkephalinScheduleTest do
 
   @settings %{window_start: "09:00", window_end: "13:00", interval_minutes: 120, last_converted_at: nil}
 
+  describe "launch ownership" do
+    @on %{close_game_after_charge: true}
+    @idle %{enabled: false}
+    @done %{"exp" => 0, "thread" => 0, "md" => 0}
+
+    setup do
+      :ok = StarlightBot.TestDB.checkout()
+      EnkephalinSchedule.release()
+      on_exit(fn -> :persistent_term.put({EnkephalinSchedule, :ownership}, nil) end)
+    end
+
+    test "any intervention after the launch ends ownership" do
+      EnkephalinSchedule.own_launch()
+      assert EnkephalinSchedule.owned?()
+      EnkephalinSchedule.revoke(:hold)
+      refute EnkephalinSchedule.owned?()
+      assert {:revoked, :hold} = EnkephalinSchedule.ownership()
+    end
+
+    test "revoking a game the bot did not launch changes nothing" do
+      EnkephalinSchedule.revoke(:hold)
+      assert EnkephalinSchedule.ownership() == nil
+    end
+
+    test "the next launch takes ownership back" do
+      EnkephalinSchedule.own_launch()
+      EnkephalinSchedule.revoke(:cancel)
+      EnkephalinSchedule.own_launch()
+      assert EnkephalinSchedule.owned?()
+    end
+
+    test "the close note says whether the game will be closed and why not" do
+      assert EnkephalinSchedule.close_note(@on, @idle, @done) =~ "already open"
+      EnkephalinSchedule.own_launch()
+      assert EnkephalinSchedule.close_note(@on, @idle, @done) =~ "Will close"
+      assert EnkephalinSchedule.close_note(@on, %{enabled: true}, %{@done | "exp" => 2}) =~ "goals are still pending"
+      assert EnkephalinSchedule.close_note(%{close_game_after_charge: false}, @idle, @done) =~ "closing is off"
+      EnkephalinSchedule.revoke(:pause)
+      assert EnkephalinSchedule.close_note(@on, @idle, @done) =~ "a run was paused"
+    end
+  end
+
   describe "close_game_after_charge" do
     setup do
       :ok = StarlightBot.TestDB.checkout()
