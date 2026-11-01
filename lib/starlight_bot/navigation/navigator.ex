@@ -3,7 +3,7 @@ defmodule StarlightBot.Navigation.Navigator do
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Automation.Scripts.ShopRunner
   alias StarlightBot.{Ctx, EnkephalinSchedule, LogStore, RunHistory, Teams}
-  alias StarlightBot.Automation.Scripts.{ClaimRewards, EnkephalinConversion, LuxcavationRunner, MirrorDungeonRunner, SelectTeamOnScreen}
+  alias StarlightBot.Automation.Scripts.{ClaimRewards, EnkephalinConversion, LuxcavationRunner, MirrorDungeonRunner, PrepareLineups, SelectTeamOnScreen}
   alias StarlightBot.Navigation.{Catalog, DSL, Machine, RunClock, RunSplits, Runner, ScreenTimes}
 
   @topic "navigation"
@@ -65,6 +65,8 @@ defmodule StarlightBot.Navigation.Navigator do
 
   def queue_after_run({:run_mirror_dungeon, _picks, _run_count, _config} = next),
     do: GenServer.cast(__MODULE__, {:queue_after_run, next})
+
+  def prepare_lineups, do: manual(:prepare_lineups)
 
   def charge_enkephalin(convert_count), do: GenServer.cast(__MODULE__, {:charge_enkephalin, convert_count})
 
@@ -226,6 +228,19 @@ defmodule StarlightBot.Navigation.Navigator do
         broadcast(state)
         {:noreply, state}
     end
+  end
+
+  @impl true
+  def handle_cast(:prepare_lineups, %{task_pid: pid} = state) when is_pid(pid),
+    do: refuse_run(state, "lineup preparation", "another run")
+
+  def handle_cast(:prepare_lineups, state) do
+    state = cancel_running(state)
+    state = add_log(state, :info, "Preparing lineups")
+    state = launch(state, :run_script, PrepareLineups.program(), nav_ctx(), nil)
+    state = %{state | phase: :running, goal: nil, run_kind: :prepare_lineups}
+    broadcast(state)
+    {:noreply, state}
   end
 
   @impl true

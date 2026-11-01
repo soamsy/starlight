@@ -61,7 +61,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:selected_ids, blank_selected_ids())
      |> assign(:budget_inputs, blank_budget_inputs(nil))
      |> assign(:phase, nav.phase)
-     |> assign(:log, nav.log)
+     |> assign(:run_kind, nav.run_kind)
      |> assign(:pane, "battle")}
   end
 
@@ -90,6 +90,18 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       nil -> {:noreply, socket}
       id -> {:noreply, push_patch(socket, to: ~p"/teams?team=#{id}&pane=#{pane}")}
     end
+  end
+
+  @impl true
+  def handle_event("prepare_lineups", _, socket) do
+    Navigator.prepare_lineups()
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("cancel_run", _, socket) do
+    Navigator.cancel()
+    {:noreply, socket}
   end
 
   @impl true
@@ -248,10 +260,15 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   @impl true
   def handle_info({:nav_state, nav}, socket) do
-    {:noreply, socket |> assign(:phase, nav.phase) |> assign(:log, nav.log)}
+    {:noreply, socket |> assign(:phase, nav.phase) |> assign(:run_kind, nav.run_kind)}
   end
 
   # --- Private ---
+
+  def running_label(:luxcavation), do: "Luxcavation is running"
+  def running_label(:mirror_dungeon), do: "Mirror Dungeon is running"
+  def running_label(:enkephalin), do: "Enkephalin charge is running"
+  def running_label(_), do: "Another run is in progress"
 
   def log_kind_class(:ok), do: "text-success"
   def log_kind_class(:error), do: "text-error"

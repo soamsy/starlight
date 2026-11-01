@@ -10,16 +10,23 @@
           <.link patch={profiles_toggle_path(@editing_id, @pane)}
                  class={"btn btn-sm " <> if(@pane == "profiles", do: "btn-primary", else: "btn-outline")}>Sinner Profiles</.link>
 
-          <%= if @phase != :idle do %>
-            <span class="flex items-center gap-1 text-sm text-base-content/60">
-              <span class="loading loading-spinner loading-xs"></span> Running…
-            </span>
+          <%= cond do %>
+            <% @phase == :idle -> %>
+              <button type="button" phx-click="prepare_lineups"
+                      title="Select each team in the Lux EXP team select and set its sinner order to the first lineup, then return home"
+                      class="btn btn-sm btn-outline">Prepare Lineups</button>
+            <% @run_kind == :prepare_lineups -> %>
+              <button type="button" phx-click="cancel_run" class="btn btn-sm btn-error btn-outline">Cancel</button>
+              <span class="flex items-center gap-1 text-sm text-base-content/60">
+                <span class="loading loading-spinner loading-xs"></span> Running…
+              </span>
+            <% true -> %>
+              <div class="tooltip tooltip-bottom" data-tip={running_label(@run_kind)}>
+                <button type="button" disabled class="btn btn-sm btn-outline">Prepare Lineups</button>
+              </div>
+              <span class="loading loading-spinner loading-xs text-base-content/60"></span>
           <% end %>
         </div>
-
-        <%= if entry = List.first(@log) do %>
-          <div class={"text-xs font-mono mb-2 leading-snug " <> log_kind_class(entry.kind)}><%= entry.text %></div>
-        <% end %>
 
         <div class="@container overflow-y-auto flex-1 min-h-0">
           <table id="team-list" phx-hook="SortableList" data-sort-event="reorder_teams" class="table table-xs table-pin-rows">

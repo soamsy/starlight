@@ -24,6 +24,31 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     end
   end
 
+  def prepare_team(team, hook, ctx) do
+    with {:ok, _} <- Engine.act([click(hook, settle_ms: @click_settle_ms), sleep(@click_settle_ms)], ctx),
+         {:ok, checks} <- check_selectors(ctx) do
+      maybe_select_order(checks.clear_selection or checks.sinner_count_0, first_lineup_sinners(team, ctx), ctx)
+    end
+  end
+
+  defp first_lineup_sinners(team, ctx) do
+    data =
+      case team.battle_plan_id && Plans.get(:battle_plans, team.battle_plan_id) do
+        %{data: data} -> data
+        _ -> nil
+      end
+
+    case data |> BattlePlans.lineups() |> List.first() do
+      %{"name" => name, "sinners" => sinners} ->
+        Ctx.log(ctx, :info, "first lineup: #{name}")
+        sinners
+
+      nil ->
+        Ctx.log(ctx, :error, "battle plan has no lineups")
+        []
+    end
+  end
+
   defp lineup_sinners(team, venue, floor, ctx) do
     data =
       case team.battle_plan_id && Plans.get(:battle_plans, team.battle_plan_id) do
