@@ -12,14 +12,17 @@ defmodule StarlightBot.Navigation.Screens.DungeonProgress do
         [await_any([:exploration_reward, :exploration_complete], timeout: 30_000)]
     end
 
-    transition to: :dungeon_given_up do
-      [
-        retry_until(:dungeon_progress_to_window_confirm, [click(:dungeon_progress_to_window)], every: 800, tries: 3),
-        reclick_until_gone(:dungeon_progress_to_window_confirm, every: 800, tries: 3)
-      ] ++ loading()
-    end
+    transition to: :dungeon_given_up, do: leave_to_window()
+
+    transition to: :home, do: leave_to_window()
   end
 
   screen :dungeon_forfeited, identity: nil, catch_all: true
   screen :dungeon_given_up, identity: nil, catch_all: true
+
+  defp leave_to_window do
+    [click(:dungeon_progress_to_window)] ++
+      confirm_enter(:dungeon_progress_to_window_confirm) ++
+      loading()
+  end
 end
