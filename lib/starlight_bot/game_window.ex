@@ -44,7 +44,7 @@ defmodule StarlightBot.GameWindow do
     LogStore.append(:info, "launch: opening Steam app #{app_id} in #{launcher_label(launcher)}")
 
     with :ok <- ensure_not_running(window_class() <> ".exe"),
-         {:ok, %{argv: argv, env: env, cwd: cwd}} <- SteamLaunch.command(app_id) do
+         {:ok, %{argv: argv, env: env, cwd: cwd}} <- SteamLaunch.command(app_id, args: game_args(launcher)) do
       pin_resolution(launcher, env)
       start(launcher, argv, env, cwd)
     end
@@ -74,6 +74,9 @@ defmodule StarlightBot.GameWindow do
   end
 
   def launch_program(_settings, _launcher, _exe, _args), do: {:error, :steam_launch_mode_required}
+
+  defp game_args(launcher) when launcher in ["gamescope", "gamescope_window"], do: ["-force-d3d11"]
+  defp game_args(_launcher), do: []
 
   defp pin_resolution(launcher, env) when launcher in ["gamescope", "gamescope_window"] do
     with {_, data_path} <- List.keyfind(env, "STEAM_COMPAT_DATA_PATH", 0),
