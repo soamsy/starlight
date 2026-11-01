@@ -656,12 +656,12 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
             <button type="button" phx-click="single_run" phx-value-dry="true" phx-value-list={@list} phx-value-index={@index} disabled={@run_disabled}
                     title="One run of this team that refuses rewards"
                     class="btn btn-primary btn-xs mt-2">
-              Dry run
+              1 Dry run
             </button>
             <button type="button" phx-click="single_run" phx-value-dry="false" phx-value-list={@list} phx-value-index={@index} disabled={@run_disabled}
                     title="One run of this team using the rewards setting"
                     class="btn btn-primary btn-outline btn-xs">
-              Rewards run
+              1 Rewards run
             </button>
           </div>
         </div>
