@@ -1,3 +1,4 @@
+pub mod niri;
 pub mod x11;
 pub mod x11_capture;
 

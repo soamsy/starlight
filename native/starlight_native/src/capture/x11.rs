@@ -367,7 +367,8 @@ fn geometry(located: &Located) -> Result<Geometry, NativeError> {
 pub fn rect(located: &Located) -> Result<(i32, i32, u32, u32), NativeError> {
     let g = geometry(located)?;
     let (cx, cy, cw, ch) = g.client;
-    Ok((g.origin.0 + cx as i32, g.origin.1 + cy as i32, cw, ch))
+    let (ox, oy) = super::niri::window_origin(&title(&located.display, located.window).to_lowercase()).unwrap_or(g.origin);
+    Ok((ox + cx as i32, oy + cy as i32, cw, ch))
 }
 
 pub fn details(located: &Located) -> Result<Vec<String>, NativeError> {
