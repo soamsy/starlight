@@ -43,6 +43,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:teams, teams)
      |> assign(:picks, default_picks(teams))
      |> assign(:start_index, 0)
+     |> assign(:reserve, [])
+     |> assign(:reorder_rev, 0)
      |> assign(:run_count, "1")
      |> assign(:rewards, "auto")
      |> assign(:collect_enkephalin, false)
@@ -73,7 +75,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
         socket
       else
         picks = RunnerForms.parse_team_picks(params["team_ids"], params["team_hooks"], params["team_modes"], params["team_searches"], socket.assigns.teams, socket.assigns.picks)
-        socket |> assign(:picks, picks) |> assign(:start_index, RunnerForms.parse_start_index(params["start_index"], picks))
+        reserve = RunnerForms.parse_team_picks(params["reserve_ids"], params["reserve_hooks"], params["reserve_modes"], params["reserve_searches"], socket.assigns.teams, socket.assigns.reserve)
+        socket |> assign(:picks, picks) |> assign(:reserve, reserve) |> assign(:start_index, RunnerForms.parse_start_index(params["start_index"], picks))
       end
 
     {:noreply,
@@ -87,28 +90,28 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   @impl true
   def handle_event(event, _params, socket)
-      when event in ~w(add_cycle_team remove_cycle_team set_cycle_start reorder_cycle set_pick_option) and
+      when event in ~w(add_team remove_cycle_team set_cycle_start reorder_teams set_pick_option remove_reserve_team single_run) and
              socket.assigns.phase != :idle and not socket.assigns.other_running? do
     {:noreply, socket}
   end
 
   @impl true
-  def handle_event("set_pick_option", %{"index" => index, "key" => key, "option" => option}, socket) when key in ~w(mode search) do
+  def handle_event("set_pick_option", %{"list" => list, "index" => index, "key" => key, "option" => option}, socket) when key in ~w(mode search) and list in ~w(cycle reserve) do
     index = String.to_integer(index)
     key = String.to_existing_atom(key)
+    parse = if key == :mode, do: &Resolver.parse_mode_override/1, else: &Resolver.parse_search_override/1
+    field = list_field(list)
 
-    picks =
-      List.update_at(socket.assigns.picks, index, fn pick ->
-        parse = if key == :mode, do: &Resolver.parse_mode_override/1, else: &Resolver.parse_search_override/1
-        Map.put(pick, key, parse.(option))
-      end)
-
-    {:noreply, socket |> assign(:picks, picks) |> save_form()}
+    {:noreply,
+     socket
+     |> assign(field, List.update_at(socket.assigns[field], index, &Map.put(&1, key, parse.(option))))
+     |> save_form()}
   end
 
   @impl true
-  def handle_event("add_cycle_team", _, socket) do
-    {:noreply, socket |> assign(:picks, socket.assigns.picks ++ Enum.take(socket.assigns.picks, -1)) |> save_form()}
+  def handle_event("add_team", _, socket) do
+    %{reserve: reserve, picks: picks} = socket.assigns
+    {:noreply, socket |> assign(:reserve, reserve ++ Enum.take(reserve ++ picks, -1)) |> save_form()}
   end
 
   @impl true
@@ -126,23 +129,28 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   end
 
   @impl true
+  def handle_event("remove_reserve_team", %{"index" => index}, socket) do
+    {:noreply, socket |> assign(:reserve, List.delete_at(socket.assigns.reserve, String.to_integer(index))) |> save_form()}
+  end
+
+  @impl true
   def handle_event("set_cycle_start", %{"index" => index}, socket) do
     {:noreply, socket |> assign(:start_index, RunnerForms.parse_start_index(index, socket.assigns.picks)) |> save_form()}
   end
 
   @impl true
-  def handle_event("reorder_cycle", %{"ids" => ids}, socket) do
-    %{picks: picks, start_index: start} = socket.assigns
-    order = Enum.map(ids, &String.to_integer/1)
+  def handle_event("reorder_teams", %{"ids" => ids}, socket) do
+    {:noreply, apply_team_layout(socket, ids)}
+  end
 
-    if Enum.sort(order) == Enum.to_list(0..(length(picks) - 1)//1) do
-      {:noreply,
-       socket
-       |> assign(:picks, Enum.map(order, &Enum.at(picks, &1)))
-       |> assign(:start_index, Enum.find_index(order, &(&1 == start)))
-       |> save_form()}
+  @impl true
+  def handle_event("single_run", %{"list" => list, "index" => index, "dry" => dry}, socket) when list in ~w(cycle reserve) and dry in ~w(true false) do
+    with %{} = pick <- Enum.at(socket.assigns[list_field(list)], String.to_integer(index)),
+         params = socket.assigns |> form_params() |> Map.merge(single_pick_params(pick)) |> then(&if(dry == "true", do: Map.put(&1, "rewards", "none"), else: &1)),
+         {:ok, {:run_mirror_dungeon, picks, run_count, config}} <- RunnerForms.mirror_dungeon_action(params, socket.assigns.teams) do
+      {:noreply, start_countdown(socket, {:run_mirror_dungeon, picks, run_count, Map.put(config, :single?, true)})}
     else
-      {:noreply, socket}
+      _ -> {:noreply, put_flash(socket, :error, "Could not start a single run for that team.")}
     end
   end
 
@@ -578,6 +586,92 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   def mode_override_label("extreme"), do: "Extreme"
   def mode_override_label("hard_" <> floor), do: "F#{floor} Hard"
 
+  attr :pick, :map, required: true
+  attr :index, :integer, required: true
+  attr :list, :string, required: true
+  attr :teams, :list, required: true
+  attr :locked, :boolean, required: true
+  attr :cycle_size, :integer, default: 1
+  attr :start_index, :integer, default: 0
+  attr :run_disabled, :boolean, default: false
+
+  def pick_row(assigns) do
+    assigns =
+      assign(assigns,
+        reserve?: assigns.list == "reserve",
+        prefix: if(assigns.list == "reserve", do: "reserve", else: "team"),
+        sort_id: (if assigns.list == "reserve", do: "r", else: "c") <> to_string(assigns.index),
+        current?: assigns.list == "cycle" and assigns.cycle_size > 1 and assigns.index == assigns.start_index
+      )
+
+    ~H"""
+    <div data-sort-id={@sort_id}
+         class={"flex items-center gap-1 rounded-r px-1 " <> cond do
+           @current? -> "border-l-4 border-primary bg-primary/20 ring-1 ring-primary"
+           @reserve? -> "border-l-4 border-transparent"
+           true -> "border-l-4 border-primary/40 bg-primary/5"
+         end}>
+      <span :if={not @locked} data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to move or reorder">⠿</span>
+      <button :if={not @reserve? and @cycle_size > 1} type="button" phx-click="set_cycle_start" phx-value-index={@index}
+              disabled={@locked}
+              title={if @locked, do: "Locked while a run is active", else: "Start the cycle with this team"}
+              class={"btn btn-ghost btn-xs px-1 " <> if(@index == @start_index, do: "text-primary", else: "text-base-content/30")}>
+        <%= if @index == @start_index, do: "★", else: "☆" %>
+      </button>
+      <span :if={not @reserve? and @cycle_size > 1} class="text-xs text-base-content/50 w-5 text-right"><%= @index + 1 %>.</span>
+      <select name={"#{@prefix}_ids[]"} class="select select-sm select-bordered flex-1 min-w-0" disabled={@teams == [] or @locked}>
+        <%= for team <- @teams do %>
+          <option value={team.id} selected={team.id == @pick.id}><%= team.name %></option>
+        <% end %>
+      </select>
+      <.hook_select name={"#{@prefix}_hooks[]"} hooks={team_hooks(@teams, @pick.id)} selected={@pick.hook} disabled={@teams == [] or @locked} />
+      <input type="hidden" name={"#{@prefix}_modes[]"} value={@pick.mode} />
+      <input type="hidden" name={"#{@prefix}_searches[]"} value={@pick.search} />
+      <span :if={@pick.mode != "default"} title={mode_override_label(@pick.mode)} class="badge badge-sm badge-primary font-mono"><%= mode_badge_label(@pick.mode) %></span>
+      <.search_badge :if={@pick.search != "default"} search={@pick.search} />
+      <div class="relative" phx-click-away={Phoenix.LiveView.JS.hide(to: "##{@list}-options-#{@index}")}>
+        <button type="button" phx-click={Phoenix.LiveView.JS.toggle(to: "##{@list}-options-#{@index}", display: "flex")} disabled={@locked}
+                title={"Pack plan: " <> mode_override_label(@pick.mode) <> ", " <> search_override_label(@pick.search)}
+                class={"btn btn-ghost btn-sm px-2 text-xl " <> if(@pick.mode == "default" and @pick.search == "default", do: "text-base-content/70", else: "text-primary")}>⚙</button>
+        <div id={"#{@list}-options-#{@index}"} style="display: none" class="absolute right-0 z-20 mt-1 w-max rounded-box border border-base-300 bg-base-100 p-3 shadow flex flex-row gap-6">
+          <div class="flex flex-col gap-1">
+            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Pack mode</span>
+            <%= for mode <- Resolver.mode_overrides() do %>
+              <button type="button" phx-click="set_pick_option" phx-value-list={@list} phx-value-index={@index} phx-value-key="mode" phx-value-option={mode}
+                      class="flex items-center gap-2 text-sm text-left">
+                <input type="radio" class="radio radio-xs radio-primary pointer-events-none" checked={mode == @pick.mode} tabindex="-1" />
+                <%= mode_override_label(mode) %>
+              </button>
+            <% end %>
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Pack search</span>
+            <%= for search <- Resolver.search_overrides() do %>
+              <button type="button" phx-click="set_pick_option" phx-value-list={@list} phx-value-index={@index} phx-value-key="search" phx-value-option={search}
+                      class="flex items-center gap-2 text-sm text-left">
+                <input type="radio" class="radio radio-xs radio-primary pointer-events-none" checked={search == @pick.search} tabindex="-1" />
+                <%= search_override_label(search) %>
+              </button>
+            <% end %>
+            <button type="button" phx-click="single_run" phx-value-dry="true" phx-value-list={@list} phx-value-index={@index} disabled={@run_disabled}
+                    title="One run of this team that refuses rewards"
+                    class="btn btn-primary btn-xs mt-2">
+              Dry run
+            </button>
+            <button type="button" phx-click="single_run" phx-value-dry="false" phx-value-list={@list} phx-value-index={@index} disabled={@run_disabled}
+                    title="One run of this team using the rewards setting"
+                    class="btn btn-primary btn-outline btn-xs">
+              Rewards run
+            </button>
+          </div>
+        </div>
+      </div>
+      <button :if={not @locked and (@reserve? or @cycle_size > 1)} type="button" phx-click={if @reserve?, do: "remove_reserve_team", else: "remove_cycle_team"} phx-value-index={@index}
+              class="btn btn-ghost btn-xs text-error">✕</button>
+    </div>
+    """
+  end
+
   def team_hooks(teams, team_id), do: Enum.find_value(teams, [], &(&1.id == team_id && &1.hooks))
 
   def restore_form(socket, nil), do: socket
@@ -587,29 +681,78 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
     socket
     |> assign(:picks, picks)
+    |> assign(:reserve, RunnerForms.parse_team_picks(params["reserve_ids"], params["reserve_hooks"], params["reserve_modes"], params["reserve_searches"], socket.assigns.teams, []))
     |> assign(:start_index, RunnerForms.parse_start_index(params["start_index"], picks))
     |> assign(:run_count, Map.get(params, "run_count", socket.assigns.run_count))
-    |> assign(:rewards, Map.get(params, "rewards", socket.assigns.rewards))
+    |> assign(:rewards, restored_rewards(Map.get(params, "rewards", socket.assigns.rewards)))
     |> assign(:collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
     |> assign(:collect_xp, Map.get(params, "collect_xp") == "true")
   end
 
-  defp save_form(socket) do
-    a = socket.assigns
+  defp restored_rewards("none"), do: "auto"
+  defp restored_rewards(rewards), do: rewards
 
-    RunnerForms.put("mirror_dungeon", %{
+  defp save_form(socket) do
+    RunnerForms.put("mirror_dungeon", form_params(socket.assigns))
+    socket
+  end
+
+  defp form_params(a) do
+    %{
       "team_ids" => Enum.map(a.picks, &to_string(&1.id)),
       "team_hooks" => Enum.map(a.picks, & &1.hook),
       "team_modes" => Enum.map(a.picks, & &1.mode),
       "team_searches" => Enum.map(a.picks, & &1.search),
+      "reserve_ids" => Enum.map(a.reserve, &to_string(&1.id)),
+      "reserve_hooks" => Enum.map(a.reserve, & &1.hook),
+      "reserve_modes" => Enum.map(a.reserve, & &1.mode),
+      "reserve_searches" => Enum.map(a.reserve, & &1.search),
       "start_index" => to_string(a.start_index),
       "run_count" => a.run_count,
       "rewards" => a.rewards,
       "collect_enkephalin" => to_string(a.collect_enkephalin),
       "collect_xp" => to_string(a.collect_xp)
-    })
+    }
+  end
 
-    socket
+  defp single_pick_params(pick) do
+    %{
+      "team_ids" => [to_string(pick.id)],
+      "team_hooks" => [pick.hook],
+      "team_modes" => [pick.mode],
+      "team_searches" => [pick.search],
+      "start_index" => "0",
+      "run_count" => "1"
+    }
+  end
+
+  defp list_field("cycle"), do: :picks
+  defp list_field("reserve"), do: :reserve
+
+  defp team_slots(socket, list) do
+    prefix = if list == "cycle", do: "c", else: "r"
+
+    socket.assigns[list_field(list)]
+    |> Enum.with_index()
+    |> Enum.map(fn {pick, index} -> {prefix <> to_string(index), pick} end)
+  end
+
+  defp apply_team_layout(socket, ids) do
+    slots = Map.new(team_slots(socket, "cycle") ++ team_slots(socket, "reserve"))
+    start_id = "c" <> to_string(socket.assigns.start_index)
+    {cycle_ids, reserve_ids} = Enum.split_while(ids, &(&1 != "split"))
+    reserve_ids = Enum.drop(reserve_ids, 1)
+
+    if cycle_ids != [] and Enum.count(ids, &(&1 == "split")) == 1 and Enum.sort(cycle_ids ++ reserve_ids) == Enum.sort(Map.keys(slots)) do
+      socket
+      |> assign(:picks, Enum.map(cycle_ids, &Map.fetch!(slots, &1)))
+      |> assign(:reserve, Enum.map(reserve_ids, &Map.fetch!(slots, &1)))
+      |> assign(:start_index, Enum.find_index(cycle_ids, &(&1 == start_id)) || 0)
+      |> update(:reorder_rev, &(&1 + 1))
+      |> save_form()
+    else
+      update(socket, :reorder_rev, &(&1 + 1))
+    end
   end
 
   defp start_countdown(socket, action) do

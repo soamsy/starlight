@@ -13,7 +13,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
 
   defp socket(picks) do
     %Phoenix.LiveView.Socket{
-      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, start_index: 0, run_count: "1", rewards: "auto", collect_enkephalin: false, collect_xp: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil, phase: :idle, other_running?: false}
+      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, reserve: [], reorder_rev: 0, start_index: 0, run_count: "1", rewards: "auto", collect_enkephalin: false, collect_xp: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil, phase: :idle, other_running?: false}
     }
   end
 
@@ -45,23 +45,24 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
   end
 
   test "set_pick_option changes one entry's mode or search and ignores unknown values" do
-    socket = socket([@burn, @burn]) |> event("set_pick_option", %{"index" => "1", "key" => "mode", "option" => "hard_4"})
-    socket = event(socket, "set_pick_option", %{"index" => "0", "key" => "search", "option" => "none"})
+    socket = socket([@burn, @burn]) |> event("set_pick_option", %{"list" => "cycle", "index" => "1", "key" => "mode", "option" => "hard_4"})
+    socket = event(socket, "set_pick_option", %{"list" => "cycle", "index" => "0", "key" => "search", "option" => "none"})
     assert socket.assigns.picks == [%{@burn | search: "none"}, %{@burn | mode: "hard_4"}]
 
-    socket = event(socket, "set_pick_option", %{"index" => "1", "key" => "mode", "option" => "bogus"})
+    socket = event(socket, "set_pick_option", %{"list" => "cycle", "index" => "1", "key" => "mode", "option" => "bogus"})
     assert Enum.at(socket.assigns.picks, 1).mode == "default"
   end
 
-  test "the cycle grows by repeating the last team and never shrinks below one" do
-    socket = socket([@burn]) |> event("add_cycle_team", %{}) |> event("update_form", %{"team_ids" => ["5", "10"], "run_count" => "3"})
+  test "+ team adds a copy of the last team to the bottom of the reserve, and the cycle never shrinks below one" do
+    socket = socket([@burn, @saikai]) |> event("add_team", %{})
     assert socket.assigns.picks == [@burn, @saikai]
+    assert socket.assigns.reserve == [@saikai]
 
-    socket = socket |> event("add_cycle_team", %{}) |> event("remove_cycle_team", %{"index" => "0"})
-    assert socket.assigns.picks == [@saikai, @saikai]
+    socket = socket |> event("add_team", %{}) |> event("remove_reserve_team", %{"index" => "0"})
+    assert socket.assigns.reserve == [@saikai]
 
     socket = socket |> event("remove_cycle_team", %{"index" => "1"}) |> event("remove_cycle_team", %{"index" => "0"})
-    assert socket.assigns.picks == [@saikai]
+    assert socket.assigns.picks == [@burn]
   end
 
   test "restoring a saved form reads its team list and hooks" do
@@ -113,12 +114,12 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     socket =
       socket([@burn, @saikai, @burn, @saikai])
       |> event("set_cycle_start", %{"index" => "2"})
-      |> event("reorder_cycle", %{"ids" => ["2", "0", "1", "3"]})
+      |> event("reorder_teams", %{"ids" => ["c2", "c0", "c1", "c3", "split"]})
 
     assert socket.assigns.picks == [@burn, @burn, @saikai, @saikai]
     assert socket.assigns.start_index == 0
 
-    socket = socket |> event("reorder_cycle", %{"ids" => ["0", "0", "1", "2"]})
+    socket = socket |> event("reorder_teams", %{"ids" => ["c0", "c0", "c1", "c2", "split"]})
     assert socket.assigns.picks == [@burn, @burn, @saikai, @saikai]
 
     socket = socket |> event("set_cycle_start", %{"index" => "2"}) |> event("remove_cycle_team", %{"index" => "0"})
@@ -129,6 +130,33 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     assert socket.assigns.start_index == 0
   end
 
+  test "dragging the split moves teams between the cycle and the reserve, keeps the star and never empties the cycle" do
+    socket = socket([@burn, @saikai, @burn]) |> event("set_cycle_start", %{"index" => "2"})
+
+    socket = event(socket, "reorder_teams", %{"ids" => ["c0", "c2", "split", "c1"]})
+    assert socket.assigns.picks == [@burn, @burn]
+    assert socket.assigns.reserve == [@saikai]
+    assert socket.assigns.start_index == 1
+
+    socket = event(socket, "reorder_teams", %{"ids" => ["c0", "c1", "r0", "split"]})
+    assert socket.assigns.picks == [@burn, @burn, @saikai]
+    assert socket.assigns.reserve == []
+
+    socket = event(socket, "reorder_teams", %{"ids" => ["split", "c0", "c1", "c2"]})
+    assert socket.assigns.picks == [@burn, @burn, @saikai]
+  end
+
+  test "a single run is one run of that row's team that leaves the cycle alone, dry runs refuse rewards" do
+    base = socket([@burn])
+    socket = %{base | assigns: %{base.assigns | reserve: [%{@saikai | mode: "extreme"}], run_count: "9", rewards: "claim"}}
+
+    dry = event(socket, "single_run", %{"list" => "reserve", "index" => "0", "dry" => "true"})
+    assert {:run_mirror_dungeon, [%{id: 10, mode: "extreme"}], 1, %{single?: true, rewards: :none}} = dry.assigns.pending_action
+
+    rewards = event(socket, "single_run", %{"list" => "cycle", "index" => "0", "dry" => "false"})
+    assert {:run_mirror_dungeon, [%{id: 5}], 1, %{single?: true, rewards: :claim}} = rewards.assigns.pending_action
+  end
+
   test "the cycle can't be edited while a run is active" do
     socket = socket([@burn, @saikai])
     running = %{socket | assigns: %{socket.assigns | phase: :paused}}
@@ -136,8 +164,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     running =
       running
       |> event("set_cycle_start", %{"index" => "1"})
-      |> event("reorder_cycle", %{"ids" => ["1", "0"]})
-      |> event("add_cycle_team", %{})
+      |> event("reorder_teams", %{"ids" => ["c1", "c0", "split"]})
+      |> event("add_team", %{})
       |> event("remove_cycle_team", %{"index" => "0"})
       |> event("update_form", %{"team_ids" => ["10"], "start_index" => "1", "run_count" => "5"})
 

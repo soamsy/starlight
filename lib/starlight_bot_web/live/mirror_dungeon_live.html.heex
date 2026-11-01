@@ -99,82 +99,44 @@
         phx-submit="run"
         phx-change="update_form"
         class="flex flex-col gap-3">
+        <% gate = StarlightBotWeb.Components.WindowGate.gate(assigns) %>
+        <% locked = cycle_locked?(@phase, @other_running?) %>
+        <% run_disabled = @teams == [] or @phase != :idle or @countdown != nil or @other_running? or gate != :ready %>
         <div class="flex flex-col gap-1">
           <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
-            <%= if length(@picks) > 1, do: "Team cycle (★ runs next, moves on after a completed run, stays on a failed one)", else: "Team" %>
+            <%= if length(@picks) > 1, do: "Team cycle (★ will run, goes down the list on completion)", else: "Team" %>
           </span>
           <input type="hidden" name="start_index" value={@start_index} />
-          <div id="team-cycle" phx-hook="SortableList" data-sort-event="reorder_cycle" class="flex flex-col gap-1">
-          <%= for {pick, index} <- Enum.with_index(@picks) do %>
-            <div data-sort-id={index}
-                 class={"flex items-center gap-1 rounded " <> if(length(@picks) > 1 and index == @start_index, do: "bg-primary/10 ring-1 ring-primary", else: "")}>
-              <span :if={length(@picks) > 1 and not cycle_locked?(@phase, @other_running?)} data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to reorder">⠿</span>
-              <button :if={length(@picks) > 1} type="button" phx-click="set_cycle_start" phx-value-index={index}
-                      disabled={cycle_locked?(@phase, @other_running?)}
-                      title={if cycle_locked?(@phase, @other_running?), do: "Locked while a run is active", else: "Start the cycle with this team"}
-                      class={"btn btn-ghost btn-xs px-1 " <> if(index == @start_index, do: "text-primary", else: "text-base-content/30")}>
-                <%= if index == @start_index, do: "★", else: "☆" %>
-              </button>
-              <span :if={length(@picks) > 1} class="text-xs text-base-content/50 w-5 text-right"><%= index + 1 %>.</span>
-              <select name="team_ids[]" class="select select-sm select-bordered flex-1 min-w-0" disabled={@teams == [] or cycle_locked?(@phase, @other_running?)}>
-                <%= for team <- @teams do %>
-                  <option value={team.id} selected={team.id == pick.id}><%= team.name %></option>
-                <% end %>
-              </select>
-              <.hook_select name="team_hooks[]" hooks={team_hooks(@teams, pick.id)} selected={pick.hook} disabled={@teams == [] or cycle_locked?(@phase, @other_running?)} />
-              <input type="hidden" name="team_modes[]" value={pick.mode} />
-              <input type="hidden" name="team_searches[]" value={pick.search} />
-              <span :if={pick.mode != "default"} title={mode_override_label(pick.mode)} class="badge badge-sm badge-primary font-mono"><%= mode_badge_label(pick.mode) %></span>
-              <.search_badge :if={pick.search != "default"} search={pick.search} />
-              <div class="relative" phx-click-away={Phoenix.LiveView.JS.hide(to: "#pick-options-#{index}")}>
-                <button type="button" phx-click={Phoenix.LiveView.JS.toggle(to: "#pick-options-#{index}", display: "flex")} disabled={cycle_locked?(@phase, @other_running?)}
-                        title={"Pack plan: " <> mode_override_label(pick.mode) <> ", " <> search_override_label(pick.search)}
-                        class={"btn btn-ghost btn-sm px-2 text-xl " <> if(pick.mode == "default" and pick.search == "default", do: "text-base-content/70", else: "text-primary")}>⚙</button>
-                <div id={"pick-options-#{index}"} style="display: none" class="absolute right-0 z-20 mt-1 w-max rounded-box border border-base-300 bg-base-100 p-3 shadow flex flex-row gap-6">
-                  <div class="flex flex-col gap-1">
-                    <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Pack mode</span>
-                    <%= for mode <- Resolver.mode_overrides() do %>
-                      <button type="button" phx-click="set_pick_option" phx-value-index={index} phx-value-key="mode" phx-value-option={mode}
-                              class="flex items-center gap-2 text-sm text-left">
-                        <input type="radio" class="radio radio-xs radio-primary pointer-events-none" checked={mode == pick.mode} tabindex="-1" />
-                        <%= mode_override_label(mode) %>
-                      </button>
-                    <% end %>
-                  </div>
-                  <div class="flex flex-col gap-1">
-                    <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Pack search</span>
-                    <%= for search <- Resolver.search_overrides() do %>
-                      <button type="button" phx-click="set_pick_option" phx-value-index={index} phx-value-key="search" phx-value-option={search}
-                              class="flex items-center gap-2 text-sm text-left">
-                        <input type="radio" class="radio radio-xs radio-primary pointer-events-none" checked={search == pick.search} tabindex="-1" />
-                        <%= search_override_label(search) %>
-                      </button>
-                    <% end %>
-                  </div>
-                </div>
-              </div>
-              <button :if={length(@picks) > 1 and not cycle_locked?(@phase, @other_running?)} type="button" phx-click="remove_cycle_team" phx-value-index={index}
-                      class="btn btn-ghost btn-xs text-error">✕</button>
+          <div id={"team-list-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_teams" class="flex flex-col gap-1">
+            <.pick_row :for={{pick, index} <- Enum.with_index(@picks)} pick={pick} index={index} list="cycle" teams={@teams} locked={locked}
+                       cycle_size={length(@picks)} start_index={@start_index} run_disabled={run_disabled} />
+            <div data-sort-id="split" class="flex items-center gap-2 py-0.5 text-base-content/40">
+              <span :if={not locked} data-sort-handle class="cursor-grab px-0.5" title="Drag to change which teams are in the cycle">⠿</span>
+              <span class="flex-1 border-t border-dashed border-base-content/30"></span>
+              <span class="text-[10px] uppercase tracking-wide">Reserve below (not cycled)</span>
+              <span class="flex-1 border-t border-dashed border-base-content/30"></span>
             </div>
-          <% end %>
+            <.pick_row :for={{pick, index} <- Enum.with_index(@reserve)} pick={pick} index={index} list="reserve" teams={@teams} locked={locked}
+                       run_disabled={run_disabled} />
           </div>
-          <button :if={@teams != [] and not cycle_locked?(@phase, @other_running?)} type="button" phx-click="add_cycle_team" class="btn btn-ghost btn-xs self-start">+ team</button>
+          <button :if={@teams != [] and not locked} type="button" phx-click="add_team" class="btn btn-ghost btn-xs self-start">+ team</button>
         </div>
 
-        <label class="flex flex-col gap-1">
-          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Mirror Dungeon runs</span>
-          <input type="number" name="run_count" min="0" value={@run_count} class="input input-sm input-bordered" />
+        <div class="flex gap-2">
+        <label class="flex flex-col gap-1 w-24 shrink-0">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Runs</span>
+          <input type="number" name="run_count" min="0" value={@run_count} class="input input-sm input-bordered w-full" />
         </label>
 
-        <label class="flex flex-col gap-1">
+        <label class="flex flex-col gap-1 flex-1 min-w-0">
           <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Rewards</span>
-          <select name="rewards" class="select select-sm select-bordered">
-            <option value="none" selected={@rewards == "none"}>Don't claim rewards (dry run)</option>
+          <select name="rewards" class="select select-sm select-bordered w-full">
             <option value="auto" selected={@rewards == "auto"}>Claim rewards, with bonuses if hard from F1</option>
             <option value="claim" selected={@rewards == "claim"}>Claim rewards</option>
             <option value="weekly" selected={@rewards == "weekly"}>Claim rewards with weekly bonuses</option>
           </select>
         </label>
+        </div>
 
         <label class="flex items-center gap-2">
           <input type="checkbox" name="collect_xp" value="true" checked={@collect_xp}
@@ -211,7 +173,6 @@
           <span class="text-xs text-warning">Luxcavation is running. Cancel it there before starting this.</span>
         <% end %>
 
-        <% gate = StarlightBotWeb.Components.WindowGate.gate(assigns) %>
         <%= if @phase == :paused and not @other_running? do %>
           <button
             type="button"
