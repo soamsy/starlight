@@ -4,10 +4,11 @@ defmodule StarlightBot.GameWindow do
 
   @target_w 1920
   @target_h 1080
-  @window_poll_ms 2_000
+  @window_poll_ms 500
   @resize_settle_ms 1_500
   @resize_attempts 3
-  @launch_settle_ms 20_000
+  @launch_settle_max_ms 20_000
+  @launch_stable_ms 2_000
   @plugin_name "starlight-resize"
 
   def rect do
@@ -156,9 +157,31 @@ defmodule StarlightBot.GameWindow do
 
   def await_settled_window(timeout_ms) do
     with {:ok, _rect} <- await_window(timeout_ms) do
-      Process.sleep(@launch_settle_ms)
+      await_stable_rect(System.monotonic_time(:millisecond) + @launch_settle_max_ms)
       Capture.refresh_window_rect()
       rect()
+    end
+  end
+
+  defp await_stable_rect(deadline) do
+    stable_until = System.monotonic_time(:millisecond) + @launch_stable_ms
+    poll_stable(rect(), stable_until, deadline)
+  end
+
+  defp poll_stable(last, stable_until, deadline) do
+    now = System.monotonic_time(:millisecond)
+
+    cond do
+      now >= deadline or (now >= stable_until and match?({:ok, _}, last)) ->
+        :ok
+
+      true ->
+        Process.sleep(@window_poll_ms)
+        current = rect()
+
+        if current == last,
+          do: poll_stable(current, stable_until, deadline),
+          else: poll_stable(current, System.monotonic_time(:millisecond) + @launch_stable_ms, deadline)
     end
   end
 
