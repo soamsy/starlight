@@ -865,6 +865,10 @@ defmodule StarlightBot.Navigation.Machine do
          {:ok, box} <- to_screen_box(target_box(region)) do
       Ctx.log(ctx, :step, "premove → #{hook_atom} (while waiting on #{inspect(watched)})")
       Mouse.premove(sx, sy, box)
+    else
+      :none -> Mouse.idle()
+      nil -> Mouse.idle()
+      _ -> :ok
     end
 
     :ok

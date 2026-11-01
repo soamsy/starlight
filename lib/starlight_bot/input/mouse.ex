@@ -1,7 +1,7 @@
 defmodule StarlightBot.Input.Mouse do
   use GenServer
   require Logger
-  alias StarlightBot.{AppSettings, LogStore, Native, Input.MouseProfile, Input.Trajectory}
+  alias StarlightBot.{AppSettings, LogStore, Native, Input.MouseProfile, Input.Trajectory, Input.Wander, Vision.Capture}
 
   @btn_left 0x110
   @btn_right 0x111
@@ -14,11 +14,9 @@ defmodule StarlightBot.Input.Mouse do
   @land_check_delay_ms 5
   @land_tolerance_px 3
   @land_attempts 3
-  @hover_max_ms 30_000
-  @hover_sigma_px 3.2
-  @hover_radius_px 10
-  @hover_min_interval_ms 220
-  @hover_interval_spread_ms 60
+  @wander_max_ms 60_000
+  @wander_tick_ms 12
+  @wander_focus_check_ms 250
   @resync_idle_ms 60_000
   @resync_every_moves 25
 
@@ -34,6 +32,10 @@ defmodule StarlightBot.Input.Mouse do
 
   def premove(x, y, within) do
     GenServer.cast(__MODULE__, {:premove, x, y, within})
+  end
+
+  def idle do
+    GenServer.cast(__MODULE__, :idle)
   end
 
   def click(x, y, opts \\ []) do
@@ -97,7 +99,7 @@ defmodule StarlightBot.Input.Mouse do
     state =
       case Keyword.get(opts, :within) do
         nil -> halt_premove(state)
-        within -> if inside?(pm.target, within), do: finish_premove(state), else: halt_premove(state)
+        within -> if targets?(pm, within), do: finish_premove(state), else: halt_premove(state)
       end
 
     handle_call(msg, from, state)
@@ -178,17 +180,19 @@ defmodule StarlightBot.Input.Mouse do
         LogStore.append(:step, "premove skipped: mouse button held")
         {:noreply, state}
 
-      state.premove != nil and inside?(state.premove.target, within) ->
+      state.premove != nil and targets?(state.premove, within) ->
         {:noreply, state}
 
       true ->
-        state = halt_premove(state)
+        {:noreply, state |> halt_premove() |> start_premove(x, y, within)}
+    end
+  end
 
-        if inside?(start_pos(state), within) do
-          {:noreply, state}
-        else
-          {:noreply, start_premove(state, x, y, within)}
-        end
+  def handle_cast(:idle, state) do
+    if MapSet.size(state.held) > 0 or state.premove != nil do
+      {:noreply, state}
+    else
+      {:noreply, start_idle(state)}
     end
   end
 
@@ -203,8 +207,7 @@ defmodule StarlightBot.Input.Mouse do
   def handle_info({:premove_tick, ref}, %{premove: %{ref: ref} = pm} = state) do
     case pm.remaining do
       [] ->
-        Process.send_after(self(), {:hover_tick, ref}, hover_interval_ms())
-        {:noreply, %{state | premove: %{pm | prev: nil, hover_until: System.monotonic_time(:millisecond) + @hover_max_ms}}}
+        {:noreply, %{state | premove: begin_wander(pm)}}
 
       [{wx, wy, t} = waypoint | rest] ->
         {px, py, prev_t} = pm.last
@@ -216,47 +219,89 @@ defmodule StarlightBot.Input.Mouse do
 
   def handle_info({:premove_tick, _stale_ref}, state), do: {:noreply, state}
 
-  def handle_info({:hover_tick, ref}, %{premove: %{ref: ref} = pm} = state) do
-    if System.monotonic_time(:millisecond) < pm.hover_until and game_focused?() do
-      {lx, ly, _} = pm.last
-      {hx, hy} = hover_point(pm.target, pm.within)
-      step({lx, ly}, {hx, hy})
-      Process.send_after(self(), {:hover_tick, ref}, hover_interval_ms())
-      {:noreply, %{state | premove: %{pm | last: {hx, hy, 0.0}}}}
+  def handle_info({:wander_tick, ref}, %{premove: %{ref: ref, wander: %Wander{}} = pm} = state) do
+    now = System.monotonic_time(:millisecond)
+
+    if now < pm.wander_until and still_focused(pm, now) do
+      {lx, ly, lt} = pm.last
+      wander = Wander.step(pm.wander, (now - lt) / 1000)
+      {wx, wy} = wander.pos
+      step({lx, ly}, {wx, wy})
+      Process.send_after(self(), {:wander_tick, ref}, @wander_tick_ms)
+      focus_at = if now - pm.focus_at >= @wander_focus_check_ms, do: now, else: pm.focus_at
+      {:noreply, %{state | premove: %{pm | wander: wander, prev: pm.last, last: {wx, wy, now}, focus_at: focus_at}}}
     else
       {:noreply, halt_premove(state)}
     end
   end
 
-  def handle_info({:hover_tick, _stale_ref}, state), do: {:noreply, state}
+  def handle_info({:wander_tick, _stale_ref}, state), do: {:noreply, state}
 
-  defp hover_point({tx, ty}, {bx, by, bw, bh}) do
-    {(tx + hover_jitter()) |> max(bx) |> min(bx + bw), (ty + hover_jitter()) |> max(by) |> min(by + bh)}
-  end
-
-  defp hover_jitter, do: (:rand.normal() * @hover_sigma_px) |> max(-@hover_radius_px) |> min(@hover_radius_px)
-
-  defp hover_interval_ms, do: @hover_min_interval_ms + :rand.uniform(@hover_interval_spread_ms)
+  defp still_focused(pm, now), do: now - pm.focus_at < @wander_focus_check_ms or game_focused?()
 
   defp game_focused? do
     match?({:ok, true}, Native.is_window_focused(Application.get_env(:starlight_bot, :game_window_class, "LimbusCompany")))
   end
 
+  defp targets?(%{target: nil}, _within), do: false
+  defp targets?(%{target: target}, within), do: inside?(target, within)
+
+  defp begin_wander(pm) do
+    {lx, ly, _} = pm.last
+    now = System.monotonic_time(:millisecond)
+
+    case Wander.area(pm.within, Capture.window_rect()) do
+      nil ->
+        pm
+
+      area ->
+        send(self(), {:wander_tick, pm.ref})
+        %{pm | wander: Wander.new(area, {lx, ly}), wander_until: now + @wander_max_ms, focus_at: now, prev: nil, last: {lx, ly, now}}
+    end
+  end
+
   defp start_premove(state, tx, ty, within) do
     state = sync(state)
     {fx, fy} = start_pos(state)
-    waypoints = Trajectory.build({fx * 1.0, fy * 1.0}, {tx * 1.0, ty * 1.0}, state.last_velocity, MouseProfile.move_duration_mult())
+
+    waypoints =
+      if inside?({fx, fy}, within),
+        do: [],
+        else: Trajectory.build({fx * 1.0, fy * 1.0}, {tx * 1.0, ty * 1.0}, state.last_velocity, MouseProfile.move_duration_mult())
+
+    begin_premove(state, {tx, ty}, within, waypoints, {fx * 1.0, fy * 1.0})
+  end
+
+  defp start_idle(state) do
+    state = sync(state)
+    {fx, fy} = start_pos(state)
+    begin_premove(state, nil, nil, [], {fx * 1.0, fy * 1.0})
+  end
+
+  defp begin_premove(state, target, within, waypoints, {fx, fy}) do
     ref = make_ref()
     send(self(), {:premove_tick, ref})
 
-    %{state | premove: %{ref: ref, target: {tx, ty}, within: within, hover_until: nil, remaining: waypoints, prev: nil, last: {fx * 1.0, fy * 1.0, 0.0}}}
+    premove = %{
+      ref: ref,
+      target: target,
+      within: within,
+      wander: nil,
+      wander_until: nil,
+      focus_at: nil,
+      remaining: waypoints,
+      prev: nil,
+      last: {fx, fy, 0.0}
+    }
+
+    %{state | premove: premove}
   end
 
   defp halt_premove(%{premove: nil} = state), do: state
 
-  defp halt_premove(%{premove: %{hover_until: until} = pm} = state) when until != nil do
+  defp halt_premove(%{premove: %{wander: %Wander{}} = pm} = state) do
     {lx, ly, _} = pm.last
-    settle(state, {lx, ly}, [pm.last])
+    settle(state, {lx, ly}, [pm.prev, pm.last])
   end
 
   defp halt_premove(%{premove: pm} = state) do
@@ -264,6 +309,8 @@ defmodule StarlightBot.Input.Mouse do
     LogStore.append(:step, "premove interrupted with #{length(pm.remaining)} waypoint(s) left")
     settle(state, {lx, ly}, [pm.prev, pm.last])
   end
+
+  defp finish_premove(%{premove: %{wander: %Wander{}}} = state), do: halt_premove(state)
 
   defp finish_premove(%{premove: pm} = state) do
     {lx, ly, lt} = pm.last
