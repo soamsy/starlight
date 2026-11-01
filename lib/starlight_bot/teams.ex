@@ -4,14 +4,19 @@ defmodule StarlightBot.Teams do
   alias StarlightBot.{BattlePlans, Plans, Repo}
 
   @team_groups [
-    {"Status", ~w(burn bleed tremor rupture sinking poise charge ammo discard)},
-    {"Sin", ~w(wrath lust sloth gluttony gloom pride envy)},
-    {"Damage Type", ~w(slash pierce blunt)},
-    {"Fixer", ~w(zwei shi cinq liu seven devyat dieci oufi)},
-    {"Syndicate", ~w(fingers thumb index middle ring pinky)}
+    {"Status", "affinity", ~w(burn bleed tremor rupture sinking poise charge ammo discard)},
+    {"Sin", "sin", ~w(wrath lust sloth gluttony gloom pride envy)},
+    {"Damage Type", "affinity", ~w(slash pierce blunt)},
+    {"Fixer", "fixer", ~w(zwei shi cinq liu seven devyat dieci oufi)},
+    {"Syndicate", "syndicate", ~w(fingers thumb index middle ring pinky)},
+    {"Other", "other", ~w(heishou ego_gear le_rouge le_noir sisyphe)}
   ]
 
-  @team_types Enum.flat_map(@team_groups, &elem(&1, 1))
+  @icon_dir_overrides %{"ammo" => "other", "discard" => "other", "fingers" => "other"}
+
+  @icon_dirs for {_label, dir, types} <- @team_groups, type <- types, into: %{}, do: {type, Map.get(@icon_dir_overrides, type, dir)}
+
+  @team_types Enum.flat_map(@team_groups, &elem(&1, 2))
 
   @all_sinners ~w(
     yi_sang faust don_quixote ryoshu meursault hong_lu
@@ -204,7 +209,7 @@ defmodule StarlightBot.Teams do
     grouped = Enum.map(@team_types, &"team_#{&1}")
 
     groups =
-      for {label, types} <- @team_groups,
+      for {label, _dir, types} <- @team_groups,
           hooks = types |> Enum.map(&"team_#{&1}") |> Enum.filter(&(&1 in names)),
           hooks != [],
           do: {label, hooks}
@@ -218,17 +223,13 @@ defmodule StarlightBot.Teams do
   def hook_label("team_" <> type), do: type |> String.replace("_", " ") |> String.upcase()
   def hook_label(hook), do: hook
 
-  @affinity_types ~w(burn bleed tremor rupture sinking poise charge slash pierce blunt)
-  @sin_types ~w(wrath lust sloth gluttony gloom pride envy)
-  @fixer_types ~w(zwei shi cinq liu seven devyat dieci oufi)
-  @syndicate_types ~w(thumb index middle ring pinky)
-  @other_types ~w(ammo heishou ego_gear le_rouge le_noir sisyphe discard fingers)
+  def hook_icon("team_" <> type) do
+    case @icon_dirs do
+      %{^type => dir} -> "/images/#{dir}/#{type}.webp"
+      _ -> nil
+    end
+  end
 
-  def hook_icon("team_" <> type) when type in @affinity_types, do: "/images/affinity/#{type}.webp"
-  def hook_icon("team_" <> type) when type in @sin_types, do: "/images/sin/#{type}.webp"
-  def hook_icon("team_" <> type) when type in @fixer_types, do: "/images/fixer/#{type}.webp"
-  def hook_icon("team_" <> type) when type in @syndicate_types, do: "/images/syndicate/#{type}.webp"
-  def hook_icon("team_" <> type) when type in @other_types, do: "/images/other/#{type}.webp"
   def hook_icon(_hook), do: nil
 
   def default_hook_icon, do: "/images/other/default.webp"
