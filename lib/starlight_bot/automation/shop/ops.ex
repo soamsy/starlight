@@ -1209,7 +1209,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     steps = [
       click(:shop_uptie_popup_commit_uptie_2),
       await(:shop_uptie_popup_commit_uptie_2_selected, timeout: @uptie_2_selected_ms),
-      click(:shop_uptie_popup_commit_confirm)
+      key(:enter)
     ]
 
     level =
@@ -1219,7 +1219,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
 
         {:error, _} ->
           Ctx.log(ctx, :info, "shop uptie: +2 isn't selected, confirming at +1")
-          Engine.act([click(:shop_uptie_popup_commit_confirm)], ctx)
+          Engine.act([key(:enter)], ctx)
           1
       end
 
@@ -1227,7 +1227,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp try_commit(level, ctx) do
-    Engine.act([click(:"shop_uptie_popup_commit_uptie_#{level}"), click(:shop_uptie_popup_commit_confirm)], ctx)
+    Engine.act([click(:"shop_uptie_popup_commit_uptie_#{level}"), key(:enter)], ctx)
     await_commit(level, ctx)
   end
 
