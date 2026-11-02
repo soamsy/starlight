@@ -349,6 +349,12 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     Map.new(path)
   end
 
+  def floor_candidates(plan_data, theme_packs, floor, mode) do
+    theme_packs
+    |> Enum.filter(&(floor in Resolver.eligible_floors(&1, mode) and Resolver.priority_at(plan_data, &1, mode, floor) == "hunt"))
+    |> Resolver.sort_hunt(plan_data, mode, floor)
+  end
+
   def path_options(plan_data, theme_packs, floor, mode) do
     Enum.filter(theme_packs, &(floor in Resolver.eligible_floors(&1, mode) and Resolver.status_at(plan_data, &1.id, mode, floor) not in ~w(banned hunt favorite)))
   end

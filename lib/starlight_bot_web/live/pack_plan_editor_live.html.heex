@@ -107,7 +107,7 @@
                           </button>
                       <% end %>
                       <%= if @path_floor == floor do %>
-                          <% candidates = path_candidates(path[floor]) %>
+                          <% candidates = floor_candidates(@plan_data, @theme_packs, floor, mode) %>
                           <% {favorites, backups} = Enum.split_with(candidates, &StarlightBot.PackPlans.Resolver.favorite?(@plan_data, &1.id, mode, floor)) %>
                           <div class="absolute left-0 top-full mt-2 z-30 w-full min-w-56 rounded-lg border border-base-content/30 bg-base-200 p-1.5 shadow-2xl ring-4 ring-base-content/10 flex flex-col gap-0.5"
                                data-no-pan phx-click-away="close_path_floor">
