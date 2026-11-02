@@ -145,6 +145,34 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   @impl true
+  def handle_event("toggle_path_floor", %{"floor" => floor}, socket) do
+    floor = String.to_integer(floor)
+    {:noreply, assign(socket, :path_floor, if(socket.assigns.path_floor == floor, do: nil, else: floor))}
+  end
+
+  @impl true
+  def handle_event("close_path_floor", _, socket), do: {:noreply, assign(socket, :path_floor, nil)}
+
+  @impl true
+  def handle_event("path_reorder", %{"scope" => scope, "ids" => ids}, socket) do
+    case parse_path_scope(scope) do
+      {mode, _favorite?} -> {:noreply, socket |> reorder_path(mode, ids) |> persist_plan()}
+      :error -> {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("path_move", %{"scope" => scope, "id" => id, "ids" => ids}, socket) do
+    with {mode, favorite?} <- parse_path_scope(scope),
+         "hunt" <- Resolver.priority_for(socket.assigns.plan_data, id, mode) do
+      plan_data = update_in(socket.assigns.plan_data, ["packs", id, mode], &set_favorite(&1, favorite?))
+      {:noreply, socket |> assign(:plan_data, plan_data) |> reorder_path(mode, ids) |> persist_plan()}
+    else
+      _ -> {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_event("toggle_favorite", %{"pack_id" => pack_id, "mode" => mode}, socket) when mode in @modes do
     if Resolver.priority_for(socket.assigns.plan_data, pack_id, mode) == "hunt" do
       plan_data = update_in(socket.assigns.plan_data, ["packs", pack_id, mode], &toggle_favorite/1)
@@ -233,6 +261,25 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     """
   end
 
+  def path_row(assigns) do
+    ~H"""
+    <div data-sort-id={@alt.id} class="rounded-full">
+      <div class={"flex items-center gap-1 rounded-full border pl-1 pr-1 py-0.5 text-[10px] " <> if(@hard?, do: "border-warning bg-warning/30", else: "border-success/60 bg-success/30")}
+           style={"opacity: #{path_alt_opacity(@index, @total)}"}>
+        <span data-sort-handle class="cursor-grab text-base-content/50 select-none" title="Drag to reorder, or between lists to change favorite">⠿</span>
+        <img src={@alt.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+        <span class="truncate flex-1"><%= @alt.name_en %></span>
+        <span class="shrink-0 text-[9px] text-base-content/60"><%= @index + 1 %></span>
+        <button type="button" phx-click="toggle_favorite" phx-value-pack_id={@alt.id} phx-value-mode={@mode}
+                class={"shrink-0 leading-none " <> if(@favorite?, do: "text-warning", else: "text-base-content/40")}
+                title={if @favorite?, do: "Remove from favorites", else: "Make favorite"}>
+          <%= if @favorite?, do: "★", else: "☆" %>
+        </button>
+      </div>
+    </div>
+    """
+  end
+
   def paste_icon(assigns) do
     ~H"""
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5">
@@ -279,6 +326,8 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
 
   def overflow?(extreme?), do: not extreme?
 
+  def path_alt_opacity(index, total), do: Float.round(1.0 - 0.65 * index / max(total - 1, 1), 2)
+
   def likely_path(plan_data, theme_packs, floor_count) do
     {path, _picked} =
       Enum.map_reduce(1..floor_count, MapSet.new(), fn floor, picked ->
@@ -288,13 +337,19 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
         |> Enum.filter(&(floor in Resolver.eligible_floors(&1, mode) and Resolver.priority_at(plan_data, &1, mode, floor) == "hunt"))
         |> Enum.reject(&MapSet.member?(picked, &1.id))
         |> Resolver.sort_hunt(plan_data, mode)
+        |> favorites_first(plan_data, mode)
         |> case do
           [] -> {{floor, nil}, picked}
-          [top | rest] -> {{floor, {top, length(rest)}}, MapSet.put(picked, top.id)}
+          [top | rest] -> {{floor, {top, rest}}, MapSet.put(picked, top.id)}
         end
       end)
 
     Map.new(path)
+  end
+
+  defp favorites_first(packs, plan_data, mode) do
+    {favorites, others} = Enum.split_with(packs, &Resolver.favorite?(plan_data, &1.id, mode))
+    favorites ++ others
   end
 
   def extreme_disabled?(plan_data), do: not Resolver.extreme_allowed?(plan_data)
@@ -442,6 +497,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     |> assign(:plan_data, blank_plan_data())
     |> assign(:floor_filter, nil)
     |> assign(:filter, "")
+    |> assign(:path_floor, nil)
   end
 
   defp load_plan(socket, id) do
@@ -528,6 +584,39 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       ids = acc |> packs_with_priority(theme_packs, mode, "hunt") |> Enum.map(& &1.id)
       put_in(acc, [Access.key("hunt_order", %{}), mode], ids)
     end)
+  end
+
+  defp set_favorite(entry, true), do: Map.put(entry, "favorite", true)
+  defp set_favorite(entry, false), do: Map.delete(entry, "favorite")
+
+  defp parse_path_scope(scope) do
+    case String.split(scope, ":") do
+      [mode, group] when mode in @modes and group in ~w(fav rest) -> {mode, group == "fav"}
+      _ -> :error
+    end
+  end
+
+  defp reorder_path(socket, mode, ids) do
+    plan_data = socket.assigns.plan_data
+    current = plan_data |> packs_with_priority(socket.assigns.theme_packs, mode, "hunt") |> Enum.map(& &1.id)
+
+    if ids == Enum.uniq(ids) and Enum.all?(ids, &(&1 in current)) do
+      members = MapSet.new(ids)
+
+      {merged, _} =
+        Enum.map_reduce(current, ids, fn id, remaining ->
+          if MapSet.member?(members, id) do
+            [next | rest] = remaining
+            {next, rest}
+          else
+            {id, remaining}
+          end
+        end)
+
+      assign(socket, :plan_data, put_in(plan_data, [Access.key("hunt_order", %{}), mode], merged))
+    else
+      socket
+    end
   end
 
   defp toggle_favorite(%{"favorite" => true} = entry), do: Map.delete(entry, "favorite")

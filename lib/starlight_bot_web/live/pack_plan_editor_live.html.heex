@@ -126,16 +126,43 @@
                         </span>
                       <% end %>
                       <%= case path[floor] do %>
-                        <% {pack, others} -> %>
-                          <% favorite? = StarlightBot.PackPlans.Resolver.favorite?(@plan_data, pack.id, if(hard?, do: "hard", else: "normal")) %>
-                          <div class={"flex-1 min-w-0 flex items-center gap-1 rounded-full border pl-0.5 pr-1 py-0.5 text-[10px] shadow-sm " <> if(hard?, do: "border-warning bg-warning/15", else: "border-success/60 bg-success/10")}
-                               title={"F#{floor}: #{pack.name_en}" <> if(favorite?, do: " (favorite)", else: "") <> if(others > 0, do: ", then #{others} more in Hunt order", else: "")}>
+                        <% {pack, rest} -> %>
+                          <% mode = if(hard?, do: "hard", else: "normal") %>
+                          <% favorite? = StarlightBot.PackPlans.Resolver.favorite?(@plan_data, pack.id, mode) %>
+                          <% others = length(rest) %>
+                          <button type="button" phx-click="toggle_path_floor" phx-value-floor={floor} data-no-pan
+                               class={"flex-1 min-w-0 flex items-center gap-1 rounded-full border pl-0.5 pr-1 py-0.5 text-[10px] shadow-sm cursor-pointer text-left " <> if(hard?, do: "border-warning bg-warning/15", else: "border-success/60 bg-success/10")}
+                               title={"F#{floor}: #{pack.name_en}" <> if(favorite?, do: " (favorite)", else: "") <> if(others > 0, do: ", then #{others} more in Hunt order. Click to list them.", else: ". Click to see next in priority.")}>
                             <img src={pack.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
                             <span class="truncate font-medium flex-1"><%= if favorite?, do: "★ " %><%= pack.name_en %></span>
                             <%= if others > 0 do %>
                               <span class="shrink-0 rounded-full bg-base-content/10 px-1 text-[9px] text-base-content/60">+<%= others %></span>
                             <% end %>
-                          </div>
+                          </button>
+                          <%= if @path_floor == floor do %>
+                            <% candidates = [pack | rest] %>
+                            <% {favorites, backups} = Enum.split_with(candidates, &StarlightBot.PackPlans.Resolver.favorite?(@plan_data, &1.id, mode)) %>
+                            <div class="absolute left-0 top-full mt-1 z-30 w-full min-w-56 rounded-lg border border-base-300 bg-base-100 p-1 shadow-xl flex flex-col gap-0.5"
+                                 data-no-pan phx-click-away="close_path_floor">
+                              <span class="px-1 text-[9px] uppercase tracking-wide text-warning">★ Favorites (hunted first)</span>
+                              <div id={"path-fav-#{floor}"} phx-hook="SortableList" data-sort-event="path_reorder" data-sort-move-event="path_move"
+                                   data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:fav"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
+                                <%= for {alt, index} <- Enum.with_index(favorites) do %>
+                                  <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} hard?={hard?} favorite?={true} />
+                                <% end %>
+                                <span :if={favorites == []} class="px-1.5 text-[10px] italic text-base-content/40">drop here to favorite</span>
+                              </div>
+                              <span class="px-1 pt-1 text-[9px] uppercase tracking-wide text-base-content/50">Not favorite<%= if favorites != [], do: " (backup)" %></span>
+                              <div id={"path-rest-#{floor}"} phx-hook="SortableList" data-sort-event="path_reorder" data-sort-move-event="path_move"
+                                   data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:rest"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
+                                <%= for {alt, index} <- Enum.with_index(backups, length(favorites)) do %>
+                                  <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} hard?={hard?} favorite?={false} />
+                                <% end %>
+                                <span :if={backups == []} class="px-1.5 text-[10px] italic text-base-content/40">none</span>
+                              </div>
+                              <span :if={others == 0} class="px-1 pt-1 text-[10px] italic text-base-content/40">Next in priority: none</span>
+                            </div>
+                          <% end %>
                         <% nil -> %>
                           <div class="flex-1 min-w-0 rounded-full border border-dashed border-base-content/20 px-1.5 py-0.5 text-[10px] italic text-base-content/30 truncate">
                             no Hunt pack
