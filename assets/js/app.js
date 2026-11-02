@@ -1346,6 +1346,16 @@ const RightClickEvent = {
   }
 }
 
+const PriorityRightClick = {
+  mounted() {
+    this.el.addEventListener("contextmenu", (e) => {
+      e.preventDefault()
+      const { packId, priority, mode } = this.el.dataset
+      this.pushEvent("toggle_priority", { pack_id: packId, priority, mode })
+    })
+  }
+}
+
 const TemplateTransfer = {
   mounted() {
     const input = this.el.querySelector("[data-file]")
@@ -1406,7 +1416,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
 })
 
 liveSocket.connect()

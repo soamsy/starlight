@@ -195,12 +195,12 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   @impl true
-  def handle_event("toggle_span_floors", %{"pack_id" => pack_id, "floors" => floors, "mode" => mode}, socket) when mode in @modes do
+  def handle_event("toggle_priority", %{"pack_id" => pack_id, "priority" => priority, "mode" => mode}, socket) when priority in @priorities and mode in @modes do
     pack = socket.assigns.packs_by_id[pack_id]
-    floors = floors |> String.split(",") |> Enum.map(&String.to_integer/1)
 
-    if pack && floors != [] && Enum.all?(floors, &(&1 in Resolver.eligible_floors(pack, mode))) do
-      plan_data = toggle_span_floors(socket.assigns.plan_data, pack, mode, floors)
+    if pack && Resolver.eligible_floors(pack, mode) != [] do
+      target = if Resolver.priority_for(socket.assigns.plan_data, pack_id, mode) == priority, do: "fine", else: priority
+      plan_data = put_priority(socket.assigns.plan_data, pack_id, mode, target)
       {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
     else
       {:noreply, socket}
@@ -652,19 +652,6 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       acc = put_priority(acc, pack_id, mode, priority)
       if floors, do: set_pack_floors(acc, pack_id, mode, floors), else: acc
     end)
-  end
-
-  defp toggle_span_floors(plan_data, pack, mode, floors) do
-    if Resolver.priority_for(plan_data, pack.id, mode) == "fine" do
-      plan_data |> put_priority(pack.id, mode, "hunt") |> set_pack_floors(pack.id, mode, floors)
-    else
-      current = Resolver.floors_for(plan_data, pack.id, mode, pack)
-      new_floors = if Enum.all?(floors, &(&1 in current)), do: current -- floors, else: Enum.sort(Enum.uniq(current ++ floors))
-
-      if new_floors == [],
-        do: put_priority(plan_data, pack.id, mode, "fine"),
-        else: set_pack_floors(plan_data, pack.id, mode, new_floors)
-    end
   end
 
   defp set_pack_floors(plan_data, pack_id, mode, floors) do

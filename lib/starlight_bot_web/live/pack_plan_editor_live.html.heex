@@ -257,9 +257,10 @@
                         </button>
                       <% end %>
                     </div>
-                    <div class={"grid grid-cols-subgrid min-w-0 rounded border bg-base-200 overflow-hidden " <> if(row_favorite?, do: "border-warning ring-1 ring-warning/60", else: "border-base-300")}
+                    <div id={"bar-#{row.mode}-#{pack.id}"} phx-hook="PriorityRightClick" data-pack-id={pack.id} data-priority="banned" data-mode={row.mode}
+                         class={"grid grid-cols-subgrid min-w-0 rounded border bg-base-200 overflow-hidden " <> if(row_favorite?, do: "border-warning ring-1 ring-warning/60", else: "border-base-300")}
                          style={"grid-row: 1; " <> span_style(row, floor_count, overflow?)}
-                         title={"#{pack.name_en} (#{row.mode} floors #{Enum.join(row.floors, ",")})"}>
+                         title={"#{pack.name_en} (#{row.mode} floors #{Enum.join(row.floors, ",")}). Click: toggle Hunt. Right click: toggle Banned."}>
                       <%= for col <- highlight_columns(@plan_data, row, floor_count, overflow?) do %>
                         <div class={"-mx-1 " <> priority_fill_class(current)} style={"grid-row: 1; grid-column: #{col}"}></div>
                       <% end %>
@@ -267,11 +268,10 @@
                         <img src={pack.image_path} class="w-5 h-5 rounded-sm object-cover shrink-0" draggable="false" />
                         <span class={"text-xs flex-1 truncate " <> if(row_favorite?, do: "font-semibold", else: "")}><%= pack.name_en %><%= if row_favorite? do %> <span class="text-warning">★</span><% end %></span>
                       </div>
-                      <%= for {col, floors, label} <- span_cells(row, floor_count, overflow?) do %>
-                        <div phx-click="toggle_span_floors" phx-value-pack_id={pack.id} phx-value-floors={Enum.join(floors, ",")} phx-value-mode={row.mode}
+                      <%= for {col, _floors, _label} <- span_cells(row, floor_count, overflow?) do %>
+                        <div phx-click="toggle_priority" phx-value-pack_id={pack.id} phx-value-priority="hunt" phx-value-mode={row.mode}
                              class="relative z-[1] -mx-1 cursor-pointer hover:bg-base-content/10"
-                             style={"grid-row: 1; grid-column: #{col}"}
-                             title={"#{pack.name_en}: toggle #{label}"}></div>
+                             style={"grid-row: 1; grid-column: #{col}"}></div>
                       <% end %>
                     </div>
                   </div>
