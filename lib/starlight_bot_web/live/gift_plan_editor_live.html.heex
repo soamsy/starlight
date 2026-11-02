@@ -166,7 +166,7 @@
                                class="absolute bottom-0 right-0 w-3 h-3 object-contain drop-shadow" />
                         </div>
                         <span :if={gift.tier} class="text-[10px] text-base-content/50 w-4 shrink-0">T<%= gift.tier %></span>
-                        <span data-gift-popup={gift.name} class="text-[11px] truncate flex-1 min-w-0 cursor-pointer select-none" title={gift.name}><%= gift.name %></span>
+                        <span data-gift-popup={gift.name} class={"text-[11px] truncate flex-1 min-w-0 select-none " <> if(added?.(gift), do: "cursor-pointer", else: "cursor-grab")} title={gift.name}><%= gift.name %></span>
                         <%= if @active_tab == :loadout do %>
                           <%= if gift.name in picks do %>
                             <button phx-click="toggle_search_gift" phx-value-gift={gift.name} class="btn btn-xs btn-primary" title="Remove from gift search">Added</button>

@@ -1585,7 +1585,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       )
 
     ~H"""
-    <form data-sort-id={@entry["id"]} phx-change="ms_update_segment"
+    <form data-sort-id={@entry["id"]} data-sort-handle phx-change="ms_update_segment"
           class={"border px-1 py-1 flex items-center gap-2 flex-wrap " <> @surface <> " rounded"}
           style={
             cond do
@@ -1605,8 +1605,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         </select>
       </div>
       <div class="flex items-center gap-1.5 w-52 min-w-0 shrink-0">
-        <img :if={@gift} src={@gift.image_path} data-gift-popup={@gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class="w-6 h-6 rounded object-cover shrink-0 cursor-pointer" />
-        <span :if={@gift} class="badge badge-ghost badge-xs">T<%= @gift.tier %></span>
+        <div :if={@gift} class="relative w-6 h-6 shrink-0">
+          <img src={@gift.image_path} data-gift-popup={@gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class="w-6 h-6 rounded object-cover cursor-pointer" />
+          <span :if={@gift.tier} class="absolute top-0 left-0 px-0.5 text-[9px] leading-tight font-bold bg-base-100/80 rounded-br pointer-events-none"><%= gift_tier_roman(@gift.tier) %></span>
+          <img :if={@gift.affinity not in [nil, "none"]} src={gift_affinity_icon(@gift.affinity)} title={@gift.affinity} draggable="false"
+               class="absolute bottom-0 right-0 w-3 h-3 object-contain drop-shadow pointer-events-none" />
+        </div>
         <span :if={@pattern? and not @action?} class="badge badge-secondary badge-xs">any</span>
         <span :if={@action?} class={"badge badge-xs " <> if(@entry["subject"]["action"] == "skill_replace", do: "badge-info text-black", else: "badge-success")}>
           <%= if @entry["subject"]["action"] == "skill_replace", do: "skill", else: "heal" %>

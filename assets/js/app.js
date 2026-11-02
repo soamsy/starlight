@@ -815,10 +815,17 @@ const eventElement = (e) => (e.target instanceof Element ? e.target : e.target.p
 const SortableList = {
   mounted() {
     this.el.addEventListener("mousedown", (e) => {
-      const handle = eventElement(e)?.closest("[data-sort-handle]")
+      const target = eventElement(e)
+      const handle = target?.closest("[data-sort-handle]")
       if (!handle) return
       const item = handle.closest("[data-sort-id]")
-      if (item && item.parentElement === this.el) item.draggable = true
+      if (!item || item.parentElement !== this.el) return
+      item.draggable = !target.closest("button, input, select, textarea, a, label, [role=button], [tabindex]")
+    })
+
+    this.el.addEventListener("mouseup", (e) => {
+      const item = eventElement(e)?.closest("[data-sort-id]")
+      if (item && item.parentElement === this.el && !sortDrag) item.draggable = false
     })
 
     this.el.addEventListener("dragstart", (e) => {
