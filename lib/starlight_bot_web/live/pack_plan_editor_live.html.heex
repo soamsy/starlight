@@ -5,6 +5,16 @@
         <div class="flex items-center gap-3">
           <.pane_tabs team_id={@team_id} pane="packs" counts={@tab_counts} />
             <.template_picker :if={@editing_id} id="pack-template-picker" templates={@templates} editing={@editing_template} current_count={@tab_counts[:pack_plans]} status={@paste_status} label="pack plan" />
+          <button :if={@editing_id} type="button" phx-click="toggle_help" class="btn btn-sm btn-outline ml-auto gap-0 overflow-hidden px-0" title="How pack plans work">
+            <span class="flex h-full items-center border-r border-current/30 bg-base-content/10 px-2 text-xs">guide</span>
+            <span class="flex h-full items-center px-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 16v-4" />
+                <path d="M12 8h.01" />
+              </svg>
+            </span>
+          </button>
           <button :if={is_nil(@editing_id)} type="button" phx-click="new_plan" class="btn btn-primary btn-sm">+ New pack plan</button>
         </div>
         <%= if @editing_id do %>
@@ -21,11 +31,7 @@
             <% rows = chart_rows(@plan_data, @theme_packs, @filter, @floor_filter, floor_count, @view) %>
             <div class="flex-1 min-h-0 flex flex-col gap-1">
               <div class="flex items-center gap-3">
-                <span class="text-xs font-medium text-base-content/70">
-                  Assign a pack
-                  <%= if @floor_filter, do: " (eligible for F#{@floor_filter})" %>
-                  <button type="button" phx-click="toggle_help" class="text-base-content/40 hover:text-base-content cursor-pointer" title="How pack plans work">ⓘ</button>
-                </span>
+                <span :if={@floor_filter} class="badge badge-primary badge-outline">Eligible for F<%= @floor_filter %></span>
                 <div class="join ml-auto items-center">
                   <span class="text-xs text-base-content/70 mr-2">View:</span>
                   <%= for {view, label} <- [{"plan", "plan"}, {"normal", "all normal"}, {"hard", "all hard"}, {"extreme", "extreme"}] do %>
