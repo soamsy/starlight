@@ -31,7 +31,9 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
     Process.demonitor(ref, [:flush])
     EnkephalinSchedule.set_charging(false)
     log_result(result)
-    {:noreply, %{state | task: nil, close_after: match?({:started, _}, result) and EnkephalinSchedule.owned?()}}
+    close_after = match?({:started, _}, result) and EnkephalinSchedule.owned?()
+    log_close_plan(result, close_after)
+    {:noreply, %{state | task: nil, close_after: close_after}}
   end
 
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{task: %Task{ref: ref}} = state) do
@@ -160,7 +162,13 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
   defp maybe_close(%{close_after: true, task: nil} = state) do
     if runners_idle?() do
       state = %{state | close_after: false}
-      if close_wanted?(state), do: close_game()
+
+      if close_wanted?(state) do
+        close_game()
+      else
+        LogStore.append(:info, "enkephalin scheduler: not closing Limbus, #{skip_reason()}")
+      end
+
       if clean_charge?(), do: EnkephalinSchedule.release()
       state
     else
@@ -169,6 +177,25 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
   end
 
   defp maybe_close(state), do: state
+
+  defp log_close_plan({:started, launched?}, close_after) do
+    LogStore.append(
+      :info,
+      "enkephalin scheduler: charge started, launched=#{launched?} ownership=#{inspect(EnkephalinSchedule.ownership())} will check closing=#{close_after}"
+    )
+  end
+
+  defp log_close_plan(_result, _close_after), do: :ok
+
+  defp skip_reason do
+    charge_settings = EnkephalinSchedule.get_settings()
+    scheduler_settings = Scheduler.get_settings()
+    remaining = DailyProgress.remaining(scheduler_settings)
+
+    "owned=#{EnkephalinSchedule.owned?()} ownership=#{inspect(EnkephalinSchedule.ownership())} " <>
+      "close_setting=#{charge_settings.close_game_after_charge} last_run=#{inspect(Navigator.status().last_run)} " <>
+      "scheduler_enabled=#{scheduler_settings.enabled} remaining=#{inspect(remaining)}"
+  end
 
   defp clean_charge?, do: match?(%{kind: :enkephalin, ok?: true}, Navigator.status().last_run)
 

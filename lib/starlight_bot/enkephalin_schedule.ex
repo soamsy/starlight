@@ -1,5 +1,5 @@
 defmodule StarlightBot.EnkephalinSchedule do
-  alias StarlightBot.{AppSettings, DailyProgress, Scheduler}
+  alias StarlightBot.{AppSettings, DailyProgress, LogStore, Scheduler}
   alias StarlightBot.Navigation.Navigator
 
   @topic "enkephalin_schedule"
@@ -76,7 +76,12 @@ defmodule StarlightBot.EnkephalinSchedule do
   def release, do: put_ownership(nil)
 
   def revoke(reason) do
-    if owned?(), do: put_ownership({:revoked, reason}), else: :ok
+    if owned?() do
+      LogStore.append(:info, "enkephalin scheduler: gave up ownership of Limbus (#{reason}), it won't be closed")
+      put_ownership({:revoked, reason})
+    else
+      :ok
+    end
   end
 
   defp put_ownership(value) do
