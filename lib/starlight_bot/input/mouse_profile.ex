@@ -1,5 +1,5 @@
 defmodule StarlightBot.Input.MouseProfile do
-  @move_duration_mult 0.62
+  @move_duration_mult 0.55
   @scroll_delay_mult 0.4
   @drift_decay 0.97
   @drift_sigma 0.02
