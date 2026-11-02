@@ -468,7 +468,12 @@ defmodule StarlightBot.GiftPlans do
   def recipe_names(gift, by_id), do: for(id <- recipe_ids(gift), by_id[id], do: by_id[id].name)
 
   def tier_fusable?(gift) do
-    not fixed_recipe?(gift) and gift.tier in @tier_fusable_tiers and String.contains?(Map.get(gift, :obtain_method) || "", "Shop")
+    not fixed_recipe?(gift) and gift.tier in @tier_fusable_tiers and not affinityless?(gift) and
+      String.contains?(Map.get(gift, :obtain_method) || "", "Shop")
+  end
+
+  defp affinityless?(gift) do
+    Map.get(gift, :affinity) in [nil, "", "none"]
   end
 
   def fusable?(gift), do: fixed_recipe?(gift) or tier_fusable?(gift)
