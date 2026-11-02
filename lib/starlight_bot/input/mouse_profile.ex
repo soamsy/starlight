@@ -4,7 +4,6 @@ defmodule StarlightBot.Input.MouseProfile do
   @drift_decay 0.97
   @drift_sigma 0.02
   @drift_limit 0.15
-  @long_pause_chance 0.02
 
   def move_duration_mult, do: @move_duration_mult * personality().tempo * advance_drift()
   def scroll_delay_mult, do: @scroll_delay_mult * personality().tempo
@@ -30,8 +29,7 @@ defmodule StarlightBot.Input.MouseProfile do
   end
 
   def hesitation_ms do
-    base = personality().hesitation_ms |> lognormal(0.5) |> round()
-    if :rand.uniform() < @long_pause_chance, do: base + round(400.0 + :rand.uniform() * 1100.0), else: base
+    personality().hesitation_ms |> lognormal(0.5) |> round()
   end
 
   def reroll do
