@@ -31,6 +31,19 @@ defmodule StarlightBot.ThemePacks do
     _ -> []
   end
 
+  def names_by_gift_id do
+    from(g in "theme_pack_gifts",
+      join: t in "theme_packs",
+      on: t.id == g.theme_pack_id,
+      order_by: [asc: t.name_en],
+      select: {g.gift_id, t.name_en}
+    )
+    |> Repo.all()
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+  rescue
+    _ -> %{}
+  end
+
   def set_search_hook(id, hook_name) do
     if Data.base_writable?() do
       now = DateTime.utc_now() |> DateTime.truncate(:second)

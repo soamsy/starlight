@@ -169,6 +169,11 @@ defmodule StarlightBot.Automation.RunMemory do
     update(ctx, :picked_packs, %{}, &Map.put(&1, key, pack_name))
   end
 
+  def current_pack(ctx) do
+    key = {get(ctx, :run_progress, %{})[:current], get(ctx, :floor, 1)}
+    ctx |> get(:picked_packs, %{}) |> Map.get(key)
+  end
+
   def cost(ctx), do: get(ctx, :cost, nil)
 
   def put_cost(ctx, cost), do: put(ctx, :cost, cost)

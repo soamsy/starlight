@@ -4,11 +4,13 @@ defmodule StarlightBot.Automation.Shop.Actions.TieredFusion do
   alias StarlightBot.EgoGifts
   alias StarlightBot.GiftPlans
   alias StarlightBot.GiftPlans.{Combos, FusionPlanner}
+  alias StarlightBot.ThemePacks
 
   @max_rounds 15
 
   def obtain(entry, step, state, ctx) do
-    with {:ok, target} <- target(entry, state) do
+    with {:ok, target} <- target(entry, state),
+         :ok <- check_pack(target, state, ctx) do
       work(entry.fusion["routes"] || [], target, [], %{rounds: 0, misses: 0, retries: step["max_retries"]}, state, ctx)
     end
   end
@@ -18,6 +20,15 @@ defmodule StarlightBot.Automation.Shop.Actions.TieredFusion do
       nil -> {:failed, "#{entry.gift} isn't a known gift", state}
       target -> {:ok, target}
     end
+  end
+
+  defp check_pack(target, state, ctx) do
+    packs = Map.get(ThemePacks.names_by_gift_id(), target.id, [])
+    current = RunMemory.current_pack(ctx)
+
+    if packs == [] or current == nil or current in packs,
+      do: :ok,
+      else: {:failed, "#{target.name} only fuses in #{Enum.join(packs, ", ")}, this floor is #{current}", state}
   end
 
   defp work(_routes, target, progress, %{rounds: rounds}, state, _ctx) when rounds >= @max_rounds,
