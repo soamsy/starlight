@@ -14,7 +14,8 @@ defmodule StarlightBotWeb.Components.PlanPicker do
              patch={~p"/teams?team=#{@team_id}&pane=#{pane}"}
              title={label}
              class={"btn btn-sm join-item " <> if(@pane == pane, do: "btn-primary", else: "btn-outline")}>
-        <.pane_icon pane={pane} class="h-4 w-4" /><%= if pane != "stats", do: label %>
+        <img :if={pane == "stats"} src="/images/icons/starlight.webp" alt="Stats" class="h-4 w-4" style="filter: drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000);" />
+        <.pane_icon :if={pane != "stats"} pane={pane} class="h-4 w-4" /><%= if pane != "stats", do: label %>
         <span :if={tab_count(@counts, pane)} class="badge badge-xs badge-ghost font-mono"><%= tab_count(@counts, pane) %></span>
       </.link>
     </div>
