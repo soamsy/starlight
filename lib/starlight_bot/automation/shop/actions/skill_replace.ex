@@ -7,10 +7,11 @@ defmodule StarlightBot.Automation.Shop.Actions.SkillReplace do
 
   def run(%{"sinner" => sinner, "target" => target, "lock_s2" => lock_s2?}, _definition, state, ctx) do
     cost = RunMemory.cost(ctx)
-    options = GiftPlans.useful_skill_options(distribution(sinner, ctx), target, lock_s2?)
+    wanted = GiftPlans.useful_skill_options(distribution(sinner, ctx), target, lock_s2?)
+    options = Enum.filter(wanted, &(affordable?(&1, cost) and not MapSet.member?(state.failed_replace_options, {sinner, &1})))
 
     cond do
-      options == [] ->
+      wanted == [] ->
         {:skipped, "#{sinner} already has the wanted skills", state}
 
       MapSet.member?(state.replaced, sinner) ->
@@ -19,10 +20,15 @@ defmodule StarlightBot.Automation.Shop.Actions.SkillReplace do
       is_integer(cost) and cost < GiftPlans.skill_replace_cost() ->
         {:skipped, "cost #{cost} is below #{GiftPlans.skill_replace_cost()}", state}
 
+      options == [] ->
+        {:skipped, "cost #{cost} can't afford #{Enum.map_join(wanted, ", ", &option_label/1)}, or they already failed this shop", state}
+
       true ->
         replace(sinner, options, state, ctx)
     end
   end
+
+  defp affordable?(option, cost), do: not is_integer(cost) or cost >= GiftPlans.skill_option_cost(option)
 
   def run_entries(entries, state, ctx) do
     attempts = for entry <- entries, sinner <- entry.sinners, do: %{"sinner" => sinner, "target" => entry.target, "lock_s2" => entry.lock_s2}
@@ -52,9 +58,10 @@ defmodule StarlightBot.Automation.Shop.Actions.SkillReplace do
       {:error, :already_purchased} ->
         {:skipped, "skill replacement already purchased in this shop", state}
 
-      {:error, :no_option_available} ->
+      {:error, {:no_option_available, tried}} ->
         Ops.recover_to_shop(ctx)
-        {:skipped, "none of #{Enum.map_join(options, ", ", &option_label/1)} could be confirmed", state}
+        failed = Enum.reduce(tried, state.failed_replace_options, &MapSet.put(&2, {sinner, &1}))
+        {:skipped, "none of #{Enum.map_join(tried, ", ", &option_label/1)} could be confirmed", %{state | failed_replace_options: failed}}
 
       {:error, reason} ->
         {:failed, inspect(reason), state}

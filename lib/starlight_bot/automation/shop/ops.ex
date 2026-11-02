@@ -159,11 +159,13 @@ defmodule StarlightBot.Automation.Shop.Ops do
     if Engine.check(:shop) do
       {:ok, nil}
     else
-      escape_step = if rem(attempt, 2) == 0, do: key(:esc), else: click(:safe_corner)
+      escape_step = if rem(attempt, 2) == 0 and not click_dismissed_popup_open?(), do: key(:esc), else: click(:safe_corner)
       Engine.act([escape_step, branch([{:shop, []}], wait: @escape_settle_ms)], ctx)
       escape_to_shop(ctx, attempt + 1)
     end
   end
+
+  defp click_dismissed_popup_open?, do: Engine.check(@replace_popup_hook) or Engine.check(:shop_purchase_popup)
 
   def open_heal_menu(ctx) do
     with false <- Engine.check(:shop_heal_disabled),
@@ -324,7 +326,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
          {:ok, _} <- Engine.act([await(@replace_popup_hook)], ctx) do
       case Enum.find(options, &replace_option_confirmed?(&1, ctx)) do
         nil ->
-          {:error, :no_option_available}
+          {:error, {:no_option_available, options}}
 
         option ->
           steps = [
@@ -784,7 +786,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   defp finish_purchase(:insufficient_funds, gift_name, ctx) do
     Ctx.log(ctx, :info, "shop: not enough cost for #{gift_name} — backing out")
 
-    case Engine.act([key(:esc)], ctx) do
+    case Engine.act([click(:safe_corner)], ctx) do
       {:ok, _} -> {:ok, :insufficient_funds}
       {:error, _} = err -> err
     end

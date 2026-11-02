@@ -164,6 +164,7 @@ defmodule StarlightBot.GiftPlans do
   def skill_sinner_complete?(replaces, target), do: replaces |> skill_distribution() |> skill_complete?(target)
   def heal_cost, do: @heal_cost
   def skill_replace_cost, do: @skill_replace_cost
+  def skill_option_cost(option), do: @skill_option_costs[option]
   def max_uptie, do: @max_uptie
   def gift_search_max, do: @gift_search_max
   def sin_fragments, do: @sin_fragments

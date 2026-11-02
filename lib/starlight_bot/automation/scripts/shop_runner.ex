@@ -158,6 +158,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       reserve: 0,
       refreshes: 0,
       replaced: MapSet.new(),
+      failed_replace_options: MapSet.new(),
       sold: %{},
       bought: %{},
       healed: %{},
