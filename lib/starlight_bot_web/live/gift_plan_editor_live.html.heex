@@ -6,7 +6,7 @@
   <StarlightBotWeb.Layouts.flash_toasts flash={@flash} />
   <% popup_gift = @gift_popup && @gifts_by_name[@gift_popup.name] %>
   <div id="gift-popup" phx-hook="GiftPopup" class="contents" data-gift={popup_gift && popup_gift.name} data-x={@gift_popup && @gift_popup.x} data-y={@gift_popup && @gift_popup.y}>
-    <div :if={popup_gift} class="fixed z-50 w-max max-w-sm rounded-lg border border-base-300 bg-base-100 p-2 shadow-xl flex flex-col gap-1">
+    <div :if={popup_gift} data-popup-control class="fixed z-50 w-max max-w-sm max-h-[calc(100vh-1rem)] overflow-y-auto rounded-lg border border-base-300 bg-base-100 p-2 shadow-xl flex flex-col gap-1">
       <div class="flex items-center gap-2">
         <img src={popup_gift.image_path} class="w-8 h-8 rounded object-cover shrink-0" />
         <div class="flex flex-col min-w-0">
@@ -24,6 +24,19 @@
         </div>
       </div>
       <p class="text-[11px] whitespace-pre-line"><%= gift_detail_text(popup_gift, @gift_popup.view, @gifts_by_id) %></p>
+      <% ingredients = fusion_ingredients(popup_gift, @gifts_by_id, @theme_packs_by_gift_id) %>
+      <div :if={ingredients} class="border-t border-base-300 pt-1 flex flex-col gap-0.5">
+        <span class="text-[10px] uppercase tracking-wide text-base-content/50">Fusion</span>
+        <div :for={ingredient <- ingredients} class="flex items-center gap-1.5 text-[11px]">
+          <img :if={ingredient.image_path} src={ingredient.image_path} class="w-4 h-4 rounded object-cover shrink-0" />
+          <span :if={!ingredient.image_path} class="w-4 shrink-0"></span>
+          <span><%= ingredient.name %></span>
+          <span :if={ingredient.packs != []} class="ml-auto pl-3 text-[10px] text-base-content/50"><%= Enum.join(ingredient.packs, ", ") %></span>
+        </div>
+      </div>
+      <p :if={@theme_packs_by_gift_id[popup_gift.id]} class="text-[10px] text-base-content/60">
+        Theme pack: <%= Enum.join(@theme_packs_by_gift_id[popup_gift.id], ", ") %>
+      </p>
     </div>
   </div>
     <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -87,11 +100,11 @@
                     <div class="flex items-center gap-1 shrink-0">
                       <input type="text" placeholder="Search gifts…" value={@gift_filter} phx-keyup="filter_gifts"
                              class="input input-bordered input-xs flex-1 min-w-0" />
-                      <button :if={@gift_tier_filter != [] or @gift_affinity_filter != []} type="button" phx-click="clear_gift_filters" title="Clear all filters"
+                      <button :if={@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter} type="button" phx-click="clear_gift_filters" title="Clear all filters"
                               class="btn btn-ghost btn-xs btn-square">✕</button>
                       <details class="dropdown dropdown-end" phx-mounted={JS.ignore_attributes("open")} phx-click-away={JS.remove_attribute("open")}>
                         <summary title="Filter"
-                             class={"btn btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [], do: "btn-primary", else: "btn-ghost")}>
+                             class={"btn btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter, do: "btn-primary", else: "btn-ghost")}>
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" /></svg>
                         </summary>
                         <div class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-200 p-2 shadow-lg ring-2 ring-base-content/20 space-y-2">
@@ -117,6 +130,15 @@
                               </button>
                             </div>
                           </div>
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[11px] text-base-content/60">Fusion</span>
+                            <div class="flex flex-wrap gap-1">
+                              <button type="button" phx-click="toggle_gift_fixed_filter"
+                                      class={"btn btn-xs " <> if(@gift_fixed_filter, do: "btn-primary", else: "btn-ghost border-base-300")}>
+                                Fixed fusions
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </details>
                       <div class="dropdown dropdown-end">
@@ -134,7 +156,7 @@
                     </div>
 
                     <% picks = @plan_data["gift_search"] %>
-                    <% shown = filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_sort) %>
+                    <% shown = filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_fixed_filter, @gift_sort) %>
                     <div id="gift-drag-source" phx-hook="GiftDragSource" class="flex flex-col flex-1 min-h-0 max-lg:min-h-28 overflow-y-auto">
                       <% added? = fn gift -> if(@active_tab == :loadout, do: gift.name in picks, else: GiftPlans.has_gift?(milestone, gift.name)) end %>
                       <div :for={gift <- shown} data-drag-gift={if not added?.(gift), do: gift.name} class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-base-200">

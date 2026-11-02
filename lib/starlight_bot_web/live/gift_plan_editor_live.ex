@@ -4,7 +4,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   import StarlightBotWeb.Components.PlanPicker
   import StarlightBotWeb.Components.PlanTemplates
 
-  alias StarlightBot.{PlanClipboard, PlanCounts, Conditions, EgoGifts, GiftPlans, Plans, Teams}
+  alias StarlightBot.{PlanClipboard, PlanCounts, Conditions, EgoGifts, GiftPlans, Plans, Teams, ThemePacks}
   alias StarlightBot.GiftPlans.{Routes, FusionRouteTemplates, Combos}
 
     @gift_tiers 1..6
@@ -93,6 +93,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:gifts, Enum.reject(gifts, &EgoGifts.unobtainable?/1))
       |> assign(:gifts_by_name, Map.new(gifts, &{&1.name, &1}))
       |> assign(:gifts_by_id, Map.new(gifts, &{&1.id, &1}))
+      |> assign(:theme_packs_by_gift_id, ThemePacks.names_by_gift_id())
       |> assign(:sinners, Teams.all_sinners())
       |> assign(:route_clipboard, nil)
       |> assign(:route_shop, :normal)
@@ -176,8 +177,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("toggle_gift_fixed_filter", _params, socket) do
+    {:noreply, assign(socket, :gift_fixed_filter, not socket.assigns.gift_fixed_filter)}
+  end
+
+  @impl true
   def handle_event("clear_gift_filters", _params, socket) do
-    {:noreply, socket |> assign(:gift_tier_filter, []) |> assign(:gift_affinity_filter, [])}
+    {:noreply, socket |> assign(:gift_tier_filter, []) |> assign(:gift_affinity_filter, []) |> assign(:gift_fixed_filter, false)}
   end
 
   @impl true
@@ -1025,11 +1031,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def combo_meta(combo), do: "#{Combos.points(combo)} pts · #{Combos.keyword_odds(combo)}% keyword"
 
-  def filtered_gifts(gifts, filter, tier_filter, affinity_filter, sort_by) do
+  def filtered_gifts(gifts, filter, tier_filter, affinity_filter, fixed_filter, sort_by) do
     gifts
     |> Enum.filter(&matches_text_filter?(&1, filter))
     |> Enum.filter(&(tier_filter == [] or &1.tier in tier_filter))
     |> Enum.filter(&(affinity_filter == [] or &1.affinity in affinity_filter))
+    |> Enum.filter(&(not fixed_filter or GiftPlans.fixed_recipe?(&1)))
     |> sort_gifts(sort_by)
   end
 
@@ -1075,6 +1082,20 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def gift_detail_text(gift, "uptie3", gifts_by_id),
     do: clean_gift_text(gift.uptie3, gifts_by_id) || "No ++ uptie change."
+
+  def fusion_ingredients(gift, gifts_by_id, packs_by_gift_id) do
+    if GiftPlans.fixed_recipe?(gift) do
+      slots = GiftPlans.fragment_slots(gift)
+      fragments = if slots > 0, do: [%{name: "Sin Fragment x#{slots}", image_path: nil, packs: []}], else: []
+
+      ingredients =
+        for id <- GiftPlans.recipe_ids(gift), ingredient = gifts_by_id[id] do
+          %{name: ingredient.name, image_path: ingredient.image_path, packs: packs_by_gift_id[id] || []}
+        end
+
+      ingredients ++ fragments
+    end
+  end
 
   def obtain_method_text(%{obtain_method: nil}, _gifts_by_id), do: nil
 
@@ -1130,6 +1151,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> assign(:gift_filter, "")
     |> assign(:gift_tier_filter, [])
     |> assign(:gift_affinity_filter, [])
+    |> assign(:gift_fixed_filter, false)
     |> assign(:gift_sort, "default")
   end
 
