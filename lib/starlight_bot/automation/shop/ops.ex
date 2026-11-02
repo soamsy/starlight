@@ -867,7 +867,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
       not affinity_popup_open? and not keyword_unselected? and RunMemory.get(ctx, @fuse_affinity_key, nil) == target.affinity ->
         :ok
 
-      not Map.has_key?(@affinity_hooks, target.affinity) ->
+      is_nil(fuse_affinity_hook(target.affinity)) ->
         {:error, {:unknown_affinity, target.affinity}}
 
       true ->
@@ -881,7 +881,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
         steps =
           open_steps ++
             [
-              click(Map.fetch!(@affinity_hooks, target.affinity)),
+              click(fuse_affinity_hook(target.affinity)),
               click(@fuse_affinity_confirm_hook),
               await(not_hook(@fuse_affinity_confirm_hook)),
               await(@fuse_popup_hook)
@@ -1269,6 +1269,9 @@ defmodule StarlightBot.Automation.Shop.Ops do
       {:error, _} = err -> err
     end
   end
+
+  defp fuse_affinity_hook("none"), do: Map.fetch!(@affinity_hooks, "burn")
+  defp fuse_affinity_hook(affinity), do: Map.get(@affinity_hooks, affinity)
 
   defp affinity_hook(affinity) do
     case Map.fetch(@affinity_hooks, affinity) do
