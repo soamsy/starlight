@@ -15,7 +15,15 @@ defmodule StarlightBot.Automation.Shop.Actions.FixedFusion do
   defp recipe(entry, state) do
     case state.gifts_by_name[entry.gift] do
       nil -> {:failed, "#{entry.gift} isn't a known gift", state}
-      target -> if GiftPlans.fixed_recipe?(target), do: {:ok, target}, else: {:failed, "#{target.name} has no fixed recipe", state}
+      target -> check_recipe(target, state)
+    end
+  end
+
+  defp check_recipe(target, state) do
+    cond do
+      not GiftPlans.fixed_recipe?(target) -> {:failed, "#{target.name} has no fixed recipe", state}
+      state.shop_type == :normal and length(GiftPlans.ingredient_ids(target)) > 3 -> {:failed, "#{target.name} needs more than 3 ingredients, which a normal shop can't fuse", state}
+      true -> {:ok, target}
     end
   end
 

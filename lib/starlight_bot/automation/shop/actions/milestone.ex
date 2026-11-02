@@ -320,7 +320,8 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
       target ->
         inventory = RunMemory.ego_gifts(ctx)
         ids = GiftPlans.recipe_ids(target)
-        ids != [] and Enum.all?(ids, &Map.has_key?(inventory, &1))
+        fusable_here? = state.shop_type != :normal or length(GiftPlans.ingredient_ids(target)) <= 3
+        fusable_here? and ids != [] and Enum.all?(ids, &Map.has_key?(inventory, &1))
     end
   end
 
