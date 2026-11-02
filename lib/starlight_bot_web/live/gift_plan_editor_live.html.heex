@@ -561,17 +561,22 @@
                               Clipboard: <%= @route_clipboard.name %> (T<%= @route_clipboard.tier %>, <%= length(@route_clipboard.routes) %> route(s))
                             </span>
                           </div>
-                          <div class="flex items-center gap-2">
-                            <button type="button" phx-click="rt_use_default" phx-value-def_id={fusion_entry["id"]} class="btn btn-xs"
-                                    data-confirm={"Replace all routes with the tier #{target.tier} default?"}>Use T<%= target.tier %> default</button>
-                            <button type="button" phx-click="rt_make_default" phx-value-def_id={fusion_entry["id"]} class="btn btn-xs"
-                                    data-confirm={"Make these routes the tier #{target.tier} default for new fusions in every plan?"}>Set as T<%= target.tier %> default</button>
-                            <span class="text-[11px] text-base-content/60">
-                              <%= case @route_defaults[target.tier] do %>
-                                <% nil -> %>No saved T<%= target.tier %> default
-                                <% routes -> %>T<%= target.tier %> default: <%= Enum.map_join(routes, ", ", &Routes.label/1) %>
-                              <% end %>
-                            </span>
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[11px] text-base-content/60">T<%= target.tier %> templates</span>
+                            <span :if={@route_templates[target.tier] == []} class="text-[11px] text-base-content/60">No T<%= target.tier %> templates yet</span>
+                            <div :for={template <- @route_templates[target.tier] || []} class="flex items-center gap-2">
+                              <button type="button" phx-click="rt_apply_template" phx-value-def_id={fusion_entry["id"]} phx-value-ref={template.ref} class="btn btn-xs"
+                                      data-confirm={"Replace all routes with the template #{template.name}?"}>Apply</button>
+                              <span class="text-xs font-semibold"><%= template.name %></span>
+                              <span class="text-[11px] text-base-content/60"><%= Enum.map_join(template.routes, ", ", &Routes.label/1) %></span>
+                              <button :if={template.deletable} type="button" phx-click="rt_delete_template" phx-value-ref={template.ref} class="btn btn-xs btn-ghost"
+                                      data-confirm={"Delete the template #{template.name}?"}>Delete</button>
+                            </div>
+                            <form phx-submit="rt_save_template" class="flex items-center gap-2">
+                              <input type="hidden" name="def_id" value={fusion_entry["id"]} />
+                              <input type="text" name="name" placeholder="Template name" autocomplete="off" class="input input-xs input-bordered" />
+                              <button type="submit" class="btn btn-xs">Save routes as T<%= target.tier %> template</button>
+                            </form>
                           </div>
                           <div class="flex items-center gap-2">
                             <span class="text-[11px] text-base-content/60">Routes for</span>

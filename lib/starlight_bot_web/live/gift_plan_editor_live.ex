@@ -5,7 +5,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   import StarlightBotWeb.Components.PlanTemplates
 
   alias StarlightBot.{PlanClipboard, PlanCounts, Conditions, EgoGifts, GiftPlans, Plans, Teams}
-  alias StarlightBot.GiftPlans.{Routes, RouteDefaults, Combos}
+  alias StarlightBot.GiftPlans.{Routes, FusionRouteTemplates, Combos}
 
     @gift_tiers 1..6
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)
@@ -96,7 +96,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:sinners, Teams.all_sinners())
       |> assign(:route_clipboard, nil)
       |> assign(:route_shop, :normal)
-      |> assign(:route_defaults, RouteDefaults.all())
+      |> assign(:route_templates, FusionRouteTemplates.all())
       |> assign(:gift_popup, nil)
       |> reset_editor()
 
@@ -469,7 +469,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("ms_add_gift", %{"gift" => name}, socket) do
-    {:noreply, update_plan(socket, &GiftPlans.add_gift(&1, socket.assigns.selected_milestone_id, name, socket.assigns.gifts_by_name, fn tier -> RouteDefaults.get(tier) end))}
+    {:noreply, update_plan(socket, &GiftPlans.add_gift(&1, socket.assigns.selected_milestone_id, name, socket.assigns.gifts_by_name, fn tier -> FusionRouteTemplates.initial(tier) end))}
   end
 
   @impl true
@@ -773,25 +773,41 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
-  def handle_event("rt_make_default", %{"def_id" => id}, socket) do
+  def handle_event("rt_save_template", %{"def_id" => id, "name" => name}, socket) do
     {entry, %{tier: tier}} = fusion_entry(socket, id)
 
-    case RouteDefaults.put(tier, entry["fusion"]["routes"] || []) do
-      :ok ->
+    case FusionRouteTemplates.create(tier, name, entry["fusion"]["routes"] || []) do
+      {:ok, _ref} ->
         {:noreply,
          socket
-         |> assign(:route_defaults, RouteDefaults.all())
-         |> put_flash(:info, "Saved these routes as the tier #{tier} default.")}
+         |> assign(:route_templates, FusionRouteTemplates.all())
+         |> put_flash(:info, "Saved \"#{String.trim(name)}\" as a tier #{tier} template.")}
+
+      {:error, :blank_name} ->
+        {:noreply, put_flash(socket, :error, "Give the template a name.")}
+
+      {:error, :name_taken} ->
+        {:noreply, put_flash(socket, :error, "A tier #{tier} template named \"#{String.trim(name)}\" already exists.")}
 
       {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Couldn't save the tier #{tier} default routes.")}
+        {:noreply, put_flash(socket, :error, "Couldn't save the tier #{tier} template.")}
     end
   end
 
   @impl true
-  def handle_event("rt_use_default", %{"def_id" => id}, socket) do
-    {_entry, %{tier: tier}} = fusion_entry(socket, id)
-    {:noreply, update_routes(socket, id, fn _routes -> RouteDefaults.get(tier) end)}
+  def handle_event("rt_apply_template", %{"def_id" => id, "ref" => ref}, socket) do
+    case FusionRouteTemplates.get(ref) do
+      %{routes: routes} -> {:noreply, update_routes(socket, id, fn _routes -> Routes.copy(routes) end)}
+      nil -> {:noreply, put_flash(socket, :error, "That template no longer exists.")}
+    end
+  end
+
+  @impl true
+  def handle_event("rt_delete_template", %{"ref" => ref}, socket) do
+    case FusionRouteTemplates.delete(ref) do
+      :ok -> {:noreply, assign(socket, :route_templates, FusionRouteTemplates.all())}
+      {:error, _} -> {:noreply, put_flash(socket, :error, "Couldn't delete that template.")}
+    end
   end
 
   @impl true
@@ -1196,7 +1212,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp ensure_fusion(socket, entry_id) do
     case fusion_entry(socket, entry_id) do
       {%{"fusion" => nil}, %{} = gift} ->
-        fusion = GiftPlans.default_fusion(gift, &RouteDefaults.get/1)
+        fusion = GiftPlans.default_fusion(gift, &FusionRouteTemplates.initial/1)
         update_plan(socket, &GiftPlans.update_entry(&1, socket.assigns.selected_milestone_id, entry_id, fn entry -> Map.put(entry, "fusion", fusion) end))
 
       _ ->

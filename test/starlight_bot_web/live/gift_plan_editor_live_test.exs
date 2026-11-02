@@ -6,7 +6,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
   setup do
     :ok = StarlightBot.TestDB.checkout()
-    Repo.query!("DELETE FROM fusion_route_defaults")
+    Repo.query!("DELETE FROM fusion_route_user_templates")
+    BaseRepo.query!("DELETE FROM fusion_route_templates")
 
     BaseRepo.insert_all("ego_gifts", [
       %{id: "g_glimpse", name: "Glimpse of Flames", affinity: "burn", tier: 4, buying_cost: 300, ingredients: nil, obtain_method: "Shop"},
@@ -485,10 +486,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert Enum.map(entry(socket, "Glimpse of Flames")["fusion"]["routes"], & &1["id"]) == [added["id"], copy["id"], edited["id"], first["id"]]
 
     socket = event(socket, "rt_delete", %{"def_id" => glimpse, "route_id" => copy["id"]})
-    socket = socket |> event("rt_copy", %{"def_id" => glimpse}) |> event("rt_make_default", %{"def_id" => glimpse})
+    socket = socket |> event("rt_copy", %{"def_id" => glimpse}) |> event("rt_save_template", %{"def_id" => glimpse, "name" => "Mine"})
     assert socket.assigns.route_clipboard.tier == 4
+    [%{ref: ref, name: "Mine"}] = socket.assigns.route_templates[4]
 
-    socket = event(socket, "rt_use_default", %{"def_id" => glimpse})
+    socket = event(socket, "rt_apply_template", %{"def_id" => glimpse, "ref" => ref})
     assert Enum.map(entry(socket, "Glimpse of Flames")["fusion"]["routes"], & &1["combo"]) == [[4, 4], [4, 2, 2], [3, 3, 2]]
 
     socket = socket |> event("ms_close_fusion", %{}) |> event("ms_open_fusion", %{"entry" => ing_a})

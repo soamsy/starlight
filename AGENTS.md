@@ -46,7 +46,7 @@ If the Rust code has errors, `mix compile` prints them in full. Fix them in `nat
 App data lives in three SQLite files, each behind its own Ecto repo:
 
 - `StarlightBot.BaseRepo` → `priv/data/base.db` (committed): hooks, ego_gifts, theme_packs, theme_pack_gifts, plan_templates, fusion_route_templates, sinner_profiles. Read-only in user mode.
-- `StarlightBot.Repo` → `priv/data/user_seed.db` in authoring mode (committed, copied to `~/.starlight/user.db` on a user's first run): teams, battle/pack/gift plans, fusion_route_defaults, scheduler_settings, runner_forms, hook_overrides, user sinner_profiles.
+- `StarlightBot.Repo` → `priv/data/user_seed.db` in authoring mode (committed, copied to `~/.starlight/user.db` on a user's first run): teams, battle/pack/gift plans, fusion_route_user_templates, scheduler_settings, runner_forms, hook_overrides, user sinner_profiles.
 - `StarlightBot.RunsRepo` → `.starlight-dev/runs.db` (gitignored) in authoring mode, `~/.starlight/runs.db` in user mode: run_logs, run_events.
 
 `StarlightBot.Data` resolves the paths and mode from `~/.config/starlight/config.toml` (`mode`, `data_dir`), `STARLIGHT_CONFIG` and `STARLIGHT_HOME`. Dev defaults to `authoring` mode, where hook, template and shipped-profile edits write to `base.db`; `user` mode writes them to the user layer instead.
@@ -62,7 +62,7 @@ Layering rules to keep in mind:
 
 - Hooks are identified by name. The effective hook is the user's override when its `base_version` equals the shipped `hooks.version`, otherwise the shipped one (`Hooks.effective_rows/0`). Only `hooks.ex` and `vision/hook_registry.ex` touch the hook tables.
 - Shipped sinner profile ids stay below 1,000,000 and are never renumbered or reused; user-created profiles start at 1,000,000.
-- Plan templates and fusion route templates are shipped data that users copy from; runtime reads the user's own plans and routes (routes fall back to the template, then to the built-in defaults).
+- Plan templates are shipped data that users copy from; runtime reads the user's own plans. Fusion route templates are a per-tier list (tiers 1 to 4): authors edit `fusion_route_templates` in base.db, users can only add to their own `fusion_route_user_templates` and never delete shipped rows. New fusions start from the first template of their tier, then the built-in defaults.
 - There are no cross-database joins. Look up across files in application code.
 
 ---
