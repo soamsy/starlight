@@ -39,6 +39,14 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
                ["thm_hunt", "thm_fine", "thm_banned"]
     end
 
+    test "ignores plan statuses on floors the pack cannot appear on" do
+      packs = [pack("thm_early", [1], [1]), pack("thm_late", [3, 4], [3, 4])]
+      plan = %{"packs" => %{"thm_late" => %{"hard" => %{"1" => "favorite"}}, "thm_early" => %{"hard" => %{"1" => "hunt"}}}}
+
+      assert ThemePackSelector.packs_with_priority(plan, packs, "hard", 1, "hunt") |> Enum.map(& &1.id) == ["thm_early"]
+      assert ThemePackSelector.packs_with_priority(plan, packs, "hard", 1, "fine") == []
+    end
+
     test "respects per-floor scoping" do
       packs = [pack("thm_scoped", [1, 2, 3], [1, 2, 3])]
       plan = %{"packs" => %{"thm_scoped" => %{"normal" => %{"2" => "hunt", "3" => "hunt"}}}}

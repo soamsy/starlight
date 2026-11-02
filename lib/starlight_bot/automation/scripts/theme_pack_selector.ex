@@ -284,14 +284,14 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
   def packs_with_priority(plan_data, theme_packs, mode, floor, priority) do
     Enum.filter(theme_packs, fn pack ->
-      Resolver.eligible_floors(pack, mode) != [] and
+      floor in Resolver.eligible_floors(pack, mode) and
         Resolver.priority_at(plan_data, pack, mode, floor) == priority
     end)
   end
 
   defp all_unbanned(plan_data, theme_packs, mode, floor) do
     Enum.filter(theme_packs, fn pack ->
-      Resolver.eligible_floors(pack, mode) != [] and
+      floor in Resolver.eligible_floors(pack, mode) and
         Resolver.priority_at(plan_data, pack, mode, floor) != "banned"
     end)
   end
