@@ -910,6 +910,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     if click_fixed_shortcut(target, ctx) do
       {:ok, ingredient_ids}
     else
+      scroll_popup_to_bottom(@fuse_popup, ctx, 0)
       select_fuse_pass({:strict, Enum.frequencies(ingredient_ids), %{}}, ctx, 0, false)
     end
   end
@@ -955,30 +956,30 @@ defmodule StarlightBot.Automation.Shop.Ops do
         fuse_selection_done?(state_after) ->
           {:ok, clicked_ids(state_after)}
 
-        not fuse_scrollable?() or Engine.check(@fuse_scroll_bottom_hook) ->
-          fuse_bottom_reached(state_after, ctx, pass, dismissed?)
+        not fuse_scrollable?() or Engine.check(@fuse_scroll_top_hook) ->
+          fuse_top_reached(state_after, ctx, pass, dismissed?)
 
         true ->
-          case scroll_and_settle(@fuse_inventory_hook, scroll_down(@sell_scroll_clicks), ctx) do
-            :unmoved -> fuse_bottom_reached(state_after, ctx, pass, dismissed?)
+          case scroll_and_settle(@fuse_inventory_hook, scroll_up(@sell_scroll_clicks), ctx) do
+            :unmoved -> fuse_top_reached(state_after, ctx, pass, dismissed?)
             _ -> select_fuse_pass(state_after, ctx, pass + 1, dismissed?)
           end
       end
     end
   end
 
-  defp fuse_bottom_reached(state, ctx, _pass, true) do
+  defp fuse_top_reached(state, ctx, _pass, true) do
     names = missing_ingredient_names(state, ctx)
     RunMemory.add_unfusable_gifts(ctx, missing_ingredient_ids(state))
     Ctx.log(ctx, :info, "shop fuse: #{Enum.join(names, ", ")} never showed up in the fuse window, leaving it out of tiered fusions for the rest of the run")
     {:error, {:missing_ingredients, names}}
   end
 
-  defp fuse_bottom_reached(state, ctx, pass, false) do
+  defp fuse_top_reached(state, ctx, pass, false) do
     Ctx.log(ctx, :info, "shop fuse: ingredients missing, dismissing info popups and rescanning")
 
     with {:ok, _} <- dismiss_fuse_info_popup(ctx) do
-      scroll_popup_to_top(@fuse_popup, ctx, 0)
+      scroll_popup_to_bottom(@fuse_popup, ctx, 0)
       select_fuse_pass(state, ctx, pass + 1, true)
     end
   end
@@ -1366,6 +1367,17 @@ defmodule StarlightBot.Automation.Shop.Ops do
       note_popup_pass(popup, 0, ctx)
     else
       scroll_popup_to_top(popup, ctx, pass + 1)
+    end
+  end
+
+  defp scroll_popup_to_bottom(_popup, _ctx, pass) when pass >= @max_sell_scroll_passes, do: :ok
+
+  defp scroll_popup_to_bottom(popup, ctx, pass) do
+    if popup_at_bottom?(popup) or
+         scroll_and_settle(popup.inventory, scroll_down(@scroll_to_top_clicks), ctx) == :unmoved do
+      :ok
+    else
+      scroll_popup_to_bottom(popup, ctx, pass + 1)
     end
   end
 
