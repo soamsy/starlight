@@ -381,21 +381,23 @@
                       <div class="flex items-center gap-1">
                         <div :for={{action, label} <- [{"heal", "+ Greatly heal"}, {"revive", "+ Revive"}]} class="dropdown dropdown-end">
                           <div tabindex="0" role="button" class="btn btn-xs btn-outline"><%= label %></div>
-                          <div tabindex="0" class="dropdown-content z-30 mt-1 w-80 max-w-[90vw] grid grid-cols-3 gap-1 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+                          <div tabindex="0" class="dropdown-content z-30 mt-1 w-80 max-w-[90vw] rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg"><div class="grid grid-cols-3 gap-1">
                             <button :for={sinner <- @sinners} type="button" phx-click="ms_add_action" phx-value-action={action} phx-value-sinner={sinner}
                                     title={sinner_label(sinner)} class="btn btn-ghost btn-xs min-w-0 flex-nowrap justify-start gap-1 px-1">
                               <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-4 w-4 shrink-0 object-contain" /><span class="truncate"><%= sinner_label(sinner) %></span>
                             </button>
                           </div>
+                          </div>
                         </div>
                         <button type="button" phx-click="ms_add_action" phx-value-action="heal_all" class="btn btn-xs btn-outline">+ Heal all</button>
                         <div class="dropdown dropdown-end">
                           <div tabindex="0" role="button" class="btn btn-xs btn-outline">+ Skill replace</div>
-                          <div tabindex="0" class="dropdown-content z-30 mt-1 w-80 max-w-[90vw] grid grid-cols-3 gap-1 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+                          <div tabindex="0" class="dropdown-content z-30 mt-1 w-80 max-w-[90vw] rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg"><div class="grid grid-cols-3 gap-1">
                             <button :for={sinner <- @sinners} type="button" phx-click="ms_add_action" phx-value-action="skill_replace" phx-value-sinner={sinner}
                                     title={sinner_label(sinner)} class="btn btn-ghost btn-xs min-w-0 flex-nowrap justify-start gap-1 px-1">
                               <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-4 w-4 shrink-0 object-contain" /><span class="truncate"><%= sinner_label(sinner) %></span>
                             </button>
+                          </div>
                           </div>
                         </div>
                       </div>

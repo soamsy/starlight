@@ -62,13 +62,14 @@
                         <img :if={profile.sinner} src={StarlightBot.SinnerProfiles.icon(profile.sinner)} class="sinner-icon h-5 w-5 object-contain" />
                         <span :if={is_nil(profile.sinner)} class="text-base-content/40">?</span>
                       </summary>
-                      <div class="dropdown-content z-30 mt-1 w-max grid grid-cols-6 gap-1 rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+                      <div class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg"><div class="grid grid-cols-6 gap-1">
                         <label :for={sinner <- StarlightBot.SinnerProfiles.sinners()} title={sinner_label(sinner)}
                                class="btn btn-sm btn-ghost px-1 has-[:checked]:btn-primary has-[:disabled]:opacity-50">
                           <input type="radio" name="sinner" value={sinner} checked={profile.sinner == sinner}
                                  disabled={!StarlightBot.SinnerProfiles.writable?(profile)} class="hidden" />
                           <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-6 w-6 object-contain" />
                         </label>
+                        </div>
                       </div>
                     </details>
                   </form>
