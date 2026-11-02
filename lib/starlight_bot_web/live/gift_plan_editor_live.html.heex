@@ -70,7 +70,7 @@
                         <span id={"milestone-name-#{m["id"]}"} phx-hook="DblClickEvent" data-event="edit_milestone_name" data-id={m["id"]}
                               class="flex-1 truncate select-none"><%= m["name"] %></span>
                       <% end %>
-                      <span class="text-[10px] text-base-content/40"><%= length(m["entries"]) %></span>
+                      <span :if={m["endless"] == true} class="rounded border border-warning bg-warning/20 px-1 text-[11px] font-bold leading-4 text-warning shrink-0">∞</span>
                       <button phx-click="copy_milestone" phx-value-id={m["id"]} title="Copy this milestone to the clipboard as JSON" class="btn btn-ghost btn-xs px-1">Copy</button>
                       <button phx-click="move_milestone" phx-value-id={m["id"]} phx-value-dir="up" class="btn btn-ghost btn-xs px-1">↑</button>
                       <button phx-click="move_milestone" phx-value-id={m["id"]} phx-value-dir="down" class="btn btn-ghost btn-xs px-1">↓</button>
@@ -368,6 +368,14 @@
                                   title="Remove this goal; its entries become required">✕</button>
                         </form>
                         <button phx-click="ms_add_goal" class="rounded-lg border border-dashed border-base-content/30 px-3 text-[11px] text-base-content/60 hover:bg-base-200">+ Goal</button>
+                        <div :if={milestone["endless"] == true} class="rounded-lg border border-warning bg-warning/20 px-2 py-1 flex items-center gap-1 text-warning"
+                             title="This milestone is never reached. It keeps buying and refreshing until a refresh case leaves the shop, and later milestones are not run.">
+                          <span class="text-[11px] font-semibold">∞ Never done</span>
+                          <button type="button" phx-click="ms_set_endless" phx-value-endless="false" class="btn btn-ghost btn-2xs px-1 text-error" title="Make this milestone finishable again">✕</button>
+                        </div>
+                        <button :if={milestone["endless"] != true} type="button" phx-click="ms_set_endless" phx-value-endless="true"
+                                title="Never count this milestone as reached, so it keeps going until a refresh case leaves the shop"
+                                class="rounded-lg border border-dashed border-base-content/30 px-3 text-[11px] text-base-content/60 hover:bg-base-200">+ Endless</button>
                       </div>
                       <div class="flex flex-col items-end gap-1 shrink-0 ml-auto">
                       <div class="flex items-center gap-1">

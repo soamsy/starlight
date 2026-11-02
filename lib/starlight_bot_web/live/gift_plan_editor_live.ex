@@ -722,6 +722,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("ms_set_endless", %{"endless" => endless}, socket) do
+    {:noreply, update_milestone(socket, socket.assigns.selected_milestone_id, &Map.put(&1, "endless", endless == "true"))}
+  end
+
+  @impl true
   def handle_event("ms_add_goal", _params, socket) do
     {:noreply, update_plan(socket, &GiftPlans.add_goal(&1, socket.assigns.selected_milestone_id))}
   end

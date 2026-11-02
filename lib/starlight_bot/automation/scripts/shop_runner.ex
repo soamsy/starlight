@@ -72,7 +72,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
 
         case run_milestone(milestone, state, mode, ctx, :full) do
           :interrupted -> {:error, :window_not_focused}
-          state -> {:steps, [call(__MODULE__, :work, [rest, state, mode])]}
+          state -> {:steps, [call(__MODULE__, :work, [if(milestone["endless"] == true, do: [], else: rest), state, mode])]}
         end
     end
   end

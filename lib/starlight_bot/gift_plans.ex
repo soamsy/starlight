@@ -261,7 +261,7 @@ defmodule StarlightBot.GiftPlans do
 
   defp normalize_milestone(milestone) do
     %{"id" => milestone["id"], "name" => milestone["name"], "applies" => milestone["applies"] || "always", "goals" => milestone["goals"] || [], "entries" => milestone["entries"] || [], "refresh" => milestone["refresh"] || [],
-      "refresh_floors" => milestone["refresh_floors"] || [], "refresh_scheduled" => milestone["refresh_scheduled"] == true}
+      "refresh_floors" => milestone["refresh_floors"] || [], "refresh_scheduled" => milestone["refresh_scheduled"] == true, "endless" => milestone["endless"] == true}
   end
 
   def new_id(prefix) do
@@ -903,6 +903,8 @@ defmodule StarlightBot.GiftPlans do
   def goal_done(progress, letter), do: progress |> goal_members(letter) |> Enum.count(&(status(progress, &1) == :done))
 
   def reached?(%{milestone: nil}), do: false
+
+  def reached?(%{milestone: %{"endless" => true}}), do: false
 
   def reached?(progress) do
     entries = goal_entries(progress)

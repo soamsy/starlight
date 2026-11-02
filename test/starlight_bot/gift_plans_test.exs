@@ -206,6 +206,16 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.milestone_reached?(data, id, env(data, %{"Glimpse" => 2}))
     end
 
+    test "an endless milestone is never reached, even with nothing left to own" do
+      {data, id} = with_gifts(["Glimpse"])
+      owned = env(data, %{"Glimpse" => 0})
+      assert GiftPlans.milestone_reached?(data, id, owned)
+
+      endless = GiftPlans.update_milestone(data, id, &Map.put(&1, "endless", true))
+      refute GiftPlans.milestone_reached?(endless, id, owned)
+      assert GiftPlans.normalize(endless) |> GiftPlans.find_milestone(id) |> Map.fetch!("endless")
+    end
+
     test "a goal needs its minimum, clamped to its members on that floor, and a partway member holds it" do
       {data, id} = with_gifts(["Glimpse", "Drumstick", "Event Only"])
       data = GiftPlans.add_goal(data, id)
