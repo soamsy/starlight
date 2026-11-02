@@ -115,6 +115,8 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
 
   defp everyone_healed?(state), do: Enum.all?(Teams.all_sinners(), &(Ops.sinner_dead?(&1) == true or settled_full?(&1, state)))
 
+  def hurt?(sinner), do: not settled_full?(sinner, %{})
+
   defp settled_full?(sinner, %{last_heal: healed}) when healed == sinner or healed == :all do
     Process.sleep(400)
     await_settled(sinner, Ops.sinner_full_reading(sinner), now() + @heal_settle_timeout_ms)

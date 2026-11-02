@@ -1,9 +1,9 @@
 defmodule StarlightBot.Automation.Scripts.ShopRunner do
   import StarlightBot.Navigation.DSL, only: [any_of: 1, call: 3, result: 1]
   alias StarlightBot.Automation.{Engine, RunMemory}
-  alias StarlightBot.Automation.Shop.Actions.Milestone
+  alias StarlightBot.Automation.Shop.Actions.{Heal, Milestone}
   alias StarlightBot.Automation.Shop.Ops
-  alias StarlightBot.{Ctx, EgoGifts, GiftPlans}
+  alias StarlightBot.{Ctx, EgoGifts, GiftPlans, Teams}
   alias StarlightBot.Navigation.Screens.Shop
   alias StarlightBot.Vision.Capture
 
@@ -25,17 +25,16 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     Ops.reset_chance_comet(ctx)
     RunMemory.put_cost(ctx, nil)
     Ops.detect_and_update_cost(ctx)
+    cost_known? = not is_nil(RunMemory.cost(ctx))
 
-    if is_nil(RunMemory.cost(ctx)) do
+    if not cost_known? do
       Ctx.log(ctx, :info, "shop runner: cost not read yet, assuming #{@assumed_starting_cost} until it is")
       RunMemory.put_cost(ctx, @assumed_starting_cost)
     end
 
     with {:ok, plan} <- fetch_plan(ctx),
          {:ok, milestones} <- fetch_milestones(plan),
-         keep_open? = mode == :run and sell_first?(hd(milestones), RunMemory.floor(ctx)),
-         {:ok, _} <- Ops.check_inventory(ctx, keep_open?) do
-      state = %{initial_state(plan, ctx) | sell_popup_open: keep_open?}
+         {:ok, state} <- prepare(milestones, initial_state(plan, ctx), cost_known?, mode, ctx) do
       Ctx.log(ctx, :info, "shop runner: floor #{state.floor}, #{state.shop_type} shop, #{length(milestones)} milestone(s)")
       {:steps, [call(__MODULE__, :work, [milestones, state, mode])]}
     else
@@ -47,6 +46,63 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
         err
     end
   end
+
+  defp prepare(milestones, state, cost_known?, mode, ctx) do
+    case quick_route(milestones, state, cost_known?, ctx) do
+      :heal ->
+        {:ok, state}
+
+      :leave ->
+        {:ok, %{state | left: true}}
+
+      :full ->
+        keep_open? = mode == :run and sell_first?(hd(milestones), state.floor)
+
+        with {:ok, _} <- Ops.check_inventory(ctx, keep_open?), do: {:ok, %{state | sell_popup_open: keep_open?}}
+    end
+  end
+
+  defp quick_route(milestones, state, cost_known?, ctx) do
+    env = condition_env(state, ctx)
+
+    if Enum.all?(milestones, &GiftPlans.milestone_reached?(state.plan, &1["id"], env)) do
+      case heal_need(milestones, state) do
+        0 ->
+          Ctx.log(ctx, :info, "shop runner: every milestone is reached and nobody needs healing, leaving without checking the inventory")
+          :leave
+
+        needed ->
+          if cost_known? and wallet(state, ctx) >= needed do
+            Ctx.log(ctx, :info, "shop runner: every milestone is reached, healing for #{needed} cost without checking the inventory")
+            :heal
+          else
+            :full
+          end
+      end
+    else
+      :full
+    end
+  end
+
+  defp heal_need(milestones, state) do
+    sinners = Teams.all_sinners()
+    dead = Enum.filter(sinners, &(Ops.sinner_dead?(&1) == true))
+    hurt = Enum.filter(sinners -- dead, &Heal.hurt?/1)
+
+    milestones
+    |> Enum.flat_map(&GiftPlans.resolved_entries(&1, state.floor))
+    |> GiftPlans.heal_entries()
+    |> Enum.map(&entry_heal_need(&1, dead, hurt))
+    |> Enum.sum()
+  end
+
+  defp entry_heal_need(%{subject: %{"action" => "heal_all"}, repeat: repeat}, _dead, hurt) do
+    times = if repeat == "until_full", do: 1, else: GiftPlans.heal_all_times(repeat)
+    if hurt == [], do: 0, else: times * GiftPlans.heal_cost()
+  end
+
+  defp entry_heal_need(%{subject: %{"action" => "revive"}, sinners: sinners}, dead, _hurt), do: Enum.count(sinners, &(&1 in dead)) * GiftPlans.heal_cost()
+  defp entry_heal_need(%{subject: %{"action" => "heal"}, sinners: sinners}, _dead, hurt), do: Enum.count(sinners, &(&1 in hurt)) * GiftPlans.heal_cost()
 
   def work([], state, mode, _frame, ctx), do: finish(state, mode, ctx)
 
