@@ -90,7 +90,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:paste_status, :unknown)
       |> assign_templates(:gift_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
-      |> assign(:gifts, gifts)
+      |> assign(:gifts, Enum.reject(gifts, &EgoGifts.unobtainable?/1))
       |> assign(:gifts_by_name, Map.new(gifts, &{&1.name, &1}))
       |> assign(:gifts_by_id, Map.new(gifts, &{&1.id, &1}))
       |> assign(:sinners, Teams.all_sinners())
