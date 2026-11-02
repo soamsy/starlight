@@ -31,13 +31,20 @@
             <% rows = chart_rows(@plan_data, @theme_packs, @filter, @floor_filter, floor_count, @view) %>
             <div class="flex-1 min-h-0 flex flex-col gap-1">
               <div class="flex items-center gap-3">
-                <span :if={@floor_filter} class="badge badge-primary badge-outline">Eligible for F<%= @floor_filter %></span>
-                <div class="join ml-auto items-center">
-                  <span class="text-xs text-base-content/70 mr-2">View:</span>
-                  <%= for {view, label} <- [{"plan", "plan"}, {"normal", "all normal"}, {"hard", "all hard"}, {"extreme", "extreme"}] do %>
-                    <button type="button" phx-click="set_view" phx-value-view={view}
-                            class={"btn btn-xs join-item capitalize " <> view_button_class(view, @view)}><%= label %></button>
+                <span :if={@floor_filter} class="badge badge-accent badge-outline">Eligible for F<%= @floor_filter %></span>
+                <div class="ml-auto flex items-center gap-3">
+                  <%= with {warning, detail} <- view_warning(@plan_data, @view) do %>
+                    <span class="badge badge-accent badge-outline gap-1 cursor-help" title={detail}>
+                      <%= warning %>
+                    </span>
                   <% end %>
+                  <div class="join items-center">
+                    <span class="text-xs text-base-content/70 mr-2">View:</span>
+                    <%= for {view, label} <- [{"plan", "plan"}, {"normal", "all normal"}, {"hard", "all hard"}, {"extreme", "extreme"}] do %>
+                      <button type="button" phx-click="set_view" phx-value-view={view}
+                              class={"btn btn-xs join-item capitalize " <> view_button_class(view, @view)}><%= label %></button>
+                    <% end %>
+                  </div>
                 </div>
                 <input type="text" placeholder="Search packs…" value={@filter} phx-keyup="filter_packs"
                        class="input input-bordered input-xs w-48" />
