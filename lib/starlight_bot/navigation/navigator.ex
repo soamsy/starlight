@@ -690,7 +690,8 @@ defmodule StarlightBot.Navigation.Navigator do
     # failing partway. Its return value alone doesn't say which one we
     # ended up on, so re-sync current_screen from live state instead of
     # guessing from the result.
-    handle_cast(:localize, state)
+    {:noreply, localizing} = handle_cast(:localize, state)
+    {:noreply, %{localizing | last_run: state.last_run}}
   end
 
   defp next_run_label({:run_mirror_dungeon, picks, run_count, _config}),
