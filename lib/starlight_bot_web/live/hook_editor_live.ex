@@ -738,6 +738,8 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     end
   end
 
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
   defp hook_action(socket, {:ok, _name}, message), do: socket |> refresh_hooks() |> put_flash(:info, message)
   defp hook_action(socket, {:error, reason}, _message), do: flash_error(socket, "Failed: #{inspect(reason)}")
 
