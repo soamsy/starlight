@@ -378,6 +378,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("add_milestone", _, socket) do
     milestone = GiftPlans.new_milestone("Milestone #{length(socket.assigns.plan_data["milestones"]) + 1}")
+    refresh_case = %{"id" => GiftPlans.new_id("rc"), "condition" => Conditions.add(nil, "", %{"op" => "cost_gte", "value" => 300}), "action" => "refresh", "affinity" => nil, "max" => 4}
+    milestone = %{milestone | "refresh" => [refresh_case]}
 
     {:noreply,
      socket
