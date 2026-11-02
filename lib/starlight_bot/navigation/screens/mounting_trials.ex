@@ -18,7 +18,7 @@ defmodule StarlightBot.Navigation.Screens.MountingTrials do
   @selection_hooks Keyword.keys(@selection_states)
   @max_select_attempts 4
   @selected_hook :mounting_trials_selected_orange
-  @hp_hooks [mounting_trials_max_hp_text: 2.5, mounting_trials_hp_plus_2_5: 2.5, mounting_trials_hp_plus_5: 5, mounting_trials_hp_plus_7_5: 7.5, mounting_trials_hp_plus_10: 10]
+  @hp_hooks [mounting_trials_max_hp_text: 2.5, mounting_trials_hp_plus_2_5: 2.5, mounting_trials_hp_plus_5: 5, mounting_trials_hp_plus_7_5: 7.5, mounting_trials_hp_plus_10: 10, mounting_trials_hp_plus_15: 15, mounting_trials_hp_plus_17_5: 17.5, mounting_trials_hp_plus_35: 35]
   @hp_gate_hook :mounting_trials_max_hp_text
 
   screen :mounting_trials, identity: :mounting_trials do
