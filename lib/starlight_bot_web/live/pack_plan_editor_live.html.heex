@@ -64,73 +64,84 @@
                           </svg>
                         </span>
                       <% end %>
+                      <% mode = path_mode(@plan_data, floor, @view) %>
+                      <% others = max(length(path_candidates(path[floor])) - 1, 0) %>
                       <%= case path[floor] do %>
-                        <% {pack, rest} -> %>
-                          <% mode = path_mode(@plan_data, floor, @view) %>
+                        <% {pack, _rest} -> %>
                           <% favorite? = StarlightBot.PackPlans.Resolver.favorite?(@plan_data, pack.id, mode, floor) %>
-                          <% others = length(rest) %>
-                          <button type="button" phx-click="toggle_path_floor" phx-value-floor={floor} data-no-pan
-                               class={"flex-1 min-w-0 flex items-center gap-1 rounded-full border pl-0.5 pr-1 py-0.5 text-[10px] shadow-sm cursor-pointer text-left " <> if(path_hard?, do: "border-warning bg-warning/15", else: "border-success/60 bg-success/10")}
+                          <button type="button" phx-click={if @path_floor == floor, do: "close_path_floor", else: "toggle_path_floor"} phx-value-floor={floor} data-no-pan aria-haspopup="true" aria-expanded={to_string(@path_floor == floor)}
+                               class={"group/pill flex-1 min-w-0 flex items-center gap-1 rounded-full border pl-0.5 pr-1 py-0.5 text-[10px] shadow-sm cursor-pointer text-left transition hover:shadow-md hover:brightness-95 " <> if(@path_floor == floor, do: "ring-2 ring-primary/60 ", else: "") <> if(path_hard?, do: "border-warning bg-warning/15", else: "border-success/60 bg-success/10")}
                                title={"F#{floor}: #{pack.name_en}" <> if(favorite?, do: " (favorite)", else: "") <> if(others > 0, do: ", then #{others} more in Hunt order. Click to list them.", else: ". Click to see next in priority.")}>
                             <img src={pack.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
                             <span class="truncate font-medium flex-1"><%= if favorite?, do: "★ " %><%= pack.name_en %></span>
                             <%= if others > 0 do %>
                               <span class="shrink-0 rounded-full bg-base-content/10 px-1 text-[9px] text-base-content/60">+<%= others %></span>
                             <% end %>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                                 class={"h-3 w-3 shrink-0 text-base-content/50 transition-transform group-hover/pill:text-base-content " <> if(@path_floor == floor, do: "rotate-180", else: "")}>
+                              <path d="m6 9 6 6 6-6" />
+                            </svg>
                           </button>
-                          <%= if @path_floor == floor do %>
-                            <% candidates = [pack | rest] %>
-                            <% {favorites, backups} = Enum.split_with(candidates, &StarlightBot.PackPlans.Resolver.favorite?(@plan_data, &1.id, mode, floor)) %>
-                            <div class="absolute left-0 top-full mt-1 z-30 w-full min-w-56 rounded-lg border border-base-300 bg-base-100 p-1 shadow-xl flex flex-col gap-0.5"
-                                 data-no-pan phx-click-away="close_path_floor">
-                              <div class="flex items-center justify-between">
-                                <span class="px-1 text-[9px] uppercase tracking-wide text-warning">★ Favorites (hunted first)</span>
-                                <button type="button" phx-click="path_clear_floor" phx-value-floor={floor}
-                                        class="btn btn-ghost btn-xs h-4 min-h-0 px-1 text-[9px] text-error"
-                                        title={"Remove every hunted pack from F#{floor} in #{mode} mode"}>Clear F<%= floor %></button>
-                              </div>
-                              <div id={"path-fav-#{floor}"} phx-hook="SortableList" data-sort-event="path_reorder" data-sort-move-event="path_move"
-                                   data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:#{floor}:fav"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
-                                <%= for {alt, index} <- Enum.with_index(favorites) do %>
-                                  <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} floor={floor} hard?={path_hard?} favorite?={true} />
-                                <% end %>
-                                <span :if={favorites == []} class="px-1.5 text-[10px] italic text-base-content/40">drop here to favorite</span>
-                              </div>
-                              <span class="px-1 pt-1 text-[9px] uppercase tracking-wide text-base-content/50">Not favorite<%= if favorites != [], do: " (backup)" %></span>
-                              <div id={"path-rest-#{floor}"} phx-hook="SortableList" data-sort-event="path_reorder" data-sort-move-event="path_move"
-                                   data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:#{floor}:rest"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
-                                <%= for {alt, index} <- Enum.with_index(backups, length(favorites)) do %>
-                                  <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} floor={floor} hard?={path_hard?} favorite?={false} />
-                                <% end %>
-                                <span :if={backups == []} class="px-1.5 text-[10px] italic text-base-content/40">none</span>
-                              </div>
-                              <span :if={others == 0} class="px-1 pt-1 text-[10px] italic text-base-content/40">Next in priority: none</span>
-                              <% matches = path_matches(@plan_data, @theme_packs, floor, mode, @path_query) %>
-                              <form phx-submit="path_add" phx-change="path_query" class="relative flex items-center pt-1">
-                                <input type="hidden" name="floor" value={floor} />
-                                <input type="text" name="query" value={@path_query} phx-debounce="100" autocomplete="off" placeholder="Add pack to Hunt…"
-                                       class="input input-bordered input-xs w-full pr-6" />
-                                <button :if={@path_query != ""} type="button" phx-click="path_query_clear"
-                                        class="absolute right-1 top-1/2 mt-0.5 -translate-y-1/2 text-base-content/50 hover:text-base-content text-xs leading-none px-1" title="Clear search">✕</button>
-                              </form>
-                              <div :if={@path_query != ""} class="flex flex-col gap-0.5 max-h-40 overflow-y-auto">
-                                <%= for {option, index} <- Enum.with_index(matches) do %>
-                                  <button type="button" phx-click="path_add" phx-value-floor={floor} phx-value-pack_id={option.id}
-                                          class={"flex items-center gap-1 rounded-full border px-1 py-0.5 text-[10px] text-left cursor-pointer hover:bg-base-200 " <> if(index == 0, do: "border-primary/60 bg-primary/10", else: "border-base-300")}>
-                                    <img src={option.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
-                                    <span class="truncate flex-1"><%= option.name_en %></span>
-                                    <span :if={index == 0} class="shrink-0 text-[9px] text-base-content/40">↵</span>
-                                  </button>
-                                <% end %>
-                                <span :if={matches == []} class="px-1.5 text-[10px] italic text-base-content/40">no matching pack</span>
-                              </div>
-                            </div>
-                          <% end %>
                         <% nil -> %>
-                          <div class="flex-1 min-w-0 rounded-full border border-dashed border-base-content/20 px-1.5 py-0.5 text-[10px] italic text-base-content/30 truncate">
-                            no Hunt pack
-                          </div>
+                          <button type="button" phx-click={if @path_floor == floor, do: "close_path_floor", else: "toggle_path_floor"} phx-value-floor={floor} data-no-pan aria-haspopup="true" aria-expanded={to_string(@path_floor == floor)}
+                                  class={"group/pill flex-1 min-w-0 flex items-center gap-1 rounded-full border border-dashed px-1.5 py-0.5 text-[10px] italic text-left cursor-pointer transition hover:border-base-content/50 hover:text-base-content/60 " <> if(@path_floor == floor, do: "ring-2 ring-primary/60 border-base-content/50 text-base-content/60", else: "border-base-content/20 text-base-content/30")}
+                                  title={"F#{floor}: no Hunt pack. Click to add one."}>
+                            <span class="truncate flex-1">no Hunt pack</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
+                                 class={"h-3 w-3 shrink-0 transition-transform " <> if(@path_floor == floor, do: "rotate-180", else: "")}>
+                              <path d="m6 9 6 6 6-6" />
+                            </svg>
+                          </button>
                       <% end %>
+                      <%= if @path_floor == floor do %>
+                          <% candidates = path_candidates(path[floor]) %>
+                          <% {favorites, backups} = Enum.split_with(candidates, &StarlightBot.PackPlans.Resolver.favorite?(@plan_data, &1.id, mode, floor)) %>
+                          <div class="absolute left-0 top-full mt-2 z-30 w-full min-w-56 rounded-lg border border-base-content/30 bg-base-200 p-1.5 shadow-2xl ring-4 ring-base-content/10 flex flex-col gap-0.5"
+                               data-no-pan phx-click-away="close_path_floor">
+                            <span class="absolute -top-[5px] left-5 h-2 w-2 rotate-45 border-l border-t border-base-content/30 bg-base-200"></span>
+                            <div class="flex items-center justify-between">
+                              <span class="px-1 text-[9px] uppercase tracking-wide text-warning">★ Favorites (hunted first)</span>
+                              <button type="button" phx-click="path_clear_floor" phx-value-floor={floor} data-confirm={"Clear every hunted pack from F#{floor} in #{mode} mode?"}
+                                      class="btn btn-ghost btn-xs h-4 min-h-0 px-1 text-[9px] text-error"
+                                      title={"Remove every hunted pack from F#{floor} in #{mode} mode"}>Clear F<%= floor %></button>
+                            </div>
+                            <div id={"path-fav-#{floor}"} phx-hook="SortableList" data-sort-event="path_reorder" data-sort-move-event="path_move"
+                                 data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:#{floor}:fav"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
+                              <%= for {alt, index} <- Enum.with_index(favorites) do %>
+                                <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} floor={floor} hard?={path_hard?} favorite?={true} />
+                              <% end %>
+                              <span :if={favorites == []} class="px-1.5 text-[10px] italic text-base-content/40">drop here to favorite</span>
+                            </div>
+                            <span class="px-1 pt-1 text-[9px] uppercase tracking-wide text-base-content/50">Not favorite<%= if favorites != [], do: " (backup)" %></span>
+                            <div id={"path-rest-#{floor}"} phx-hook="SortableList" data-sort-event="path_reorder" data-sort-move-event="path_move"
+                                 data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:#{floor}:rest"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
+                              <%= for {alt, index} <- Enum.with_index(backups, length(favorites)) do %>
+                                <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} floor={floor} hard?={path_hard?} favorite?={false} />
+                              <% end %>
+                              <span :if={backups == []} class="px-1.5 text-[10px] italic text-base-content/40">none</span>
+                            </div>
+                            <span :if={others == 0} class="px-1 pt-1 text-[10px] italic text-base-content/40">Next in priority: none</span>
+                            <% matches = path_matches(@plan_data, @theme_packs, floor, mode, @path_query) %>
+                            <form phx-submit="path_add" phx-change="path_query" class="relative flex items-center pt-1">
+                              <input type="hidden" name="floor" value={floor} />
+                              <input type="text" name="query" value={@path_query} phx-debounce="100" autocomplete="off" placeholder="Add pack to Hunt…"
+                                     class="input input-bordered input-xs w-full pr-6" />
+                              <button :if={@path_query != ""} type="button" phx-click="path_query_clear"
+                                      class="absolute right-1 top-1/2 mt-0.5 -translate-y-1/2 text-base-content/50 hover:text-base-content text-xs leading-none px-1" title="Clear search">✕</button>
+                            </form>
+                            <div :if={@path_query != ""} class="flex flex-col gap-0.5 max-h-40 overflow-y-auto">
+                              <%= for {option, index} <- Enum.with_index(matches) do %>
+                                <button type="button" phx-click="path_add" phx-value-floor={floor} phx-value-pack_id={option.id}
+                                        class={"flex items-center gap-1 rounded-full border px-1 py-0.5 text-[10px] text-left cursor-pointer hover:bg-base-200 " <> if(index == 0, do: "border-primary/60 bg-primary/10", else: "border-base-300")}>
+                                  <img src={option.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                                  <span class="truncate flex-1"><%= option.name_en %></span>
+                                  <span :if={index == 0} class="shrink-0 text-[9px] text-base-content/40">↵</span>
+                                </button>
+                              <% end %>
+                              <span :if={matches == []} class="px-1.5 text-[10px] italic text-base-content/40">no matching pack</span>
+                            </div>
+                          </div>
+                        <% end %>
                       <%= if floor < floor_count do %>
                         <span class="absolute top-1/2 -right-2 w-5 h-px bg-base-content/40"></span>
                         <span class="absolute top-1/2 -right-2 -translate-y-1/2 border-y-[4px] border-y-transparent border-l-[6px] border-l-base-content/40"></span>

@@ -230,6 +230,12 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   @impl true
+  def handle_event("path_remove", %{"pack_id" => pack_id, "mode" => mode, "floor" => floor}, socket) when mode in @modes do
+    plan_data = put_status(socket.assigns.plan_data, pack_id, mode, String.to_integer(floor), "none")
+    {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
+  end
+
+  @impl true
   def handle_event("toggle_help", _, socket), do: {:noreply, update(socket, :show_help, &(!&1))}
 
   # --- Display helpers (used from the template) ---
@@ -246,10 +252,9 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
         <img src={@alt.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
         <span class="truncate flex-1"><%= @alt.name_en %></span>
         <span class="shrink-0 text-[9px] text-base-content/60"><%= @index + 1 %></span>
-        <button type="button" phx-click="toggle_favorite" phx-value-pack_id={@alt.id} phx-value-mode={@mode} phx-value-floor={@floor}
-                class={"shrink-0 leading-none " <> if(@favorite?, do: "text-warning", else: "text-base-content/40")}
-                title={if @favorite?, do: "Remove from favorites", else: "Make favorite"}>
-          <%= if @favorite?, do: "★", else: "☆" %>
+        <button type="button" phx-click="path_remove" phx-value-pack_id={@alt.id} phx-value-mode={@mode} phx-value-floor={@floor}
+                class="shrink-0 leading-none text-base-content/50 hover:text-error cursor-pointer" title="Remove from Hunt">
+          ✕
         </button>
       </div>
     </div>
@@ -300,6 +305,9 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   def path_mode(plan_data, floor, "plan"), do: Resolver.mode_for_floor(plan_data["mode_schedule"], floor)
   def path_mode(_plan_data, _floor, "extreme"), do: "hard"
   def path_mode(_plan_data, _floor, view), do: view
+
+  def path_candidates({pack, rest}), do: [pack | rest]
+  def path_candidates(nil), do: []
 
   def likely_path(plan_data, theme_packs, floor_count, view) do
     {path, _picked} =
