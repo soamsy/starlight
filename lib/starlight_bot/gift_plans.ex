@@ -737,6 +737,53 @@ defmodule StarlightBot.GiftPlans do
     |> reorder_entries(id, ids)
   end
 
+  def move_entries(data, id, moved, nil, ids) do
+    Enum.reduce(moved, data, &leave_group(&2, id, &1, ids))
+  end
+
+  def move_entries(data, id, moved, key, ids) do
+    {data, _key} =
+      Enum.reduce(moved, {data, key}, fn entry_id, {acc, key} ->
+        acc = join_group(acc, id, entry_id, key, ids)
+        entry = acc |> find_milestone(id) |> find_entry(entry_id)
+        {acc, (entry && entry["group"]) || key}
+      end)
+
+    data
+  end
+
+  def paste_entries(data, id, sources, after_id) do
+    groups = for %{"group" => group} <- sources, uniq: true, into: %{}, do: {group, new_id("grp")}
+
+    clones =
+      Enum.map(sources, fn entry ->
+        entry |> Map.put("id", new_id("me")) |> then(&if(&1["group"], do: Map.update!(&1, "group", fn group -> groups[group] end), else: &1))
+      end)
+
+    data =
+      update_milestone(data, id, fn milestone ->
+        Map.update(milestone, "entries", clones, fn entries ->
+          index = Enum.find_index(entries, &(&1["id"] == after_id))
+          {before, rest} = if index, do: Enum.split(entries, index + 1), else: {entries, []}
+          {actions, gifts} = Enum.split_with(before ++ clones ++ rest, &action_entry?/1)
+          actions ++ gifts
+        end)
+      end)
+
+    target = data |> find_milestone(id) |> find_entry(after_id)
+
+    if target && (target["group"] || scheduled_alone?(target)) do
+      key = group_key(target)
+      members = data |> find_milestone(id) |> Map.fetch!("entries") |> Enum.filter(&(group_key(&1) == key)) |> Enum.map(& &1["id"])
+      ids = Enum.flat_map(members, fn member -> if member == after_id, do: [member | Enum.map(clones, & &1["id"])], else: [member] end)
+      move_entries(data, id, Enum.map(clones, & &1["id"]), key, ids)
+    else
+      data
+    end
+  end
+
+  defp scheduled_alone?(entry), do: entry["scheduled"] == true or length(entry["floors"]) > 1
+
   defp adopt_schedule(entry, template) do
     floors =
       for tab <- template["floors"] do

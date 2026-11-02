@@ -41,4 +41,13 @@ defmodule StarlightBot.PlanClipboardTest do
     broken = %{playbook | "actions" => [%{"type" => "if", "then" => [%{"id" => "x"}], "else" => []}]}
     assert {:error, "That playbook is malformed and can't be pasted."} = broken |> PlanClipboard.encode_playbook() |> PlanClipboard.decode_playbook("chain")
   end
+
+  test "round trips entries and rejects other clipboards" do
+    entries = [%{"id" => "me_1", "floors" => []}]
+    assert {:ok, ^entries} = entries |> PlanClipboard.encode_entries() |> PlanClipboard.decode_entries()
+    assert {:error, _} = PlanClipboard.decode_entries("hello")
+    assert {:error, _} = PlanClipboard.decode_entries(~s({"starlight_entries": []}))
+    assert {:error, _} = PlanClipboard.decode_entries(~s({"starlight_entries": [{"id": "e"}]}))
+    assert {:error, _} = PlanClipboard.decode_entries(PlanClipboard.encode_milestone(%{"id" => "a", "name" => "b"}))
+  end
 end

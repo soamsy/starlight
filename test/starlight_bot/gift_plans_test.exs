@@ -559,6 +559,63 @@ defmodule StarlightBot.GiftPlansTest do
     end
   end
 
+  describe "multi entry moves and pastes" do
+    defp entry(id, extra \\ %{}), do: Map.merge(%{"id" => id, "subject" => %{"gift" => id}, "floors" => [%{"from" => 1, "disposition" => "keep"}]}, extra)
+
+    defp grouped_plan do
+      floors = [%{"from" => 1, "disposition" => "keep"}, %{"from" => 5, "disposition" => "keep"}]
+
+      entries = [
+        entry("a"),
+        entry("b"),
+        entry("c"),
+        entry("g1", %{"group" => "grp", "scheduled" => true, "floors" => floors}),
+        entry("g2", %{"group" => "grp", "scheduled" => true, "floors" => floors})
+      ]
+
+      %{"milestones" => [%{"id" => "ms", "name" => "Shop", "entries" => entries}]}
+    end
+
+    defp entries_of(data), do: hd(data["milestones"])["entries"]
+    defp ids_of(data), do: data |> entries_of() |> Enum.map(& &1["id"])
+
+    test "moves several entries into a group in the given order" do
+      data = GiftPlans.move_entries(grouped_plan(), "ms", ["a", "c"], "grp", ["g1", "a", "c", "g2"])
+      grouped = entries_of(data) |> Enum.filter(&(&1["group"] == "grp")) |> Enum.map(& &1["id"])
+      assert grouped == ["g1", "a", "c", "g2"]
+      assert ids_of(data) == ["b", "g1", "a", "c", "g2"]
+    end
+
+    test "moves several entries out of a group" do
+      data = GiftPlans.move_entries(grouped_plan(), "ms", ["g1", "g2"], nil, ["g2", "a", "g1", "b", "c"])
+      assert ids_of(data) == ["g2", "a", "g1", "b", "c"]
+      refute Enum.any?(entries_of(data), &Map.has_key?(&1, "group"))
+    end
+
+    test "pastes clones with fresh ids right after the target row" do
+      data = GiftPlans.paste_entries(grouped_plan(), "ms", [entry("x"), entry("y")], "a")
+      assert [%{"id" => "a"}, first, second, %{"id" => "b"} | _] = entries_of(data)
+      assert first["subject"] == %{"gift" => "x"}
+      assert second["subject"] == %{"gift" => "y"}
+      assert first["id"] != "x" and first["id"] != second["id"]
+    end
+
+    test "pasting below a grouped entry joins that group" do
+      data = GiftPlans.paste_entries(grouped_plan(), "ms", [entry("x"), entry("y")], "g1")
+      group = Enum.filter(entries_of(data), &(&1["group"] == "grp"))
+      assert Enum.map(group, & &1["subject"]["gift"]) == ["g1", "x", "y", "g2"]
+      assert Enum.all?(group, &(length(&1["floors"]) == 2))
+    end
+
+    test "pasted entries from one group stay together under a new group" do
+      source = [entry("x", %{"group" => "old"}), entry("y", %{"group" => "old"})]
+      data = GiftPlans.paste_entries(grouped_plan(), "ms", source, "b")
+      [x, y] = entries_of(data) |> Enum.filter(&(&1["subject"]["gift"] in ["x", "y"]))
+      assert x["group"] == y["group"]
+      refute x["group"] in ["old", "grp"]
+    end
+  end
+
   describe "import_milestone/2" do
     defp source do
       leaf = fn id -> %{"op" => "milestone", "milestone" => id} end

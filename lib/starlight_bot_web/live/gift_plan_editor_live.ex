@@ -603,12 +603,38 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
-  def handle_event("ms_move_entry", %{"scope" => "group:" <> key, "id" => entry_id, "ids" => ids}, socket) do
-    {:noreply, update_plan(socket, &GiftPlans.join_group(&1, socket.assigns.selected_milestone_id, entry_id, key, ids))}
+  def handle_event("ms_move_entry", %{"scope" => "group:" <> key, "id" => entry_id, "ids" => ids} = params, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.move_entries(&1, socket.assigns.selected_milestone_id, Map.get(params, "moved", [entry_id]), key, ids))}
   end
 
-  def handle_event("ms_move_entry", %{"id" => entry_id, "ids" => ids}, socket) do
-    {:noreply, update_plan(socket, &GiftPlans.leave_group(&1, socket.assigns.selected_milestone_id, entry_id, ids))}
+  def handle_event("ms_move_entry", %{"id" => entry_id, "ids" => ids} = params, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.move_entries(&1, socket.assigns.selected_milestone_id, Map.get(params, "moved", [entry_id]), nil, ids))}
+  end
+
+  @impl true
+  def handle_event("ms_copy_entries", %{"ids" => ids}, socket) do
+    milestone = GiftPlans.find_milestone(socket.assigns.plan_data, socket.assigns.selected_milestone_id)
+
+    case Enum.filter(milestone["entries"], &(&1["id"] in ids)) do
+      [] ->
+        {:noreply, socket}
+
+      entries ->
+        label = if length(entries) == 1, do: "1 entry", else: "#{length(entries)} entries"
+        {:noreply, socket |> push_event("copy_json", %{text: PlanClipboard.encode_entries(entries)}) |> put_flash(:info, "Copied #{label} to the clipboard.")}
+    end
+  end
+
+  @impl true
+  def handle_event("ms_paste_entries", %{"text" => text, "after" => after_id}, socket) do
+    case PlanClipboard.decode_entries(text) do
+      {:ok, entries} ->
+        socket = update_plan(socket, &GiftPlans.paste_entries(&1, socket.assigns.selected_milestone_id, entries, after_id))
+        {:noreply, put_flash(socket, :info, "Pasted #{length(entries)} #{if length(entries) == 1, do: "entry", else: "entries"}.")}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
   end
 
   @impl true
@@ -1512,7 +1538,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp entry_list(assigns) do
     ~H"""
     <div id={@id} phx-hook="SortableList" data-sort-event="ms_reorder_entries" data-sort-move-event="ms_move_entry"
-         data-sort-shared={@shared} data-sort-scope={@milestone["id"]} class="flex flex-col gap-1">
+         data-sort-shared={@shared} data-sort-scope={@milestone["id"]} data-sort-multi class="flex flex-col gap-1">
       <%= for chunk <- entry_chunks(@entries) do %>
         <%= case chunk do %>
           <% {:single, entry} -> %>
@@ -1522,7 +1548,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
             <div data-sort-id={"group:#{key}"} data-sort-stay class="flex flex-col">
               <.schedule_tabs entry={lead} members={members} from={active_from(@entry_tabs, lead)} />
               <div id={"entry-group-#{key}"} phx-hook="SortableList" data-sort-event="ms_reorder_entries" data-sort-move-event="ms_move_entry"
-                   data-sort-shared={@shared} data-sort-scope={"group:#{key}"} data-sort-highlight
+                   data-sort-shared={@shared} data-sort-scope={"group:#{key}"} data-sort-highlight data-sort-multi
                    class="flex flex-col gap-1 min-h-8 p-1 border-2 border-primary rounded-b-lg rounded-tr-lg transition-colors">
                 <.milestone_entry_row :for={entry <- members} entry={entry} milestone={@milestone} from={active_from(@entry_tabs, entry)} in_group={true}
                                       gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
@@ -1705,9 +1731,21 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         Made from:
         <%= for {{name, present?}, index} <- Enum.with_index(@made_from) do %><%= if index > 0, do: ", " %><span class={if present?, do: "", else: "text-error font-semibold"}><%= name %></span><% end %>
       </span>
-      <button :if={not @in_group} type="button" phx-click="ms_add_schedule" phx-value-entry={@entry["id"]} class="btn btn-ghost btn-xs ml-auto">Add Schedule</button>
+      <span class="hidden in-[.ring-primary]:flex items-center shrink-0 ml-auto">
+        <button type="button" data-copy-entry title="Copy this entry (or every selected entry)" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="size-3.5 pointer-events-none">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+          </svg>
+        </button>
+        <button type="button" data-paste-entries={@entry["id"]} title="Paste copied entries below this one" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="size-3.5 pointer-events-none">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+          </svg>
+        </button>
+      </span>
+      <button :if={not @in_group} type="button" phx-click="ms_add_schedule" phx-value-entry={@entry["id"]} class="btn btn-ghost btn-xs ml-auto in-[.ring-primary]:ml-0">Add Schedule</button>
       <button type="button" phx-click="ms_remove_entry" phx-value-entry={@entry["id"]}
-              class={"btn btn-ghost btn-xs px-1 text-error " <> if(@in_group, do: "ml-auto", else: "")} title="Remove from this milestone">✕</button>
+              class={"btn btn-ghost btn-xs px-1 text-error " <> if(@in_group, do: "ml-auto in-[.ring-primary]:ml-0", else: "")} title="Remove from this milestone">✕</button>
     </form>
     """
   end

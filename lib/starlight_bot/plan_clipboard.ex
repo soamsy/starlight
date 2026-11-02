@@ -28,6 +28,20 @@ defmodule StarlightBot.PlanClipboard do
     end
   end
 
+  def encode_entries(entries), do: Jason.encode!(%{"starlight_entries" => entries})
+
+  def decode_entries(text) do
+    case Jason.decode(text) do
+      {:ok, %{"starlight_entries" => [_ | _] = entries}} when is_list(entries) ->
+        if Enum.all?(entries, &(is_map(&1) and is_list(&1["floors"]))),
+          do: {:ok, entries},
+          else: {:error, "Those entries are malformed and can't be pasted."}
+
+      _ ->
+        {:error, "The clipboard doesn't hold Starlight entries."}
+    end
+  end
+
   def encode_playbook(playbook), do: Jason.encode!(%{"starlight_playbook" => playbook})
 
   def decode_playbook(text, kind) do

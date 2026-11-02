@@ -809,11 +809,109 @@ const DragScroll = {
 
 let sortDrag = null
 const SORT_EDGE_PX = 16
+const SORT_SELECTED = ["ring-2", "ring-primary"]
+const SORT_INTERACTIVE = "button, input, select, textarea, a, label, [role=button], [tabindex], [data-gift-popup]"
+const sortSelection = { list: null, ids: new Set(), anchor: null }
+
+const sortRows = (list) => Array.from(list.children).filter(c => c.dataset.sortId && !c.dataset.sortId.startsWith("group:"))
+
+const paintSortSelection = (list) => {
+  if (!list) return
+  const selected = sortSelection.list === list
+  sortRows(list).forEach(row => SORT_SELECTED.forEach(c => row.classList.toggle(c, selected && sortSelection.ids.has(row.dataset.sortId))))
+}
+
+const setSortSelection = (list, ids, anchor) => {
+  const previous = sortSelection.list
+  sortSelection.list = ids.size ? list : null
+  sortSelection.ids = ids
+  sortSelection.anchor = ids.size ? anchor : null
+  if (previous && previous !== list) paintSortSelection(previous)
+  paintSortSelection(list)
+}
+
+const clearSortSelection = () => setSortSelection(sortSelection.list, new Set(), null)
+
+let sortSelectionBound = false
+const bindSortSelectionGlobals = () => {
+  if (sortSelectionBound) return
+  sortSelectionBound = true
+  document.addEventListener("click", (e) => {
+    if (!sortSelection.list) return
+    if (!eventElement(e)?.closest("[data-sort-id]")) clearSortSelection()
+  })
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && sortSelection.list) clearSortSelection()
+  })
+}
 
 const eventElement = (e) => (e.target instanceof Element ? e.target : e.target.parentElement)
 
 const SortableList = {
+  updated() {
+    if (sortSelection.list === this.el) {
+      const present = new Set(sortRows(this.el).map(r => r.dataset.sortId))
+      const ids = new Set(Array.from(sortSelection.ids).filter(id => present.has(id)))
+      setSortSelection(this.el, ids, ids.has(sortSelection.anchor) ? sortSelection.anchor : Array.from(ids)[0])
+    }
+  },
+
+  destroyed() {
+    if (sortSelection.list === this.el) setSortSelection(null, new Set(), null)
+  },
+
   mounted() {
+    const multi = "sortMulti" in this.el.dataset
+    if (multi) bindSortSelectionGlobals()
+
+    const rowOf = (e) => {
+      const row = eventElement(e)?.closest("[data-sort-id]")
+      return row && row.parentElement === this.el && !row.dataset.sortId.startsWith("group:") ? row : null
+    }
+
+    if (multi) {
+      this.el.addEventListener("click", (e) => {
+        const row = rowOf(e)
+        if (!row) return
+
+        const copy = eventElement(e).closest("[data-copy-entry]")
+        if (copy) {
+          const ids = sortSelection.list === this.el && sortSelection.ids.has(row.dataset.sortId)
+            ? sortRows(this.el).map(r => r.dataset.sortId).filter(id => sortSelection.ids.has(id))
+            : [row.dataset.sortId]
+          this.pushEvent("ms_copy_entries", { ids })
+          return
+        }
+
+        const paste = eventElement(e).closest("[data-paste-entries]")
+        if (paste) {
+          navigator.clipboard.readText()
+            .then(text => this.pushEvent("ms_paste_entries", { text, after: paste.dataset.pasteEntries }))
+            .catch(err => this.pushEvent("plan_clipboard_failed", { message: `Couldn't read clipboard: ${err.message || err}` }))
+          return
+        }
+
+        if (eventElement(e).closest(SORT_INTERACTIVE)) return
+
+        const id = row.dataset.sortId
+        const same = sortSelection.list === this.el
+        if (e.shiftKey && same && sortSelection.anchor) {
+          const ids = sortRows(this.el).map(r => r.dataset.sortId)
+          const from = ids.indexOf(sortSelection.anchor)
+          const to = ids.indexOf(id)
+          const range = from < 0 ? [id] : ids.slice(Math.min(from, to), Math.max(from, to) + 1)
+          setSortSelection(this.el, new Set([...sortSelection.ids, ...range]), sortSelection.anchor)
+        } else if ((e.ctrlKey || e.metaKey) && same) {
+          const next = new Set(sortSelection.ids)
+          if (next.has(id)) next.delete(id)
+          else next.add(id)
+          setSortSelection(this.el, next, next.has(id) ? id : Array.from(next)[0])
+        } else {
+          setSortSelection(this.el, new Set([id]), id)
+        }
+      })
+    }
+
     this.el.addEventListener("mousedown", (e) => {
       const target = eventElement(e)
       const handle = target?.closest("[data-sort-handle]")
@@ -831,19 +929,47 @@ const SortableList = {
     this.el.addEventListener("dragstart", (e) => {
       const item = eventElement(e)?.closest("[data-sort-id]")
       if (!item || item.parentElement !== this.el) return
-      sortDrag = { item, source: this.el }
-      item.classList.add("opacity-40")
+      const multiple = multi && sortSelection.list === this.el && sortSelection.ids.has(item.dataset.sortId) && sortSelection.ids.size > 1
+      const items = multiple ? sortRows(this.el).filter(r => sortSelection.ids.has(r.dataset.sortId)) : [item]
+      if (multi && !multiple) setSortSelection(this.el, new Set([item.dataset.sortId]), item.dataset.sortId)
+      sortDrag = { item, items, source: this.el, packed: false }
       e.dataTransfer.effectAllowed = "move"
+      if (items.length > 1) {
+        const stack = document.createElement("div")
+        stack.style.cssText = `position:fixed;top:-10000px;left:0;width:${item.offsetWidth}px;display:flex;flex-direction:column;gap:4px`
+        items.forEach(i => {
+          const clone = i.cloneNode(true)
+          clone.removeAttribute("data-sort-id")
+          stack.appendChild(clone)
+        })
+        document.body.appendChild(stack)
+        const box = item.getBoundingClientRect()
+        e.dataTransfer.setDragImage(stack, e.clientX - box.left, e.clientY - box.top)
+        requestAnimationFrame(() => stack.remove())
+      }
+      requestAnimationFrame(() => items.forEach(i => i.classList.add("opacity-40")))
     })
 
     const place = (parent, ref) => {
       const drag = sortDrag
       if (drag.item.parentElement === drag.source && parent !== drag.source && !drag.spacer) {
         drag.spacer = document.createElement("div")
-        drag.spacer.style.height = `${drag.item.offsetHeight}px`
+        drag.spacer.style.height = `${drag.items.reduce((sum, i) => sum + i.offsetHeight, 0) + 4 * (drag.items.length - 1)}px`
         drag.source.insertBefore(drag.spacer, drag.item)
       }
-      parent.insertBefore(drag.item, ref)
+      let target = ref
+      while (target && drag.items.includes(target)) target = target.nextSibling
+      const last = drag.items[drag.items.length - 1]
+      if (drag.packed && last.parentElement === parent && last.nextSibling === target) return
+      drag.packed = true
+      parent.insertBefore(drag.item, target)
+      const at = drag.items.indexOf(drag.item)
+      drag.items.slice(0, at).forEach(i => parent.insertBefore(i, drag.item))
+      let tail = drag.item
+      drag.items.slice(at + 1).forEach(i => {
+        parent.insertBefore(i, tail.nextSibling)
+        tail = i
+      })
       if (parent === drag.source && drag.spacer) {
         drag.spacer.remove()
         drag.spacer = null
@@ -866,7 +992,7 @@ const SortableList = {
         if (sortDrag.item.parentElement !== this.el) place(this.el, null)
         return
       }
-      if (!over || over === sortDrag.item) return
+      if (!over || sortDrag.items.includes(over)) return
       const rect = over.getBoundingClientRect()
       if (over.querySelector("[data-sort-move-event]") && e.clientY > rect.top + SORT_EDGE_PX && e.clientY < rect.bottom - SORT_EDGE_PX) return
       const after = this.el.dataset.sortAxis === "x"
@@ -877,16 +1003,27 @@ const SortableList = {
 
     this.el.addEventListener("dragend", () => {
       if (!sortDrag || sortDrag.item.parentElement !== this.el) return
-      const { item, source, highlight, spacer } = sortDrag
+      const { item, items, source, highlight, spacer } = sortDrag
       spacer?.remove()
       highlight?.classList.remove("bg-primary/15")
       sortDrag = null
-      item.classList.remove("opacity-40")
-      item.draggable = false
+      items.forEach(i => {
+        i.classList.remove("opacity-40")
+        i.draggable = false
+      })
       const ids = Array.from(this.el.children).filter(c => c.dataset.sortId).map(c => c.dataset.sortId)
       const scope = this.el.dataset.sortScope || ""
       if (source === this.el) this.pushEvent(this.el.dataset.sortEvent, { scope, ids })
-      else this.pushEvent(this.el.dataset.sortMoveEvent, { scope, from: source.dataset.sortScope || "", id: item.dataset.sortId, ids })
+      else {
+        const payload = { scope, from: source.dataset.sortScope || "", id: item.dataset.sortId, ids }
+        if (items.length > 1) payload.moved = items.map(i => i.dataset.sortId)
+        this.pushEvent(this.el.dataset.sortMoveEvent, payload)
+      }
+      if (sortSelection.list) {
+        sortSelection.list = this.el
+        paintSortSelection(source)
+        paintSortSelection(this.el)
+      }
     })
   },
 
