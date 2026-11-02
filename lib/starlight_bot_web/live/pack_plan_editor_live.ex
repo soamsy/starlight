@@ -26,7 +26,6 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
       |> assign(:theme_packs, theme_packs)
       |> assign(:packs_by_id, Map.new(theme_packs, &{&1.id, &1}))
-      |> assign(:extreme?, false)
       |> assign(:view, "plan")
       |> assign(:show_help, false)
       |> reset_editor()
@@ -69,20 +68,15 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   def handle_event("clipboard_status", %{"text" => text}, socket), do: {:noreply, paste_status(socket, :pack_plans, text)}
 
   @impl true
-  def handle_event("toggle_extreme", _, socket) do
-    {:noreply, update(socket, :extreme?, &(not &1))}
-  end
-
-  @impl true
   def handle_event("toggle_extreme_mode", _, socket) do
     plan_data = socket.assigns.plan_data
 
-    if Resolver.extreme_allowed?(plan_data) do
-      plan_data = Map.put(plan_data, "extreme", not Resolver.extreme?(plan_data))
-      {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
-    else
-      {:noreply, socket}
-    end
+    plan_data =
+      if Resolver.extreme?(plan_data),
+        do: Map.put(plan_data, "extreme", false),
+        else: Resolver.with_mode_override(plan_data, "extreme")
+
+    {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
   end
 
   @impl true
@@ -117,7 +111,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   @impl true
-  def handle_event("set_view", %{"view" => view}, socket) when view in ~w(plan normal hard) do
+  def handle_event("set_view", %{"view" => view}, socket) when view in ~w(plan normal hard extreme) do
     {:noreply, assign(socket, :view, view)}
   end
 
@@ -283,6 +277,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   defp view_modes("plan"), do: @modes
+  defp view_modes("extreme"), do: ["hard"]
   defp view_modes(view), do: [view]
 
   def view_button_class(view, view), do: active_view_class(view)
@@ -291,6 +286,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   defp active_view_class("plan"), do: "btn-neutral"
   defp active_view_class("normal"), do: "btn-success"
   defp active_view_class("hard"), do: "btn-warning"
+  defp active_view_class("extreme"), do: "btn-error"
 
   def cell_fill_class("favorite"), do: "bg-warning/30"
   def cell_fill_class("hunt"), do: "bg-success/30"
@@ -302,6 +298,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   def path_alt_opacity(index, total), do: Float.round(1.0 - 0.65 * index / max(total - 1, 1), 2)
 
   def path_mode(plan_data, floor, "plan"), do: Resolver.mode_for_floor(plan_data["mode_schedule"], floor)
+  def path_mode(_plan_data, _floor, "extreme"), do: "hard"
   def path_mode(_plan_data, _floor, view), do: view
 
   def likely_path(plan_data, theme_packs, floor_count, view) do
@@ -350,7 +347,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     socket |> assign(:plan_data, plan_data) |> assign(:path_query, "") |> persist_plan()
   end
 
-  def extreme_disabled?(plan_data), do: not Resolver.extreme_allowed?(plan_data)
+  def extreme_disabled?(plan_data), do: not Resolver.extreme?(plan_data)
 
   def disabled_stripes_style do
     "background-image: repeating-linear-gradient(135deg, color-mix(in oklab, var(--color-base-content) 14%, transparent) 0 4px, transparent 4px 10px)"

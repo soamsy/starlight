@@ -12,8 +12,9 @@
           <div class="flex-1 min-h-0 flex flex-col gap-3 min-h-0">
 
             <%!-- Assign panel --%>
-            <% floor_count = max_floor(@extreme?) %>
-            <% overflow? = overflow?(@extreme?) %>
+            <% extreme? = @view == "extreme" %>
+            <% floor_count = max_floor(extreme?) %>
+            <% overflow? = overflow?(extreme?) %>
             <% hard_col = hard_column(@plan_data, floor_count, overflow?) %>
             <% extreme_disabled? = extreme_disabled?(@plan_data) %>
             <% path = likely_path(@plan_data, @theme_packs, floor_count, @view) %>
@@ -25,15 +26,9 @@
                   <%= if @floor_filter, do: " (eligible for F#{@floor_filter})" %>
                   <button type="button" phx-click="toggle_help" class="text-base-content/40 hover:text-base-content cursor-pointer" title="How pack plans work">ⓘ</button>
                 </span>
-                <label class={"flex items-center gap-1 text-xs " <> if(extreme_disabled?, do: "opacity-50 cursor-not-allowed", else: "cursor-pointer")}
-                       title={if(extreme_disabled?, do: "Requires F1-F5 to be hard mode", else: "Turn on superposition and continue into extreme floors F6-15 after beating the F5 boss")}>
-                  <input type="checkbox" class="toggle toggle-xs toggle-warning" phx-click="toggle_extreme_mode"
-                         checked={StarlightBot.PackPlans.Resolver.extreme?(@plan_data)} disabled={extreme_disabled?} />
-                  Extreme mode
-                </label>
                 <div class="join ml-auto items-center">
                   <span class="text-xs text-base-content/70 mr-2">View:</span>
-                  <%= for {view, label} <- [{"plan", "plan"}, {"normal", "all normal"}, {"hard", "all hard"}] do %>
+                  <%= for {view, label} <- [{"plan", "plan"}, {"normal", "all normal"}, {"hard", "all hard"}, {"extreme", "extreme"}] do %>
                     <button type="button" phx-click="set_view" phx-value-view={view}
                             class={"btn btn-xs join-item capitalize " <> view_button_class(view, @view)}><%= label %></button>
                   <% end %>
@@ -43,7 +38,7 @@
               </div>
               <div id="assign-waterfall" phx-hook="DragScroll"
                    class="group/pan flex-1 min-h-0 grid content-start gap-x-2 gap-y-0.5 overflow-auto data-[pan=ready]:cursor-grab data-[pan=active]:cursor-grabbing"
-                   style={"grid-template-columns: auto repeat(#{floor_count}, minmax(#{if @extreme?, do: "calc(6rem + 100px)", else: "6rem"}, 1fr))#{if overflow?, do: " 5rem"}"}>
+                   style={"grid-template-columns: auto repeat(#{floor_count}, minmax(#{if extreme?, do: "calc(6rem + 100px)", else: "6rem"}, 1fr))#{if overflow?, do: " 9rem"}"}>
                 <div class="col-span-full grid grid-cols-subgrid sticky top-0 bg-base-100 z-10 border-b border-base-300">
                   <span class="row-start-2 col-start-1 sticky left-0 z-20 bg-base-100 text-[10px] text-base-content/40 px-1 whitespace-nowrap self-end" data-no-pan><span class="invisible group-data-[pan]/pan:visible">drag chart to pan ⇆</span></span>
                   <span class="row-start-1 col-start-1 sticky left-0 z-20 bg-base-100 text-[10px] font-medium text-base-content/50 px-1 whitespace-nowrap self-center text-right" data-no-pan>likely path ▸</span>
@@ -57,6 +52,15 @@
                             <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
                             <path d="M12 9v4" />
                             <path d="M12 17h.01" />
+                          </svg>
+                        </span>
+                      <% end %>
+                      <%= if floor == 6 and extreme_disabled? do %>
+                        <span class="tooltip tooltip-bottom shrink-0 text-error cursor-help" data-tip="Run stops after F5. Enable go extreme on F6 to continue">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                            <path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z" />
+                            <path d="M12 8v4" />
+                            <path d="M12 16h.01" />
                           </svg>
                         </span>
                       <% end %>
@@ -140,10 +144,10 @@
                     <% search? = searchable? and floor in @plan_data["search_floors"] %>
                     <div class={"row-start-2 flex items-center justify-between gap-1 px-1 py-1 rounded-t " <> if(hard?, do: "bg-warning/15", else: "")}
                          style={"grid-column: #{floor + 1}; " <> if(extreme_disabled? and floor >= 6, do: disabled_stripes_style(), else: "")}
-                         title={if(extreme_disabled? and floor >= 6, do: "Extreme floors only matter when the plan goes hard from F1")}>
+                         title={if(extreme_disabled? and floor >= 6, do: "Extreme floors only run when the plan goes extreme")}>
                       <div class="flex items-center gap-0.5">
                         <%= if floor == 6 do %>
-                          <button phx-click="toggle_extreme" class="text-[11px] px-1 rounded text-base-content/50 hover:bg-base-200" title="Collapse F6-15 into one column">◂</button>
+                          <button phx-click="set_view" phx-value-view="hard" class="text-[11px] px-1 rounded text-base-content/50 hover:bg-base-200" title="Collapse F6-15 into one column">◂</button>
                         <% end %>
                         <button phx-click="set_floor_filter" phx-value-floor={floor}
                                 class={"text-[11px] font-semibold px-1.5 rounded " <> if(@floor_filter == floor, do: "bg-success text-success-content", else: "text-base-content/70 hover:bg-base-200")}
@@ -159,6 +163,13 @@
                           go hard
                         </button>
                         <% end %>
+                        <%= if floor == 6 do %>
+                        <button phx-click="toggle_extreme_mode"
+                                class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(extreme_disabled?, do: "btn-ghost border-base-300", else: "btn-secondary")}
+                                title={if extreme_disabled?, do: "Go hard from F1 and continue into extreme floors F6-15 with superposition after beating the F5 boss", else: "Extreme is on. Click to stop after the F5 boss."}>
+                          go extreme
+                        </button>
+                        <% end %>
                         <button phx-click="toggle_search_floor" phx-value-floor={floor} disabled={not searchable?}
                                 class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(search?, do: "btn-error", else: "btn-ghost border-base-300")}
                                 title={if(searchable?, do: "Once refreshes run out, search-replace the leftmost pack with the highest unvisited favorite (or Hunt pack when there are no favorites) that has a search hook", else: "Pack search is unavailable on F11+")}>
@@ -168,17 +179,24 @@
                     </div>
                   <% end %>
                   <%= if overflow? do %>
-                    <button phx-click="toggle_extreme"
-                            class={"row-start-2 flex items-center justify-center text-[11px] font-semibold text-base-content/60 rounded-t hover:bg-base-200 " <> if(hard_col, do: "bg-warning/15", else: "")}
-                            style={"grid-column: #{floor_count + 2}; " <> if(extreme_disabled?, do: disabled_stripes_style(), else: "")}
-                            title={"Expand extreme floors F6-15" <> if(extreme_disabled?, do: " (they only matter when the plan goes hard from F1)", else: "")}>
-                      F6-15 ▸
-                    </button>
+                    <div class={"row-start-2 flex items-center justify-center gap-1 rounded-t " <> if(hard_col, do: "bg-warning/15", else: "")}
+                         style={"grid-column: #{floor_count + 2}; " <> if(extreme_disabled?, do: disabled_stripes_style(), else: "")}>
+                      <button phx-click="set_view" phx-value-view="extreme"
+                              class="text-[11px] font-semibold text-base-content/60 px-1 rounded hover:bg-base-200"
+                              title="Expand extreme floors F6-15">
+                        F6-15 ▸
+                      </button>
+                      <button phx-click="toggle_extreme_mode"
+                              class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(extreme_disabled?, do: "btn-ghost border-base-300", else: "btn-secondary")}
+                              title={if extreme_disabled?, do: "Go hard from F1 and continue into extreme floors F6-15 with superposition after beating the F5 boss", else: "Extreme is on. Click to stop after the F5 boss."}>
+                        go extreme
+                      </button>
+                    </div>
                   <% end %>
                   <%= if extreme_disabled? do %>
                     <div class="row-start-2 self-end relative z-[1] pointer-events-none" style="grid-column: 7 / -1">
-                      <span class={"absolute top-full inset-x-0 mt-3 px-1 font-bold leading-tight text-center text-base-content/60 " <> if(@extreme?, do: "text-2xl", else: "text-sm")}>
-                        N/A until F1 starts hard
+                      <span class={"absolute top-full inset-x-0 mt-3 px-1 font-bold leading-tight text-center text-base-content/60 " <> if(extreme?, do: "text-2xl", else: "text-sm")}>
+                        Go extreme on F6 to enable
                       </span>
                     </div>
                   <% end %>
@@ -267,8 +285,12 @@
             <p>The "search" toggle on a floor makes the bot, once refreshes run out, replace the leftmost pack with the highest unvisited favorite (or Hunt pack when there are no favorites) that has a search hook. Unavailable on F11 and later.</p>
           </section>
           <section>
-            <h4 class="font-semibold">Extreme mode</h4>
-            <p>Turns on superposition and continues into extreme floors F6-15 after beating the F5 boss. Requires F1-F5 to be hard.</p>
+            <h4 class="font-semibold">Extreme view</h4>
+            <p>Opens up F6-15 and shows F1-5 as if the view were all hard. Floors F6-15 only run when the plan goes extreme, but you can edit them any time. A stop sign on the likely path marks where the run ends before F6.</p>
+          </section>
+          <section>
+            <h4 class="font-semibold">Go extreme</h4>
+            <p>The "go extreme" button on F6 turns on superposition and continues into extreme floors F6-15 after beating the F5 boss. Turning it on also sets go hard on F1. Turning it off only stops the run after F5.</p>
           </section>
         </div>
         <div class="modal-action mt-0">
