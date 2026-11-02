@@ -153,11 +153,11 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   @impl true
   def handle_event("toggle_path_floor", %{"floor" => floor}, socket) do
     floor = String.to_integer(floor)
-    {:noreply, assign(socket, :path_floor, if(socket.assigns.path_floor == floor, do: nil, else: floor))}
+    {:noreply, socket |> assign(:path_floor, if(socket.assigns.path_floor == floor, do: nil, else: floor)) |> assign(:path_browse, false)}
   end
 
   @impl true
-  def handle_event("close_path_floor", _, socket), do: {:noreply, socket |> assign(:path_floor, nil) |> assign(:path_query, "")}
+  def handle_event("close_path_floor", _, socket), do: {:noreply, socket |> assign(:path_floor, nil) |> assign(:path_query, "") |> assign(:path_browse, false)}
 
   @impl true
   def handle_event("path_clear_floor", %{"floor" => floor}, socket) do
@@ -170,14 +170,20 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       |> Enum.filter(&(Resolver.priority_at(plan_data, &1, mode, floor) == "hunt"))
       |> Enum.reduce(plan_data, &put_status(&2, &1.id, mode, floor, "none"))
 
-    {:noreply, socket |> assign(:plan_data, plan_data) |> assign(:path_floor, nil) |> assign(:path_query, "") |> persist_plan()}
+    {:noreply, socket |> assign(:plan_data, plan_data) |> assign(:path_floor, nil) |> assign(:path_query, "") |> assign(:path_browse, false) |> persist_plan()}
   end
 
   @impl true
-  def handle_event("path_query", %{"query" => query}, socket), do: {:noreply, assign(socket, :path_query, query)}
+  def handle_event("path_query", %{"query" => query}, socket), do: {:noreply, socket |> assign(:path_query, query) |> assign(:path_browse, socket.assigns.path_browse and String.trim(query) == "")}
 
   @impl true
-  def handle_event("path_query_clear", _, socket), do: {:noreply, assign(socket, :path_query, "")}
+  def handle_event("path_browse", _, socket), do: {:noreply, assign(socket, :path_browse, true)}
+
+  @impl true
+  def handle_event("path_key", %{"key" => "Escape"}, socket), do: handle_event("close_path_floor", %{}, socket)
+
+  @impl true
+  def handle_event("path_query_clear", _, socket), do: {:noreply, socket |> assign(:path_query, "") |> assign(:path_browse, false)}
 
   @impl true
   def handle_event("path_add", %{"floor" => floor, "pack_id" => pack_id}, socket) do
@@ -191,7 +197,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   def handle_event("path_add", %{"floor" => floor, "query" => query}, socket) do
     floor = String.to_integer(floor)
     mode = path_mode(socket.assigns.plan_data, floor, socket.assigns.view)
-    pack = socket.assigns.plan_data |> path_matches(socket.assigns.theme_packs, floor, mode, query) |> List.first()
+    pack = if String.trim(query) == "", do: nil, else: socket.assigns.plan_data |> path_matches(socket.assigns.theme_packs, floor, mode, query) |> List.first()
     {:noreply, add_path_pack(socket, pack, mode, floor)}
   end
 
@@ -245,7 +251,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
 
   def path_row(assigns) do
     ~H"""
-    <div data-sort-id={@alt.id} class="rounded-full">
+    <div data-sort-id={@alt.id} data-sort-handle class="rounded-full cursor-grab">
       <div class={"flex items-center gap-1 rounded-full border pl-1 pr-1 py-0.5 text-[10px] " <> if(@hard?, do: "border-warning bg-warning/30", else: "border-success/60 bg-success/30")}
            style={"opacity: #{path_alt_opacity(@index, @total)}"}>
         <span data-sort-handle class="cursor-grab text-base-content/50 select-none" title="Drag to reorder, or between lists to change favorite">⠿</span>
@@ -293,10 +299,10 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   defp active_view_class("hard"), do: "btn-warning"
   defp active_view_class("extreme"), do: "btn-error"
 
-  def cell_fill_class("favorite"), do: "bg-warning/30"
-  def cell_fill_class("hunt"), do: "bg-success/30"
-  def cell_fill_class("banned"), do: "bg-error/30"
-  def cell_fill_class("none"), do: ""
+  def cell_fill_class("favorite"), do: "bg-warning/30 hover:bg-warning/50"
+  def cell_fill_class("hunt"), do: "bg-success/30 hover:bg-success/50"
+  def cell_fill_class("banned"), do: "bg-error/30 hover:bg-error/50"
+  def cell_fill_class("none"), do: "hover:bg-base-content/10"
 
   def overflow?(extreme?), do: not extreme?
 
@@ -328,17 +334,18 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   end
 
   def path_options(plan_data, theme_packs, floor, mode) do
-    Enum.filter(theme_packs, &(floor in Resolver.eligible_floors(&1, mode) and Resolver.status_at(plan_data, &1.id, mode, floor) != "banned"))
+    Enum.filter(theme_packs, &(floor in Resolver.eligible_floors(&1, mode) and Resolver.status_at(plan_data, &1.id, mode, floor) not in ~w(banned hunt favorite)))
   end
 
   def path_matches(plan_data, theme_packs, floor, mode, query) do
     needle = query |> String.trim() |> String.downcase()
     name = &String.downcase(&1.name_en || "")
 
+    options = path_options(plan_data, theme_packs, floor, mode)
+
     if needle == "" do
-      []
+      options
     else
-      options = path_options(plan_data, theme_packs, floor, mode)
       {starts, rest} = options |> Enum.filter(&String.contains?(name.(&1), needle)) |> Enum.split_with(&String.starts_with?(name.(&1), needle))
       Enum.take(starts ++ rest, 8)
     end
@@ -352,7 +359,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
         do: socket.assigns.plan_data,
         else: put_status(socket.assigns.plan_data, pack.id, mode, floor, "hunt")
 
-    socket |> assign(:plan_data, plan_data) |> assign(:path_query, "") |> persist_plan()
+    socket |> assign(:plan_data, plan_data) |> assign(:path_query, "") |> assign(:path_browse, false) |> persist_plan()
   end
 
   def extreme_disabled?(plan_data), do: not Resolver.extreme?(plan_data)
@@ -444,6 +451,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     |> assign(:filter, "")
     |> assign(:path_floor, nil)
     |> assign(:path_query, "")
+    |> assign(:path_browse, false)
   end
 
   defp load_plan(socket, id) do

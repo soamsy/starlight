@@ -1323,6 +1323,53 @@ const RightClickEvent = {
   }
 }
 
+const PathPicker = {
+  mounted() {
+    this.index = 0
+    this.query = null
+    this.el.addEventListener("keydown", (e) => {
+      if (e.target.tagName !== "INPUT") return
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault()
+        const options = this.options()
+        if (options.length === 0) {
+          this.index = 0
+          if (e.target.value.trim() === "") this.pushEvent("path_browse", {})
+          return
+        }
+        const step = e.key === "ArrowDown" ? 1 : -1
+        this.index = (this.index + step + options.length) % options.length
+        this.paint()
+      } else if (e.key === "Enter") {
+        const option = this.options()[this.index]
+        if (option) {
+          e.preventDefault()
+          option.click()
+        }
+      }
+    })
+    this.sync()
+  },
+  updated() {
+    this.sync()
+  },
+  options() {
+    return Array.from(this.el.querySelectorAll("[data-path-option]"))
+  },
+  sync() {
+    const query = this.el.querySelector("input[name=query]")?.value ?? ""
+    if (query !== this.query) this.index = 0
+    this.query = query
+    this.paint()
+  },
+  paint() {
+    const options = this.options()
+    if (this.index >= options.length) this.index = 0
+    options.forEach((option, i) => option.setAttribute("aria-selected", String(i === this.index)))
+    options[this.index]?.scrollIntoView({ block: "nearest" })
+  }
+}
+
 const PriorityRightClick = {
   mounted() {
     this.el.addEventListener("contextmenu", (e) => {
@@ -1395,7 +1442,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
 })
 
 liveSocket.connect()
