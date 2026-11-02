@@ -87,28 +87,36 @@
                     <div class="flex items-center gap-1 shrink-0">
                       <input type="text" placeholder="Search gifts…" value={@gift_filter} phx-keyup="filter_gifts"
                              class="input input-bordered input-xs flex-1 min-w-0" />
-                      <details class="dropdown dropdown-end">
+                      <button :if={@gift_tier_filter != [] or @gift_affinity_filter != []} type="button" phx-click="clear_gift_filters" title="Clear all filters"
+                              class="btn btn-ghost btn-xs btn-square">✕</button>
+                      <details class="dropdown dropdown-end" phx-mounted={JS.ignore_attributes("open")} phx-click-away={JS.remove_attribute("open")}>
                         <summary title="Filter"
-                             class={"btn btn-xs btn-square " <> if(@gift_tier_filter || @gift_affinity_filter, do: "btn-primary", else: "btn-ghost")}>
+                             class={"btn btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [], do: "btn-primary", else: "btn-ghost")}>
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" /></svg>
                         </summary>
-                        <div class="dropdown-content z-30 mt-1 w-44 rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg space-y-2">
-                          <form phx-change="set_gift_tier_filter" class="flex flex-col gap-0.5">
+                        <div class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-200 p-2 shadow-lg ring-2 ring-base-content/20 space-y-2">
+                          <div class="flex flex-col gap-1">
                             <span class="text-[11px] text-base-content/60">Tier</span>
-                            <select name="value" class="select select-bordered select-xs">
-                              <option value="">any tier</option>
-                              <option :for={tier <- gift_tiers()} value={tier} selected={@gift_tier_filter == tier}>Tier <%= tier %></option>
-                            </select>
-                          </form>
-                          <form phx-change="set_gift_affinity_filter" class="flex flex-col gap-0.5">
+                            <div class="flex flex-wrap gap-1">
+                              <button :for={tier <- gift_tiers()} type="button" phx-click="set_gift_tier_filter" value={tier}
+                                      class={"btn btn-xs " <> if(tier in @gift_tier_filter, do: "btn-primary", else: "btn-ghost border-base-300")}>
+                                <%= gift_tier_roman(tier) %>
+                              </button>
+                            </div>
+                          </div>
+                          <div class="flex flex-col gap-1">
                             <span class="text-[11px] text-base-content/60">Affinity</span>
-                            <select name="value" class="select select-bordered select-xs">
-                              <option value="">any affinity</option>
-                              <option :for={affinity <- affinities()} value={affinity} selected={@gift_affinity_filter == affinity}><%= affinity %></option>
-                              <option disabled>──────────</option>
-                              <option value="none" selected={@gift_affinity_filter == "none"}>none</option>
-                            </select>
-                          </form>
+                            <div class="flex flex-wrap gap-1">
+                              <button :for={affinity <- affinities()} type="button" phx-click="set_gift_affinity_filter" value={affinity} title={affinity}
+                                      class={"btn btn-xs btn-square " <> if(affinity in @gift_affinity_filter, do: "btn-primary", else: "btn-ghost border-base-300")}>
+                                <img src={gift_affinity_icon(affinity)} alt={affinity} class="w-4 h-4" />
+                              </button>
+                              <button type="button" phx-click="set_gift_affinity_filter" value="none"
+                                      class={"btn btn-xs " <> if("none" in @gift_affinity_filter, do: "btn-primary", else: "btn-ghost border-base-300")}>
+                                none
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </details>
                       <div class="dropdown dropdown-end">
@@ -116,7 +124,7 @@
                              class={"btn btn-xs btn-square " <> if(@gift_sort != "default", do: "btn-primary", else: "btn-ghost")}>
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="m21 16-4 4-4-4" /><path d="M17 20V4" /><path d="m3 8 4-4 4 4" /><path d="M7 4v16" /></svg>
                         </div>
-                        <div tabindex="0" class="dropdown-content z-30 mt-1 w-36 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+                        <div tabindex="0" class="dropdown-content z-30 mt-1 w-36 rounded-lg border border-base-300 bg-base-200 p-1 shadow-lg ring-2 ring-base-content/20">
                           <button :for={sort_by <- gift_sorts()} type="button" phx-click="set_gift_sort" value={sort_by}
                                   class={"btn btn-xs w-full justify-start " <> if(@gift_sort == sort_by, do: "btn-primary", else: "btn-ghost")}>
                             <%= gift_sort_label(sort_by) %>

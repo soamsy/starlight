@@ -167,13 +167,17 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("set_gift_tier_filter", %{"value" => tier}, socket) do
-    tier = if tier == "", do: nil, else: String.to_integer(tier)
-    {:noreply, assign(socket, :gift_tier_filter, tier)}
+    {:noreply, assign(socket, :gift_tier_filter, toggle(socket.assigns.gift_tier_filter, String.to_integer(tier)))}
   end
 
   @impl true
   def handle_event("set_gift_affinity_filter", %{"value" => affinity}, socket) do
-    {:noreply, assign(socket, :gift_affinity_filter, blank_to_nil(affinity))}
+    {:noreply, assign(socket, :gift_affinity_filter, toggle(socket.assigns.gift_affinity_filter, affinity))}
+  end
+
+  @impl true
+  def handle_event("clear_gift_filters", _params, socket) do
+    {:noreply, socket |> assign(:gift_tier_filter, []) |> assign(:gift_affinity_filter, [])}
   end
 
   @impl true
@@ -1008,8 +1012,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def filtered_gifts(gifts, filter, tier_filter, affinity_filter, sort_by) do
     gifts
     |> Enum.filter(&matches_text_filter?(&1, filter))
-    |> Enum.filter(&(is_nil(tier_filter) or &1.tier == tier_filter))
-    |> Enum.filter(&(is_nil(affinity_filter) or &1.affinity == affinity_filter))
+    |> Enum.filter(&(tier_filter == [] or &1.tier in tier_filter))
+    |> Enum.filter(&(affinity_filter == [] or &1.affinity in affinity_filter))
     |> sort_gifts(sort_by)
   end
 
@@ -1108,8 +1112,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp reset_browser(socket) do
     socket
     |> assign(:gift_filter, "")
-    |> assign(:gift_tier_filter, nil)
-    |> assign(:gift_affinity_filter, nil)
+    |> assign(:gift_tier_filter, [])
+    |> assign(:gift_affinity_filter, [])
     |> assign(:gift_sort, "default")
   end
 
@@ -1288,6 +1292,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       true -> nil
     end
   end
+
+  defp toggle(list, value), do: if(value in list, do: List.delete(list, value), else: [value | list])
 
   defp matches_text_filter?(_gift, ""), do: true
   defp matches_text_filter?(gift, filter), do: String.contains?(String.downcase(gift.name || ""), String.downcase(filter))
