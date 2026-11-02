@@ -59,24 +59,15 @@ defmodule StarlightBot.PackPlans.Resolver do
   def eligible_floors(pack, "hard"), do: ThemePacks.decode_floors(pack.hard_floors)
   def eligible_floors(pack, "normal"), do: ThemePacks.decode_floors(pack.normal_floors)
 
-  def priority_for(plan_data, pack_id, mode) do
-    get_in(plan_data, ["packs", pack_id, mode, "priority"]) || "fine"
-  end
-
-  def floors_for(plan_data, pack_id, mode, pack) do
-    case get_in(plan_data, ["packs", pack_id, mode, "floors"]) do
-      floors when is_list(floors) -> floors
-      _ -> eligible_floors(pack, mode)
-    end
+  def status_at(plan_data, pack_id, mode, floor) do
+    get_in(plan_data, ["packs", pack_id, mode, Integer.to_string(floor)]) || "none"
   end
 
   def priority_at(plan_data, pack, mode, floor) do
-    priority = priority_for(plan_data, pack.id, mode)
-
-    if priority == "fine" or floor in floors_for(plan_data, pack.id, mode, pack) do
-      priority
-    else
-      "fine"
+    case status_at(plan_data, pack.id, mode, floor) do
+      status when status in ~w(favorite hunt) -> "hunt"
+      "banned" -> "banned"
+      _ -> "fine"
     end
   end
 
@@ -84,18 +75,23 @@ defmodule StarlightBot.PackPlans.Resolver do
     Enum.any?(all_packs, &(priority_at(plan_data, &1, mode, floor) == "hunt"))
   end
 
-  def favorite?(plan_data, pack_id, mode) do
-    get_in(plan_data, ["packs", pack_id, mode, "favorite"]) == true
+  def favorite?(plan_data, pack_id, mode, floor), do: status_at(plan_data, pack_id, mode, floor) == "favorite"
+
+  def hunted_floors(plan_data, pack_id, mode) do
+    floors = get_in(plan_data, ["packs", pack_id, mode]) || %{}
+    for {floor, status} <- floors, status in ~w(favorite hunt), do: String.to_integer(floor)
   end
 
-  def hunt_rank(plan_data, mode) do
-    order = get_in(plan_data, ["hunt_order", mode]) || []
+  def hunt_order(plan_data, mode, floor), do: get_in(plan_data, ["order", mode, Integer.to_string(floor)]) || []
+
+  def hunt_rank(plan_data, mode, floor) do
+    order = hunt_order(plan_data, mode, floor)
     ranks = order |> Enum.with_index() |> Map.new()
-    &Map.get(ranks, &1, length(order))
+    &{if(favorite?(plan_data, &1, mode, floor), do: 0, else: 1), Map.get(ranks, &1, length(order))}
   end
 
-  def sort_hunt(packs, plan_data, mode) do
-    rank = hunt_rank(plan_data, mode)
+  def sort_hunt(packs, plan_data, mode, floor) do
+    rank = hunt_rank(plan_data, mode, floor)
     Enum.sort_by(packs, &rank.(&1.id))
   end
 
@@ -105,7 +101,7 @@ defmodule StarlightBot.PackPlans.Resolver do
 
     cond do
       hunt != [] ->
-        {:pick, hd(sort_hunt(hunt, plan_data, mode)).id}
+        {:pick, hd(sort_hunt(hunt, plan_data, mode, floor)).id}
 
       fine = Enum.find(classified, fn {_, p} -> p == "fine" end) ->
         if refreshes_left > 0 and hunt_in_play?(plan_data, all_packs, mode, floor) do

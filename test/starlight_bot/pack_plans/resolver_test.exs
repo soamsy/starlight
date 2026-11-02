@@ -94,29 +94,40 @@ defmodule StarlightBot.PackPlans.ResolverTest do
     end
   end
 
-  describe "priority_for/3 and floors_for/4" do
-    test "defaults to fine and all eligible floors when unspecified" do
+  describe "status_at/4 and priority_at/4" do
+    test "defaults to none and fine when unspecified" do
       p = pack("thm_1", [1, 2], [1, 2, 3])
-      assert Resolver.priority_for(%{}, "thm_1", "hard") == "fine"
-      assert Resolver.floors_for(%{}, "thm_1", "hard", p) == [1, 2, 3]
+      assert Resolver.status_at(%{}, "thm_1", "hard", 1) == "none"
+      assert Resolver.priority_at(%{}, p, "hard", 1) == "fine"
     end
 
-    test "reads an explicit priority and floor subset" do
-      plan = %{"packs" => %{"thm_1" => %{"hard" => %{"priority" => "hunt", "floors" => [2, 3]}}}}
-      p = pack("thm_1", [1, 2], [1, 2, 3])
+    test "statuses are kept per floor and per mode" do
+      plan = %{"packs" => %{"thm_1" => %{"hard" => %{"1" => "favorite", "2" => "hunt", "3" => "banned"}}}}
+      p = pack("thm_1", [], [1, 2, 3, 4])
 
-      assert Resolver.priority_for(plan, "thm_1", "hard") == "hunt"
-      assert Resolver.floors_for(plan, "thm_1", "hard", p) == [2, 3]
+      assert Enum.map(1..4, &Resolver.status_at(plan, "thm_1", "hard", &1)) == ["favorite", "hunt", "banned", "none"]
+      assert Resolver.status_at(plan, "thm_1", "normal", 1) == "none"
+      assert Enum.map(1..4, &Resolver.priority_at(plan, p, "hard", &1)) == ["hunt", "hunt", "banned", "fine"]
+      assert Resolver.favorite?(plan, "thm_1", "hard", 1)
+      refute Resolver.favorite?(plan, "thm_1", "hard", 2)
+      assert Enum.sort(Resolver.hunted_floors(plan, "thm_1", "hard")) == [1, 2]
     end
   end
 
-  describe "priority_at/4" do
-    test "falls back to fine outside the assigned floor subset" do
-      plan = %{"packs" => %{"thm_1" => %{"hard" => %{"priority" => "hunt", "floors" => [2, 3]}}}}
-      p = pack("thm_1", [], [1, 2, 3])
+  describe "sort_hunt/4" do
+    test "favorites first, then the floor's own order" do
+      plan = %{
+        "packs" => %{
+          "a" => %{"hard" => %{"1" => "hunt", "2" => "hunt"}},
+          "b" => %{"hard" => %{"1" => "favorite", "2" => "hunt"}},
+          "c" => %{"hard" => %{"1" => "hunt", "2" => "hunt"}}
+        },
+        "order" => %{"hard" => %{"1" => ["a", "b", "c"], "2" => ["c", "a", "b"]}}
+      }
 
-      assert Resolver.priority_at(plan, p, "hard", 2) == "hunt"
-      assert Resolver.priority_at(plan, p, "hard", 1) == "fine"
+      packs = [%{id: "a"}, %{id: "b"}, %{id: "c"}]
+      assert Enum.map(Resolver.sort_hunt(packs, plan, "hard", 1), & &1.id) == ["b", "a", "c"]
+      assert Enum.map(Resolver.sort_hunt(packs, plan, "hard", 2), & &1.id) == ["c", "a", "b"]
     end
   end
 
@@ -129,23 +140,35 @@ defmodule StarlightBot.PackPlans.ResolverTest do
 
       plan = %{
         "packs" => %{
-          "thm_banned" => %{"hard" => %{"priority" => "banned"}},
-          "thm_hunt" => %{"hard" => %{"priority" => "hunt"}},
-          "thm_favorite" => %{"hard" => %{"priority" => "hunt", "favorite" => true}}
+          "thm_banned" => %{"hard" => %{"1" => "banned"}},
+          "thm_hunt" => %{"hard" => %{"1" => "hunt"}},
+          "thm_favorite" => %{"hard" => %{"1" => "favorite"}}
         },
-        "hunt_order" => %{"hard" => ["thm_favorite", "thm_hunt"]}
+        "order" => %{"hard" => %{"1" => ["thm_favorite", "thm_hunt"]}}
       }
 
       all_packs = [banned, fine, hunt, favorite]
       %{all_packs: all_packs, plan: plan}
     end
 
-    test "the highest hunt pack in hunt order wins, favorite or not", %{all_packs: all_packs, plan: plan} do
+    test "a favorite beats a hunt pack regardless of order", %{all_packs: all_packs, plan: plan} do
       [_banned, _fine, hunt, favorite] = all_packs
       assert Resolver.choose([hunt, favorite], all_packs, plan, "hard", 1, 3) == {:pick, "thm_favorite"}
 
-      reordered = put_in(plan, ["hunt_order", "hard"], ["thm_hunt", "thm_favorite"])
-      assert Resolver.choose([favorite, hunt], all_packs, reordered, "hard", 1, 3) == {:pick, "thm_hunt"}
+      reordered = put_in(plan, ["order", "hard", "1"], ["thm_hunt", "thm_favorite"])
+      assert Resolver.choose([favorite, hunt], all_packs, reordered, "hard", 1, 3) == {:pick, "thm_favorite"}
+    end
+
+    test "hunt packs follow the floor's order", %{all_packs: all_packs, plan: plan} do
+      [_banned, _fine, hunt, _favorite] = all_packs
+      other = pack("thm_other", [], [1, 2, 3])
+      plan = plan |> put_in(["packs", "thm_other"], %{"hard" => %{"1" => "hunt"}}) |> put_in(["order", "hard", "1"], ["thm_other", "thm_hunt"])
+      assert Resolver.choose([hunt, other], [hunt, other | all_packs], plan, "hard", 1, 3) == {:pick, "thm_other"}
+    end
+
+    test "statuses on other floors do not apply", %{all_packs: all_packs, plan: plan} do
+      [_banned, _fine, hunt, _favorite] = all_packs
+      assert Resolver.priority_at(plan, hunt, "hard", 2) == "fine"
     end
 
     test "a lone favorite still holds out for a refresh", %{all_packs: all_packs, plan: plan} do
@@ -162,7 +185,7 @@ defmodule StarlightBot.PackPlans.ResolverTest do
     test "fine is picked immediately when no hunt pack is in play" do
       fine = pack("thm_fine", [], [1, 2, 3])
       banned = pack("thm_banned2", [], [1, 2, 3])
-      plan_without_hunt = %{"packs" => %{"thm_banned2" => %{"hard" => %{"priority" => "banned"}}}}
+      plan_without_hunt = %{"packs" => %{"thm_banned2" => %{"hard" => %{"1" => "banned"}}}}
 
       assert Resolver.choose([fine, banned], [fine, banned], plan_without_hunt, "hard", 1, 3) ==
                {:pick, "thm_fine"}

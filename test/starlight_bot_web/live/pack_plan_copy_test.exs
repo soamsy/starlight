@@ -9,7 +9,7 @@ defmodule StarlightBotWeb.Live.PackPlanCopyTest do
   end
 
   test "a copied pack plan pastes into another team and keeps its plan" do
-    data = %{"version" => 1, "mode_schedule" => [%{"from_floor" => 4, "mode" => "hard"}], "search_floors" => [5], "packs" => %{"thm_3" => %{"normal" => %{"priority" => "hunt"}}}}
+    data = %{"version" => 2, "mode_schedule" => [%{"from_floor" => 4, "mode" => "hard"}], "search_floors" => [5], "packs" => %{"thm_3" => %{"normal" => %{"1" => "hunt"}}}}
     {:ok, source} = Teams.create_default_team()
     {:ok, target} = Teams.create_default_team()
     source_plan = Teams.get_team(source).pack_plan_id

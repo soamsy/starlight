@@ -1,5 +1,6 @@
 defmodule StarlightBot.PlanClipboard do
-  alias StarlightBot.{BattlePlans, SinnerProfiles}
+  alias StarlightBot.{BattlePlans, SinnerProfiles, ThemePacks}
+  alias StarlightBot.PackPlans.{Legacy, Resolver}
 
   @kinds %{gift_plans: "gift", battle_plans: "battle", pack_plans: "pack"}
 
@@ -59,7 +60,15 @@ defmodule StarlightBot.PlanClipboard do
   defp validate(:battle_plans, %{"version" => 4, "playbooks" => [_ | _], "profiles" => profiles} = data) when is_map(profiles), do: {:ok, data}
   defp validate(:battle_plans, %{"version" => 4, "playbooks" => [_ | _]} = data) when not is_map_key(data, "profiles"), do: {:ok, data}
   defp validate(:battle_plans, _data), do: {:error, "That battle plan isn't a version 4 plan this app can read."}
+  defp validate(:pack_plans, data), do: {:ok, Legacy.upgrade(data, &legacy_eligible/2)}
   defp validate(_table, data), do: {:ok, data}
+
+  defp legacy_eligible(id, mode) do
+    case Enum.find(ThemePacks.list_theme_packs(), &(&1.id == id)) do
+      nil -> []
+      pack -> Resolver.eligible_floors(pack, mode)
+    end
+  end
 
   defp validate_milestone(milestone) do
     lists = for key <- ["goals", "entries", "refresh", "refresh_floors"], value = milestone[key], do: is_list(value)

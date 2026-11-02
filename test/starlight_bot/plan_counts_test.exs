@@ -14,9 +14,8 @@ defmodule StarlightBot.PlanCountsTest do
   test "pack counts hunted packs across modes" do
     data = %{
       "packs" => %{
-        "thm_1" => %{"normal" => %{"priority" => "hunt"}, "hard" => %{"priority" => "hunt"}},
-        "thm_2" => %{"normal" => %{"priority" => "banned"}},
-        "thm_3" => %{"hard" => %{"floors" => [3]}}
+        "thm_1" => %{"normal" => %{"1" => "hunt"}, "hard" => %{"1" => "favorite", "2" => "hunt"}},
+        "thm_2" => %{"normal" => %{"1" => "banned"}}
       }
     }
 

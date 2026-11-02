@@ -52,76 +52,31 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLiveTest do
     end
   end
 
-  defp pack(id, name, normal_floors, hard_floors) do
-    %{id: id, name_en: name, normal_floors: Jason.encode!(normal_floors), hard_floors: Jason.encode!(hard_floors)}
-  end
-
-  describe "parse_paste/3" do
-    setup do
-      %{packs: [pack("thm_1", "The Forgotten", [1, 2], [1, 2]), pack("thm_2", "S.E.A.", [2], [2, 3])]}
+  describe "cell_changes/2" do
+    test "hunt toggles between none and hunt, from banned too" do
+      assert Live.cell_changes(%{1 => "none"}, "hunt") == [{1, "hunt"}]
+      assert Live.cell_changes(%{1 => "hunt"}, "hunt") == [{1, "none"}]
+      assert Live.cell_changes(%{1 => "favorite"}, "hunt") == [{1, "none"}]
+      assert Live.cell_changes(%{1 => "banned"}, "hunt") == [{1, "hunt"}]
     end
 
-    test "accepts a pack with no explicit floors (means all eligible)", %{packs: packs} do
-      json = Jason.encode!(%{"mode" => "hard", "packs" => %{"thm_1" => %{}}})
-      assert Live.parse_paste(json, packs, "hard") == {:ok, %{"thm_1" => nil}}
+    test "hunt on a mixed span hunts the unhunted floors and keeps favorites" do
+      assert Live.cell_changes(%{6 => "favorite", 7 => "none", 8 => "banned"}, "hunt") |> Enum.sort() == [{7, "hunt"}, {8, "hunt"}]
+      assert Live.cell_changes(%{6 => "favorite", 7 => "hunt"}, "hunt") |> Enum.sort() == [{6, "none"}, {7, "none"}]
     end
 
-    test "accepts a pack scoped to a valid floor subset", %{packs: packs} do
-      json = Jason.encode!(%{"mode" => "hard", "packs" => %{"thm_2" => %{"floors" => [2]}}})
-      assert Live.parse_paste(json, packs, "hard") == {:ok, %{"thm_2" => [2]}}
+    test "banned toggles between none and banned" do
+      assert Live.cell_changes(%{1 => "none"}, "banned") == [{1, "banned"}]
+      assert Live.cell_changes(%{1 => "hunt"}, "banned") == [{1, "banned"}]
+      assert Live.cell_changes(%{1 => "banned"}, "banned") == [{1, "none"}]
     end
 
-    test "bails when the clipboard's mode doesn't match the mode being edited", %{packs: packs} do
-      json = Jason.encode!(%{"mode" => "normal", "packs" => %{"thm_1" => %{}}})
-
-      assert Live.parse_paste(json, packs, "hard") ==
-               {:error, "Expected hard mode floors, got normal mode floors."}
-    end
-
-    test "bails when a pack's floors fall outside what that pack is eligible for", %{packs: packs} do
-      json = Jason.encode!(%{"mode" => "hard", "packs" => %{"thm_1" => %{"floors" => [3, 4]}}})
-
-      assert Live.parse_paste(json, packs, "hard") ==
-               {:error, "Expected floors 1, 2, got floors 3, 4 for The Forgotten."}
-    end
-
-    test "bails on an unknown pack id", %{packs: packs} do
-      json = Jason.encode!(%{"mode" => "hard", "packs" => %{"thm_999" => %{}}})
-      assert Live.parse_paste(json, packs, "hard") == {:error, "Unknown pack: thm_999."}
-    end
-
-    test "bails on a pack that doesn't appear in the target mode at all" do
-      json = Jason.encode!(%{"mode" => "normal", "packs" => %{"thm_2" => %{}}})
-      packs_normal_only = [pack("thm_2", "S.E.A.", [], [2, 3])]
-
-      assert Live.parse_paste(json, packs_normal_only, "normal") ==
-               {:error, "S.E.A. doesn't appear in normal mode."}
-    end
-
-    test "bails on malformed JSON", %{packs: packs} do
-      assert Live.parse_paste("not json", packs, "hard") == {:error, "Clipboard doesn't contain valid JSON."}
-    end
-
-    test "bails when the packs field is missing", %{packs: packs} do
-      json = Jason.encode!(%{"mode" => "hard"})
-      assert Live.parse_paste(json, packs, "hard") == {:error, "Expected a JSON object with a \"packs\" field."}
-    end
-  end
-
-  describe "copy_payload/4" do
-    test "round-trips through parse_paste" do
-      packs = [pack("thm_1", "The Forgotten", [1, 2], [1, 2]), pack("thm_2", "S.E.A.", [2], [2, 3])]
-
-      plan_data = %{
-        "packs" => %{
-          "thm_1" => %{"hard" => %{"priority" => "hunt"}},
-          "thm_2" => %{"hard" => %{"priority" => "hunt", "floors" => [2]}}
-        }
-      }
-
-      json = Live.copy_payload(plan_data, packs, "hard", "hunt")
-      assert {:ok, entries} = Live.parse_paste(json, packs, "hard")
-      assert entries == %{"thm_1" => nil, "thm_2" => [2]}
+    test "favorite toggles only hunted floors" do
+      assert Live.cell_changes(%{1 => "none"}, "favorite") == []
+      assert Live.cell_changes(%{1 => "banned"}, "favorite") == []
+      assert Live.cell_changes(%{1 => "hunt"}, "favorite") == [{1, "favorite"}]
+      assert Live.cell_changes(%{1 => "favorite"}, "favorite") == [{1, "hunt"}]
+      assert Live.cell_changes(%{1 => "favorite", 2 => "hunt", 3 => "none"}, "favorite") |> Enum.sort() == [{1, "favorite"}, {2, "favorite"}]
     end
   end
 end

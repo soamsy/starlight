@@ -28,7 +28,7 @@ defmodule StarlightBot.PlanCounts do
   def count(:battle_plans, %{"playbooks" => playbooks}) when is_list(playbooks), do: length(playbooks)
 
   def count(:pack_plans, %{"packs" => packs}) when is_map(packs) do
-    Enum.sum(for {_pack, modes} <- packs, is_map(modes), {_mode, %{"priority" => "hunt"}} <- modes, do: 1)
+    Enum.sum(for {_pack, modes} <- packs, is_map(modes), {_mode, floors} <- modes, is_map(floors), Enum.any?(floors, fn {_floor, status} -> status in ~w(hunt favorite) end), do: 1)
   end
 
   def count(:gift_plans, %{"milestones" => milestones}) when is_list(milestones) do

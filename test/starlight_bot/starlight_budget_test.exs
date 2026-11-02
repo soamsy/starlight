@@ -60,7 +60,7 @@ defmodule StarlightBot.StarlightBudgetTest do
     assert StarlightBudget.railway_floors(all_hard, packs, ~w(hunt fine)) == [4, 5]
     assert StarlightBudget.railway_floors(all_hard, packs, ~w(hunt)) == []
 
-    hunt_l1 = Map.put(all_hard, "packs", %{"l1" => %{"hard" => %{"priority" => "hunt"}}, "l2" => %{"hard" => %{"priority" => "banned"}}})
+    hunt_l1 = Map.put(all_hard, "packs", %{"l1" => %{"hard" => %{"5" => "hunt", "6" => "hunt"}}, "l2" => %{"hard" => %{"4" => "banned", "5" => "banned", "6" => "banned"}}})
     assert StarlightBudget.railway_floors(hunt_l1, packs, ~w(hunt fine)) == [5]
     assert StarlightBudget.railway_floors(hunt_l1, packs, ~w(hunt)) == [5]
 

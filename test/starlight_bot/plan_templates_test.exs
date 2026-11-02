@@ -20,7 +20,7 @@ defmodule StarlightBot.PlanTemplatesTest do
 
   test "listed templates carry the same rough count as the tabs" do
     {:ok, _} = PlanTemplates.create(:battle_plans, StarlightBot.BattlePlans.blank())
-    {:ok, _} = PlanTemplates.create(:pack_plans, %{"packs" => %{"thm_1" => %{"normal" => %{"priority" => "hunt"}}}})
+    {:ok, _} = PlanTemplates.create(:pack_plans, %{"packs" => %{"thm_1" => %{"normal" => %{"1" => "hunt"}}}})
     {:ok, _} = PlanTemplates.create(:gift_plans, %{"milestones" => [%{"entries" => [1, 2, 3]}]})
 
     assert [%{count: 3}] = PlanTemplates.list(:battle_plans)

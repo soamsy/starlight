@@ -67,7 +67,7 @@ defmodule StarlightBot.Plans do
 
   def blank(:gift_plans), do: GiftPlans.blank()
   def blank(:battle_plans), do: BattlePlans.blank()
-  def blank(:pack_plans), do: %{"version" => 1, "mode_schedule" => [], "packs" => %{}, "search_floors" => []}
+  def blank(:pack_plans), do: %{"version" => 2, "mode_schedule" => [], "packs" => %{}, "search_floors" => []}
 
   def new_name(table, team_id) when table in @tables do
     base =

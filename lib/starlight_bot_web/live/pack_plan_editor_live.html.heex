@@ -9,94 +9,21 @@
         </div>
         <%= if @editing_id do %>
 
-          <div id="priority-columns" phx-hook="PriorityClipboard" class="flex-1 min-h-0 flex flex-col gap-3 min-h-0">
-
-            <%!-- Priority columns --%>
-            <div class="grid grid-cols-2 gap-2">
-              <%= for priority <- priorities() do %>
-                <div class="border border-base-300 rounded-lg p-2 flex flex-col gap-1 min-h-24 max-h-72 overflow-y-auto">
-                  <%= for mode <- modes() do %>
-                    <%= if mode == "normal" do %>
-                      <div class="text-xs font-semibold text-base-content/70 flex items-center gap-1 flex-wrap">
-                        <%= priority_label(priority) %>
-                        <button type="button" phx-click="toggle_help" class="text-base-content/40 hover:text-base-content cursor-pointer" title="How pack plans work">ⓘ</button>
-                        <button type="button" phx-click="copy_priority" phx-value-priority={priority} phx-value-mode={mode}
-                                class="btn btn-ghost btn-xs btn-square ml-auto" title={"Copy normal #{priority_label(priority)} list to clipboard"}>
-                          <.copy_icon />
-                        </button>
-                        <button type="button" data-paste-priority={priority} data-paste-mode={mode}
-                                class="btn btn-ghost btn-xs btn-square" title={"Paste clipboard JSON, replacing the normal #{priority_label(priority)} list"}>
-                          <.paste_icon />
-                        </button>
-                      </div>
-                    <% else %>
-                      <div class="text-[10px] font-semibold uppercase tracking-wide text-base-content/60 flex items-center gap-1 border-t border-base-300 pt-1 mt-1">
-                        Hard
-                        <button type="button" phx-click="copy_priority" phx-value-priority={priority} phx-value-mode={mode}
-                                class="btn btn-ghost btn-xs btn-square ml-auto" title={"Copy hard #{priority_label(priority)} list to clipboard"}>
-                          <.copy_icon />
-                        </button>
-                        <button type="button" data-paste-priority={priority} data-paste-mode={mode}
-                                class="btn btn-ghost btn-xs btn-square" title={"Paste clipboard JSON, replacing the hard #{priority_label(priority)} list"}>
-                          <.paste_icon />
-                        </button>
-                      </div>
-                    <% end %>
-                    <div id={"priority-list-#{priority}-#{mode}"} phx-hook={if priority == "hunt", do: "SortableList"}
-                         data-sort-event="reorder_hunt" data-sort-scope={mode} class="flex flex-col gap-0.5">
-                      <%= for pack <- packs_with_priority(@plan_data, @theme_packs, mode, priority) do %>
-                        <div id={"priority-#{priority}-#{mode}-#{pack.id}"} data-sort-id={pack.id} class="flex flex-col bg-base-200 rounded pr-1">
-                          <div class="flex items-center gap-1">
-                            <%= if priority == "hunt" do %>
-                              <span data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to reorder">⠿</span>
-                            <% end %>
-                            <img src={pack.image_path} class="w-6 h-6 rounded-l object-cover shrink-0" />
-                            <span class="text-[11px] truncate flex-1" title={pack.name_en}><%= pack.name_en %></span>
-                            <% assigned = StarlightBot.PackPlans.Resolver.floors_for(@plan_data, pack.id, mode, pack) %>
-                            <div class="flex gap-0.5 shrink-0">
-                              <%= for floor <- StarlightBot.PackPlans.Resolver.eligible_floors(pack, mode) do %>
-                                <button phx-click="toggle_pack_floor" phx-value-pack_id={pack.id} phx-value-floor={floor} phx-value-mode={mode}
-                                        class={"btn h-5 min-h-0 px-1 text-[10px] " <> if(floor in assigned, do: "btn-primary", else: "btn-outline")}>
-                                  <%= floor %>
-                                </button>
-                              <% end %>
-                            </div>
-                            <%= if priority == "hunt" do %>
-                              <% favorite? = StarlightBot.PackPlans.Resolver.favorite?(@plan_data, pack.id, mode) %>
-                              <button phx-click="toggle_favorite" phx-value-pack_id={pack.id} phx-value-mode={mode}
-                                      class={"btn btn-ghost h-5 min-h-0 px-1 text-[11px] whitespace-nowrap " <> if(favorite?, do: "text-warning", else: "text-base-content/40")}
-                                      title={if favorite?, do: "Favorite: while any favorite is in play, only favorites are hunted, refreshed for and searched for. Click to make it a normal Hunt pack.", else: "Mark as favorite: while any favorite is in play, only favorites are hunted, refreshed for and searched for"}>
-                                <%= if favorite?, do: "★ favorite", else: "☆" %>
-                              </button>
-                            <% end %>
-                            <button phx-click="assign_priority" phx-value-pack_id={pack.id} phx-value-priority="fine" phx-value-mode={mode}
-                                    class="btn btn-ghost h-5 min-h-0 px-1 text-[11px]" title="Reset to fine">✕</button>
-                          </div>
-                        </div>
-                      <% end %>
-                    </div>
-                    <%= if packs_with_priority(@plan_data, @theme_packs, mode, priority) == [] do %>
-                      <div class="text-[11px] text-base-content/30 italic">none</div>
-                    <% end %>
-                  <% end %>
-                </div>
-              <% end %>
-            </div>
-
-            <div class="divider my-0"></div>
+          <div class="flex-1 min-h-0 flex flex-col gap-3 min-h-0">
 
             <%!-- Assign panel --%>
             <% floor_count = max_floor(@extreme?) %>
             <% overflow? = overflow?(@extreme?) %>
             <% hard_col = hard_column(@plan_data, floor_count, overflow?) %>
             <% extreme_disabled? = extreme_disabled?(@plan_data) %>
-            <% path = likely_path(@plan_data, @theme_packs, floor_count) %>
-            <% rows = chart_rows(@plan_data, @theme_packs, @filter, @floor_filter, floor_count) %>
+            <% path = likely_path(@plan_data, @theme_packs, floor_count, @view) %>
+            <% rows = chart_rows(@plan_data, @theme_packs, @filter, @floor_filter, floor_count, @view) %>
             <div class="flex-1 min-h-0 flex flex-col gap-1">
               <div class="flex items-center gap-3">
                 <span class="text-xs font-medium text-base-content/70">
                   Assign a pack
                   <%= if @floor_filter, do: " (eligible for F#{@floor_filter})" %>
+                  <button type="button" phx-click="toggle_help" class="text-base-content/40 hover:text-base-content cursor-pointer" title="How pack plans work">ⓘ</button>
                 </span>
                 <label class={"flex items-center gap-1 text-xs " <> if(extreme_disabled?, do: "opacity-50 cursor-not-allowed", else: "cursor-pointer")}
                        title={if(extreme_disabled?, do: "Requires F1-F5 to be hard mode", else: "Turn on superposition and continue into extreme floors F6-15 after beating the F5 boss")}>
@@ -104,8 +31,15 @@
                          checked={StarlightBot.PackPlans.Resolver.extreme?(@plan_data)} disabled={extreme_disabled?} />
                   Extreme mode
                 </label>
+                <div class="join ml-auto items-center">
+                  <span class="text-xs text-base-content/70 mr-2">View:</span>
+                  <%= for {view, label} <- [{"plan", "plan"}, {"normal", "all normal"}, {"hard", "all hard"}] do %>
+                    <button type="button" phx-click="set_view" phx-value-view={view}
+                            class={"btn btn-xs join-item capitalize " <> view_button_class(view, @view)}><%= label %></button>
+                  <% end %>
+                </div>
                 <input type="text" placeholder="Search packs…" value={@filter} phx-keyup="filter_packs"
-                       class="input input-bordered input-xs w-48 ml-auto" />
+                       class="input input-bordered input-xs w-48" />
               </div>
               <div id="assign-waterfall" phx-hook="DragScroll"
                    class="group/pan flex-1 min-h-0 grid content-start gap-x-2 gap-y-0.5 overflow-auto data-[pan=ready]:cursor-grab data-[pan=active]:cursor-grabbing"
@@ -115,6 +49,7 @@
                   <span class="row-start-1 col-start-1 sticky left-0 z-20 bg-base-100 text-[10px] font-medium text-base-content/50 px-1 whitespace-nowrap self-center text-right" data-no-pan>likely path ▸</span>
                   <%= for floor <- 1..floor_count do %>
                     <% hard? = StarlightBot.PackPlans.Resolver.mode_for_floor(@plan_data["mode_schedule"], floor) == "hard" %>
+                    <% path_hard? = path_mode(@plan_data, floor, @view) == "hard" %>
                     <div class="row-start-1 relative flex items-center gap-1 py-1 pr-3 min-w-0" style={"grid-column: #{floor + 1}"}>
                       <%= if hard? and Enum.any?(@plan_data["mode_schedule"], &(&1["from_floor"] == floor)) do %>
                         <span class="tooltip tooltip-bottom shrink-0 text-warning cursor-help" data-tip="Switching to hard mode at this floor">
@@ -127,11 +62,11 @@
                       <% end %>
                       <%= case path[floor] do %>
                         <% {pack, rest} -> %>
-                          <% mode = if(hard?, do: "hard", else: "normal") %>
-                          <% favorite? = StarlightBot.PackPlans.Resolver.favorite?(@plan_data, pack.id, mode) %>
+                          <% mode = path_mode(@plan_data, floor, @view) %>
+                          <% favorite? = StarlightBot.PackPlans.Resolver.favorite?(@plan_data, pack.id, mode, floor) %>
                           <% others = length(rest) %>
                           <button type="button" phx-click="toggle_path_floor" phx-value-floor={floor} data-no-pan
-                               class={"flex-1 min-w-0 flex items-center gap-1 rounded-full border pl-0.5 pr-1 py-0.5 text-[10px] shadow-sm cursor-pointer text-left " <> if(hard?, do: "border-warning bg-warning/15", else: "border-success/60 bg-success/10")}
+                               class={"flex-1 min-w-0 flex items-center gap-1 rounded-full border pl-0.5 pr-1 py-0.5 text-[10px] shadow-sm cursor-pointer text-left " <> if(path_hard?, do: "border-warning bg-warning/15", else: "border-success/60 bg-success/10")}
                                title={"F#{floor}: #{pack.name_en}" <> if(favorite?, do: " (favorite)", else: "") <> if(others > 0, do: ", then #{others} more in Hunt order. Click to list them.", else: ". Click to see next in priority.")}>
                             <img src={pack.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
                             <span class="truncate font-medium flex-1"><%= if favorite?, do: "★ " %><%= pack.name_en %></span>
@@ -141,26 +76,50 @@
                           </button>
                           <%= if @path_floor == floor do %>
                             <% candidates = [pack | rest] %>
-                            <% {favorites, backups} = Enum.split_with(candidates, &StarlightBot.PackPlans.Resolver.favorite?(@plan_data, &1.id, mode)) %>
+                            <% {favorites, backups} = Enum.split_with(candidates, &StarlightBot.PackPlans.Resolver.favorite?(@plan_data, &1.id, mode, floor)) %>
                             <div class="absolute left-0 top-full mt-1 z-30 w-full min-w-56 rounded-lg border border-base-300 bg-base-100 p-1 shadow-xl flex flex-col gap-0.5"
                                  data-no-pan phx-click-away="close_path_floor">
-                              <span class="px-1 text-[9px] uppercase tracking-wide text-warning">★ Favorites (hunted first)</span>
+                              <div class="flex items-center justify-between">
+                                <span class="px-1 text-[9px] uppercase tracking-wide text-warning">★ Favorites (hunted first)</span>
+                                <button type="button" phx-click="path_clear_floor" phx-value-floor={floor}
+                                        class="btn btn-ghost btn-xs h-4 min-h-0 px-1 text-[9px] text-error"
+                                        title={"Remove every hunted pack from F#{floor} in #{mode} mode"}>Clear F<%= floor %></button>
+                              </div>
                               <div id={"path-fav-#{floor}"} phx-hook="SortableList" data-sort-event="path_reorder" data-sort-move-event="path_move"
-                                   data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:fav"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
+                                   data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:#{floor}:fav"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
                                 <%= for {alt, index} <- Enum.with_index(favorites) do %>
-                                  <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} hard?={hard?} favorite?={true} />
+                                  <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} floor={floor} hard?={path_hard?} favorite?={true} />
                                 <% end %>
                                 <span :if={favorites == []} class="px-1.5 text-[10px] italic text-base-content/40">drop here to favorite</span>
                               </div>
                               <span class="px-1 pt-1 text-[9px] uppercase tracking-wide text-base-content/50">Not favorite<%= if favorites != [], do: " (backup)" %></span>
                               <div id={"path-rest-#{floor}"} phx-hook="SortableList" data-sort-event="path_reorder" data-sort-move-event="path_move"
-                                   data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:rest"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
+                                   data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:#{floor}:rest"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
                                 <%= for {alt, index} <- Enum.with_index(backups, length(favorites)) do %>
-                                  <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} hard?={hard?} favorite?={false} />
+                                  <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} floor={floor} hard?={path_hard?} favorite?={false} />
                                 <% end %>
                                 <span :if={backups == []} class="px-1.5 text-[10px] italic text-base-content/40">none</span>
                               </div>
                               <span :if={others == 0} class="px-1 pt-1 text-[10px] italic text-base-content/40">Next in priority: none</span>
+                              <% matches = path_matches(@plan_data, @theme_packs, floor, mode, @path_query) %>
+                              <form phx-submit="path_add" phx-change="path_query" class="relative flex items-center pt-1">
+                                <input type="hidden" name="floor" value={floor} />
+                                <input type="text" name="query" value={@path_query} phx-debounce="100" autocomplete="off" placeholder="Add pack to Hunt…"
+                                       class="input input-bordered input-xs w-full pr-6" />
+                                <button :if={@path_query != ""} type="button" phx-click="path_query_clear"
+                                        class="absolute right-1 top-1/2 mt-0.5 -translate-y-1/2 text-base-content/50 hover:text-base-content text-xs leading-none px-1" title="Clear search">✕</button>
+                              </form>
+                              <div :if={@path_query != ""} class="flex flex-col gap-0.5 max-h-40 overflow-y-auto">
+                                <%= for {option, index} <- Enum.with_index(matches) do %>
+                                  <button type="button" phx-click="path_add" phx-value-floor={floor} phx-value-pack_id={option.id}
+                                          class={"flex items-center gap-1 rounded-full border px-1 py-0.5 text-[10px] text-left cursor-pointer hover:bg-base-200 " <> if(index == 0, do: "border-primary/60 bg-primary/10", else: "border-base-300")}>
+                                    <img src={option.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                                    <span class="truncate flex-1"><%= option.name_en %></span>
+                                    <span :if={index == 0} class="shrink-0 text-[9px] text-base-content/40">↵</span>
+                                  </button>
+                                <% end %>
+                                <span :if={matches == []} class="px-1.5 text-[10px] italic text-base-content/40">no matching pack</span>
+                              </div>
                             </div>
                           <% end %>
                         <% nil -> %>
@@ -226,8 +185,6 @@
                 </div>
                 <%= for row <- rows do %>
                   <% pack = row.pack %>
-                  <% current = StarlightBot.PackPlans.Resolver.priority_for(@plan_data, pack.id, row.mode) %>
-                  <% row_favorite? = current == "hunt" and StarlightBot.PackPlans.Resolver.favorite?(@plan_data, pack.id, row.mode) %>
                   <div class="group col-span-full grid grid-cols-subgrid items-center rounded hover:bg-base-200">
                     <%= if hard_col do %>
                       <div class="self-stretch -my-px bg-warning/10" style={"grid-row: 1; grid-column: #{hard_col + 1} / -1"}></div>
@@ -236,42 +193,35 @@
                       <div class="self-stretch -my-px" style={"grid-row: 1; grid-column: 7 / -1; " <> disabled_stripes_style()}></div>
                     <% end %>
                     <div class="sticky left-0 z-[5] flex gap-1 px-1 bg-base-100 group-hover:bg-base-200 cursor-default" style="grid-row: 1; grid-column: 1" data-no-pan>
-                      <%= for priority <- priorities() do %>
-                        <%= if current == priority do %>
-                          <button phx-click="assign_priority" phx-value-pack_id={pack.id} phx-value-priority="fine" phx-value-mode={row.mode}
-                                  class={"btn btn-xs h-5 min-h-0 px-1.5 text-[10px] " <> priority_button_class(priority)} title={"Remove from #{row.mode} #{priority_label(priority)}"}>
-                            <%= priority_label(priority) %>
-                          </button>
-                        <% else %>
-                          <button phx-click="assign_priority" phx-value-pack_id={pack.id} phx-value-priority={priority} phx-value-mode={row.mode}
-                                  class="btn btn-xs h-5 min-h-0 px-1.5 text-[10px] btn-outline">
-                            <%= priority_label(priority) %>
-                          </button>
-                        <% end %>
-                      <% end %>
-                      <%= if current == "hunt" do %>
-                        <button type="button" phx-click="toggle_favorite" phx-value-pack_id={pack.id} phx-value-mode={row.mode}
-                                class={"btn btn-ghost btn-xs h-5 min-h-0 px-1 text-xs " <> if(row_favorite?, do: "text-warning", else: "text-base-content/40")}
-                                title={if row_favorite?, do: "Favorite. Click to make it a normal Hunt pack.", else: "Mark as favorite: while any favorite is in play, only favorites are hunted, refreshed for and searched for"}>
-                          <%= if row_favorite?, do: "★", else: "☆" %>
+                      <%= for {status, label, active_class, title} <- [{"favorite", "★", "btn-warning", "favorite"}, {"hunt", "hunt", "btn-success", "hunt"}, {"banned", "banned", "btn-error", "banned"}] do %>
+                        <% all? = row_status?(@plan_data, pack.id, row.mode, row.floors, status) %>
+                        <button type="button" phx-click="set_row_status" phx-value-pack_id={pack.id} phx-value-mode={row.mode} phx-value-floors={Enum.join(row.floors, ",")} phx-value-status={status}
+                                class={"btn btn-xs h-5 min-h-0 px-1.5 text-[10px] " <> if(all?, do: active_class, else: "btn-outline")}
+                                title={if all?, do: "Clear #{title} on every #{row.mode} floor", else: "Make every #{row.mode} floor #{title}"}>
+                          <%= label %>
                         </button>
                       <% end %>
                     </div>
-                    <div id={"bar-#{row.mode}-#{pack.id}"} phx-hook="PriorityRightClick" data-pack-id={pack.id} data-priority="banned" data-mode={row.mode}
-                         class={"grid grid-cols-subgrid min-w-0 rounded border bg-base-200 overflow-hidden " <> if(row_favorite?, do: "border-warning ring-1 ring-warning/60", else: "border-base-300")}
+                    <div id={"bar-#{row.mode}-#{pack.id}"} phx-hook="PriorityRightClick" data-pack-id={pack.id} data-mode={row.mode}
+                         class="grid grid-cols-subgrid min-w-0 rounded border border-base-300 bg-base-200 overflow-hidden"
                          style={"grid-row: 1; " <> span_style(row, floor_count, overflow?)}
-                         title={"#{pack.name_en} (#{row.mode} floors #{Enum.join(row.floors, ",")}). Click: toggle Hunt. Right click: toggle Banned."}>
-                      <%= for col <- highlight_columns(@plan_data, row, floor_count, overflow?) do %>
-                        <div class={"-mx-1 " <> priority_fill_class(current)} style={"grid-row: 1; grid-column: #{col}"}></div>
-                      <% end %>
+                         title={"#{pack.name_en} (#{row.mode} floors #{Enum.join(row.floors, ",")}). Click a floor: toggle Hunt there. Star a hunted floor to favorite it. Right click a floor: toggle Banned there."}>
                       <div class="relative pointer-events-none flex items-center gap-1.5 px-1 min-w-0" style="grid-row: 1; grid-column: 1 / -1">
                         <img src={pack.image_path} class="w-5 h-5 rounded-sm object-cover shrink-0" draggable="false" />
-                        <span class={"text-xs flex-1 truncate " <> if(row_favorite?, do: "font-semibold", else: "")}><%= pack.name_en %><%= if row_favorite? do %> <span class="text-warning">★</span><% end %></span>
+                        <span class="text-xs flex-1 truncate"><%= pack.name_en %></span>
                       </div>
-                      <%= for {col, _floors, _label} <- span_cells(row, floor_count, overflow?) do %>
-                        <div phx-click="toggle_priority" phx-value-pack_id={pack.id} phx-value-priority="hunt" phx-value-mode={row.mode}
-                             class="relative z-[1] -mx-1 cursor-pointer hover:bg-base-content/10"
-                             style={"grid-row: 1; grid-column: #{col}"}></div>
+                      <%= for {col, cell_floors, label} <- span_cells(row, floor_count, overflow?) do %>
+                        <% status = cell_status(@plan_data, row, cell_floors) %>
+                        <div phx-click="toggle_cell" phx-value-action="hunt" phx-value-pack_id={pack.id} phx-value-mode={row.mode} phx-value-floors={Enum.join(cell_floors, ",")}
+                             data-floors={Enum.join(cell_floors, ",")} title={"#{label}: click toggles Hunt, right click toggles Banned"}
+                             class={"relative z-[1] -mx-1 flex items-center justify-end cursor-pointer hover:bg-base-content/10 " <> cell_fill_class(status)}
+                             style={"grid-row: 1; grid-column: #{col}"}>
+                          <button :if={status in ~w(hunt favorite)} type="button" phx-click="toggle_cell" phx-value-action="favorite" phx-value-pack_id={pack.id} phx-value-mode={row.mode} phx-value-floors={Enum.join(cell_floors, ",")}
+                                  class={"px-1 text-xs leading-none cursor-pointer " <> if(status == "favorite", do: "text-warning", else: "text-base-content/50 hover:text-warning")}
+                                  title={if status == "favorite", do: "#{label}: favorite. Click to make it a normal Hunt pack.", else: "#{label}: mark as favorite. While any favorite is in play on a floor, only favorites are hunted, refreshed for and searched for."}>
+                            <%= if status == "favorite", do: "★", else: "☆" %>
+                          </button>
+                        </div>
                       <% end %>
                     </div>
                   </div>
@@ -297,18 +247,20 @@
         <h3 class="font-bold text-base">How theme pack plans work</h3>
         <div class="overflow-y-auto flex flex-col gap-3 pr-1">
           <section>
-            <h4 class="font-semibold">Priorities</h4>
-            <p><span class="font-medium">Hunt</span>: picked immediately if shown, highest in the list first (drag to reorder). If none are shown and refreshes remain, the bot keeps refreshing to find one.</p>
+            <h4 class="font-semibold">Statuses</h4>
+            <p>Every pack has a status on each floor it can appear on, and it can differ from floor to floor.</p>
+            <p><span class="font-medium">Hunt</span>: picked immediately if shown, highest in that floor's list first. If none are shown and refreshes remain, the bot keeps refreshing to find one.</p>
+            <p><span class="font-medium">Favorite</span>: a Hunt pack with a star. While any favorite is in play on a floor, only favorites are hunted, refreshed for and searched for. The other Hunt packs become a backup once refreshes and search run out.</p>
             <p><span class="font-medium">Banned</span>: never picked voluntarily. Only taken if nothing else is shown and no refreshes are left.</p>
-            <p>Anything not in either list is Fine: acceptable filler, picked when nothing better is shown.</p>
+            <p>Anything else is none: acceptable filler, picked when nothing better is shown.</p>
           </section>
           <section>
-            <h4 class="font-semibold">Favorites</h4>
-            <p>Star a Hunt pack to make it a favorite. While any favorite is in play, only favorites are hunted, refreshed for and searched for. The other Hunt packs become a backup once refreshes and search run out.</p>
+            <h4 class="font-semibold">Editing</h4>
+            <p>In the chart, left click a floor of a pack to toggle Hunt. Click the star on a hunted floor to make it a favorite, or click a favorite floor to clear it. Right click a floor to toggle Banned. To reorder what is hunted on a floor, open the likely path dropdown for that floor and drag.</p>
           </section>
           <section>
             <h4 class="font-semibold">Normal and hard</h4>
-            <p>Each priority has a separate list for normal and hard floors. Use "go hard" on a floor header to switch to hard from that floor on. Hard columns are tinted.</p>
+            <p>Statuses are kept separately for normal and hard. Use "go hard" on a floor header to switch to hard from that floor on. Hard columns are tinted.</p>
           </section>
           <section>
             <h4 class="font-semibold">Search</h4>

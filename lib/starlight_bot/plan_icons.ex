@@ -30,10 +30,16 @@ defmodule StarlightBot.PlanIcons do
   end
 
   defp hunted_ids(%{"packs" => packs} = data) when is_map(packs) do
-    hunted = for {id, modes} <- packs, is_map(modes), Enum.any?(modes, &match?({_mode, %{"priority" => "hunt"}}, &1)), do: id
-    order = List.wrap(get_in(data, ["hunt_order", "normal"])) ++ List.wrap(get_in(data, ["hunt_order", "hard"]))
-    Enum.filter(Enum.uniq(order), &(&1 in hunted)) ++ Enum.sort(hunted -- order)
+    hunted = for {id, modes} <- packs, is_map(modes), Enum.any?(modes, fn {_mode, floors} -> is_map(floors) and Enum.any?(floors, fn {_floor, status} -> status in ~w(hunt favorite) end) end), do: id
+    Enum.filter(Enum.uniq(ordered_ids(data)), &(&1 in hunted)) ++ Enum.sort(hunted -- ordered_ids(data))
   end
 
   defp hunted_ids(_data), do: []
+
+  defp ordered_ids(data) do
+    for mode <- ~w(normal hard),
+        {_floor, ids} <- Enum.sort_by(Map.get(data["order"] || %{}, mode, %{}), fn {floor, _ids} -> String.to_integer(floor) end),
+        id <- List.wrap(ids),
+        do: id
+  end
 end

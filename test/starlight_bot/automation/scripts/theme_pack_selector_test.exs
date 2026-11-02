@@ -22,8 +22,8 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
     test "filters by resolved priority at the given floor", %{packs: packs} do
       plan = %{
         "packs" => %{
-          "thm_hunt" => %{"hard" => %{"priority" => "hunt"}},
-          "thm_banned" => %{"hard" => %{"priority" => "banned"}}
+          "thm_hunt" => %{"hard" => %{"1" => "hunt"}},
+          "thm_banned" => %{"hard" => %{"1" => "banned"}}
         }
       }
 
@@ -41,7 +41,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
 
     test "respects per-floor scoping" do
       packs = [pack("thm_scoped", [1, 2, 3], [1, 2, 3])]
-      plan = %{"packs" => %{"thm_scoped" => %{"normal" => %{"priority" => "hunt", "floors" => [2, 3]}}}}
+      plan = %{"packs" => %{"thm_scoped" => %{"normal" => %{"2" => "hunt", "3" => "hunt"}}}}
 
       assert ThemePackSelector.packs_with_priority(plan, packs, "normal", 1, "hunt") == []
       assert ThemePackSelector.packs_with_priority(plan, packs, "normal", 2, "hunt") |> Enum.map(& &1.id) == ["thm_scoped"]
@@ -108,9 +108,10 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
       plan = %{
         "search_floors" => [2],
         "packs" => %{
-          "thm_a" => %{"normal" => %{"priority" => "hunt"}},
-          "thm_b" => %{"normal" => %{"priority" => "hunt"}}
-        }
+          "thm_a" => %{"normal" => %{"2" => "hunt"}},
+          "thm_b" => %{"normal" => %{"2" => "hunt"}}
+        },
+        "order" => %{"normal" => %{"2" => ["thm_a", "thm_b"]}}
       }
 
       %{packs: packs, plan: plan}
@@ -127,14 +128,15 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
 
     test "nil on F11+ even when listed as a search floor", %{packs: packs, plan: plan} do
       packs = Enum.map(packs, &%{&1 | hard_floors: Jason.encode!([11])})
-      plan = %{plan | "search_floors" => [11], "packs" => %{"thm_a" => %{"hard" => %{"priority" => "hunt"}}}}
+      plan = %{plan | "search_floors" => [11], "packs" => %{"thm_a" => %{"hard" => %{"11" => "hunt"}}}}
       assert ThemePackSelector.search_target(plan, packs, "hard", 11, [], fn _ -> true end) == nil
     end
 
     test "follows hunt order and prefers favorites", %{packs: packs, plan: plan} do
-      assert %{id: "thm_b"} = ThemePackSelector.search_target(Map.put(plan, "hunt_order", %{"normal" => ["thm_b", "thm_a"]}), packs, "normal", 2, [], fn _ -> true end)
+      reordered = Map.put(plan, "order", %{"normal" => %{"2" => ["thm_b", "thm_a"]}})
+      assert %{id: "thm_b"} = ThemePackSelector.search_target(reordered, packs, "normal", 2, [], fn _ -> true end)
 
-      favorite_a = plan |> put_in(["packs", "thm_a", "normal", "favorite"], true) |> Map.put("hunt_order", %{"normal" => ["thm_b", "thm_a"]})
+      favorite_a = put_in(reordered, ["packs", "thm_a", "normal", "2"], "favorite")
       assert %{id: "thm_a"} = ThemePackSelector.search_target(favorite_a, packs, "normal", 2, [], fn _ -> true end)
       assert ThemePackSelector.search_target(favorite_a, packs, "normal", 2, ["thm_a"], fn _ -> true end) == nil
     end
@@ -154,10 +156,10 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
     test "hunt packs win in hunt order" do
       plan = %{
         "packs" => %{
-          "thm_favorite" => %{"hard" => %{"priority" => "hunt", "favorite" => true}},
-          "thm_hunt" => %{"hard" => %{"priority" => "hunt"}}
+          "thm_favorite" => %{"hard" => %{"1" => "hunt"}},
+          "thm_hunt" => %{"hard" => %{"1" => "hunt"}}
         },
-        "hunt_order" => %{"hard" => ["thm_favorite", "thm_hunt"]}
+        "order" => %{"hard" => %{"1" => ["thm_favorite", "thm_hunt"]}}
       }
 
       pack_a = pack("thm_hunt", [1], [1])
@@ -167,7 +169,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
 
       assert ThemePackSelector.pick_winner(matched_pairs, matched_hooks, plan, "hard", 1) == {:ok, pack_b, {2, 2, 10, 10}}
 
-      reordered = put_in(plan, ["hunt_order", "hard"], ["thm_hunt", "thm_favorite"])
+      reordered = put_in(plan, ["order", "hard", "1"], ["thm_hunt", "thm_favorite"])
       assert ThemePackSelector.pick_winner(matched_pairs, matched_hooks, reordered, "hard", 1) == {:ok, pack_a, {1, 1, 10, 10}}
     end
 
@@ -175,7 +177,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
       plan = %{
         "mode_schedule" => [%{"from_floor" => 1, "mode" => "hard"}],
         "extreme" => true,
-        "packs" => %{"thm_hunt" => %{"hard" => %{"priority" => "hunt"}}, "thm_116" => %{"hard" => %{"priority" => "banned"}}}
+        "packs" => %{"thm_hunt" => %{"hard" => %{"1" => "hunt"}}, "thm_116" => %{"hard" => %{"1" => "banned"}}}
       }
 
       pack_hunt = pack("thm_hunt", [1], [1])
@@ -190,7 +192,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
     end
 
     test "falls back through the tiers when a higher one has no match" do
-      plan = %{"packs" => %{"thm_hunt" => %{"hard" => %{"priority" => "hunt"}}}}
+      plan = %{"packs" => %{"thm_hunt" => %{"hard" => %{"1" => "hunt"}}}}
       pack_fine = pack("thm_fine", [1], [1])
       pack_hunt = pack("thm_hunt", [1], [1])
 

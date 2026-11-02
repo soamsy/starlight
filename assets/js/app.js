@@ -561,29 +561,6 @@ const ScrollToBottom = {
   }
 }
 
-const PriorityClipboard = {
-  mounted() {
-    this.handleEvent("copy_priority_json", ({ text }) => {
-      navigator.clipboard.writeText(text).catch(err => {
-        this.pushEvent("paste_priority_failed", { message: `Couldn't copy to clipboard: ${err.message || err}` })
-      })
-    })
-
-    this.el.addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-paste-priority]")
-      if (!btn) return
-      const priority = btn.dataset.pastePriority
-      const mode = btn.dataset.pasteMode
-
-      navigator.clipboard.readText()
-        .then(text => this.pushEvent("paste_priority", { priority, mode, text }))
-        .catch(err => {
-          this.pushEvent("paste_priority_failed", { message: `Couldn't read clipboard: ${err.message || err}` })
-        })
-    })
-  }
-}
-
 const PlanClipboard = {
   mounted() {
     this.last = undefined
@@ -1350,8 +1327,10 @@ const PriorityRightClick = {
   mounted() {
     this.el.addEventListener("contextmenu", (e) => {
       e.preventDefault()
-      const { packId, priority, mode } = this.el.dataset
-      this.pushEvent("toggle_priority", { pack_id: packId, priority, mode })
+      const cell = e.target.closest("[data-floors]")
+      if (!cell) return
+      const { packId, mode } = this.el.dataset
+      this.pushEvent("toggle_cell", { pack_id: packId, mode, floors: cell.dataset.floors, action: "banned" })
     })
   }
 }
@@ -1416,7 +1395,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PriorityClipboard, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
+  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
 })
 
 liveSocket.connect()

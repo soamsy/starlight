@@ -22,11 +22,11 @@ defmodule StarlightBot.PlanIconsTest do
 
   test "pack icons are hunted packs, hunt order first" do
     images = Map.new(~w(p1 p2 p3 p4 p5), &{&1, "/#{&1}.webp"})
-    hunt = %{"normal" => %{"priority" => "hunt"}}
+    hunt = %{"normal" => %{"1" => "hunt"}}
 
     data = %{
-      "packs" => %{"p1" => hunt, "p2" => hunt, "p3" => %{"normal" => %{"priority" => "banned"}}, "p4" => hunt, "p5" => hunt},
-      "hunt_order" => %{"normal" => ["p4", "p3", "p2"]}
+      "packs" => %{"p1" => hunt, "p2" => hunt, "p3" => %{"normal" => %{"1" => "banned"}}, "p4" => hunt, "p5" => hunt},
+      "order" => %{"normal" => %{"1" => ["p4", "p3", "p2"]}}
     }
 
     assert PlanIcons.icons(:pack_plans, data, images) == ["/p4.webp", "/p2.webp", "/p1.webp"]

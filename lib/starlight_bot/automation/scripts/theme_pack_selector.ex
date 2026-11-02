@@ -265,8 +265,8 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     {favorites, others} =
       plan_data
       |> packs_with_priority(theme_packs, mode, floor, "hunt")
-      |> Resolver.sort_hunt(plan_data, mode)
-      |> Enum.split_with(&Resolver.favorite?(plan_data, &1.id, mode))
+      |> Resolver.sort_hunt(plan_data, mode, floor)
+      |> Enum.split_with(&Resolver.favorite?(plan_data, &1.id, mode, floor))
 
     {hunt, backup} = if favorites == [], do: {others, []}, else: {favorites, others}
     hunt = if hunt == [], do: packs_with_priority(plan_data, theme_packs, mode, floor, "fine"), else: hunt
@@ -388,8 +388,8 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
   def search_target(plan_data, theme_packs, mode, floor, visited_ids, search_hook_ready?) do
     if Resolver.searchable_floor?(floor) and floor in Map.get(plan_data, "search_floors", []) do
-      hunt = plan_data |> packs_with_priority(theme_packs, mode, floor, "hunt") |> Resolver.sort_hunt(plan_data, mode)
-      favorites = Enum.filter(hunt, &Resolver.favorite?(plan_data, &1.id, mode))
+      hunt = plan_data |> packs_with_priority(theme_packs, mode, floor, "hunt") |> Resolver.sort_hunt(plan_data, mode, floor)
+      favorites = Enum.filter(hunt, &Resolver.favorite?(plan_data, &1.id, mode, floor))
       candidates = if favorites == [], do: hunt, else: favorites
 
       Enum.find(candidates, &(&1.id not in visited_ids and search_hook_ready?.(&1)))
@@ -696,7 +696,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
         if Resolver.extreme_override?(plan_data, pack.id, mode), do: "override", else: Resolver.priority_at(plan_data, pack, mode, floor)
       end)
 
-    rank = Resolver.hunt_rank(plan_data, mode)
+    rank = Resolver.hunt_rank(plan_data, mode, floor)
 
     winner =
       cond do
