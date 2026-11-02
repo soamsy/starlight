@@ -1,7 +1,7 @@
 defmodule StarlightBot.Automation.RunMemory do
   alias StarlightBot.Ctx
   alias StarlightBot.PackPlans.Resolver
-  alias StarlightBot.{BattlePlans, Plans, Teams}
+  alias StarlightBot.{BattlePlans, GiftPlans, Plans, Teams}
 
   @extreme_retry_floors 11..15
   @extreme_max_retries 2
@@ -189,7 +189,7 @@ defmodule StarlightBot.Automation.RunMemory do
     with %{id: team_id} <- team(ctx),
          %{gift_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
          %{data: data} when is_map(data) <- Plans.get(:gift_plans, id) do
-      data
+      GiftPlans.for_run(data, run_kind(team(ctx)))
     else
       _ -> nil
     end
@@ -272,6 +272,8 @@ defmodule StarlightBot.Automation.RunMemory do
   def full_hard?(team), do: team |> pack_plan_data() |> Resolver.full_hard?()
 
   def extreme?(team), do: team |> pack_plan_data() |> Resolver.extreme?()
+
+  def run_kind(team), do: team |> pack_plan_data() |> Resolver.run_kind()
 
   defp pack_plan_data(%{id: team_id} = team) do
     with %{pack_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),

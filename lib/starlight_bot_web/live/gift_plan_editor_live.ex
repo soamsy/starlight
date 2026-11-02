@@ -717,6 +717,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("ms_set_applies", %{"applies" => applies}, socket) when applies in ~w(always all_normal becomes_hard all_hard extreme) do
+    {:noreply, update_milestone(socket, socket.assigns.selected_milestone_id, &Map.put(&1, "applies", applies))}
+  end
+
+  @impl true
   def handle_event("ms_add_goal", _params, socket) do
     {:noreply, update_plan(socket, &GiftPlans.add_goal(&1, socket.assigns.selected_milestone_id))}
   end
@@ -909,6 +914,36 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp goal_colors(<<letter, _::binary>>), do: Enum.at(@goal_colors, rem(letter - ?A, length(@goal_colors)))
 
   def goal_color(goal), do: elem(goal_colors(goal), 0)
+
+  def applies_label("always"), do: "Every run"
+  def applies_label("all_normal"), do: "Normal F1-F5"
+  def applies_label("becomes_hard"), do: "Hard starts F2-F5"
+  def applies_label("all_hard"), do: "Hard from F1"
+  def applies_label("extreme"), do: "Extreme"
+
+  def applies_hint("always"), do: "Always considered; must be reached in every run"
+  def applies_hint("all_normal"), do: "Only considered when F1-F5 are all normal"
+  def applies_hint("becomes_hard"), do: "Only considered when the hard switch happens somewhere in F2-F5"
+  def applies_hint("all_hard"), do: "Only considered when F1 starts hard (extreme runs included)"
+  def applies_hint("extreme"), do: "Only considered when F1 starts hard and extreme mode is on, so F6+ floors are played"
+
+  def applies_row_color("all_normal"), do: "bg-sky-500/15"
+  def applies_row_color("becomes_hard"), do: "bg-amber-500/15"
+  def applies_row_color("all_hard"), do: "bg-orange-500/15"
+  def applies_row_color("extreme"), do: "bg-fuchsia-500/15"
+  def applies_row_color(_applies), do: ""
+
+  def applies_group_color("all_normal"), do: "border-sky-500/50 bg-sky-500/10 p-1"
+  def applies_group_color("becomes_hard"), do: "border-amber-500/50 bg-amber-500/10 p-1"
+  def applies_group_color("all_hard"), do: "border-orange-500/50 bg-orange-500/10 p-1"
+  def applies_group_color("extreme"), do: "border-fuchsia-500/50 bg-fuchsia-500/10 p-1"
+  def applies_group_color(_applies), do: "border-base-300 bg-base-200/60 p-1"
+
+  def applies_badge_color("all_normal"), do: "bg-sky-600 border-sky-700 text-white"
+  def applies_badge_color("becomes_hard"), do: "bg-amber-600 border-amber-700 text-white"
+  def applies_badge_color("all_hard"), do: "bg-orange-600 border-orange-700 text-white"
+  def applies_badge_color("extreme"), do: "bg-fuchsia-600 border-fuchsia-700 text-white"
+  def applies_badge_color(_applies), do: "bg-base-200 border-base-300"
 
   def goal_select_color("optional"), do: ""
   def goal_select_color(goal), do: elem(goal_colors(goal), 1)

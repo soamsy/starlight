@@ -260,7 +260,7 @@ defmodule StarlightBot.GiftPlans do
   end
 
   defp normalize_milestone(milestone) do
-    %{"id" => milestone["id"], "name" => milestone["name"], "goals" => milestone["goals"] || [], "entries" => milestone["entries"] || [], "refresh" => milestone["refresh"] || [],
+    %{"id" => milestone["id"], "name" => milestone["name"], "applies" => milestone["applies"] || "always", "goals" => milestone["goals"] || [], "entries" => milestone["entries"] || [], "refresh" => milestone["refresh"] || [],
       "refresh_floors" => milestone["refresh_floors"] || [], "refresh_scheduled" => milestone["refresh_scheduled"] == true}
   end
 
@@ -268,7 +268,27 @@ defmodule StarlightBot.GiftPlans do
     prefix <> "_" <> Base.encode32(:crypto.strong_rand_bytes(4), case: :lower, padding: false)
   end
 
-  def new_milestone(name), do: %{"id" => new_id("ms"), "name" => name, "goals" => [], "entries" => [], "refresh" => []}
+  def new_milestone(name), do: %{"id" => new_id("ms"), "name" => name, "applies" => "always", "goals" => [], "entries" => [], "refresh" => []}
+
+  @milestone_applies ~w(always all_normal becomes_hard all_hard extreme)
+
+  def milestone_applies_options, do: @milestone_applies
+
+  def milestone_applies?(milestone, run_kind) do
+    case Map.get(milestone, "applies", "always") do
+      "all_normal" -> run_kind == "all_normal"
+      "becomes_hard" -> run_kind == "becomes_hard"
+      "all_hard" -> run_kind in ["all_hard", "extreme"]
+      "extreme" -> run_kind == "extreme"
+      _ -> true
+    end
+  end
+
+  def for_run(%{"milestones" => milestones} = data, run_kind) when is_list(milestones) do
+    %{data | "milestones" => Enum.filter(milestones, &milestone_applies?(&1, run_kind))}
+  end
+
+  def for_run(data, _run_kind), do: data
 
   def find_milestone(data, id), do: Enum.find(data["milestones"] || [], &(&1["id"] == id))
 

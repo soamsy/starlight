@@ -61,7 +61,7 @@
                     <div :for={{m, number} <- Enum.with_index(@plan_data["milestones"], 1)}
                          phx-click="select_milestone" phx-value-id={m["id"]}
                          class={"flex items-center gap-1 rounded px-2 py-1 cursor-pointer text-xs " <>
-                           if(m["id"] == @selected_milestone_id and @active_tab == :shop, do: "bg-primary/10 border-l-2 border-primary", else: "hover:bg-base-200")}>
+                           applies_row_color(m["applies"]) <> " " <> if(m["id"] == @selected_milestone_id and @active_tab == :shop, do: "border-l-2 border-primary ring-1 ring-primary/40", else: "hover:bg-base-200")}>
                       <span class="text-[10px] text-base-content/40 w-4 text-right shrink-0"><%= number %></span>
                       <%= if m["id"] == @editing_milestone_id do %>
                         <input id={"milestone-name-input-#{m["id"]}"} type="text" value={m["name"]} phx-hook="FocusSelect"
@@ -342,7 +342,17 @@
                   <% else %>
                   <%= if milestone do %>
                     <div class="flex items-start gap-2">
-                      <div class="flex items-stretch gap-2 flex-wrap flex-1 min-w-0">
+                      <div class={"flex items-stretch gap-2 flex-wrap flex-1 min-w-0 rounded-xl border " <> applies_group_color(milestone["applies"])}>
+                        <div class="dropdown">
+                          <div tabindex="0" role="button" title={applies_hint(milestone["applies"] || "always")}
+                               class={"h-full rounded-lg border px-2 py-1 flex items-center text-[11px] font-semibold cursor-pointer " <> applies_badge_color(milestone["applies"])}>
+                            <%= if milestone["applies"] not in [nil, "always"], do: "When: " %><%= applies_label(milestone["applies"] || "always") %><%= if milestone["applies"] not in [nil, "always"], do: " do →" %>
+                          </div>
+                          <div tabindex="0" class="dropdown-content z-30 mt-1 w-40 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+                            <button :for={option <- GiftPlans.milestone_applies_options()} type="button" phx-click="ms_set_applies" phx-value-applies={option} title={applies_hint(option)}
+                                    class="btn btn-ghost btn-xs w-full justify-start"><%= applies_label(option) %></button>
+                          </div>
+                        </div>
                         <div class={"rounded-lg border px-2 py-1 flex flex-col justify-center " <> goal_color("required")}>
                           <span class="text-[11px] font-semibold">Required</span>
                           <span class="text-[10px] text-base-content/50">all of <%= goal_member_count(milestone, "required") %></span>

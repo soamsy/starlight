@@ -513,9 +513,10 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   end
 
   defp milestone_statuses(run_memory, gifts_by_name) do
-    with %{id: team_id} <- Map.get(run_memory, :team),
+    with %{id: team_id} = team <- Map.get(run_memory, :team),
          %{gift_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
-         %{data: %{"milestones" => milestones} = data} <- Plans.get(:gift_plans, id) do
+         %{data: %{"milestones" => _} = raw} <- Plans.get(:gift_plans, id),
+         %{"milestones" => milestones} = data <- GiftPlans.for_run(raw, RunMemory.run_kind(team)) do
       env = %{
         plan: data,
         floor: current_floor(run_memory),

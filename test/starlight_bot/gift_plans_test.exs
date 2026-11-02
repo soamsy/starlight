@@ -598,4 +598,26 @@ defmodule StarlightBot.GiftPlansTest do
       assert dropped == 1
     end
   end
+
+  describe "milestone applies" do
+    defp plan_with(applies) do
+      milestones = for {kind, id} <- Enum.with_index(applies), do: %{GiftPlans.new_milestone("M#{id}") | "id" => "ms_#{id}", "applies" => kind}
+      %{"milestones" => milestones}
+    end
+
+    test "filters milestones by run kind" do
+      plan = plan_with(["always", "all_normal", "becomes_hard", "all_hard", "extreme"])
+      names = fn kind -> plan |> GiftPlans.for_run(kind) |> Map.fetch!("milestones") |> Enum.map(& &1["applies"]) end
+
+      assert names.("all_normal") == ["always", "all_normal"]
+      assert names.("becomes_hard") == ["always", "becomes_hard"]
+      assert names.("all_hard") == ["always", "all_hard"]
+      assert names.("extreme") == ["always", "all_hard", "extreme"]
+    end
+
+    test "milestones without the key apply always" do
+      plan = %{"milestones" => [%{"id" => "ms_a"}]}
+      assert GiftPlans.for_run(plan, "extreme") == plan
+    end
+  end
 end

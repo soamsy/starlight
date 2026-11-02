@@ -206,4 +206,16 @@ defmodule StarlightBot.PackPlans.ResolverTest do
       assert Resolver.choose([banned], all_packs, plan, "hard", 1, 0) == {:forced_pick, "thm_banned"}
     end
   end
+
+  describe "run_kind/1" do
+    test "classifies the mode schedule" do
+      hard_from = fn floor -> %{"mode_schedule" => [%{"from_floor" => floor, "mode" => "hard"}]} end
+
+      assert Resolver.run_kind(%{"mode_schedule" => []}) == "all_normal"
+      assert Resolver.run_kind(hard_from.(3)) == "becomes_hard"
+      assert Resolver.run_kind(hard_from.(1)) == "all_hard"
+      assert Resolver.run_kind(Map.put(hard_from.(1), "extreme", true)) == "extreme"
+      assert Resolver.run_kind(Map.put(hard_from.(3), "extreme", true)) == "becomes_hard"
+    end
+  end
 end
