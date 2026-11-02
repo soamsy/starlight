@@ -1070,6 +1070,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def uptie_view_icon("uptie2"), do: "+"
   def uptie_view_icon("uptie3"), do: "++"
 
+  def uptie_level_available?(gift, 1), do: String.trim(gift.uptie2 || "") != ""
+  def uptie_level_available?(gift, 2), do: String.trim(gift.uptie3 || "") != ""
+
   def uptie_view_available?(gift, "base", gifts_by_id), do: not is_nil(clean_gift_text(gift.description, gifts_by_id))
   def uptie_view_available?(gift, "uptie2", gifts_by_id), do: not is_nil(clean_gift_text(gift.uptie2, gifts_by_id))
   def uptie_view_available?(gift, "uptie3", gifts_by_id), do: not is_nil(clean_gift_text(gift.uptie3, gifts_by_id))
@@ -1669,7 +1672,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
             <% current = @segment["uptie"] || 0 %>
             <button :for={{level, icon} <- Enum.zip(1..GiftPlans.max_uptie(), ~w(+ ++))} type="button" phx-click="ms_set_uptie"
                     phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-level={if current == level, do: 0, else: level}
-                    disabled={not @keep?} title={uptie_title(@gift, level)}
+                    disabled={not @keep? or not uptie_level_available?(@gift, level)} title={uptie_title(@gift, level)}
                     class={"btn btn-xs join-item " <> if(@keep? and level <= current, do: "btn-secondary", else: "btn-outline")}>
               <%= icon %>
             </button>
