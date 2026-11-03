@@ -56,6 +56,10 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   def play_focused_turn(_last_frame, ctx), do: start_turn("focused", ctx)
 
   def preview_target(enemy_pick, ctx) do
+    with_preview_memory(ctx, &do_preview_target(enemy_pick, &1))
+  end
+
+  defp do_preview_target(enemy_pick, ctx) do
     Process.sleep(@preview_alt_tab_ms)
 
     with {:ok, _frame, tray} <- scan(ctx),
@@ -67,7 +71,21 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  def preview_target_everyone(ctx) do
+  def preview_target_everyone(ctx), do: with_preview_memory(ctx, &do_preview_target_everyone/1)
+
+  defp with_preview_memory(%Ctx{run_memory: nil} = ctx, fun) do
+    {:ok, memory} = RunMemory.start_link()
+
+    try do
+      fun.(%{ctx | run_memory: memory})
+    after
+      Agent.stop(memory)
+    end
+  end
+
+  defp with_preview_memory(ctx, fun), do: fun.(ctx)
+
+  defp do_preview_target_everyone(ctx) do
     Process.sleep(@preview_alt_tab_ms)
 
     with {:ok, _frame, %SkillTray{sinner_of_slot: [_ | _] = sinner_of_slot} = tray} <- scan(ctx) do
@@ -76,7 +94,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
         |> Enum.with_index()
         |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
         |> Enum.sort()
-        |> Enum.map(fn {sinner, columns} -> target_randomly(tray, sinner, columns, ctx) end)
+        |> Enum.with_index(1)
+        |> Enum.map(fn {{sinner, columns}, enemy_n} -> target_in_order(tray, sinner, columns, enemy_n, ctx) end)
 
       {outcome, _attempts} = List.last(results)
       {:ok, {outcome, Enum.flat_map(results, &elem(&1, 1))}}
@@ -85,15 +104,14 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp target_randomly(tray, sinner, columns, ctx) do
+  defp target_in_order(tray, sinner, columns, enemy_n, ctx) do
     column = Enum.random(columns)
     row = Enum.random([:top, :bottom])
-    percent = Enum.random(0..100)
 
     case skill_point(tray, column, row, ctx) do
       {:ok, grab} ->
-        Ctx.log(ctx, :info, "playbook: sinner #{sinner + 1}: slot #{column + 1} (#{row} skill) to the enemy at #{percent}%")
-        {outcome, attempts} = drag_to_enemy(grab, %{"pick" => "percent", "n" => percent}, ctx)
+        Ctx.log(ctx, :info, "playbook: sinner #{sinner + 1}: slot #{column + 1} (#{row} skill) to enemy #{enemy_n} from the left")
+        {outcome, attempts} = drag_to_enemy(grab, %{"pick" => "first", "n" => enemy_n}, ctx)
         Ctx.log(ctx, :info, "playbook: sinner #{sinner + 1}: #{inspect(outcome)}")
         {outcome, attempts}
 
@@ -599,12 +617,14 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     Process.sleep(@skill_hover_ms)
     Mouse.mouse_down()
 
-    settle = if RunMemory.get(ctx, :target_panned?, false), do: [], else: [DSL.sleep(@target_pan_settle_ms)]
-    RunMemory.put(ctx, :target_panned?, true)
+    pan = if RunMemory.get(ctx, :target_panned?, false), do: [], else: [DSL.move_to(:battle_drag_checkpoint), DSL.sleep(@target_pan_settle_ms)]
 
     try do
-      case Runner.run_steps([DSL.move_to(:battle_drag_checkpoint) | settle], ctx) do
-        {:ok, _} -> aim(enemy, 1, nil, [], ctx)
+      case if(pan == [], do: {:ok, nil}, else: Runner.run_steps(pan, ctx)) do
+        {:ok, _} ->
+          RunMemory.put(ctx, :target_panned?, true)
+          aim(enemy, 1, nil, [], ctx)
+
         {:error, reason} -> {{:error, reason}, []}
       end
     after

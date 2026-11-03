@@ -51,4 +51,34 @@ defmodule StarlightBot.Vision.EnemyTargetsTest do
 
     assert [%EnemyTargets{point: {890, 550}}, %EnemyTargets{point: {1290, 450}}] = EnemyTargets.from_icons(whites, staggered ++ red)
   end
+
+  test "a brown icon close to a red is targetable without a white icon" do
+    red = {850, 400, 100, 200}
+
+    assert [%EnemyTargets{icon: {900, 420}, point: {890, 550}}] =
+             EnemyTargets.from_icons([], [], [{880, 400, 40, 40}], [red])
+  end
+
+  test "a brown icon far from any red is ignored, and one matching a white icon is not doubled" do
+    red = {850, 400, 100, 200}
+
+    assert [] = EnemyTargets.from_icons([], [], [{880, 100, 40, 40}], [red])
+
+    assert [_] =
+             EnemyTargets.from_icons([{880, 280, 40, 40}], [red], [{885, 285, 40, 40}], [red])
+  end
+
+  test "red centers must sit 2h to 7h below the white center and within 2.5h across" do
+    white = [{1190, 490, 20, 20}]
+    at = fn cx, cy -> [{cx - 10, cy - 10, 20, 20}] end
+
+    assert [_] = EnemyTargets.from_icons(white, at.(1200, 540))
+    assert [_] = EnemyTargets.from_icons(white, at.(1200, 640))
+    assert [_] = EnemyTargets.from_icons(white, at.(1150, 600))
+    assert [_] = EnemyTargets.from_icons(white, at.(1250, 600))
+    assert [] = EnemyTargets.from_icons(white, at.(1200, 539))
+    assert [] = EnemyTargets.from_icons(white, at.(1200, 641))
+    assert [] = EnemyTargets.from_icons(white, at.(1149, 600))
+    assert [] = EnemyTargets.from_icons(white, at.(1251, 600))
+  end
 end

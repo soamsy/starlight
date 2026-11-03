@@ -14,8 +14,8 @@
       🎯 First skill to last enemy (2s delay)
     </button>
     <button phx-click="preview_target_everyone" class="btn btn-sm btn-secondary" disabled={@target_preview_status == :running}
-            title="Every sinner drags a random one of their skills, top or bottom, to a random enemy">
-      🎲 Everyone to random enemies (2s delay)
+            title="Every sinner drags a random one of their skills, top or bottom, to each enemy left to right, ending on the last enemy if there are more sinners than enemies">
+      🎲 Everyone to enemies left to right (2s delay)
     </button>
     <label class="flex items-center gap-2 cursor-pointer">
       <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@watch_tray?} phx-click="toggle_watch_tray" />
