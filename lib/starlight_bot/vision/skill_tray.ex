@@ -24,8 +24,11 @@ defmodule StarlightBot.Vision.SkillTray do
   @top_hue_scan_offset 0
   @bottom_hue_scan_offset 45
 
-  @top_hue_inset_x_pct 0.1
+  @top_hue_inset_x_pct 0.18
   @bottom_hue_inset_x_pct 0.07
+
+  @outer_shift_px 2
+  @outer_shift_min_columns 7
 
   @bg_strip_top_margin 10
   @bg_strip_w 20
@@ -254,9 +257,15 @@ defmodule StarlightBot.Vision.SkillTray do
     inset = bin_width * inset_pct
 
     for i <- 0..(columns - 1) do
-      {round(start_x + bin_width * i + inset), round(start_x + bin_width * (i + 1) - inset)}
+      shift = outer_shift(i, columns)
+      {round(start_x + bin_width * i + inset + shift), round(start_x + bin_width * (i + 1) - inset + shift)}
     end
   end
+
+  defp outer_shift(_i, columns) when columns < @outer_shift_min_columns, do: 0
+  defp outer_shift(0, _columns), do: -@outer_shift_px
+  defp outer_shift(i, columns) when i == columns - 1, do: @outer_shift_px
+  defp outer_shift(_i, _columns), do: 0
 
   defp assign_sinner_of_slot(%__MODULE__{} = tray, %Frame{mat: mat}) do
     case HookRegistry.find(@hp_hook) do

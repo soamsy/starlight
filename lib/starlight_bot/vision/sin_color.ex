@@ -26,12 +26,12 @@ defmodule StarlightBot.Vision.SinColor do
   # background is close in hue, hue_window_mask lifts s_lo/v_lo further for contrast.
   @colors [
     wrath: {0, 6, 70, 255, 105, 255},
-    gloom: {96, 6, 100, 250, 100, 240},
+    gloom: {93, 9, 85, 250, 70, 240},
     sloth: {23, 5, 145, 255, 100, 245},
     lust: {12, 5, 140, 255, 105, 245},
-    pride: {110, 6, 77, 255, 60, 228},
+    pride: {112, 6, 77, 255, 60, 228},
     gluttony: {41, 6, 100, 255, 100, 252},
-    envy: {140, 6, 100, 252, 100, 245}
+    envy: {146, 10, 100, 255, 100, 245}
   ]
 
   @type sin :: :wrath | :lust | :sloth | :gluttony | :gloom | :pride | :envy
@@ -45,23 +45,35 @@ defmodule StarlightBot.Vision.SinColor do
           tier_area: non_neg_integer,
           wedge_area: non_neg_integer,
           tier_pct: float,
+          flame: float,
           tier_margin: float,
           match_mask: term,
           reference_mask: term,
           wedge_mask: term,
           tier_mask: term,
-          tier_color_mask: term
+          tier_color_mask: term,
+          tier_raw_mask: term
         }
 
   @tier_thresholds [
     wrath: {0.48, 0.60},
     gloom: {0.38, 0.59},
-    sloth: {0.43, 0.65},
-    lust: {0.45, 0.61},
+    sloth: {0.43, 0.85},
+    lust: {0.50, 0.61},
     pride: {0.39, 0.56},
-    gluttony: {0.38, 0.51},
+    gluttony: {0.42, 0.51},
     envy: {0.40, 0.60}
   ]
+
+  @flame_thresholds [
+    envy: {0.18, 0.33},
+    gloom: {0.30, 0.46},
+    gluttony: {0.22, 0.315},
+    pride: {0.185, nil},
+    wrath: {0.275, 0.325}
+  ]
+
+  @flame_zone_start_pct 0.68
 
   @corner_cut_pct [
     lust: 0.30,
@@ -74,14 +86,20 @@ defmodule StarlightBot.Vision.SinColor do
   ]
 
   @wedge_bulge_pct 0.23
+  @max_leak_discount 2
+  @bg_peak_window 3
+  @bg_cluster_hue_tol 15
+  @score_weights [gloom: 1.8]
+  @bg_chroma_floor 0.6
+  @bg_spread_k 0.5
 
   @ring_kernel_px 3
   @min_ring_area 8
 
   @bg_exclusion_hue_tol 20
   @bg_exclusion_s_tol 30
-  @bg_exclusion_v_tol 15
-  @bg_hue_affect_range 14
+  @bg_exclusion_v_tol 25
+  @bg_hue_affect_range 20
   @bg_contrast_margin 30
   @bg_min_value_floor 100
 
@@ -94,19 +112,24 @@ defmodule StarlightBot.Vision.SinColor do
           {integer, integer} | nil,
           0..179 | nil,
           0..255 | nil,
-          0..255 | nil
+          0..255 | nil,
+          %{optional(sin) => float}
         ) :: result
-  def classify_cell(mat, {x0, x1}, y, h, hue_scan_y \\ nil, hue_x \\ nil, bg_hue \\ nil, bg_saturation \\ nil, bg_value \\ nil) do
+  def classify_cell(mat, {x0, x1}, y, h, hue_scan_y \\ nil, hue_x \\ nil, bg_hue \\ nil, bg_saturation \\ nil, bg_value \\ nil, bg_leak \\ %{}) do
     hue_scan_y = hue_scan_y || y
     {hx0, hx1} = hue_x || {x0, x1}
     hue_cell = Frame.crop(mat, {hx0, hue_scan_y, hx1 - hx0, h})
     hsv = Evision.cvtColor(hue_cell, @color_bgr2hsv)
     bg_mask = background_exclusion_mask(hsv, bg_hue, bg_saturation, bg_value)
 
+    cell_px = (hx1 - hx0) * h
+
     scores =
       for {name, {hue, tol, s_lo, s_hi, v_lo, v_hi}} <- @colors do
         mask = hue_window_mask(hsv, hue, tol, s_lo, s_hi, v_lo, v_hi, bg_hue, bg_saturation, bg_value, bg_mask)
-        {name, Evision.countNonZero(mask), mask}
+        raw = Evision.countNonZero(mask)
+        leak = min(round(Map.get(bg_leak, name, 0.0) * cell_px), div(raw, @max_leak_discount))
+        {name, round((raw - leak) * Keyword.get(@score_weights, name, 1.0)), mask}
       end
 
     {winner, area, mask} = Enum.max_by(scores, fn {_name, area, _mask} -> area end)
@@ -122,17 +145,16 @@ defmodule StarlightBot.Vision.SinColor do
     {mean, stddev} = Evision.meanStdDev(hue_cell, mask: ref_mask)
     detected_hue = hue_of_mean(mean)
 
-    tier_color_mask =
-      mat
-      |> tier_color_mask({x0, x1}, y, h, winner, detected_hue, bg_hue, bg_saturation, bg_value)
-      |> Matcher.fill_holes_mask()
+    tier_raw_mask = tier_color_mask(mat, {x0, x1}, y, h, winner, detected_hue, bg_hue, bg_saturation, bg_value)
+    tier_color_mask = Matcher.fill_holes_mask(tier_raw_mask)
 
     wedge = wedge_mask(x1 - x0, h, winner)
     tier_mask = Evision.Mat.bitwise_and(tier_color_mask, wedge)
     tier_area = Evision.countNonZero(tier_mask)
     wedge_area = Evision.countNonZero(wedge)
     tier_pct = if wedge_area > 0, do: tier_area / wedge_area, else: 0.0
-    tier = classify_tier(winner, tier_pct)
+    flame = flame_density(tier_raw_mask, x1 - x0, h)
+    tier = classify_tier(winner, tier_pct, flame)
 
     %{
       sin: winner,
@@ -142,12 +164,14 @@ defmodule StarlightBot.Vision.SinColor do
       tier_area: tier_area,
       wedge_area: wedge_area,
       tier_pct: tier_pct,
+      flame: flame,
       tier_margin: tier_margin(winner, tier, tier_pct),
       match_mask: mask,
       reference_mask: ref_mask,
       wedge_mask: wedge,
       tier_mask: tier_mask,
-      tier_color_mask: tier_color_mask
+      tier_color_mask: tier_color_mask,
+      tier_raw_mask: tier_raw_mask
     }
   end
 
@@ -181,12 +205,27 @@ defmodule StarlightBot.Vision.SinColor do
     Evision.Mat.bitwise_and(wedge, Evision.Mat.bitwise_not(corner))
   end
 
-  defp classify_tier(sin, pct) do
+  defp flame_density(raw_mask, w, h) do
+    zone_x = trunc(w * @flame_zone_start_pct)
+    zone_w = w - zone_x
+
+    if zone_w > 0 do
+      Evision.countNonZero(Frame.crop(raw_mask, {zone_x, 0, zone_w, h})) / (zone_w * h)
+    else
+      0.0
+    end
+  end
+
+  defp classify_tier(sin, pct, flame) do
     {tier2_min_pct, tier3_min_pct} = Keyword.fetch!(@tier_thresholds, sin)
+    {flame2, flame3} = Keyword.get(@flame_thresholds, sin, {nil, nil})
+
+    tier2? = if flame2, do: flame >= flame2, else: pct >= tier2_min_pct
+    tier3? = tier2? and if flame3, do: flame >= flame3 and pct >= tier3_min_pct, else: pct >= tier3_min_pct
 
     cond do
-      pct >= tier3_min_pct -> :skill3
-      pct >= tier2_min_pct -> :skill2
+      tier3? -> :skill3
+      tier2? -> :skill2
       true -> :skill1
     end
   end
@@ -206,29 +245,46 @@ defmodule StarlightBot.Vision.SinColor do
     if Evision.countNonZero(ring) >= @min_ring_area, do: ring, else: mask
   end
 
-  @spec classify_row(term, SkillTray.row(), 0..179 | nil, 0..255 | nil, 0..255 | nil) :: [result]
-  def classify_row(mat, row, bg_hue \\ nil, bg_saturation \\ nil, bg_value \\ nil) do
+  @spec classify_row(term, SkillTray.row(), 0..179 | nil, 0..255 | nil, 0..255 | nil, map) :: [result]
+  def classify_row(mat, row, bg_hue \\ nil, bg_saturation \\ nil, bg_value \\ nil, bg_leak \\ %{}) do
     tier_columns = SkillTray.row_columns(row)
     hue_columns = SkillTray.hue_scan_columns(row)
 
     [tier_columns, hue_columns]
     |> Enum.zip()
     |> Enum.map(fn {{x0, x1}, hue_x} ->
-      classify_cell(mat, {x0, x1}, row.y, row.h, row.hue_scan_y, hue_x, bg_hue, bg_saturation, bg_value)
+      classify_cell(mat, {x0, x1}, row.y, row.h, row.hue_scan_y, hue_x, bg_hue, bg_saturation, bg_value, bg_leak)
     end)
   end
 
   @spec classify_tray(term, SkillTray.t()) :: {[result], [result]}
   def classify_tray(mat, tray) do
     bg = background_color(mat, SkillTray.background_region(tray))
-    {classify_row(mat, tray.top_row, bg.hue, bg.saturation, bg.value), classify_row(mat, tray.bottom_row, bg.hue, bg.saturation, bg.value)}
+    top = classify_row(mat, tray.top_row, bg.hue, bg.saturation, bg.value, bg.leak)
+    bottom = classify_row(mat, tray.bottom_row, bg.hue, bg.saturation, bg.value, bg.leak)
+    {top, Enum.zip_with(top, bottom, &inherit_top_tier/2)}
+  end
+
+  defp inherit_top_tier(%{sin: sin, tier: tier}, %{sin: sin} = bottom), do: %{bottom | tier: tier}
+  defp inherit_top_tier(%{tier: tier}, %{tier: tier} = bottom), do: %{bottom | tier: next_best_tier(bottom.sin, tier, bottom.tier_pct)}
+  defp inherit_top_tier(_top, bottom), do: bottom
+
+  defp next_best_tier(sin, banned, pct) do
+    {tier2_min_pct, tier3_min_pct} = Keyword.fetch!(@tier_thresholds, sin)
+
+    case banned do
+      :skill1 -> if pct >= tier3_min_pct, do: :skill3, else: :skill2
+      :skill2 -> if pct >= (tier2_min_pct + tier3_min_pct) / 2, do: :skill3, else: :skill1
+      :skill3 -> if pct >= tier2_min_pct, do: :skill2, else: :skill1
+    end
   end
 
   @spec background_color(term, {integer, integer, integer, integer}) :: %{
           bgr: {number, number, number},
           hue: 0..179,
           saturation: 0..255,
-          value: 0..255
+          value: 0..255,
+          leak: %{optional(sin) => float}
         }
   def background_color(mat, {x, y, w, h}) do
     strip = Frame.crop(mat, {x, y, w, h})
@@ -236,10 +292,62 @@ defmodule StarlightBot.Vision.SinColor do
     {b, g, r} = to_bgr(mean)
 
     hsv_strip = Evision.cvtColor(strip, @color_bgr2hsv)
-    {hsv_mean, _stddev} = Evision.meanStdDev(hsv_strip)
-    [hue, saturation, value] = hsv_mean |> Evision.Mat.to_nx() |> Nx.to_flat_list()
+    {bg_hue, saturation, value} = dominant_hsv(hsv_strip)
 
-    %{bgr: {b, g, r}, hue: round(hue) |> clamp(0, 179), saturation: round(saturation) |> clamp(0, 255), value: round(value) |> clamp(0, 255)}
+    bg_saturation = round(saturation) |> clamp(0, 255)
+    bg_value = round(value) |> clamp(0, 255)
+
+    %{
+      bgr: {b, g, r},
+      hue: bg_hue,
+      saturation: bg_saturation,
+      value: bg_value,
+      leak: background_leak(hsv_strip, bg_hue, bg_saturation, bg_value)
+    }
+  end
+
+  defp background_leak(hsv_strip, bg_hue, bg_saturation, bg_value) do
+    bg_mask = background_exclusion_mask(hsv_strip, bg_hue, bg_saturation, bg_value)
+    {rows, cols, _channels} = Evision.Mat.shape(hsv_strip)
+    strip_px = max(rows * cols, 1)
+
+    Map.new(@colors, fn {name, {hue, tol, s_lo, s_hi, v_lo, v_hi}} ->
+      mask = hue_window_mask(hsv_strip, hue, tol, s_lo, s_hi, v_lo, v_hi, bg_hue, bg_saturation, bg_value, bg_mask)
+      {name, Evision.countNonZero(mask) / strip_px}
+    end)
+  end
+
+  defp dominant_hsv(hsv) do
+    pixels = hsv |> Evision.Mat.to_nx() |> Nx.reshape({:auto, 3}) |> Nx.to_list()
+    hues = Enum.map(pixels, fn [hue, _s, _v] -> hue end)
+    counts = Enum.frequencies(hues)
+
+    peak =
+      Enum.max_by(0..179, fn center ->
+        Enum.sum(for offset <- -@bg_peak_window..@bg_peak_window, do: Map.get(counts, Integer.mod(center + offset, 180), 0))
+      end)
+
+    cluster = Enum.filter(pixels, fn [hue, _s, _v] -> hue_distance(hue, peak) <= @bg_cluster_hue_tol end)
+    saturations = Enum.map(cluster, fn [_h, s, _v] -> s end)
+    values = Enum.map(cluster, fn [_h, _s, v] -> v end)
+
+    {circular_mean_hue(Enum.map(cluster, fn [hue, _s, _v] -> hue end)), mean_plus_spread(saturations), mean_plus_spread(values)}
+  end
+
+  defp mean_plus_spread(samples) do
+    n = length(samples)
+    mean = Enum.sum(samples) / n
+    deviation = :math.sqrt(Enum.sum(Enum.map(samples, &((&1 - mean) * (&1 - mean)))) / n)
+    mean + @bg_spread_k * deviation
+  end
+
+  defp circular_mean_hue(hues) do
+    radians = Enum.map(hues, &(&1 * 2 * :math.pi() / 180))
+    sin_sum = radians |> Enum.map(&:math.sin/1) |> Enum.sum()
+    cos_sum = radians |> Enum.map(&:math.cos/1) |> Enum.sum()
+    degrees = :math.atan2(sin_sum, cos_sum) * 180 / :math.pi()
+    degrees = if degrees < 0, do: degrees + 360, else: degrees
+    round(degrees / 2) |> rem(180)
   end
 
   defp clamp(v, lo, hi), do: v |> max(lo) |> min(hi)
@@ -255,7 +363,7 @@ defmodule StarlightBot.Vision.SinColor do
   defp bg_hue_scale(bg_hue, bg_saturation, bg_value, hue) do
     hue_proximity = max(0.0, 1.0 - hue_distance(hue, bg_hue) / @bg_hue_affect_range)
     bg_chroma = bg_saturation / 255 * (bg_value / 255)
-    hue_proximity * bg_chroma
+    hue_proximity * max(bg_chroma, @bg_chroma_floor)
   end
 
   defp hue_distance(a, b) do
