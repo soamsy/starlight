@@ -21,7 +21,7 @@ defmodule StarlightBot.Automation.Scripts.ClaimRewards do
 
   defp action_steps(:claim, weekly_bonus?) do
     give_up = [log(:info, "no rewards worth claiming — giving up instead") | action_steps(:give_up, weekly_bonus?)]
-    [branch([{:exploration_reward_no_bp, give_up}, default: claim_steps(weekly_bonus?)], wait: @settle_check_ms)]
+    [branch([{:exploration_reward_bp_available, claim_steps(weekly_bonus?)}, default: give_up], wait: @settle_check_ms)]
   end
 
   defp action_steps(:give_up, _weekly_bonus?) do

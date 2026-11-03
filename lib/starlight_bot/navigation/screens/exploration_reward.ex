@@ -13,7 +13,7 @@ defmodule StarlightBot.Navigation.Screens.ExplorationReward do
     end
 
     transition to: :exploration_reward_claimed do
-      [click(:exploration_reward_claim)] ++
+      confirm_enter(:exploration_reward_claim) ++
         confirm_either(:exploration_reward_claim_confirm, :exploration_reward_claim_confirm_2, @confirm_timeout) ++
         [retry_until(any_of([:loading_stage_1, :loading_stage_2]), [click(:exploration_complete)], every: 300, timeout: 15_000)] ++
         loading()
