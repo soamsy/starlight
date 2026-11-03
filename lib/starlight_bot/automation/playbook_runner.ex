@@ -1,6 +1,6 @@
 defmodule StarlightBot.Automation.PlaybookRunner do
   alias StarlightBot.Automation.{BattleChain, RunMemory, SlotPlan, TrayWatch}
-  alias StarlightBot.{BattlePlans, Conditions, Ctx, SinnerProfiles}
+  alias StarlightBot.{BattleDebug, BattlePlans, Conditions, Ctx, SinnerProfiles}
   alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.Navigation.{DSL, Runner}
@@ -660,6 +660,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     with :ok <- guard(ctx),
          {:ok, frame} <- Capture.grab_frame() do
       targets = EnemyTargets.find(frame)
+      BattleDebug.record_enemies(frame, targets, ctx)
 
       case pick_enemy(BattlePlans.apply_ignores(targets, enemy["ignore"]), enemy, attempt, ctx) do
         {:ok, target} ->
@@ -795,6 +796,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, tray} <- SkillTray.scan(frame) do
       TrayWatch.record(frame)
+      BattleDebug.record_tray(frame, tray, ctx)
       Ctx.log(ctx, :info, "playbook: skill tray read, sinner per slot [#{Enum.map_join(tray.sinner_of_slot || [], " ", &(&1 + 1))}]")
       {:ok, frame, tray}
     else

@@ -3,7 +3,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1]
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Navigation.{Navigator, RunSplits, ScreenTimes}
-  alias StarlightBot.{EgoGifts, GiftPlans, Plans, RunHistory, RunnerForms, Teams}
+  alias StarlightBot.{AppSettings, EgoGifts, GiftPlans, Plans, RunHistory, RunnerForms, Teams}
   alias StarlightBot.PackPlans.Resolver
   alias StarlightBotWeb.Live.{GiftPlanEditorLive, LuxcavationLive}
 
@@ -49,6 +49,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:rewards, "auto")
      |> assign(:collect_enkephalin, false)
      |> assign(:collect_xp, false)
+     |> assign(:battle_debug, AppSettings.battle_debug?())
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)
      |> restore_form(RunnerForms.get("mirror_dungeon"))}
@@ -66,6 +67,13 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
       {:ok, action} -> {:noreply, start_countdown(socket, action)}
       :error -> {:noreply, put_flash(socket, :error, "Pick at least one team and enter a non-negative run count.")}
     end
+  end
+
+  @impl true
+  def handle_event("toggle_battle_debug", _, socket) do
+    enabled? = not socket.assigns.battle_debug
+    AppSettings.put_battle_debug(enabled?)
+    {:noreply, assign(socket, :battle_debug, enabled?)}
   end
 
   @impl true

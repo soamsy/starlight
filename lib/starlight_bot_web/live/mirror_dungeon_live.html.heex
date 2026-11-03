@@ -94,6 +94,12 @@
         </details>
       </div>
 
+      <label :if={StarlightBot.Data.authoring?()} class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@battle_debug} phx-click="toggle_battle_debug" />
+        <span class="text-sm">Save battle debug images</span>
+        <.link navigate={~p"/battle/history"} class="link text-xs text-base-content/60">history</.link>
+      </label>
+
       <form
         id="mirror-dungeon-runner-form"
         phx-submit="run"

@@ -1,0 +1,189 @@
+<div class="flex flex-col h-full gap-3 overflow-hidden">
+  <div class="flex items-center gap-3 shrink-0">
+    <h1 class="text-lg font-bold">Battle History</h1>
+    <.link navigate={~p"/battle"} class="btn btn-sm btn-ghost">Inspector</.link>
+    <div class="join">
+      <button phx-click="view" phx-value-view="captures" class={"btn btn-sm join-item " <> if(@view == "captures", do: "btn-primary", else: "")}>Captures</button>
+      <button phx-click="view" phx-value-view="bulk" class={"btn btn-sm join-item " <> if(@view == "bulk", do: "btn-primary", else: "")}>Bulk test</button>
+    </div>
+    <button phx-click="refresh" class="btn btn-sm">Refresh</button>
+    <span class="text-xs text-base-content/60"><%= length(@entries) %> capture(s), <%= length(suite_entries(@entries)) %> in suite</span>
+  </div>
+
+  <%= if @view == "bulk" do %>
+    <% stats = bulk_stats(@bulk) %>
+    <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3">
+      <div class="flex items-center gap-3 shrink-0">
+        <button phx-click="bulk_run" class="btn btn-sm btn-primary" disabled={@bulk.running? or suite_entries(@entries) == []}>
+          <%= if @bulk.running?, do: "Testing #{@bulk.done}/#{@bulk.total}…", else: "Test suite (#{length(suite_entries(@entries))})" %>
+        </button>
+        <%= if stats.tested > 0 do %>
+          <span class="text-sm text-success"><%= stats.passed %> passed</span>
+          <span class={"text-sm " <> if(stats.failed > 0, do: "text-error", else: "text-base-content/60")}><%= stats.failed %> failed (<%= stats.problems %> problem(s))</span>
+          <span class="text-xs text-base-content/60"><%= stats.tested %> of <%= stats.total %> tested</span>
+        <% end %>
+        <select phx-change="bulk_filter" name="filter" class="select select-sm select-bordered ml-auto">
+          <option value="failures" selected={@bulk_filter == "failures"}>Failures only</option>
+          <option value="all" selected={@bulk_filter == "all"}>All tested</option>
+        </select>
+      </div>
+
+      <div class="flex flex-wrap gap-1 shrink-0">
+        <%= for entry <- suite_entries(@entries) do %>
+          <% result = Map.get(@bulk.results, entry["id"]) %>
+          <button phx-click="open" phx-value-id={entry["id"]}
+                  title={entry["id"] <> (if result, do: ": " <> result.summary, else: "")}
+                  class={"w-4 h-4 rounded-sm " <> cell_class(result)}></button>
+        <% end %>
+      </div>
+
+      <table class="table table-xs">
+        <thead><tr><th>capture</th><th>kind</th><th>result</th><th></th></tr></thead>
+        <tbody>
+          <%= for {entry, result} <- bulk_rows(@entries, @bulk, @bulk_filter) do %>
+            <tr>
+              <td class="font-mono text-xs"><%= entry["id"] %></td>
+              <td><%= kind_label(entry["kind"]) %></td>
+              <td class={cond do
+                result == nil -> "text-base-content/40"
+                result.ok? -> "text-success"
+                true -> "text-error"
+              end}><%= if result, do: result.summary, else: "not tested" %></td>
+              <td><button phx-click="open" phx-value-id={entry["id"]} class="btn btn-xs">Open</button></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+      <div :if={@bulk.results == %{} and not @bulk.running?} class="text-sm text-base-content/40">
+        Runs current detection on every capture marked "In test suite" and compares it with the labeled answer (the recorded detection until you edit it).
+      </div>
+    </div>
+  <% else %>
+    <div class="flex flex-1 min-h-0 gap-3">
+      <div class="w-72 shrink-0 overflow-y-auto flex flex-col gap-1">
+        <select phx-change="filter" name="kind" class="select select-sm select-bordered shrink-0">
+          <option value="all" selected={@kind_filter == "all"}>All</option>
+          <option value="chain_tray" selected={@kind_filter == "chain_tray"}>Chain tray</option>
+          <option value="focused_enemies" selected={@kind_filter == "focused_enemies"}>Focused enemies</option>
+        </select>
+        <button phx-click="delete_non_suite" disabled={@entries -- suite_entries(@entries) == []}
+                data-confirm={"Move #{length(@entries) - length(suite_entries(@entries))} capture(s) that are not in the test suite to the trash?"}
+                class="btn btn-sm btn-error btn-outline shrink-0">Delete non-suite captures</button>
+        <%= for entry <- visible(@entries, @kind_filter) do %>
+          <% result = Map.get(@bulk.results, entry["id"]) %>
+          <button phx-click="select" phx-value-id={entry["id"]}
+                  class={"btn btn-sm h-auto py-1 justify-start text-left normal-case " <> if(@selected && @selected["id"] == entry["id"], do: "btn-primary", else: "btn-ghost")}>
+            <span class="flex items-start gap-2">
+              <span class={"w-2 h-2 rounded-full mt-1 shrink-0 " <> cell_class(result)}></span>
+              <span class="flex flex-col items-start">
+                <span class="font-mono text-xs"><%= String.slice(entry["captured_at"], 11, 12) %><%= if entry["labeled?"], do: " ✎" %><%= if entry["in_suite?"], do: " ★" %></span>
+                <span class="text-xs"><%= summary(entry) %></span>
+              </span>
+            </span>
+          </button>
+        <% end %>
+        <div :if={@entries == []} class="text-sm text-base-content/40">
+          No captures yet. Turn on "Save battle debug images" on the mirror dungeon page and run a battle.
+        </div>
+      </div>
+
+      <div class="flex-1 min-w-0 overflow-y-auto flex flex-col gap-3">
+        <%= if @selected do %>
+          <div class="flex items-center gap-2 shrink-0">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" class="checkbox checkbox-sm" checked={@selected["in_suite?"]} phx-click="toggle_suite" />
+              <span class="text-sm">In test suite</span>
+            </label>
+            <button phx-click="test" class="btn btn-sm btn-primary">Test detection</button>
+            <button phx-click="reset_truth" class="btn btn-sm" data-confirm="Throw away your labels and go back to the recorded detection?">Reset labels</button>
+            <button :if={@selected["kind"] == "focused_enemies"} phx-click="clear_enemies" class="btn btn-sm">Clear boxes</button>
+            <span class="text-xs text-base-content/60 font-mono"><%= @selected["id"] %></span>
+            <%= if @result do %>
+              <span class={"badge " <> if(@result.ok?, do: "badge-success", else: "badge-error")}><%= @result.summary %></span>
+            <% end %>
+          </div>
+
+          <div class="flex items-center justify-center bg-base-200 rounded-lg border border-base-300 shrink-0" style="aspect-ratio: 16/9;">
+            <%= if @selected["kind"] == "chain_tray" do %>
+              <canvas id="battle-history-canvas" phx-hook="BattleHistoryCanvas" phx-update="ignore"
+                      class="max-w-full max-h-full" style="aspect-ratio: 16/9;"></canvas>
+            <% else %>
+              <canvas id="enemy-editor-canvas" phx-hook="EnemyLabelCanvas" phx-update="ignore" tabindex="0"
+                      class="max-w-full max-h-full cursor-crosshair outline-none" style="aspect-ratio: 16/9;"></canvas>
+            <% end %>
+          </div>
+
+          <%= if @selected["kind"] == "focused_enemies" do %>
+            <div class="text-xs text-base-content/60">
+              Drag on empty space to box an enemy you can target. Drag a box to move it. Click a box then press Delete, or double click it, to remove it.
+              A detection counts as correct when its target point lands inside one box.
+            </div>
+            <%= if @result && @result[:matched] do %>
+              <div class="text-sm flex gap-4">
+                <span class="text-success"><%= length(@result.matched) %> matched</span>
+                <span class="text-error"><%= length(@result.missed) %> missed (under-detected)</span>
+                <span class="text-error"><%= length(@result.extra) %> extra (over-detected)</span>
+              </div>
+            <% end %>
+          <% else %>
+            <form phx-change="tray_edit" class="overflow-x-auto shrink-0">
+              <table class="table table-xs">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th :for={i <- 0..(length(@truth["slots"]) - 1)}>slot <%= i %></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="text-base-content/60">sinner starts here</td>
+                    <td :for={{slot, i} <- Enum.with_index(@truth["slots"])}>
+                      <input type="checkbox" name={"slots[#{i}][sinner_start]"} value="true" checked={slot["sinner_start"]} class="checkbox checkbox-xs" />
+                    </td>
+                  </tr>
+                  <%= for {row, label} <- [{"top", "top row"}, {"bottom", "bottom row"}] do %>
+                    <tr>
+                      <td class="text-base-content/60"><%= label %> sin</td>
+                      <td :for={{slot, i} <- Enum.with_index(@truth["slots"])}>
+                        <select name={"slots[#{i}][#{row}_sin]"} class="select select-xs select-bordered">
+                          <option :for={sin <- sins()} value={sin} selected={slot[row]["sin"] == sin}><%= sin %></option>
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="text-base-content/60"><%= label %> tier</td>
+                      <td :for={{slot, i} <- Enum.with_index(@truth["slots"])}>
+                        <select name={"slots[#{i}][#{row}_tier]"} class="select select-xs select-bordered">
+                          <option :for={tier <- tiers()} value={tier} selected={slot[row]["tier"] == tier}><%= tier_label(tier) %></option>
+                        </select>
+                      </td>
+                    </tr>
+                  <% end %>
+                </tbody>
+              </table>
+            </form>
+            <div class="text-xs text-base-content/60">
+              Changes save as you make them.
+            </div>
+            <%= if @result && @result.diffs != [] do %>
+              <table class="table table-xs shrink-0">
+                <thead><tr><th>slot</th><th>field</th><th>labeled</th><th>detected</th></tr></thead>
+                <tbody>
+                  <tr :for={d <- @result.diffs}>
+                    <td><%= d.slot %></td>
+                    <td><%= field_label(d.field) %></td>
+                    <td><%= value_text(d.expected) %></td>
+                    <td class="text-error"><%= value_text(d.actual) %></td>
+                  </tr>
+                </tbody>
+              </table>
+            <% end %>
+          <% end %>
+          <div :if={@result && @result.error} class="text-sm text-error"><%= @result.error %></div>
+        <% else %>
+          <div class="text-base-content/40 text-sm">Pick a capture to label it</div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

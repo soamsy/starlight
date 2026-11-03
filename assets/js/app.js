@@ -289,16 +289,205 @@ function overlayCanvasHook(eventName) {
         }
       }
 
+      let lastImg = null
+
       this.handleEvent(eventName, ({ data, overlays }) => {
+        if (!data) {
+          draw(lastImg, overlays)
+          return
+        }
         const img = new Image()
-        img.onload = () => draw(img, overlays)
+        img.onload = () => {
+          lastImg = img
+          draw(img, overlays)
+        }
         img.src = "data:image/jpeg;base64," + data
       })
     }
   }
 }
 
+const EnemyLabelCanvas = {
+  mounted() {
+    const canvas = this.el
+    const ctx = canvas.getContext("2d")
+    canvas.width = 1920
+    canvas.height = 1080
+
+    const minSize = 15
+    let img = null
+    let rects = []
+    let diff = null
+    let selected = -1
+    let drag = null
+
+    const pos = (e) => {
+      const r = canvas.getBoundingClientRect()
+      return {
+        x: Math.max(0, Math.min(1920, Math.round(((e.clientX - r.left) * 1920) / r.width))),
+        y: Math.max(0, Math.min(1080, Math.round(((e.clientY - r.top) * 1080) / r.height)))
+      }
+    }
+
+    const inside = (r, p) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
+    const hit = (p) => {
+      for (let i = rects.length - 1; i >= 0; i--) if (inside(rects[i], p)) return i
+      return -1
+    }
+    const normalized = (a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) })
+
+    const label = (text, x, y, color) => {
+      ctx.setLineDash([])
+      ctx.font = "bold 14px monospace"
+      ctx.lineWidth = 3
+      ctx.strokeStyle = "#000"
+      ctx.strokeText(text, x, y)
+      ctx.fillStyle = color
+      ctx.fillText(text, x, y)
+    }
+
+    const box = (r, color, dashed, width) => {
+      ctx.strokeStyle = color
+      ctx.lineWidth = width
+      ctx.setLineDash(dashed ? [6, 4] : [])
+      ctx.strokeRect(r.x, r.y, r.w, r.h)
+    }
+
+    const redraw = () => {
+      ctx.clearRect(0, 0, 1920, 1080)
+      if (img) ctx.drawImage(img, 0, 0, 1920, 1080)
+
+      rects.forEach((r, i) => {
+        box(r, i === selected ? "#facc15" : "#4ade80", false, i === selected ? 4 : 2)
+        label(`enemy ${i + 1}`, r.x + 4, r.y - 6, i === selected ? "#facc15" : "#4ade80")
+      })
+
+      if (diff) {
+        for (const r of diff.missed || []) {
+          box(r, "#ef4444", true, 4)
+          label("MISSED", r.x + 4, r.y + r.h + 16, "#ef4444")
+        }
+        for (const m of diff.matched || []) {
+          ctx.fillStyle = "#4ade80"
+          ctx.beginPath()
+          ctx.arc(m.x, m.y, 7, 0, 2 * Math.PI)
+          ctx.fill()
+        }
+        for (const p of diff.extra || []) {
+          ctx.strokeStyle = "#ef4444"
+          ctx.lineWidth = 4
+          ctx.setLineDash([])
+          ctx.beginPath()
+          ctx.moveTo(p.x - 10, p.y - 10)
+          ctx.lineTo(p.x + 10, p.y + 10)
+          ctx.moveTo(p.x + 10, p.y - 10)
+          ctx.lineTo(p.x - 10, p.y + 10)
+          ctx.stroke()
+          label("EXTRA", p.x + 14, p.y + 5, "#ef4444")
+        }
+      }
+
+      if (drag && drag.mode === "create") box(normalized(drag.start, drag.current), "#facc15", true, 2)
+    }
+
+    const changed = () => {
+      diff = null
+      this.pushEvent("enemy_rects", { rects })
+      redraw()
+    }
+
+    const onDown = (e) => {
+      canvas.focus()
+      const p = pos(e)
+      const i = hit(p)
+      if (i >= 0) {
+        selected = i
+        drag = { mode: "move", start: p, origin: { ...rects[i] }, moved: false }
+      } else {
+        selected = -1
+        drag = { mode: "create", start: p, current: p }
+      }
+      redraw()
+    }
+
+    const onMove = (e) => {
+      if (!drag) return
+      const p = pos(e)
+      if (drag.mode === "create") {
+        drag.current = p
+      } else {
+        const dx = p.x - drag.start.x
+        const dy = p.y - drag.start.y
+        if (dx !== 0 || dy !== 0) drag.moved = true
+        rects[selected] = { ...rects[selected], x: drag.origin.x + dx, y: drag.origin.y + dy }
+      }
+      redraw()
+    }
+
+    const onUp = () => {
+      if (!drag) return
+      const finished = drag
+      drag = null
+      if (finished.mode === "create") {
+        const r = normalized(finished.start, finished.current)
+        if (r.w >= minSize && r.h >= minSize) {
+          rects.push(r)
+          selected = rects.length - 1
+          changed()
+          return
+        }
+      } else if (finished.moved) {
+        changed()
+        return
+      }
+      redraw()
+    }
+
+    const remove = (i) => {
+      if (i < 0) return
+      rects.splice(i, 1)
+      selected = -1
+      changed()
+    }
+
+    canvas.addEventListener("mousedown", onDown)
+    canvas.addEventListener("dblclick", (e) => remove(hit(pos(e))))
+    canvas.addEventListener("keydown", (e) => {
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault()
+        remove(selected)
+      }
+    })
+    document.addEventListener("mousemove", onMove)
+    document.addEventListener("mouseup", onUp)
+    this.removeListeners = () => {
+      document.removeEventListener("mousemove", onMove)
+      document.removeEventListener("mouseup", onUp)
+    }
+
+    this.handleEvent("load_enemy_editor", ({ data, rects: incoming, diff: incomingDiff }) => {
+      rects = incoming || []
+      diff = incomingDiff
+      selected = -1
+      if (!data) {
+        redraw()
+        return
+      }
+      const next = new Image()
+      next.onload = () => {
+        img = next
+        redraw()
+      }
+      next.src = "data:image/jpeg;base64," + data
+    })
+  },
+  destroyed() {
+    this.removeListeners?.()
+  }
+}
+
 const BattleInspectorCanvas = overlayCanvasHook("load_battle_frame")
+const BattleHistoryCanvas = overlayCanvasHook("load_battle_history_frame")
 const ChainPreviewCanvas = overlayCanvasHook("load_chain_preview_frame")
 const TargetPreviewCanvas = overlayCanvasHook("load_target_preview_frame")
 const DungeonInspectorCanvas = overlayCanvasHook("load_dungeon_frame")
@@ -1586,7 +1775,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, BattleInspectorCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
+  hooks: { ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
 })
 
 liveSocket.connect()

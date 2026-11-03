@@ -28,6 +28,7 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.HookEditorLive => :hooks,
     StarlightBotWeb.Live.ScreenshotViewerLive => :screenshots,
     StarlightBotWeb.Live.BattleInspectorLive => :battle,
+    StarlightBotWeb.Live.BattleHistoryLive => :battle,
     StarlightBotWeb.Live.DungeonInspectorLive => :dungeon,
     StarlightBotWeb.Live.GiftInspectorLive => :gift_inspector,
     StarlightBotWeb.Live.ThemePackInspectorLive => :theme_packs,

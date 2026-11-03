@@ -17,6 +17,7 @@
             title="Every slot drags a random skill, top or bottom, to each enemy left to right, ending on the last enemy if there are more slots than enemies">
       🎲 Every slot to enemies left to right (2s delay)
     </button>
+    <.link navigate={~p"/battle/history"} class="btn btn-sm btn-ghost">History</.link>
     <label class="flex items-center gap-2 cursor-pointer">
       <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@watch_tray?} phx-click="toggle_watch_tray" />
       <span class="text-sm">Watch tray</span>

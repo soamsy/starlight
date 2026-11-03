@@ -53,6 +53,10 @@ defmodule StarlightBot.AppSettings do
 
   def put_gamescope_flags(flags) when is_binary(flags), do: put("gamescope_flags", String.trim(flags))
 
+  def battle_debug?, do: Repo.one(from_key("battle_debug")) == "true"
+
+  def put_battle_debug(enabled?) when is_boolean(enabled?), do: put("battle_debug", to_string(enabled?))
+
   def get(key), do: Repo.one(from_key(key))
 
   def put(key, value) do
