@@ -3,7 +3,7 @@ ExUnit.start()
 ExUnit.configure(exclude: [:kde])
 
 defmodule StarlightBot.TestDB do
-  @repos [StarlightBot.Repo, StarlightBot.BaseRepo, StarlightBot.RunsRepo]
+  @repos [StarlightBot.BaseRepo, StarlightBot.Repo, StarlightBot.RunsRepo]
 
   def repos, do: @repos
 
