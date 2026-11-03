@@ -184,7 +184,7 @@ defmodule StarlightBot.Automation.Scripts.GiftSearchPicker do
 
     confirm = [
       log(:ok, "gift search: selected #{MapSet.size(picked)} gift(s), confirming"),
-      click(:gift_search_select, settle_ms: 50)
+      key(:enter)
     ]
 
     [branch([{not_hook(@none_selected_hook), confirm ++ confirm_enter(:gift_search_select_confirm) ++ [dismiss_ego_gift_get()]}, default: refuse], wait: @selected_timeout_ms)]

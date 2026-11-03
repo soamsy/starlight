@@ -20,7 +20,7 @@ defmodule StarlightBot.Navigation.Screens.CabinetEgoGifts do
     transition to: :cabinet_ego_gift_refuse_confirm, do: [reclick_until_arrived(:cabinet_ego_gift_refuse)]
     transition to: :ego_gift_get, do: [
       key(:enter),
-      sleep(100),
+      await_any([:ego_gift_get, :cabinet_ego_gift_never_message_again], timeout: 400),
       branch([
         {:cabinet_ego_gift_never_message_again, [click(:cabinet_ego_gift_never_message_again), click(:cabinet_ego_gift_unselected_confirm)]},
         {:ego_gift_get, []},
