@@ -2,7 +2,7 @@ defmodule StarlightBot.Navigation.Machine do
   @behaviour :gen_statem
 
   alias StarlightBot.Automation.RunMemory
-  alias StarlightBot.{Ctx, EnkephalinSchedule, GameWindow}
+  alias StarlightBot.{Ctx, EnkephalinSchedule, FailureShot, GameWindow}
   alias StarlightBot.Input.{Keyboard, Mouse, Premove}
   alias StarlightBot.Navigation.{Catalog, MachineStatus, Offload, Runner, Screen}
   alias StarlightBot.Vision.{Capture, Frame, HookRegistry, Matcher}
@@ -328,7 +328,9 @@ defmodule StarlightBot.Navigation.Machine do
       else
         case Catalog.plan_path(from, to) do
           {:ok, transitions} -> Runner.plan_program(transitions) ++ [{:__mark__, nil}]
-          {:error, :no_path} -> [{:fail, {:no_path, from, to}}]
+          {:error, :no_path} ->
+            FailureShot.record("no_path_#{from}_to_#{to}", data.ctx)
+            [{:fail, {:no_path, from, to}}]
         end
       end
 

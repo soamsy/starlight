@@ -11,6 +11,7 @@ defmodule StarlightBot.Data do
   def log_dir, do: Application.get_env(:starlight_bot, :bot_log_dir, Map.get(resolved(), :log_dir))
   def screenshots_dir, do: Map.fetch!(resolved(), :screenshots_dir)
   def battle_debug_dir, do: Path.join(resolved().root, "battle_debug")
+  def failure_shots_dir, do: Path.join(resolved().root, "failures")
   def portal_token_path, do: Path.join(resolved().root, "portal_remote_desktop_token")
 
   def require_authoring! do
