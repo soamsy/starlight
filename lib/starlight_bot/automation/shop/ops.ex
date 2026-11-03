@@ -10,7 +10,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
 
   @min_item_area_px 1000
   @min_classifier_conf 0.95
-  @cost_read_tries 8
+  @cost_read_tries 12
   @cost_read_every_ms 50
   @uptie_extend_px 50
   @uptie_2_hook :shop_sell_popup_uptie_2
@@ -1425,7 +1425,9 @@ defmodule StarlightBot.Automation.Shop.Ops do
 
   defp detect_and_update_cost(tries_left, previous, ctx) do
     with {:ok, frame} <- Capture.grab_frame(),
-         {:ok, ^previous} <- NumberScanner.read(frame) do
+         read = NumberScanner.read(frame),
+         Ctx.log(ctx, :info, "cost: try #{@cost_read_tries - tries_left + 1}/#{@cost_read_tries} #{inspect(read)}"),
+         {:ok, ^previous} <- read do
       Ctx.log(ctx, :info, "cost: read #{previous}")
       RunMemory.put_cost(ctx, previous)
     else
