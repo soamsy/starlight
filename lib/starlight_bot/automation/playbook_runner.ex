@@ -53,7 +53,10 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   def play_chain_turn(_last_frame, ctx), do: start_turn("chain", ctx)
 
-  def play_focused_turn(_last_frame, ctx), do: start_turn("focused", ctx)
+  def play_focused_turn(_last_frame, ctx) do
+    dismiss_stray_overlay(ctx)
+    start_turn("focused", ctx)
+  end
 
   def preview_target(enemy_pick, ctx) do
     with_preview_memory(ctx, &do_preview_target(enemy_pick, &1))
@@ -128,6 +131,12 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   def new_battle(last_frame, ctx) do
     RunMemory.put_battle_turn(ctx, 1)
     {:ok, last_frame}
+  end
+
+  defp dismiss_stray_overlay(ctx) do
+    if await(:battle_safe_click_spot, 0) do
+      Runner.run_steps([DSL.click(:battle_safe_click_spot), DSL.sleep(@key_gap_ms)], ctx)
+    end
   end
 
   defp start_turn(kind, ctx) do
