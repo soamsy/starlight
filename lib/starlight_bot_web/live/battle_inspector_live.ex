@@ -255,20 +255,28 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
 
   @enemy_target_color "#f472b6"
   @chosen_target_color "#4ade80"
+  @enemy_zone_color "#38bdf8"
 
   defp enemy_target_overlays(targets, chosen) do
     targets
     |> Enum.with_index(1)
-    |> Enum.flat_map(fn {%EnemyTargets{point: {px, py} = point, icon: {ix, iy} = icon} = target, i} ->
+    |> Enum.flat_map(fn {%EnemyTargets{point: {px, py} = point, icon: {ix, iy} = icon, zone: zone} = target, i} ->
       color = if target == chosen, do: @chosen_target_color, else: @enemy_target_color
       label = if target == chosen, do: "enemy #{i} (chosen)", else: "enemy #{i}"
 
-      [
-        %{type: "line", x1: ix, y1: iy, x2: px, y2: py, color: color, dashed: true},
-        point_marker(icon, color, nil),
-        point_marker(point, color, label)
-      ]
+      zone_overlays(zone, i) ++
+        [
+          %{type: "line", x1: ix, y1: iy, x2: px, y2: py, color: color, dashed: true},
+          point_marker(icon, color, nil),
+          point_marker(point, color, label)
+        ]
     end)
+  end
+
+  defp zone_overlays(nil, _i), do: []
+
+  defp zone_overlays({x, y, w, h}, i) do
+    [%{type: "rect", x: x, y: y, w: w, h: h, color: @enemy_zone_color, dashed: true, text: "reserved #{i}", text_x: x + 4, text_y: y + 16}]
   end
 
   def run_label(:mirror_dungeon), do: "Mirror dungeon"

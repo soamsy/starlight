@@ -95,10 +95,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       results =
         sinner_of_slot
         |> Enum.with_index()
-        |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
-        |> Enum.sort()
-        |> Enum.with_index(1)
-        |> Enum.map(fn {{sinner, columns}, enemy_n} -> target_in_order(tray, sinner, columns, enemy_n, ctx) end)
+        |> Enum.map(fn {sinner, column} -> target_in_order(tray, sinner, column, column + 1, ctx) end)
 
       {outcome, _attempts} = List.last(results)
       {:ok, {outcome, Enum.flat_map(results, &elem(&1, 1))}}
@@ -107,8 +104,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp target_in_order(tray, sinner, columns, enemy_n, ctx) do
-    column = Enum.random(columns)
+  defp target_in_order(tray, sinner, column, enemy_n, ctx) do
     row = Enum.random([:top, :bottom])
 
     case skill_point(tray, column, row, ctx) do
