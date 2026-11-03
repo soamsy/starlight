@@ -2,7 +2,7 @@ defmodule StarlightBot.Navigation.Screens.Lux do
   use StarlightBot.Navigation.DSL
 
   screen :lux, identity: :lux_tab_exp do
-    transition to: :home_drive, do: [key(:esc)]
+    transition to: :home_drive, do: [retry_until_arrived([key(:esc)])]
   end
 
   screen :lux_exp, identity: :lux_exp_aligned_correctly, refines: :lux do
