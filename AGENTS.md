@@ -97,6 +97,12 @@ phx.server`, and this is a read query, not a file copy.
 
 ---
 
+## Enemy Targeting
+
+`Vision.EnemyTargets.find/1` finds the enemy skill septagons (the clash targets) with a HOG sliding-window classifier. The model is `priv/vision/enemy_targets_hog.f32`, trained from the in-suite `focused_enemies` captures in the battle history UI. After adding or relabeling suite captures, run `mix enemy_targets.train --cv --write` and commit the regenerated model. Design, accuracy numbers and the dead ends are in `docs/enemy_targets.md`.
+
+---
+
 ## Testing
 
 ```sh
