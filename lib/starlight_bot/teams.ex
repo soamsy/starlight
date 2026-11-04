@@ -1,7 +1,7 @@
 defmodule StarlightBot.Teams do
   require Logger
   import Ecto.Query
-  alias StarlightBot.{BattlePlans, Plans, Repo}
+  alias StarlightBot.{BattlePlans, PlanTemplates, Plans, Repo}
 
   @team_groups [
     {"Status", "affinity", ~w(burn bleed tremor rupture sinking poise charge ammo discard)},
@@ -24,6 +24,8 @@ defmodule StarlightBot.Teams do
   )
 
   @plan_fields [gift_plan_id: :gift_plans, battle_plan_id: :battle_plans, pack_plan_id: :pack_plans]
+
+  @template_fields [gift_plan_id: :gift_template_id, battle_plan_id: :battle_template_id, pack_plan_id: :pack_template_id]
 
   def all_sinners, do: @all_sinners
   def team_types, do: @team_types
@@ -49,7 +51,10 @@ defmodule StarlightBot.Teams do
           battle_plan_name: b.name,
           battle_plan_data: b.data,
           pack_plan_id: t.pack_plan_id,
-          pack_plan_name: p.name
+          pack_plan_name: p.name,
+          gift_template_id: t.gift_template_id,
+          battle_template_id: t.battle_template_id,
+          pack_template_id: t.pack_template_id
         }
     )
     |> Enum.map(&(&1 |> decode_hooks() |> decorate()))
@@ -71,7 +76,10 @@ defmodule StarlightBot.Teams do
           gift_plan_id: t.gift_plan_id,
           gift_plan_data: g.data,
           battle_plan_id: t.battle_plan_id,
-          pack_plan_id: t.pack_plan_id
+          pack_plan_id: t.pack_plan_id,
+          gift_template_id: t.gift_template_id,
+          battle_template_id: t.battle_template_id,
+          pack_template_id: t.pack_template_id
         }
     )
     |> decode_hooks()
@@ -126,7 +134,7 @@ defmodule StarlightBot.Teams do
 
     Enum.reduce_while(@plan_fields, :ok, fn {field, table}, :ok ->
       with nil <- Map.get(team, field),
-           {:ok, plan_id} <- Plans.save(table, %{name: Plans.new_name(table, team_id), data: Plans.blank(table)}),
+           {:ok, plan_id} <- Plans.save(table, %{name: Plans.new_name(table, team_id), data: Plans.blank(table), team_id: team_id}),
            {:ok, _} <- set_plan(team_id, field, plan_id) do
         {:cont, :ok}
       else
@@ -157,15 +165,19 @@ defmodule StarlightBot.Teams do
       team ->
         with {:ok, new_id} <- team |> Map.take([:hooks]) |> Map.put(:name, unique_name("#{team.name} (copy)")) |> save_team() do
           Enum.each(@plan_fields, &copy_plan(team, new_id, &1))
+          Enum.each(@template_fields, fn {field, template_field} -> set_template(new_id, field, Map.get(team, template_field)) end)
           with :ok <- ensure_plans(new_id), do: {:ok, new_id}
         end
     end
   end
 
   defp copy_plan(team, new_id, {field, table}) do
-    with plan_id when is_integer(plan_id) <- Map.get(team, field),
-         %{data: data} <- Plans.get(table, plan_id),
-         {:ok, copy_id} <- Plans.save(table, %{name: Plans.new_name(table, new_id), data: data}) do
+    active = Map.get(team, field)
+
+    for %{id: plan_id} <- Plans.list_for_team(table, team.id),
+        %{data: data} <- [Plans.get(table, plan_id)],
+        {:ok, copy_id} <- [Plans.save(table, %{name: Plans.new_name(table, new_id), data: data, team_id: new_id})],
+        plan_id == active do
       set_plan(new_id, field, copy_id)
     end
   end
@@ -176,6 +188,25 @@ defmodule StarlightBot.Teams do
       |> Enum.with_index()
       |> Enum.each(fn {id, position} -> Repo.update_all(from(t in "teams", where: t.id == ^id), set: [position: position]) end)
     end)
+  end
+
+  def template_field(field), do: Keyword.fetch!(@template_fields, field)
+
+  def set_template(team_id, field, template_id) when is_integer(team_id) and field in [:gift_plan_id, :battle_plan_id, :pack_plan_id] and (is_integer(template_id) or is_nil(template_id)) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    {n, _} = Repo.update_all(from(t in "teams", where: t.id == ^team_id), set: [{template_field(field), template_id}, updated_at: now])
+    if n > 0, do: {:ok, team_id}, else: {:error, :not_found}
+  end
+
+  defp template_data(_table, nil), do: nil
+
+  defp template_data(table, template_id) do
+    kind = Atom.to_string(table)
+
+    case PlanTemplates.get(template_id) do
+      %{kind: ^kind, data: %{} = data} -> data
+      _ -> nil
+    end
   end
 
   def set_plan(team_id, field, plan_id) when is_integer(team_id) and field in [:gift_plan_id, :battle_plan_id, :pack_plan_id] do
@@ -190,6 +221,8 @@ defmodule StarlightBot.Teams do
     {n, _} = Repo.delete_all(from t in "teams", where: t.id == ^id)
 
     if n > 0 do
+      Plans.delete_for_team(id)
+
       Enum.each(@plan_fields, fn {field, table} ->
         if plan_id = Map.get(team, field), do: Plans.delete(table, plan_id)
       end)
@@ -265,8 +298,9 @@ defmodule StarlightBot.Teams do
 
   defp decode_affinity(%{gift_plan_data: json} = team) do
     data =
-      case json && Jason.decode(json) do
+      case template_data(:gift_plans, team.gift_template_id) || (json && Jason.decode(json)) do
         {:ok, %{} = data} -> data
+        %{} = data -> data
         _ -> %{}
       end
 
@@ -283,8 +317,9 @@ defmodule StarlightBot.Teams do
     {data, team} = Map.pop(team, :battle_plan_data)
 
     decoded =
-      case data && Jason.decode(data) do
+      case template_data(:battle_plans, team.battle_template_id) || (data && Jason.decode(data)) do
         {:ok, %{} = data} -> data
+        %{} = data -> data
         _ -> nil
       end
 

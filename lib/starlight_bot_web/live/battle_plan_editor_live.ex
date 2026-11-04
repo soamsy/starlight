@@ -8,6 +8,10 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   alias StarlightBot.BattlePlans.Resolver
 
   @collapsed_floors 5
+  @read_only_events ~w(restore_view select_playbook select_lineup set_paint select_schedule_tab open_action_condition close_action_condition copy_playbook toggle_extreme copy_plan clipboard_status plan_clipboard_failed)
+
+  def read_only_events, do: @read_only_events
+
   @sinner_rows [~w(yi_sang faust don_quixote ryoshu meursault hong_lu), ~w(heathcliff ishmael rodion sinclair outis gregor)]
 
   @impl true
@@ -20,13 +24,15 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       socket
       |> assign(:team_id, team && team.id)
       |> assign(:paste_status, :unknown)
+      |> assign(:template_id, nil)
+      |> read_only_guard(@read_only_events)
       |> assign_templates(:battle_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
       |> assign(:hook_names, Enum.map(Hooks.list_hooks(), & &1.name))
       |> assign_profiles()
       |> reset_editor()
 
-    {:ok, if(team && team.battle_plan_id, do: load_plan(socket, team.battle_plan_id), else: socket)}
+    {:ok, if(team && team.battle_plan_id, do: load_plan(socket, team.battle_plan_id, team.battle_template_id), else: socket)}
   end
 
   @impl true
@@ -37,7 +43,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   @impl true
   def handle_event("new_plan", _, socket) do
-    attrs = %{name: Plans.new_name(:battle_plans, socket.assigns.team_id), data: BattlePlans.blank()}
+    attrs = %{name: Plans.new_name(:battle_plans, socket.assigns.team_id), data: BattlePlans.blank(), team_id: socket.assigns.team_id}
 
     case Plans.save(:battle_plans, attrs) do
       {:ok, id} -> {:noreply, socket |> load_plan(id) |> link_team(:battle_plan_id)}
@@ -55,7 +61,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   def handle_event("plan_clipboard_failed", %{"message" => message}, socket), do: {:noreply, put_flash(socket, :error, message)}
 
   @impl true
-  def handle_event("template_" <> action, params, socket), do: {:noreply, template_event(socket, action, params, :battle_plans, :battle_plan_id, &load_plan/2)}
+  def handle_event("template_" <> action, params, socket), do: {:noreply, template_event(socket, action, params, :battle_plans, :battle_plan_id, &load_plan/3)}
 
   @impl true
   def handle_event("clipboard_status", %{"text" => text}, socket), do: {:noreply, paste_status(socket, :battle_plans, text)}
@@ -1377,13 +1383,14 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     |> assign(:extreme?, false)
   end
 
-  defp load_plan(socket, id) do
-    case Plans.get(:battle_plans, id) do
+  defp load_plan(socket, id, template_id \\ nil) do
+    case Plans.for_team(%{battle_plan_id: id, battle_template_id: template_id}, :battle_plans) do
       %{data: %{"version" => 4} = data} = plan ->
         first_playbook = List.first(data["playbooks"])
 
         socket
-        |> assign(:editing_id, plan.id)
+        |> assign(:editing_id, id)
+        |> assign(:template_id, plan.template_id)
         |> assign(:name, plan.name)
         |> assign(:data, data)
         |> assign(:playbook_id, first_playbook["id"])
@@ -1399,6 +1406,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         put_flash(socket, :error, "Plan data is not version 4. Run mix db.migrate.")
     end
   end
+
+  defp persist(%{assigns: %{template_id: template_id}} = socket) when is_integer(template_id), do: socket
 
   defp persist(socket) do
     attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.data}

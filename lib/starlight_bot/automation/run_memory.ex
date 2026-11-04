@@ -192,8 +192,8 @@ defmodule StarlightBot.Automation.RunMemory do
 
   def gift_plan(ctx) do
     with %{id: team_id} <- team(ctx),
-         %{gift_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
-         %{data: data} when is_map(data) <- Plans.get(:gift_plans, id) do
+         %{} = full <- Teams.get_team(team_id),
+         %{data: data} when is_map(data) <- Plans.for_team(full, :gift_plans) do
       GiftPlans.for_run(data, run_kind(team(ctx)))
     else
       _ -> nil
@@ -206,8 +206,8 @@ defmodule StarlightBot.Automation.RunMemory do
 
   def battle_plan(ctx) do
     with %{id: team_id} <- team(ctx),
-         %{battle_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
-         %{data: data} when is_map(data) <- Plans.get(:battle_plans, id) do
+         %{} = full <- Teams.get_team(team_id),
+         %{data: data} when is_map(data) <- Plans.for_team(full, :battle_plans) do
       data
     else
       _ -> nil
@@ -281,8 +281,8 @@ defmodule StarlightBot.Automation.RunMemory do
   def run_kind(team), do: team |> pack_plan_data() |> Resolver.run_kind()
 
   defp pack_plan_data(%{id: team_id} = team) do
-    with %{pack_plan_id: id} when is_integer(id) <- Teams.get_team(team_id),
-         %{data: %{"mode_schedule" => schedule} = data} when is_list(schedule) <- Plans.get(:pack_plans, id) do
+    with %{} = full <- Teams.get_team(team_id),
+         %{data: %{"mode_schedule" => schedule} = data} when is_list(schedule) <- Plans.for_team(full, :pack_plans) do
       Resolver.with_mode_override(data, Map.get(team, :mode_override))
     else
       _ -> %{}

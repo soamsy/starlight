@@ -10,6 +10,9 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   @modes ~w(normal hard)
   @cell_actions ~w(hunt favorite banned)
   @hunted ~w(hunt favorite)
+  @read_only_events ~w(set_floor_filter set_view filter_packs toggle_help copy_plan clipboard_status plan_clipboard_failed)
+
+  def read_only_events, do: @read_only_events
 
   @impl true
   def mount(_params, session, socket) do
@@ -22,6 +25,8 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       socket
       |> assign(:team_id, team && team.id)
       |> assign(:paste_status, :unknown)
+      |> assign(:template_id, nil)
+      |> read_only_guard(@read_only_events)
       |> assign_templates(:pack_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
       |> assign(:theme_packs, theme_packs)
@@ -30,7 +35,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       |> assign(:show_help, false)
       |> reset_editor()
 
-    {:ok, if(team && team.pack_plan_id, do: load_plan(socket, team.pack_plan_id), else: socket)}
+    {:ok, if(team && team.pack_plan_id, do: load_plan(socket, team.pack_plan_id, team.pack_template_id), else: socket)}
   end
 
   @impl true
@@ -41,7 +46,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
 
   @impl true
   def handle_event("new_plan", _, socket) do
-    attrs = %{name: Plans.new_name(:pack_plans, socket.assigns.team_id), data: blank_plan_data()}
+    attrs = %{name: Plans.new_name(:pack_plans, socket.assigns.team_id), data: blank_plan_data(), team_id: socket.assigns.team_id}
 
     case Plans.save(:pack_plans, attrs) do
       {:ok, id} ->
@@ -62,7 +67,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   def handle_event("plan_clipboard_failed", %{"message" => message}, socket), do: {:noreply, put_flash(socket, :error, message)}
 
   @impl true
-  def handle_event("template_" <> action, params, socket), do: {:noreply, template_event(socket, action, params, :pack_plans, :pack_plan_id, &load_plan/2)}
+  def handle_event("template_" <> action, params, socket), do: {:noreply, template_event(socket, action, params, :pack_plans, :pack_plan_id, &load_plan/3)}
 
   @impl true
   def handle_event("clipboard_status", %{"text" => text}, socket), do: {:noreply, paste_status(socket, :pack_plans, text)}
@@ -476,20 +481,23 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     |> assign(:path_browse, false)
   end
 
-  defp load_plan(socket, id) do
-    case Plans.get(:pack_plans, id) do
+  defp load_plan(socket, id, template_id \\ nil) do
+    case Plans.for_team(%{pack_plan_id: id, pack_template_id: template_id}, :pack_plans) do
       nil ->
         put_flash(socket, :error, "Plan not found.")
 
       plan ->
         socket
-        |> assign(:editing_id, plan.id)
+        |> assign(:editing_id, id)
+        |> assign(:template_id, plan.template_id)
         |> assign(:name, plan.name)
         |> assign(:plan_data, normalize_plan_data(plan.data))
         |> assign(:floor_filter, nil)
         |> assign(:filter, "")
         end
   end
+
+  defp persist_plan(%{assigns: %{template_id: template_id}} = socket) when is_integer(template_id), do: socket
 
   defp persist_plan(socket) do
     attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.plan_data}

@@ -1,7 +1,7 @@
 defmodule StarlightBot.Plans do
   require Logger
   import Ecto.Query
-  alias StarlightBot.{BattlePlans, GiftPlans, Repo, Teams}
+  alias StarlightBot.{BattlePlans, GiftPlans, PlanCounts, PlanTemplates, Repo, Teams}
 
   @tables ~w(gift_plans battle_plans pack_plans)a
 
@@ -13,6 +13,34 @@ defmodule StarlightBot.Plans do
     _ -> []
   end
 
+  @doc "The team's own plans in `table`: `%{id, name, count}` ordered by name."
+  def list_for_team(table, team_id) when table in @tables and is_integer(team_id) do
+    Repo.all(from r in Atom.to_string(table), where: r.team_id == ^team_id, order_by: [asc: r.name], select: %{id: r.id, name: r.name, data: r.data})
+    |> Enum.map(&decode/1)
+    |> Enum.map(&%{id: &1.id, name: &1.name, count: PlanCounts.count(table, &1.data)})
+  rescue
+    _ -> []
+  end
+
+  def list_for_team(_table, _team_id), do: []
+
+  def owned_by?(table, id, team_id) when table in @tables and is_integer(id) and is_integer(team_id) do
+    Repo.exists?(from r in Atom.to_string(table), where: r.id == ^id and r.team_id == ^team_id)
+  end
+
+  def rename(table, id, name) when table in @tables and is_integer(id) and is_binary(name) and name != "" do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    {n, _} = Repo.update_all(from(r in Atom.to_string(table), where: r.id == ^id), set: [name: name, updated_at: now])
+    if n > 0, do: {:ok, id}, else: {:error, :not_found}
+  rescue
+    e in Exqlite.Error ->
+      if e.message =~ "UNIQUE", do: {:error, :name_taken}, else: reraise(e, __STACKTRACE__)
+  end
+
+  def delete_for_team(team_id) when is_integer(team_id) do
+    Enum.each(@tables, &Repo.delete_all(from(r in Atom.to_string(&1), where: r.team_id == ^team_id)))
+  end
+
   @doc "Get a single row by id. Returns nil if not found."
   def get(table, id) when table in @tables and is_integer(id) do
     Repo.one(from r in Atom.to_string(table), where: r.id == ^id, select: %{id: r.id, name: r.name, data: r.data})
@@ -20,6 +48,34 @@ defmodule StarlightBot.Plans do
   rescue
     _ -> nil
   end
+
+  @doc """
+  The plan a team actually uses for `table`: the template it references when one is
+  set and still exists, otherwise its own plan. Carries `:template_id` (nil for the
+  team's own plan).
+  """
+  def for_team(nil, _table), do: nil
+
+  def for_team(team, table) when table in @tables do
+    field = plan_field(table)
+
+    with template_id when is_integer(template_id) <- Map.get(team, Teams.template_field(field)),
+         kind = Atom.to_string(table),
+         %{kind: ^kind, name: name, data: %{} = data} <- PlanTemplates.get(template_id) do
+      %{id: Map.get(team, field), name: name, data: data, template_id: template_id}
+    else
+      _ ->
+        with id when is_integer(id) <- Map.get(team, field), %{} = plan <- get(table, id) do
+          Map.put(plan, :template_id, nil)
+        else
+          _ -> nil
+        end
+    end
+  end
+
+  defp plan_field(:gift_plans), do: :gift_plan_id
+  defp plan_field(:battle_plans), do: :battle_plan_id
+  defp plan_field(:pack_plans), do: :pack_plan_id
 
   @doc """
   Insert or update a row. `attrs` must include `:name` (string) and `:data`
@@ -40,7 +96,7 @@ defmodule StarlightBot.Plans do
         if n > 0, do: {:ok, id}, else: {:error, :not_found}
 
       _ ->
-        row = %{name: name, data: json, inserted_at: now, updated_at: now}
+        row = %{name: name, data: json, team_id: attrs[:team_id], inserted_at: now, updated_at: now}
 
         case Repo.insert_all(table_str, [row], returning: [:id]) do
           {1, [%{id: id}]} -> {:ok, id}
@@ -76,6 +132,10 @@ defmodule StarlightBot.Plans do
         _ -> "New Plan"
       end
 
+    unique_name(table, base)
+  end
+
+  def unique_name(table, base) when table in @tables do
     existing = Repo.all(from r in Atom.to_string(table), select: r.name) |> MapSet.new()
 
     if MapSet.member?(existing, base) do

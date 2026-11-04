@@ -46,7 +46,7 @@
 
           <div class="flex items-center gap-2 flex-wrap">
             <.pane_tabs team_id={@team_id} pane="gifts" counts={@tab_counts} />
-            <.template_picker id="gift-template-picker" templates={@templates} editing={@editing_template} current_count={@tab_counts[:gift_plans]} status={@paste_status} label="gift plan" />
+            <.template_picker id="gift-template-picker" templates={@templates} editing={@editing_template} current_count={@tab_counts[:gift_plans]} status={@paste_status} selected={@template_id} plans={@plans} plan_id={@editing_id} editing_plan={@editing_plan} label="gift plan" />
             <%= if @active_tab == :loadout do %>
               <button phx-click="set_tab" phx-value-tab="shop" class="btn btn-sm btn-accent w-32">Milestones</button>
             <% else %>
@@ -59,6 +59,8 @@
               <%= length(issues) %> issue(s)
             </span>
           </div>
+
+          <.read_only_banner container="gift-view-memory" allowed={read_only_events()} template_id={@template_id} templates={@templates} label="gift plan" />
 
           <div class="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
 

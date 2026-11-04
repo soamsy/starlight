@@ -33,7 +33,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
   defp first_lineup_sinners(team, ctx) do
     data =
-      case team.battle_plan_id && Plans.get(:battle_plans, team.battle_plan_id) do
+      case Plans.for_team(Teams.get_team(team.id), :battle_plans) do
         %{data: data} -> data
         _ -> nil
       end
@@ -51,7 +51,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
   defp lineup_sinners(team, venue, floor, ctx) do
     data =
-      case team.battle_plan_id && Plans.get(:battle_plans, team.battle_plan_id) do
+      case Plans.for_team(Teams.get_team(team.id), :battle_plans) do
         %{data: data} -> data
         _ -> nil
       end

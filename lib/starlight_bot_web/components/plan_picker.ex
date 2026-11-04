@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Components.PlanPicker do
   use Phoenix.Component
   use Phoenix.VerifiedRoutes, endpoint: StarlightBotWeb.Endpoint, router: StarlightBotWeb.Router
-  alias StarlightBot.{PlanClipboard, PlanCounts, Plans, Teams}
+  alias StarlightBot.{PlanClipboard, PlanCounts, PlanTemplates, Plans, Teams}
 
   attr :team_id, :integer, default: nil
   attr :pane, :string, required: true
@@ -82,10 +82,13 @@ defmodule StarlightBotWeb.Components.PlanPicker do
   def notify_parent(socket), do: socket
 
   def copy_plan(socket, table) do
-    %{data: data} = Plans.get(table, socket.assigns.editing_id)
+    %{data: data} = shown_plan(socket, table)
     text = PlanClipboard.encode(table, Teams.get_team(socket.assigns.team_id).name, data)
     socket |> Phoenix.LiveView.push_event("copy_plan_json", %{text: text}) |> Phoenix.LiveView.put_flash(:info, "Plan copied to the clipboard.")
   end
+
+  defp shown_plan(%{assigns: %{template_id: template_id}}, _table) when is_integer(template_id), do: PlanTemplates.get(template_id)
+  defp shown_plan(socket, table), do: Plans.get(table, socket.assigns.editing_id)
 
   def paste_status(socket, table, text) do
     Phoenix.Component.assign(socket, :paste_status, status_of(socket.assigns.editing_id, table, text))
@@ -99,6 +102,10 @@ defmodule StarlightBotWeb.Components.PlanPicker do
       {:ok, data} -> if Plans.get(table, plan_id).data == data, do: :same, else: :different
       {:error, _} -> :invalid
     end
+  end
+
+  def paste_plan(%{assigns: %{template_id: template_id}} = socket, _table, _field, _text, _load_plan) when is_integer(template_id) do
+    Phoenix.LiveView.put_flash(socket, :error, "Choose your own plan in the Plans menu before pasting.")
   end
 
   def paste_plan(socket, table, field, text, load_plan) do

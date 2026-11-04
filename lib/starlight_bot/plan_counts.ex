@@ -2,7 +2,7 @@ defmodule StarlightBot.PlanCounts do
   alias StarlightBot.{Plans, Teams}
 
   @topic "plan_counts"
-  @fields [battle_plans: :battle_plan_id, pack_plans: :pack_plan_id, gift_plans: :gift_plan_id]
+  @tables ~w(battle_plans pack_plans gift_plans)a
 
   def subscribe, do: Phoenix.PubSub.subscribe(StarlightBot.PubSub, @topic)
 
@@ -15,8 +15,8 @@ defmodule StarlightBot.PlanCounts do
   def for_team(team_id) when is_integer(team_id) do
     team = Teams.get_team(team_id)
 
-    Map.new(@fields, fn {table, field} ->
-      case team && team[field] && Plans.get(table, team[field]) do
+    Map.new(@tables, fn table ->
+      case Plans.for_team(team, table) do
         %{data: data} -> {table, count(table, data)}
         _ -> {table, 0}
       end

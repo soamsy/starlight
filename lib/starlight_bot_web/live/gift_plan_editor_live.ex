@@ -77,6 +77,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
+  @read_only_events ~w(restore_view set_tab filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition select_milestone copy_milestone ms_copy_entries ms_select_tab ms_refresh_select_tab ms_open_fusion ms_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed)
+
+  def read_only_events, do: @read_only_events
+
   @impl true
   def mount(_params, session, socket) do
     if connected?(socket), do: PlanCounts.subscribe()
@@ -88,6 +92,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       socket
       |> assign(:team_id, team && team.id)
       |> assign(:paste_status, :unknown)
+      |> assign(:template_id, nil)
+      |> read_only_guard(@read_only_events)
       |> assign_templates(:gift_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
       |> assign(:gifts, Enum.reject(gifts, &EgoGifts.unobtainable?/1))
@@ -101,7 +107,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:gift_popup, nil)
       |> reset_editor()
 
-    {:ok, if(team && team.gift_plan_id, do: load_plan(socket, team.gift_plan_id), else: socket)}
+    {:ok, if(team && team.gift_plan_id, do: load_plan(socket, team.gift_plan_id, team.gift_template_id), else: socket)}
   end
 
   @impl true
@@ -112,7 +118,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("new_plan", _, socket) do
-    attrs = %{name: Plans.new_name(:gift_plans, socket.assigns.team_id), data: GiftPlans.blank()}
+    attrs = %{name: Plans.new_name(:gift_plans, socket.assigns.team_id), data: GiftPlans.blank(), team_id: socket.assigns.team_id}
 
     case Plans.save(:gift_plans, attrs) do
       {:ok, id} -> {:noreply, socket |> load_plan(id) |> link_team(:gift_plan_id)}
@@ -130,7 +136,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def handle_event("plan_clipboard_failed", %{"message" => message}, socket), do: {:noreply, put_flash(socket, :error, message)}
 
   @impl true
-  def handle_event("template_" <> action, params, socket), do: {:noreply, template_event(socket, action, params, :gift_plans, :gift_plan_id, &load_plan/2)}
+  def handle_event("template_" <> action, params, socket), do: {:noreply, template_event(socket, action, params, :gift_plans, :gift_plan_id, &load_plan/3)}
 
   @impl true
   def handle_event("clipboard_status", %{"text" => text}, socket), do: {:noreply, paste_status(socket, :gift_plans, text)}
@@ -1184,8 +1190,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> assign(:gift_sort, "default")
   end
 
-  defp load_plan(socket, id) do
-    case Plans.get(:gift_plans, id) do
+  defp load_plan(socket, id, template_id \\ nil) do
+    case Plans.for_team(%{gift_plan_id: id, gift_template_id: template_id}, :gift_plans) do
       nil ->
         put_flash(socket, :error, "Plan not found.")
 
@@ -1193,7 +1199,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         data = GiftPlans.normalize(plan.data)
 
         socket
-        |> assign(:editing_id, plan.id)
+        |> assign(:editing_id, id)
+        |> assign(:template_id, plan.template_id)
         |> assign(:name, plan.name)
         |> assign(:plan_data, data)
         |> assign(:active_tab, :shop)
@@ -1205,6 +1212,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
             |> reset_browser()
     end
   end
+
+  defp persist_plan(%{assigns: %{template_id: template_id}} = socket) when is_integer(template_id), do: socket
 
   defp persist_plan(socket) do
     attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.plan_data}

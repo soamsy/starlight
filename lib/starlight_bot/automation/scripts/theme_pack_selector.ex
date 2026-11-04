@@ -142,8 +142,9 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   defp team_override(ctx, key), do: ctx |> RunMemory.team() |> then(&(&1 && Map.get(&1, key)))
 
   defp fetch_plan_data(team) do
-    with %{pack_plan_id: id} when is_integer(id) <- team,
-         %{data: data} when is_map(data) <- Plans.get(:pack_plans, id) do
+    with %{id: team_id} <- team,
+         %{} = full <- Teams.get_team(team_id),
+         %{data: data} when is_map(data) <- Plans.for_team(full, :pack_plans) do
       data
     else
       _ -> %{"mode_schedule" => [], "packs" => %{}}

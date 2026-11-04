@@ -1,10 +1,10 @@
-<div class="flex flex-col h-full gap-3 overflow-hidden">
+<div id="pack-plan-editor" class="flex flex-col h-full gap-3 overflow-hidden">
   <StarlightBotWeb.Layouts.flash_toasts flash={@flash} />
     <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
       <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
         <div class="flex items-center gap-3">
           <.pane_tabs team_id={@team_id} pane="packs" counts={@tab_counts} />
-            <.template_picker :if={@editing_id} id="pack-template-picker" templates={@templates} editing={@editing_template} current_count={@tab_counts[:pack_plans]} status={@paste_status} label="pack plan" />
+            <.template_picker :if={@editing_id} id="pack-template-picker" templates={@templates} editing={@editing_template} current_count={@tab_counts[:pack_plans]} status={@paste_status} selected={@template_id} plans={@plans} plan_id={@editing_id} editing_plan={@editing_plan} label="pack plan" />
           <button :if={@editing_id} type="button" phx-click="toggle_help" class="btn btn-sm btn-outline ml-auto gap-0 overflow-hidden px-0" title="How pack plans work">
             <span class="flex h-full items-center border-r border-current/30 bg-base-content/10 px-2 text-xs">guide</span>
             <span class="flex h-full items-center px-2">
@@ -17,6 +17,7 @@
           </button>
           <button :if={is_nil(@editing_id)} type="button" phx-click="new_plan" class="btn btn-primary btn-sm">+ New pack plan</button>
         </div>
+        <.read_only_banner :if={@editing_id} container="pack-plan-editor" allowed={read_only_events()} template_id={@template_id} templates={@templates} label="pack plan" />
         <%= if @editing_id do %>
 
           <div class="flex-1 min-h-0 flex flex-col gap-3 min-h-0">

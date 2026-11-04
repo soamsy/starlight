@@ -314,7 +314,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         |> assign(:hooks, team.hooks)
         |> assign(:editing_hooks?, false)
         |> assign(:selected_ids, selected_ids(team))
-        |> assign(:budget_inputs, blank_budget_inputs(team.battle_plan_id))
+        |> assign(:budget_inputs, blank_budget_inputs(team))
     end
   end
 
@@ -322,8 +322,17 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     %{
       "gift_plan" => team.gift_plan_id,
       "battle_plan" => team.battle_plan_id,
-      "pack_plan" => team.pack_plan_id
+      "pack_plan" => team.pack_plan_id,
+      "gift_override" => template_override(team, :gift_plans),
+      "pack_override" => template_override(team, :pack_plans)
     }
+  end
+
+  defp template_override(team, table) do
+    case Plans.for_team(team, table) do
+      %{template_id: template_id, data: data} when is_integer(template_id) -> data
+      _ -> nil
+    end
   end
 
   def pane_view(pane), do: Map.fetch!(@panes, pane)
@@ -371,25 +380,25 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   defp blank_selected_ids do
-    %{"gift_plan" => nil, "battle_plan" => nil, "pack_plan" => nil}
+    %{"gift_plan" => nil, "battle_plan" => nil, "pack_plan" => nil, "gift_override" => nil, "pack_override" => nil}
   end
 
-  defp blank_budget_inputs(battle_plan_id) do
-    %{pack_searches: 1, sinner_bonus: StarlightBudget.default_sinner_bonus(first_lineup_size(battle_plan_id)), railway_packs: nil, reward_cards: 0}
+  defp blank_budget_inputs(team) do
+    %{pack_searches: 1, sinner_bonus: StarlightBudget.default_sinner_bonus(first_lineup_size(team)), railway_packs: nil, reward_cards: 0}
   end
 
   defp first_lineup_size(nil), do: 0
 
-  defp first_lineup_size(battle_plan_id) do
-    case Plans.get(:battle_plans, battle_plan_id) do
+  defp first_lineup_size(team) do
+    case Plans.for_team(team, :battle_plans) do
       %{data: data} -> length((data |> BattlePlans.lineups() |> List.first() || %{})["sinners"] || [])
-      nil -> 0
+      _ -> 0
     end
   end
 
   def starlight_budget(gift_plans, pack_plans, theme_packs, selected_ids, inputs) do
-    gift_data = plan_data_for(gift_plans, selected_ids["gift_plan"])
-    plan_data = plan_data_for(pack_plans, selected_ids["pack_plan"])
+    gift_data = selected_ids["gift_override"] || plan_data_for(gift_plans, selected_ids["gift_plan"])
+    plan_data = selected_ids["pack_override"] || plan_data_for(pack_plans, selected_ids["pack_plan"])
     floors = StarlightBudget.floor_rewards(plan_data["mode_schedule"] || [])
     floor_total = floors |> Enum.map(& &1.starlight) |> Enum.sum()
     max_pack_searches = StarlightBudget.max_pack_searches(plan_data)
