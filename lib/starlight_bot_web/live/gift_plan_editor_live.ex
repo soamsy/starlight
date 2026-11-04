@@ -77,7 +77,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
-  @read_only_events ~w(restore_view set_tab filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition select_milestone copy_milestone ms_copy_entries ms_select_tab ms_refresh_select_tab ms_open_fusion ms_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed)
+  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition select_milestone copy_milestone ms_copy_entries ms_select_tab ms_refresh_select_tab ms_open_fusion ms_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed)
 
   def read_only_events, do: @read_only_events
 
@@ -105,6 +105,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:route_shop, :normal)
       |> assign(:route_templates, FusionRouteTemplates.all())
       |> assign(:gift_popup, nil)
+      |> assign(:show_help, false)
       |> reset_editor()
 
     {:ok, if(team && team.gift_plan_id, do: load_plan(socket, team.gift_plan_id, team.gift_template_id), else: socket)}
@@ -161,6 +162,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("restore_view", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("toggle_help", _, socket), do: {:noreply, update(socket, :show_help, &(!&1))}
 
   @impl true
   def handle_event("set_tab", %{"tab" => tab}, socket) do

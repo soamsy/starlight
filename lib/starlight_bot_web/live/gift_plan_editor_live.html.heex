@@ -55,9 +55,21 @@
                 Loadout
               </button>
             <% end %>
-            <span :if={issues != []} class="badge badge-warning badge-sm ml-auto" title={Enum.join(issues, "\n")}>
-              <%= length(issues) %> issue(s)
-            </span>
+            <div class="ml-auto flex items-center gap-3">
+              <span :if={issues != []} class="badge badge-warning badge-sm" title={Enum.join(issues, "\n")}>
+                <%= length(issues) %> issue(s)
+              </span>
+              <button type="button" phx-click="toggle_help" class="btn btn-sm btn-outline gap-0 overflow-hidden px-0" title="How gift plans work">
+                <span class="flex h-full items-center border-r border-current/30 bg-base-content/10 px-2 text-xs">guide</span>
+                <span class="flex h-full items-center px-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 16v-4" />
+                    <path d="M12 8h.01" />
+                  </svg>
+                </span>
+              </button>
+            </div>
           </div>
 
           <.read_only_banner container="gift-view-memory" allowed={read_only_events()} template_id={@template_id} templates={@templates} label="gift plan" />
@@ -637,4 +649,51 @@
         <% end %>
       </div>
     </div>
+  <%= if @show_help do %>
+    <div class="modal modal-open" phx-window-keydown="toggle_help" phx-key="Escape">
+      <div class="modal-box max-w-3xl max-h-[85vh] flex flex-col gap-3 text-sm">
+        <h2 class="font-bold text-base">How gift plans work</h2>
+        <div class="overflow-y-auto flex flex-col gap-3 pr-1">
+          <section>
+            <h4 class="font-semibold mb-1">Two parts</h4>
+            <p><span class="font-medium">Loadout</span> is everything set up before the first shop: the starting gift, gift search, graces and mounting trials. It applies to every run. <span class="font-medium">Milestones</span> drive what the bot buys, keeps, fuses and refreshes in each shop. Switch between them with the button at the top.</p>
+          </section>
+          <section>
+            <h4 class="font-semibold mb-1">Milestones</h4>
+            <p>Milestones run top to bottom. The bot works on one in each shop until its goals are met, then moves to the next. Drag gifts from the search on the left into the milestone, or use Add.</p>
+            <ul class="mt-1 list-disc pl-5 flex flex-col gap-1">
+              <li><span class="font-medium">When</span> limits a milestone to certain runs: every run, normal F1-F5, hard starting F2-F5, hard from F1, or extreme planned. It follows the run's theme pack plan. Rows are tinted to match.</li>
+              <li><span class="font-medium">Required</span> entries must all be owned. Extra goals ("at least N of") let a group of entries count as one requirement.</li>
+              <li><span class="font-medium">Any-tier and any-affinity</span> entries never count toward goals and never keep anything. Buy buys matches when no wanted gift is on the shelf, and Sell sells matches at the start of the milestone. A specific gift entry overrides them.</li>
+              <li><span class="font-medium">Fixed fusions</span> add their ingredients too. Open a fusion entry to choose its routes. See <span class="font-mono text-xs">docs/fusion.md</span> for the fusion rules.</li>
+              <li><span class="font-medium">Greatly heal</span> and <span class="font-medium">Revive</span> pick sinners to restore while working on the milestone.</li>
+              <li><span class="font-medium">&infin; Endless</span> means the milestone is never reached. It keeps buying and refreshing until a refresh case leaves the shop, and later milestones never run.</li>
+            </ul>
+          </section>
+          <section>
+            <h4 class="font-semibold mb-1">Refresh</h4>
+            <p>Cases are checked top to bottom, like if / else if. The first case whose condition is true runs its action: Refresh, Keyword Refresh or Leave Shop, optionally up to a maximum count. If no case matches, the bot stops working on the milestone.</p>
+          </section>
+          <section>
+            <h4 class="font-semibold mb-1">Loadout</h4>
+            <ul class="list-disc pl-5 flex flex-col gap-1">
+              <li><span class="font-medium">Affinity and cabinet order</span>: the starting gift picks, in order. The cabinet only allows as many picks as your graces give.</li>
+              <li><span class="font-medium">Gift search</span>: gifts to pick on the gift search screen after the cabinet, Tier 3 and under. Each slot costs <span class="inline-flex items-center gap-1 rounded-full bg-base-300 px-1.5 py-0.5 text-[10px] font-medium align-middle"><img src="/images/icons/starlight.webp" alt="Starlight" class="h-3 w-3" />starlight</span>. Leave it empty to skip gift search.</li>
+              <li><span class="font-medium">Graces</span>: starter buffs, each with two enhancement tiers. Pick the ones to select on every run; the total Starlight cost is shown.</li>
+              <li><span class="font-medium">Mounting trials</span>: from a floor onward, either avoid boosting enemy HP or take the best gift. With no rows every floor takes the best gift.</li>
+              <li><span class="font-medium">Encounter rewards</span>: from a floor onward, the order of reward types. The first one visible on screen is taken; if none is, the highest tier available.</li>
+            </ul>
+          </section>
+          <section>
+            <h4 class="font-semibold mb-1">Issues</h4>
+            <p>The badge in the corner lists problems found in the plan. Hover it for the details.</p>
+          </section>
+        </div>
+        <div class="modal-action mt-0">
+          <button phx-click="toggle_help" class="btn btn-sm">Close</button>
+        </div>
+      </div>
+      <div class="modal-backdrop" phx-click="toggle_help"></div>
+    </div>
+  <% end %>
 </div>
