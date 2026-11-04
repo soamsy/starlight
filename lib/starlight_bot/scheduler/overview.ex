@@ -13,10 +13,20 @@ defmodule StarlightBot.Scheduler.Overview do
       charger_on: charger.enabled,
       blocked: blocked,
       runs_pending: DailyProgress.pending?(remaining),
-      runs_text: runs.enabled && Scheduler.outlook(now, runs, remaining, busy?, blocked),
+      runs_text: runs.enabled && (Scheduler.outlook(now, runs, remaining, busy?, blocked) || close_text(runs, busy?)),
       charge_text: EnkephalinSchedule.outlook(now, charger, blocked, busy?),
       label: label(now, runs, remaining, charger, blocked, busy?)
     }
+  end
+
+  defp close_text(%{close_game_when_done: true}, true) do
+    if close_armed?(), do: "Will close Limbus when this run finishes if the daily goals are met"
+  end
+
+  defp close_text(_runs, _busy?), do: nil
+
+  defp close_armed? do
+    GenServer.whereis(Scheduler.Server) != nil and Scheduler.Server.status().close_armed
   end
 
   def label(now, runs, remaining, charger, blocked, busy?) do

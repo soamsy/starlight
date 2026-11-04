@@ -1,6 +1,6 @@
 defmodule StarlightBot.Scheduler.Server do
   use GenServer
-  alias StarlightBot.{AppSettings, DailyProgress, GameWindow, LogStore, Scheduler}
+  alias StarlightBot.{DailyProgress, GameWindow, LogStore, Scheduler}
   alias StarlightBot.Automation.Engine
   alias StarlightBot.Navigation.Navigator
 
@@ -10,9 +10,8 @@ defmodule StarlightBot.Scheduler.Server do
   @run_start_confirm_ms 5_000
   @max_events 50
   @forced_window_s 2 * 3600
-  @closed_after_row_key "scheduler_closed_after_row"
 
-  defstruct settings: nil, task: nil, activity: nil, retry_after: nil, last_fire: nil, events: []
+  defstruct settings: nil, task: nil, activity: nil, retry_after: nil, last_fire: nil, close_armed: false, events: []
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -83,19 +82,20 @@ defmodule StarlightBot.Scheduler.Server do
     end
   end
 
-  defp maybe_close(%{task: nil, settings: %{close_game_when_done: true} = settings} = state) do
-    latest = DailyProgress.latest()
-
-    if Scheduler.close_after_goals?(settings, DailyProgress.remaining(settings), Scheduler.busy?(), latest, closed_after_row()) do
-      result = GameWindow.close()
-      AppSettings.put(@closed_after_row_key, Integer.to_string(latest.id))
-
-      case result do
-        :ok -> add_event(state, :ok, "goals met, closed Limbus")
-        {:error, reason} -> add_event(state, :error, "goals met, but closing Limbus failed: #{inspect(reason)}")
-      end
-    else
+  defp maybe_close(%{task: nil, close_armed: true, settings: settings} = state) do
+    if Scheduler.busy?() do
       state
+    else
+      state = %{state | close_armed: false}
+
+      if Scheduler.close_after_goals?(settings, DailyProgress.remaining(settings), Navigator.status().last_run) do
+        case GameWindow.close() do
+          :ok -> add_event(state, :ok, "goals met, closed Limbus")
+          {:error, reason} -> add_event(state, :error, "goals met, but closing Limbus failed: #{inspect(reason)}")
+        end
+      else
+        state
+      end
     end
   end
 
@@ -133,13 +133,6 @@ defmodule StarlightBot.Scheduler.Server do
     end
   end
 
-  defp closed_after_row do
-    case Integer.parse(AppSettings.get(@closed_after_row_key) || "") do
-      {id, ""} -> id
-      _ -> 0
-    end
-  end
-
   defp retry_pending?(%{retry_after: nil}), do: false
   defp retry_pending?(%{retry_after: at}), do: System.monotonic_time(:millisecond) < at
 
@@ -156,7 +149,7 @@ defmodule StarlightBot.Scheduler.Server do
     state =
       case result do
         {:fired, remaining, text} ->
-          add_event(%{state | retry_after: nil, last_fire: remaining}, :ok, text)
+          add_event(%{state | retry_after: nil, last_fire: remaining, close_armed: true}, :ok, text)
 
         {:ok, text} ->
           add_event(state, :ok, text)
@@ -276,6 +269,7 @@ defmodule StarlightBot.Scheduler.Server do
     %{
       settings: state.settings,
       activity: state.activity,
+      close_armed: state.close_armed,
       retry_after_ms: if(retry_pending?(state), do: state.retry_after - System.monotonic_time(:millisecond)),
       events: state.events
     }

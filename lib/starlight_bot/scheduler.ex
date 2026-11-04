@@ -51,9 +51,8 @@ defmodule StarlightBot.Scheduler do
     |> save_settings()
   end
 
-  def close_after_goals?(settings, remaining, busy?, latest, closed_after_row) do
-    settings.close_game_when_done and not DailyProgress.pending?(remaining) and not busy? and
-      match?(%{source: "scheduler", id: id} when id > closed_after_row, latest)
+  def close_after_goals?(settings, remaining, last_run) do
+    settings.close_game_when_done and not DailyProgress.pending?(remaining) and match?(%{ok?: true}, last_run)
   end
 
   def busy?, do: EnkephalinSchedule.charging?() or navigator_busy?()

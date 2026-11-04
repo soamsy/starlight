@@ -114,34 +114,23 @@ defmodule StarlightBot.SchedulerTest do
   describe "close_after_goals?" do
     @on %{close_game_when_done: true}
     @done %{"exp" => 0, "thread" => 0, "md" => 0}
-    @by_bot %{id: 10, source: "scheduler"}
+    @finished %{kind: :mirror_dungeon, ok?: true}
 
-    test "closes when the bot's work completed the goals and nothing has been closed since" do
-      assert Scheduler.close_after_goals?(@on, @done, false, @by_bot, 0)
-      assert Scheduler.close_after_goals?(@on, @done, false, @by_bot, 9)
+    test "closes when the scheduled run finished cleanly and the goals are met" do
+      assert Scheduler.close_after_goals?(@on, @done, @finished)
     end
 
     test "never closes with the setting off" do
-      refute Scheduler.close_after_goals?(%{close_game_when_done: false}, @done, false, @by_bot, 0)
+      refute Scheduler.close_after_goals?(%{close_game_when_done: false}, @done, @finished)
     end
 
-    test "waits while goals are pending or something is running" do
-      refute Scheduler.close_after_goals?(@on, %{@done | "md" => 1}, false, @by_bot, 0)
-      refute Scheduler.close_after_goals?(@on, @done, true, @by_bot, 0)
+    test "waits while goals are pending" do
+      refute Scheduler.close_after_goals?(@on, %{@done | "md" => 1}, @finished)
     end
 
-    test "does not close goals the user finished or extended by hand" do
-      refute Scheduler.close_after_goals?(@on, @done, false, nil, 0)
-      refute Scheduler.close_after_goals?(@on, @done, false, %{id: 10, source: "manual"}, 0)
-      refute Scheduler.close_after_goals?(@on, @done, false, %{id: 11, source: "manual"}, 10)
-    end
-
-    test "does not close again after reopening with no new bot work" do
-      refute Scheduler.close_after_goals?(@on, @done, false, @by_bot, 10)
-    end
-
-    test "closes a second time once the bot completes raised goals" do
-      assert Scheduler.close_after_goals?(@on, @done, false, %{id: 14, source: "scheduler"}, 10)
+    test "does not close after a cancelled or failed run" do
+      refute Scheduler.close_after_goals?(@on, @done, nil)
+      refute Scheduler.close_after_goals?(@on, @done, %{kind: :mirror_dungeon, ok?: false})
     end
   end
 
