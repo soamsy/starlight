@@ -3,13 +3,15 @@ defmodule StarlightBotWeb.Components.SchedulerControls do
 
   attr :blocked, :any, default: nil
   attr :pending, :boolean, default: true
+  attr :starting, :boolean, default: false
   attr :section, :atom, default: :all, values: [:all, :start, :hold]
 
   def scheduler_controls(assigns) do
     ~H"""
     <div class={["flex flex-col gap-1", @section == :hold && "items-end"]}>
       <div :if={@section != :hold} class="flex flex-wrap gap-1">
-        <button :if={@pending} type="button" phx-click="scheduler_start_now" class="btn btn-xs btn-success">Start runs now</button>
+        <button :if={@starting} type="button" phx-click="scheduler_cancel_start" class="btn btn-xs btn-error">Cancel scheduled run</button>
+        <button :if={@pending and not @starting} type="button" phx-click="scheduler_start_now" class="btn btn-xs btn-success">Start runs now</button>
         <button :if={@blocked} type="button" phx-click="scheduler_hold" phx-value-for="clear" class="btn btn-xs">Resume schedulers</button>
       </div>
       <span :if={@section != :start} class="font-semibold text-base-content/50">Stop both schedulers for</span>

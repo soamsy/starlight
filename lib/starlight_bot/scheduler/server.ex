@@ -19,6 +19,8 @@ defmodule StarlightBot.Scheduler.Server do
 
   def start_now, do: GenServer.cast(__MODULE__, :start_now)
 
+  def cancel, do: GenServer.cast(__MODULE__, :cancel)
+
   @impl true
   def init(_opts) do
     Scheduler.subscribe()
@@ -34,6 +36,17 @@ defmodule StarlightBot.Scheduler.Server do
     Scheduler.hold("clear")
     {:noreply, start_now_run(%{state | retry_after: nil, last_fire: nil})}
   end
+
+  def handle_cast(:cancel, %{task: %Task{} = task} = state) do
+    Scheduler.hold("1")
+    Task.Supervisor.terminate_child(StarlightBot.TaskSupervisor, task.pid)
+    Process.demonitor(task.ref, [:flush])
+    Navigator.cancel()
+    state = %{state | task: nil, activity: nil, retry_after: nil, last_fire: nil}
+    {:noreply, add_event(state, :info, "canceled the scheduled run before it started, holding the schedulers for 1h")}
+  end
+
+  def handle_cast(:cancel, state), do: {:noreply, state}
 
   @impl true
   def handle_info(:tick, state) do

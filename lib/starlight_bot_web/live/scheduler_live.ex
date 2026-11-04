@@ -68,6 +68,11 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     {:noreply, assign_outlook(socket)}
   end
 
+  def handle_event("scheduler_cancel_start", _params, socket) do
+    Server.cancel()
+    {:noreply, socket}
+  end
+
   def handle_event("scheduler_start_now", _params, socket) do
     Server.start_now()
     {:noreply, socket}
