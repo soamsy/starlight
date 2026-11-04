@@ -1,7 +1,7 @@
 <div class="flex flex-col h-full min-h-0 gap-2 overflow-hidden">
   <div class="flex flex-wrap items-center gap-x-4 gap-y-2 shrink-0">
     <h2 :if={not @embedded?} class="text-lg font-semibold">Log</h2>
-    <span class="badge badge-ghost badge-sm font-mono">{@shown} lines</span>
+    <span id={"#{@lines_dom_id}-count"} phx-update="ignore" class="badge badge-ghost badge-sm font-mono">0 lines</span>
 
     <label class="flex items-center gap-1.5 text-sm cursor-pointer select-none">
       <input type="checkbox" class="toggle toggle-xs" checked={@show_steps} phx-click="toggle_steps" /> steps
@@ -22,10 +22,6 @@
         <span class="truncate">only {@machine_filter_label}</span>
         <button class="hover:text-error" phx-click="clear_machine_filter" title="Show every machine">✕</button>
       </span>
-    <% end %>
-
-    <%= if not @embedded? and older_available?(@oldest_seq) do %>
-      <button class="btn btn-xs" phx-click="load_older">Load older</button>
     <% end %>
 
     <span :if={not @embedded?} class="ml-auto text-xs text-base-content/50 font-mono select-all truncate">
@@ -67,13 +63,12 @@
 
   <div class="relative flex-1 min-h-0 rounded-xl overflow-hidden">
   <div class="log-pane opacity-92 absolute inset-0 rounded-xl pointer-events-none"></div>
-  <div id={@lines_dom_id} phx-update="stream" phx-hook="ScrollToBottom"
-       class="relative h-full overflow-y-auto p-2 font-mono text-xs flex flex-col">
-    <div :for={{dom_id, entry} <- @streams.entries} id={dom_id}
-         class={"flex gap-2 leading-snug border-l-2 pl-2 py-px #{line_class(entry.kind)}"}>
-      <span class="text-base-content/40 shrink-0 tabular-nums" title={LogStore.format_time(entry.at)}>{short_time(entry.at)}</span>
-      <span class="whitespace-pre-wrap break-all">{entry.text}</span>
-    </div>
+  <div id={@lines_dom_id} phx-hook="LogVirtual" class="relative h-full"
+       data-count-id={"#{@lines_dom_id}-count"}
+       data-show-steps={to_string(@show_steps)}
+       data-errors-only={to_string(@errors_only)}
+       data-machine={@machine_filter && pid_text(@machine_filter)}>
+    <div id={"#{@lines_dom_id}-scroll"} phx-update="ignore" class="relative h-full overflow-y-auto px-2 font-mono text-xs"></div>
   </div>
   </div>
 </div>

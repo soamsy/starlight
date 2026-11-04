@@ -746,9 +746,293 @@ const ScrollToBottom = {
     this.pinned = this.el.scrollHeight - this.el.scrollTop - this.el.clientHeight <= SCROLL_PIN_THRESHOLD_PX
   },
   updated() {
-    if (this.pinned) this.el.scrollTop = this.el.scrollHeight
+    if (!this.pinned) return
+    cancelAnimationFrame(this.frame)
+    this.frame = requestAnimationFrame(() => { this.el.scrollTop = this.el.scrollHeight })
+  },
+  destroyed() {
+    cancelAnimationFrame(this.frame)
   }
 }
+
+const LOG_ROW_CLASS = "flex gap-2 leading-snug border-l-2 pl-2 py-px"
+const LOG_KIND_CLASS = {
+  error: "border-error bg-error/10 text-error",
+  ok: "border-success/60 text-base-content",
+  info: "border-base-content/20 text-base-content/80",
+  step: "border-transparent text-base-content/40 text-[11px]"
+}
+const LOG_DEFAULT_CLASS = "border-base-content/10 text-base-content/60"
+const LOG_PAD_PX = 8
+const LOG_OVERSCAN_PX = 800
+const LOG_PIN_PX = 60
+
+const logKindClass = (kind) => LOG_KIND_CLASS[kind] || LOG_DEFAULT_CLASS
+
+const LogVirtual = {
+  mounted() {
+    this.scroller = this.el.firstElementChild
+    this.count = document.getElementById(this.el.dataset.countId)
+    this.sizer = document.createElement("div")
+    this.sizer.style.position = "relative"
+    this.win = document.createElement("div")
+    this.win.style.cssText = "position:absolute;left:0;right:0"
+    this.sizer.appendChild(this.win)
+    this.scroller.appendChild(this.sizer)
+
+    this.all = []
+    this.view = []
+    this.offsets = [0]
+    this.range = [0, 0]
+    this.pinned = true
+    this.metrics = null
+    this.metricsVersion = 0
+    this.filterKey = this.readFilterKey()
+    this.lastWidth = 0
+    this.frame = null
+
+    this.scroller.addEventListener("scroll", this.onScroll = () => {
+      this.pinned = this.scroller.scrollHeight - this.scroller.scrollTop - this.scroller.clientHeight <= LOG_PIN_PX
+      this.scheduleRender()
+    })
+
+    this.resizer = new ResizeObserver(() => this.onResize())
+    this.resizer.observe(this.scroller)
+
+    this.handleEvent("log_entries", ({ id, mode, entries }) => {
+      if (id === this.el.id) this.receive(mode, entries.map(parseLogEntry))
+    })
+
+    this.pushEvent("log_ready", {})
+  },
+
+  reconnected() {
+    this.pushEvent("log_ready", {})
+  },
+
+  updated() {
+    const key = this.readFilterKey()
+    if (key === this.filterKey) return
+    this.filterKey = key
+    this.relayout()
+  },
+
+  destroyed() {
+    this.resizer.disconnect()
+    this.scroller.removeEventListener("scroll", this.onScroll)
+    cancelAnimationFrame(this.frame)
+  },
+
+  readFilterKey() {
+    const d = this.el.dataset
+    return `${d.showSteps}|${d.errorsOnly}|${d.machine || ""}`
+  },
+
+  passes(e) {
+    const d = this.el.dataset
+    return (d.showSteps === "true" || e.kind !== "step") &&
+      (d.errorsOnly !== "true" || e.kind === "error") &&
+      (!d.machine || e.lineage.includes(d.machine))
+  },
+
+  receive(mode, entries) {
+    if (mode === "reset") {
+      this.all = entries
+      this.pinned = true
+      this.relayout()
+    } else if (mode === "prepend") {
+      this.all = entries.concat(this.all)
+      this.relayout()
+    } else {
+      for (const e of entries) this.all.push(e)
+      if (!this.ensureMetrics()) return
+      for (const e of entries) {
+        if (!this.passes(e)) continue
+        this.view.push(e)
+        this.offsets.push(this.offsets[this.offsets.length - 1] + this.heightOf(e))
+      }
+      this.layout()
+      if (this.pinned) this.stickToBottom()
+      else this.scheduleRender()
+    }
+  },
+
+  relayout() {
+    if (!this.ensureMetrics()) return
+    const anchor = this.captureAnchor()
+    this.view = this.all.filter((e) => this.passes(e))
+    const offsets = new Array(this.view.length + 1)
+    offsets[0] = 0
+    for (let i = 0; i < this.view.length; i++) offsets[i + 1] = offsets[i] + this.heightOf(this.view[i])
+    this.offsets = offsets
+    this.layout()
+    this.restoreAnchor(anchor)
+    this.renderWindow(true)
+  },
+
+  layout() {
+    this.sizer.style.height = `${this.offsets[this.offsets.length - 1] + 2 * LOG_PAD_PX}px`
+    if (this.count) this.count.textContent = `${this.view.length} lines`
+  },
+
+  stickToBottom() {
+    this.scroller.scrollTop = this.scroller.scrollHeight
+    this.renderWindow(false)
+  },
+
+  captureAnchor() {
+    if (this.pinned || this.view.length === 0) return null
+    const y = this.scroller.scrollTop - LOG_PAD_PX
+    const i = this.indexAt(y)
+    return { seq: this.view[i].seq, delta: y - this.offsets[i] }
+  },
+
+  restoreAnchor(anchor) {
+    if (this.pinned || !anchor) {
+      this.scroller.scrollTop = this.scroller.scrollHeight
+      return
+    }
+    const i = this.lowerBound(anchor.seq)
+    this.scroller.scrollTop = this.offsets[i] + anchor.delta + LOG_PAD_PX
+  },
+
+  indexAt(y) {
+    const offsets = this.offsets
+    let lo = 0
+    let hi = Math.max(offsets.length - 2, 0)
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (offsets[mid] <= y) lo = mid
+      else hi = mid - 1
+    }
+    return lo
+  },
+
+  lowerBound(seq) {
+    let lo = 0
+    let hi = this.view.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (this.view[mid].seq < seq) lo = mid + 1
+      else hi = mid
+    }
+    return Math.min(lo, Math.max(this.view.length - 1, 0))
+  },
+
+  scheduleRender() {
+    if (this.frame) return
+    this.frame = requestAnimationFrame(() => {
+      this.frame = null
+      this.renderWindow(false)
+    })
+  },
+
+  renderWindow(force) {
+    const n = this.view.length
+    if (n === 0) {
+      this.win.replaceChildren()
+      this.range = [0, 0]
+      return
+    }
+    const top = this.scroller.scrollTop - LOG_PAD_PX
+    const bottom = top + this.scroller.clientHeight
+    const first = this.indexAt(top)
+    const last = this.indexAt(bottom)
+    if (!force && this.range[0] <= first && last < this.range[1]) return
+
+    const start = this.indexAt(top - LOG_OVERSCAN_PX)
+    const end = Math.min(n, this.indexAt(bottom + LOG_OVERSCAN_PX) + 1)
+    const fragment = document.createDocumentFragment()
+    for (let i = start; i < end; i++) fragment.appendChild(this.buildRow(this.view[i]))
+    this.win.replaceChildren(fragment)
+    this.win.style.top = `${LOG_PAD_PX + this.offsets[start]}px`
+    this.range = [start, end]
+  },
+
+  buildRow(e) {
+    const row = document.createElement("div")
+    row.className = `${LOG_ROW_CLASS} ${logKindClass(e.kind)}`
+    const time = document.createElement("span")
+    time.className = "text-base-content/40 shrink-0 tabular-nums"
+    time.title = e.at
+    time.textContent = e.at.slice(11)
+    const text = document.createElement("span")
+    text.className = "whitespace-pre-wrap break-all"
+    text.textContent = e.text
+    row.append(time, text)
+    return row
+  },
+
+  heightOf(e) {
+    if (e.hv === this.metricsVersion) return e.h
+    const m = e.kind === "step" ? this.metrics.step : this.metrics.base
+    const t = e.text
+    let lines = 0
+    let from = 0
+    for (;;) {
+      const nl = t.indexOf("\n", from)
+      const len = (nl === -1 ? t.length : nl) - from
+      lines += Math.max(1, Math.ceil(len / m.cols))
+      if (nl === -1) break
+      from = nl + 1
+    }
+    e.h = lines * m.lineH + m.pad
+    e.hv = this.metricsVersion
+    return e.h
+  },
+
+  ensureMetrics() {
+    if (this.metrics) return true
+    return this.measure()
+  },
+
+  measure() {
+    if (this.scroller.clientWidth === 0) return false
+    const probe = (kind) => {
+      const row = document.createElement("div")
+      row.className = `${LOG_ROW_CLASS} ${logKindClass(kind)}`
+      row.style.cssText = "position:absolute;visibility:hidden;left:0;right:0"
+      const time = document.createElement("span")
+      time.className = "shrink-0 tabular-nums"
+      time.textContent = "00:00:00.000"
+      const text = document.createElement("span")
+      text.className = "whitespace-pre-wrap break-all"
+      text.style.flex = "1 1 0%"
+      text.textContent = "0"
+      const ch = document.createElement("span")
+      ch.style.cssText = "position:absolute;white-space:pre"
+      ch.textContent = "0".repeat(100)
+      row.append(time, text, ch)
+      this.scroller.appendChild(row)
+      const style = getComputedStyle(row)
+      const pad = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+      const rowH = row.getBoundingClientRect().height
+      const charW = ch.getBoundingClientRect().width / 100
+      const textW = text.getBoundingClientRect().width
+      row.remove()
+      return { lineH: rowH - pad, pad, cols: Math.max(1, Math.floor(textW / charW + 1e-6)) }
+    }
+    this.metrics = { base: probe("info"), step: probe("step") }
+    this.metricsVersion += 1
+    this.lastWidth = this.scroller.clientWidth
+    return true
+  },
+
+  onResize() {
+    const width = this.scroller.clientWidth
+    if (width !== this.lastWidth) {
+      this.metrics = null
+      if (this.all.length > 0) this.relayout()
+      else this.lastWidth = width
+    } else if (this.pinned) {
+      this.stickToBottom()
+    } else {
+      this.scheduleRender()
+    }
+  }
+}
+
+const parseLogEntry = ([seq, at, kind, text, lineage]) => ({ seq, at, kind, text, lineage, h: 0, hv: -1 })
 
 const PlanClipboard = {
   mounted() {
@@ -1775,7 +2059,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
+  hooks: { ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
 })
 
 liveSocket.connect()

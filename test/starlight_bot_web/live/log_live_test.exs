@@ -13,74 +13,71 @@ defmodule StarlightBotWeb.Live.LogLiveTest do
     }
   end
 
-  defp settle(socket) do
-    streams = Map.update!(socket.assigns.streams, :entries, &Phoenix.LiveView.LiveStream.prune/1)
-    %{socket | assigns: %{socket.assigns | streams: streams}}
+  defp pushed(socket) do
+    socket.private.live_temp
+    |> Map.get(:push_events, [])
+    |> Enum.reverse()
+    |> Enum.map(fn [_event, payload] -> payload end)
   end
 
-  defp html(socket) do
-    socket.assigns
-    |> LogLive.render()
-    |> Phoenix.HTML.Safe.to_iodata()
-    |> IO.iodata_to_binary()
+  defp texts(socket), do: socket |> pushed() |> Enum.flat_map(& &1.entries) |> Enum.map(&Enum.at(&1, 3))
+
+  defp ready(session \\ %{}) do
+    {:ok, socket} = LogLive.mount(%{}, session, socket())
+    {:noreply, socket} = LogLive.handle_event("log_ready", %{}, socket)
+    socket
   end
 
-  test "renders existing lines with timestamps and appends live ones" do
+  test "sends existing lines on ready, then batches live ones" do
     marker = "log-live-#{System.unique_integer([:positive])}"
     LogStore.append(:error, "#{marker} boom")
     :sys.get_state(LogStore)
 
-    {:ok, socket} = LogLive.mount(%{}, %{}, socket())
-    rendered = html(socket)
-    assert rendered =~ "#{marker} boom"
-    assert rendered =~ ~r/\d\d:\d\d:\d\d\.\d{3}/
+    socket = ready()
+    assert [%{mode: "reset", entries: entries}] = pushed(socket)
+    assert Enum.any?(entries, &(Enum.at(&1, 3) == "#{marker} boom"))
+    assert Enum.any?(entries, &(Enum.at(&1, 1) =~ ~r/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}$/))
 
-    entry = %{seq: 999_999_999, at: LogStore.now(), kind: :ok, text: "#{marker} live"}
+    entry = %{seq: 999_999_999, at: LogStore.now(), kind: :ok, text: "#{marker} live", lineage: []}
     {:noreply, socket} = LogLive.handle_info({:log_entry, entry}, socket)
-    assert html(socket) =~ "#{marker} live"
+    {:noreply, socket} = LogLive.handle_info({:log_entry, %{entry | seq: 1_000_000_000, text: "#{marker} live 2"}}, socket)
+    {:noreply, socket} = LogLive.handle_info(:flush_entries, socket)
+    assert %{mode: "append", entries: [[999_999_999, _, "ok", _, []], [1_000_000_000, _, "ok", _, []]]} = List.last(pushed(socket))
   end
 
-  test "step lines are hidden until steps are switched on, and errors only narrows to errors" do
-    marker = "log-kinds-#{System.unique_integer([:positive])}"
-    LogStore.append(:step, "#{marker} step")
-    LogStore.append(:info, "#{marker} info")
-    LogStore.append(:error, "#{marker} error")
+  test "entries already sent in the reset are not sent again" do
+    marker = "log-dupe-#{System.unique_integer([:positive])}"
+    LogStore.append(:info, "#{marker} one")
     :sys.get_state(LogStore)
 
-    {:ok, socket} = LogLive.mount(%{}, %{}, socket())
-    rendered = html(socket)
-    refute rendered =~ "#{marker} step"
-    assert rendered =~ "#{marker} info"
-
-    {:noreply, socket} = LogLive.handle_event("toggle_steps", %{}, settle(socket))
-    assert html(socket) =~ "#{marker} step"
-
-    {:noreply, socket} = LogLive.handle_event("toggle_errors", %{}, settle(socket))
-    rendered = html(socket)
-    assert rendered =~ "#{marker} error"
-    refute rendered =~ "#{marker} info"
-
-    {:noreply, socket} = LogLive.handle_info({:log_entry, %{seq: 999_999_998, at: LogStore.now(), kind: :info, text: "#{marker} live info"}}, settle(socket))
-    refute html(socket) =~ "#{marker} live info"
+    socket = ready()
+    [newest] = LogStore.recent(1)
+    {:noreply, socket} = LogLive.handle_info({:log_entry, newest}, socket)
+    assert socket.assigns.pending == []
   end
 
-  test "embedded in another page it keeps only its line cap and drops the page-only controls" do
+  test "filter toggles only change assigns and never resend lines" do
+    socket = ready()
+    sent = length(pushed(socket))
+
+    {:noreply, socket} = LogLive.handle_event("toggle_steps", %{}, socket)
+    {:noreply, socket} = LogLive.handle_event("toggle_errors", %{}, socket)
+    assert socket.assigns.show_steps
+    assert socket.assigns.errors_only
+    assert length(pushed(socket)) == sent
+  end
+
+  test "embedded in another page it sends every line and drops the page-only controls" do
     marker = "log-embedded-#{System.unique_integer([:positive])}"
     for n <- 1..5, do: LogStore.append(:info, "#{marker} #{n}")
     :sys.get_state(LogStore)
 
-    {:ok, socket} = LogLive.mount(%{}, %{"max_lines" => 3}, socket())
-    rendered = html(socket)
-    assert socket.assigns.shown == 3
-    assert rendered =~ "#{marker} 5"
-    refute rendered =~ "#{marker} 2"
-    assert :binary.match(rendered, "#{marker} 3") < :binary.match(rendered, "#{marker} 5")
-    refute rendered =~ ">Log</h2>"
-    refute rendered =~ "Load older"
+    socket = ready(%{"embedded" => true})
+    sent = Enum.filter(texts(socket), &String.starts_with?(&1, marker))
+    assert sent == for(n <- 1..5, do: "#{marker} #{n}")
+    assert socket.assigns.embedded?
 
-    entry = %{seq: 999_999_997, at: LogStore.now(), kind: :info, text: "#{marker} live", lineage: []}
-    {:noreply, socket} = LogLive.handle_info({:log_entry, entry}, settle(socket))
-    assert socket.assigns.shown == 3
-    assert html(socket) =~ "#{marker} live"
+    {:noreply, socket} = LogLive.handle_info({:nav_state, %{}}, socket)
+    assert socket.assigns.embedded?
   end
 end

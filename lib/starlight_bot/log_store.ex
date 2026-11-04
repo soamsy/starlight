@@ -22,18 +22,13 @@ defmodule StarlightBot.LogStore do
 
   def recent(count), do: before(:infinity, count)
 
+  def all, do: recent(@memory_limit)
+
   def before(seq, count) do
     if :ets.whereis(@table) == :undefined do
       []
     else
       collect_before(@table, seq, count, [])
-    end
-  end
-
-  def first_seq do
-    case :ets.whereis(@table) != :undefined and :ets.first(@table) do
-      seq when is_integer(seq) -> seq
-      _ -> nil
     end
   end
 
@@ -46,12 +41,11 @@ defmodule StarlightBot.LogStore do
     end
   end
 
-  def read_file(path, limit) do
+  def read_file(path) do
     path
     |> File.read!()
     |> String.split("\n", trim: true)
     |> Enum.reduce([], &parse_line/2)
-    |> Enum.take(limit)
     |> Enum.reverse()
     |> Enum.with_index(1)
     |> Enum.map(fn {entry, seq} -> Map.put(entry, :seq, seq) end)

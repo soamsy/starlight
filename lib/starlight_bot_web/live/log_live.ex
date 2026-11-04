@@ -3,14 +3,15 @@ defmodule StarlightBotWeb.Live.LogLive do
   alias StarlightBot.LogStore
   alias StarlightBot.Navigation.MachineStatus
 
-  @page_size 2000
-  @file_limit 20_000
-  @embedded_lines 300
   @machine_refresh_ms 500
+  @flush_ms 100
+  @first_chunk 2000
+  @backlog_chunk 5000
+  @backlog_ms 30
 
   @impl true
   def mount(_params, session, socket) do
-    embedded? = Map.has_key?(session, "max_lines")
+    embedded? = Map.has_key?(session, "embedded")
 
     if connected?(socket) do
       LogStore.subscribe()
@@ -21,98 +22,117 @@ defmodule StarlightBotWeb.Live.LogLive do
      socket
      |> assign(:embedded?, embedded?)
      |> assign(:lines_dom_id, "log-lines-#{socket.id}")
-     |> assign(:max_lines, Map.get(session, "max_lines", @page_size))
      |> assign(:machines, machine_rows())
      |> assign(:file_path, LogStore.file_path())
      |> assign(:log_files, LogStore.files())
      |> assign(:viewing, nil)
      |> assign(:memory_limit, LogStore.memory_limit())
+     |> assign(:pending, [])
+     |> assign(:flush_scheduled?, false)
+     |> assign(:backlog, [])
+     |> assign(:last_seq, 0)
+     |> assign(:oldest_seq, nil)
      |> assign(:show_steps, false)
      |> assign(:errors_only, false)
      |> assign(:machine_filter, nil)
-     |> assign(:machine_filter_label, nil)
-     |> stream_configure(:entries, dom_id: &"log-#{&1.seq}")
-     |> reload()}
+     |> assign(:machine_filter_label, nil)}
   end
 
   @impl true
-  def handle_event("load_older", _, %{assigns: %{oldest_seq: nil}} = socket), do: {:noreply, socket}
-
-  def handle_event("load_older", _, socket) do
-    older = LogStore.before(socket.assigns.oldest_seq, @page_size)
-    visible = Enum.filter(older, &visible?(&1, socket.assigns))
-
-    {:noreply,
-     socket
-     |> update(:shown, &(&1 + length(visible)))
-     |> assign(:oldest_seq, oldest_seq(older) || socket.assigns.oldest_seq)
-     |> stream(:entries, Enum.reverse(visible), at: 0)}
-  end
-
   def handle_event("select_log", %{"path" => path}, socket) do
     files = LogStore.files()
     viewing = if path in files and path != socket.assigns.file_path, do: path
 
-    {:noreply, socket |> assign(log_files: files, viewing: viewing) |> reload()}
+    {:noreply, socket |> assign(log_files: files, viewing: viewing) |> load_log()}
   end
 
-  def handle_event("toggle_steps", _, socket), do: {:noreply, socket |> update(:show_steps, &(not &1)) |> reload()}
+  def handle_event("log_ready", _, socket), do: {:noreply, load_log(socket)}
 
-  def handle_event("toggle_errors", _, socket), do: {:noreply, socket |> update(:errors_only, &(not &1)) |> reload()}
+  def handle_event("toggle_steps", _, socket), do: {:noreply, update(socket, :show_steps, &(not &1))}
+
+  def handle_event("toggle_errors", _, socket), do: {:noreply, update(socket, :errors_only, &(not &1))}
 
   def handle_event("filter_machine", %{"pid" => pid_text}, socket) do
     case Enum.find(socket.assigns.machines, &(pid_text(&1.pid) == pid_text)) do
       nil -> {:noreply, socket}
-      row -> {:noreply, socket |> assign(machine_filter: row.pid, machine_filter_label: row.label || row.current) |> reload()}
+      row -> {:noreply, socket |> assign(machine_filter: row.pid, machine_filter_label: row.label || row.current)}
     end
   end
 
   def handle_event("clear_machine_filter", _, socket),
-    do: {:noreply, socket |> assign(machine_filter: nil, machine_filter_label: nil) |> reload()}
+    do: {:noreply, assign(socket, machine_filter: nil, machine_filter_label: nil)}
 
   @impl true
   def handle_info(:refresh_machines, socket), do: {:noreply, assign(socket, :machines, machine_rows())}
 
-  @impl true
   def handle_info({:log_entry, _entry}, %{assigns: %{viewing: viewing}} = socket) when viewing != nil, do: {:noreply, socket}
 
-  def handle_info({:log_entry, entry}, socket) do
-    socket = update(socket, :oldest_seq, &(&1 || entry.seq))
+  def handle_info({:log_entry, %{seq: seq}}, %{assigns: %{last_seq: last_seq}} = socket) when seq <= last_seq, do: {:noreply, socket}
 
-    cond do
-      not visible?(entry, socket.assigns) -> {:noreply, socket}
-      socket.assigns.embedded? -> {:noreply, socket |> update(:shown, &min(&1 + 1, socket.assigns.max_lines)) |> stream_insert(:entries, entry, limit: -socket.assigns.max_lines)}
-      true -> {:noreply, socket |> update(:shown, &(&1 + 1)) |> stream_insert(:entries, entry)}
-    end
+  def handle_info({:log_entry, entry}, socket) do
+    {:noreply, socket |> update(:oldest_seq, &(&1 || entry.seq)) |> update(:pending, &[entry | &1]) |> schedule_flush()}
   end
 
+  def handle_info(:flush_entries, %{assigns: %{pending: pending}} = socket) do
+    last_seq = pending |> hd() |> Map.fetch!(:seq)
+
+    {:noreply,
+     socket
+     |> assign(pending: [], flush_scheduled?: false, last_seq: last_seq)
+     |> push_entries("append", Enum.reverse(pending))}
+  end
+
+  def handle_info(:load_backlog, %{assigns: %{backlog: []}} = socket), do: {:noreply, socket}
+
+  def handle_info(:load_backlog, %{assigns: %{backlog: [chunk | rest]}} = socket) do
+    if rest != [], do: Process.send_after(self(), :load_backlog, @backlog_ms)
+    {:noreply, socket |> assign(:backlog, rest) |> push_entries("prepend", chunk)}
+  end
+
+  def handle_info(_message, socket), do: {:noreply, socket}
+
   def panel(assigns) do
-    assigns = assigns |> assign_new(:class, fn -> "flex-1 min-h-0" end) |> assign(:embedded_lines, @embedded_lines)
+    assigns = assign_new(assigns, :class, fn -> "flex-1 min-h-0" end)
 
     ~H"""
-    {live_render(@socket, __MODULE__, id: @id, session: %{"max_lines" => @embedded_lines}, container: {:div, class: "flex flex-col min-w-0 #{@class}"})}
+    {live_render(@socket, __MODULE__, id: @id, session: %{"embedded" => true}, container: {:div, class: "flex flex-col min-w-0 #{@class}"})}
     """
   end
 
-  defp reload(socket) do
+  defp load_log(socket) do
     entries =
       case socket.assigns.viewing do
-        nil -> LogStore.recent(socket.assigns.max_lines)
-        path -> LogStore.read_file(path, @file_limit)
+        nil -> LogStore.all()
+        path -> LogStore.read_file(path)
       end
 
-    visible = Enum.filter(entries, &visible?(&1, socket.assigns))
+    {older, newest} = Enum.split(entries, max(length(entries) - @first_chunk, 0))
+    backlog = older |> Enum.reverse() |> Enum.chunk_every(@backlog_chunk) |> Enum.map(&Enum.reverse/1)
+    if backlog != [], do: send(self(), :load_backlog)
 
     socket
-    |> assign(:shown, length(visible))
+    |> assign(:pending, [])
+    |> assign(:backlog, backlog)
+    |> assign(:last_seq, last_seq(entries))
     |> assign(:oldest_seq, oldest_seq(entries))
-    |> stream(:entries, visible, reset: true)
+    |> push_entries("reset", newest)
   end
 
-  defp visible?(entry, assigns) do
-    (assigns.show_steps or entry.kind != :step) and
-      (not assigns.errors_only or entry.kind == :error) and
-      (assigns.machine_filter == nil or assigns.machine_filter in Map.get(entry, :lineage, []))
+  defp push_entries(socket, mode, entries) do
+    push_event(socket, "log_entries", %{id: socket.assigns.lines_dom_id, mode: mode, entries: Enum.map(entries, &encode/1)})
+  end
+
+  defp encode(entry),
+    do: [entry.seq, LogStore.format_time(entry.at), Atom.to_string(entry.kind), entry.text, entry |> Map.get(:lineage, []) |> Enum.map(&pid_text/1)]
+
+  defp last_seq([]), do: 0
+  defp last_seq(entries), do: List.last(entries).seq
+
+  defp schedule_flush(%{assigns: %{flush_scheduled?: true}} = socket), do: socket
+
+  defp schedule_flush(socket) do
+    Process.send_after(self(), :flush_entries, @flush_ms)
+    assign(socket, :flush_scheduled?, true)
   end
 
   defp oldest_seq([]), do: nil
@@ -158,17 +178,8 @@ defmodule StarlightBotWeb.Live.LogLive do
   def machine_state_class(:polling), do: "badge-info"
   def machine_state_class(_state), do: "badge-ghost"
 
-  def older_available?(nil), do: false
-
-  def older_available?(oldest_seq) do
-    case LogStore.first_seq() do
-      nil -> false
-      first -> first < oldest_seq
-    end
-  end
-
   def log_label(path), do: path |> Path.basename() |> String.replace_prefix("starlight_", "") |> String.replace_suffix(".log", "")
 
-  def trimmed?(oldest_seq), do: oldest_seq != nil and not older_available?(oldest_seq) and oldest_seq > 1
+  def trimmed?(oldest_seq), do: oldest_seq != nil and oldest_seq > 1
 
 end
