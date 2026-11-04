@@ -282,10 +282,20 @@ defmodule StarlightBot.Teams do
   defp decorate(team) do
     {data, team} = Map.pop(team, :battle_plan_data)
 
-    lineup_issues =
+    decoded =
       case data && Jason.decode(data) do
-        {:ok, %{} = data} -> BattlePlans.lineup_issues(data)
-        _ -> []
+        {:ok, %{} = data} -> data
+        _ -> nil
+      end
+
+    lineup_issues = if decoded, do: BattlePlans.lineup_issues(decoded), else: []
+
+    profile_ids =
+      if decoded do
+        assigned = BattlePlans.profiles(decoded)
+        for sinner <- @all_sinners, is_integer(assigned[sinner]), do: assigned[sinner]
+      else
+        []
       end
 
     missing =
@@ -298,6 +308,6 @@ defmodule StarlightBot.Teams do
       ]
       |> Enum.filter(& &1)
 
-    Map.put(team, :missing, missing)
+    team |> Map.put(:missing, missing) |> Map.put(:profile_ids, profile_ids)
   end
 end

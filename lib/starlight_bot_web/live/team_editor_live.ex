@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{BattlePlans, EgoGifts, GiftPlans, PlanCounts, Plans, StarlightBudget, Teams, ThemePacks}
+  alias StarlightBot.{BattlePlans, EgoGifts, GiftPlans, Hooks, PlanCounts, Plans, SinnerProfiles, StarlightBudget, Teams, ThemePacks}
   alias StarlightBotWeb.Live.{BattlePlanEditorLive, GiftPlanEditorLive, PackPlanEditorLive}
   alias StarlightBot.Navigation.Navigator
   import StarlightBotWeb.Components.PlanPicker, only: [pane_icon: 1, pane_tabs: 1]
@@ -47,6 +47,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     {:ok,
      socket
      |> assign(:teams, Teams.list_teams())
+     |> assign_profiles()
      |> assign(:gift_plans, Plans.list(:gift_plans))
      |> assign(:gifts_by_name, Map.new(EgoGifts.list_gifts(), &{&1.name, &1}))
      |> assign(:pack_plans, Plans.list(:pack_plans))
@@ -71,6 +72,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
     socket =
       socket
+      |> assign_profiles()
       |> assign(:pane, if(Map.has_key?(@panes, params["pane"]) or params["pane"] in ["profiles", "stats"], do: params["pane"], else: socket.assigns.pane))
 
     cond do
@@ -328,6 +330,30 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   defp plan_pane("profiles"), do: "battle"
   defp plan_pane(pane), do: pane
+
+  defp assign_profiles(socket) do
+    socket
+    |> assign(:profiles_by_id, Map.new(SinnerProfiles.list(), &{&1.id, &1}))
+    |> assign(:locator_thumbs, Hooks.hook_thumbnails("locator"))
+  end
+
+  def profile_icons(profile_ids, profiles_by_id, locator_thumbs) do
+    for id <- profile_ids, profile = profiles_by_id[id] do
+      src =
+        case profile do
+          %{locator_hook: hook} when is_binary(hook) ->
+            case locator_thumbs do
+              %{^hook => version} -> ~p"/hooks/#{hook}/thumb.png?#{[v: version]}"
+              _ -> SinnerProfiles.icon(profile.sinner)
+            end
+
+          _ ->
+            SinnerProfiles.icon(profile.sinner)
+        end
+
+      %{name: profile.name, src: src}
+    end
+  end
 
   def profiles_toggle_path(nil, "profiles"), do: ~p"/teams?pane=battle"
   def profiles_toggle_path(nil, _pane), do: ~p"/teams?pane=profiles"
