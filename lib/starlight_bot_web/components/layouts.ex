@@ -36,8 +36,9 @@ defmodule StarlightBotWeb.Layouts do
 
   def flash_toasts(assigns) do
     ~H"""
+    <div id="flash-toasts">
     <%= if msg = @flash["info"] do %>
-      <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md bg-success/90 text-success-content text-xs cursor-pointer select-none"
+      <div id="flash-info" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md bg-success/90 text-success-content text-xs cursor-pointer select-none"
            role="alert"
            phx-click="lv:clear-flash" phx-value-key="info">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -48,7 +49,7 @@ defmodule StarlightBotWeb.Layouts do
     <% end %>
 
     <%= if msg = @flash["error"] do %>
-      <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md bg-error/90 text-error-content text-xs cursor-pointer select-none"
+      <div id="flash-error" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md bg-error/90 text-error-content text-xs cursor-pointer select-none"
            role="alert"
            phx-click="lv:clear-flash" phx-value-key="error">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -57,6 +58,7 @@ defmodule StarlightBotWeb.Layouts do
         <span><%= msg %></span>
       </div>
     <% end %>
+    </div>
     """
   end
 end
