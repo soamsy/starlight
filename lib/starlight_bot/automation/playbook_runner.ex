@@ -622,10 +622,10 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     Process.sleep(@skill_hover_ms)
     Mouse.mouse_down()
 
-    pan = if RunMemory.get(ctx, :target_panned?, false), do: [], else: [DSL.move_to(:battle_drag_checkpoint), DSL.sleep(@target_pan_settle_ms)]
+    settle = if RunMemory.get(ctx, :target_panned?, false), do: [], else: [DSL.sleep(@target_pan_settle_ms)]
 
     try do
-      case if(pan == [], do: {:ok, nil}, else: Runner.run_steps(pan, ctx)) do
+      case Runner.run_steps([DSL.move_to(:battle_drag_checkpoint) | settle], ctx) do
         {:ok, _} ->
           RunMemory.put(ctx, :target_panned?, true)
           aim(enemy, 1, nil, [], ctx)
@@ -639,7 +639,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp aim(_enemy, attempt, nil, attempts, ctx) when attempt > @target_tries do
-    Ctx.log(ctx, :error, "playbook: no enemy detected after #{@target_tries} tries, releasing at battle_safe_click_spot")
+    Ctx.log(ctx, :error, "playbook: no enemy detected after #{@target_tries} tries, releasing at battle_drag_checkpoint")
     Runner.run_steps([DSL.move_to(:battle_drag_checkpoint)], ctx)
     {:gave_up, Enum.reverse(attempts)}
   end
