@@ -142,7 +142,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
           <div class="mt-2 flex items-center gap-1 px-1">
             <button type="button" phx-click="template_plan_new" class="btn btn-xs btn-outline" title={"Add a blank #{@label} to this team"}>+ New plan</button>
             <button :if={PlanTemplates.writable?()} type="button" phx-click="template_new" class="btn btn-xs btn-primary ml-auto"
-                    title={"Add a template holding a copy of this team's active #{@label}"}>New template from</button>
+                    title={"Add a template holding a copy of this team's active #{@label}"}>Save as template</button>
           </div>
         </div>
       </div>

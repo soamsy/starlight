@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{BattlePlans, EgoGifts, GiftPlans, Hooks, PlanCounts, Plans, SinnerProfiles, StarlightBudget, Teams, ThemePacks}
+  alias StarlightBot.{BattlePlans, EgoGifts, GiftPlans, Hooks, PlanCounts, Plans, SinnerProfiles, StarlightBudget, TeamTemplates, Teams, ThemePacks}
   alias StarlightBotWeb.Live.{BattlePlanEditorLive, GiftPlanEditorLive, PackPlanEditorLive}
   alias StarlightBot.Navigation.Navigator
   import StarlightBotWeb.Components.PlanPicker, only: [pane_icon: 1, pane_tabs: 1]
@@ -47,6 +47,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     {:ok,
      socket
      |> assign(:teams, Teams.list_teams())
+     |> assign(:team_templates, TeamTemplates.list())
      |> assign_profiles()
      |> assign(:gift_plans, Plans.list(:gift_plans))
      |> assign(:gifts_by_name, Map.new(EgoGifts.list_gifts(), &{&1.name, &1}))
@@ -107,8 +108,14 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
-  def handle_event("new_team", _, socket) do
-    case Teams.create_default_team() do
+  def handle_event("new_team", params, socket) do
+    result =
+      case params do
+        %{"template" => template_id} -> Teams.create_team_from_template(String.to_integer(template_id))
+        _ -> Teams.create_default_team()
+      end
+
+    case result do
       {:ok, id} ->
         {:noreply,
          socket
@@ -118,6 +125,22 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
+    end
+  end
+
+  @impl true
+  def handle_event("new_team_template", %{"id" => id}, socket) do
+    case TeamTemplates.create_from_team(String.to_integer(id)) do
+      {:ok, _} -> {:noreply, socket |> assign(:team_templates, TeamTemplates.list()) |> put_flash(:info, "Template created.")}
+      {:error, reason} -> {:noreply, put_flash(socket, :error, "Create template failed: #{inspect(reason)}")}
+    end
+  end
+
+  @impl true
+  def handle_event("delete_team_template", %{"id" => id}, socket) do
+    case TeamTemplates.delete(String.to_integer(id)) do
+      {:ok, _} -> {:noreply, assign(socket, :team_templates, TeamTemplates.list())}
+      {:error, reason} -> {:noreply, put_flash(socket, :error, "Delete failed: #{inspect(reason)}")}
     end
   end
 

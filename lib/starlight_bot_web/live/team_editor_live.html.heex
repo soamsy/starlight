@@ -98,6 +98,9 @@
                         <button type="button" phx-click="duplicate_team" phx-value-id={team.id}
                                 title="Copy this team, keeping its hook and plans"
                                 class="btn btn-sm btn-ghost ml-auto">Dup</button>
+                        <button :if={TeamTemplates.writable?()} type="button" phx-click="new_team_template" phx-value-id={team.id}
+                                title="Add a template holding a copy of this team's hooks and active plans"
+                                class="btn btn-sm btn-ghost">New template from</button>
                         <button type="button" phx-click="delete_team" phx-value-id={team.id}
                                 data-confirm={"Delete '#{team.name}'?"}
                                 class="btn btn-sm btn-ghost text-error">Del</button>
@@ -150,7 +153,20 @@
               </tr>
             </tbody>
           </table>
-          <button phx-click="new_team" class="btn btn-primary btn-sm w-full mt-2">+ New Team</button>
+          <div id="new-team-menu" class="hidden mt-2 rounded-box border border-base-300 bg-base-100 p-1 flex flex-col gap-0.5">
+            <button type="button" phx-click={JS.push("new_team") |> JS.hide(to: "#new-team-menu")} class="btn btn-ghost btn-sm justify-start font-mono">Blank team</button>
+            <div :for={template <- @team_templates} class="flex items-center gap-1 rounded hover:bg-base-200">
+              <button type="button" phx-click={JS.push("new_team", value: %{template: template.id}) |> JS.hide(to: "#new-team-menu")}
+                      title={"Create a team from the template '#{template.name}'"}
+                      class="flex-1 min-w-0 flex items-center gap-1.5 px-2 py-1 text-left">
+                <span class="min-w-0 truncate font-mono text-xs"><%= template.name %></span>
+                <img :for={hook <- template.hooks} src={Teams.hook_icon(hook) || Teams.default_hook_icon()} class="size-4 shrink-0 object-contain" />
+              </button>
+              <button :if={TeamTemplates.writable?()} type="button" phx-click="delete_team_template" phx-value-id={template.id}
+                      data-confirm={"Delete the template '#{template.name}'?"} class="btn btn-xs btn-ghost text-error">Del</button>
+            </div>
+          </div>
+          <button type="button" phx-click={JS.toggle(to: "#new-team-menu")} class="btn btn-primary btn-sm w-full mt-2">+ New Team ▾</button>
         </div>
       </div>
     </div>

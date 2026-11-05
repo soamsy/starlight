@@ -1,7 +1,7 @@
 defmodule StarlightBot.Teams do
   require Logger
   import Ecto.Query
-  alias StarlightBot.{BattlePlans, PlanTemplates, Plans, Repo}
+  alias StarlightBot.{BattlePlans, PlanTemplates, Plans, Repo, TeamTemplates}
 
   @team_groups [
     {"Status", "affinity", ~w(burn bleed tremor rupture sinking poise charge ammo discard)},
@@ -127,6 +127,39 @@ defmodule StarlightBot.Teams do
          :ok <- ensure_plans(id) do
       {:ok, id}
     end
+  end
+
+  def create_team_from_template(template_id) when is_integer(template_id) do
+    case TeamTemplates.get(template_id) do
+      nil ->
+        {:error, :not_found}
+
+      template ->
+        with {:ok, id} <- save_team(%{name: unique_name(template.name), hooks: template.hooks}),
+             :ok <- copy_template_plans(template, id),
+             :ok <- ensure_plans(id) do
+          {:ok, id}
+        end
+    end
+  end
+
+  defp copy_template_plans(template, team_id) do
+    Enum.reduce_while(@plan_fields, :ok, fn {field, table}, :ok ->
+      column = field |> Atom.to_string() |> String.replace_suffix("_id", "") |> String.to_existing_atom()
+
+      case Map.get(template, column) do
+        nil ->
+          {:cont, :ok}
+
+        data ->
+          with {:ok, plan_id} <- Plans.save(table, %{name: Plans.new_name(table, team_id), data: data, team_id: team_id}),
+               {:ok, _} <- set_plan(team_id, field, plan_id) do
+            {:cont, :ok}
+          else
+            {:error, _} = error -> {:halt, error}
+          end
+      end
+    end)
   end
 
   def ensure_plans(team_id) when is_integer(team_id) do
