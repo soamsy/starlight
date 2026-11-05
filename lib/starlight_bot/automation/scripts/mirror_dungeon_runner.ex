@@ -491,7 +491,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         [capture(charge, then: {__MODULE__, :charged, [run, charged_state]})]
 
       screen == :start_screen ->
-        [goto(:start_screen, :home, then: resume_at(run, run_state))]
+        [goto(:start_screen, :start_screen_after, then: resume_at(run, run_state))]
 
       screen in @home_screens ->
         [goto(screen, :md_door, then: resume_at(run, run_state))]
