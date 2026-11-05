@@ -54,6 +54,7 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:run_live, false)
       |> assign(:game_launch_label, nil)
       |> assign(:game_launcher_label, nil)
+      |> assign(:game_update_pending, false)
       |> assign(:game_launcher_missing, [])
       |> assign(:settings_open, false)
       |> assign(:settings_tab, "scheduler")
@@ -182,7 +183,8 @@ defmodule StarlightBotWeb.Live.PageHook do
     {:halt,
      socket
      |> assign_scheduler(socket.assigns.scheduler_settings)
-     |> assign_enkephalin_schedule(socket.assigns.enkephalin_schedule)}
+     |> assign_enkephalin_schedule(socket.assigns.enkephalin_schedule)
+     |> assign(:game_update_pending, update_pending?(Scheduler.get_settings()))}
   end
 
   defp handle_scheduler_message(_msg, socket), do: {:cont, socket}
@@ -273,6 +275,9 @@ defmodule StarlightBotWeb.Live.PageHook do
     end)
   end
 
+  defp handle_window_event("game_window_launch", _params, %{assigns: %{game_update_pending: true}} = socket),
+    do: {:halt, put_flash(socket, :error, "A Limbus update is pending, let Steam finish it first")}
+
   defp handle_window_event("game_window_launch", _params, socket) do
     run_window_action(socket, "launching", launch_action(Scheduler.get_settings(), nil))
   end
@@ -293,6 +298,7 @@ defmodule StarlightBotWeb.Live.PageHook do
     case WindowGate.gate(socket.assigns) do
       :ready -> {:cont, socket}
       :launch -> run_window_action(socket, "launching", launch_action(Scheduler.get_settings(), params))
+      :update -> {:halt, put_flash(socket, :error, "A Limbus update is pending, let Steam finish it first")}
       :resize -> {:halt, socket}
     end
   end
@@ -341,7 +347,11 @@ defmodule StarlightBotWeb.Live.PageHook do
     |> assign(:game_launch_label, launch_label(settings))
     |> assign(:game_launcher_label, LauncherDeps.label(launcher))
     |> assign(:game_launcher_missing, LauncherDeps.missing(launcher, settings.launch_mode))
+    |> assign(:game_update_pending, update_pending?(settings))
   end
+
+  defp update_pending?(%{launch_mode: "steam", steam_app_id: id}), do: StarlightBot.SteamLaunch.update_pending?(id)
+  defp update_pending?(_settings), do: false
 
   defp launch_label(%{launch_mode: "steam", steam_app_id: id}), do: "Steam app #{id}"
   defp launch_label(%{launch_mode: "exe", exe_path: path}), do: path

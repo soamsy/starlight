@@ -51,6 +51,29 @@ defmodule StarlightBot.SteamLaunch do
     end
   end
 
+  def update_pending?(app_id) do
+    app_id = to_string(app_id)
+
+    with {:ok, root} <- steam_root(),
+         {:ok, libraries} <- libraries(root),
+         {:ok, library, _dir} <- find_app(libraries, app_id),
+         {:ok, manifest} <- Vdf.parse_file(Path.join([library, "steamapps", "appmanifest_#{app_id}.acf"])) do
+      flags = manifest |> Vdf.get(["AppState", "StateFlags"]) |> to_int()
+      built = Vdf.get(manifest, ["AppState", "buildid"])
+      target = Vdf.get(manifest, ["AppState", "TargetBuildID"])
+      Bitwise.band(flags, 2) != 0 or (target not in [nil, "0"] and target != built)
+    else
+      _ -> false
+    end
+  end
+
+  defp to_int(value) do
+    case Integer.parse(to_string(value)) do
+      {int, _} -> int
+      :error -> 0
+    end
+  end
+
   defp steam_root do
     candidates = [Path.expand("~/.local/share/Steam"), Path.expand("~/.steam/steam")]
 

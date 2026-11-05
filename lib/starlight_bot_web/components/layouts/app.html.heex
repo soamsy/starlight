@@ -247,8 +247,12 @@
             <div class="text-base-content/70 mb-2">Launches <span class="font-mono break-all">{launch}</span> through {assigns[:game_launcher_label]}.</div>
             <% missing = assigns[:game_launcher_missing] || [] %>
             <div :if={missing != []} class="text-warning mb-2">Missing: <span class="font-mono">{Enum.join(missing, ", ")}</span></div>
-            <button class="btn btn-primary btn-xs w-full" phx-click="game_window_launch" disabled={busy != nil or missing != []}>
-              <%= if busy, do: String.capitalize(busy) <> "…", else: "Open Limbus" %>
+            <button class="btn btn-primary btn-xs w-full" phx-click="game_window_launch" disabled={busy != nil or missing != [] or assigns[:game_update_pending] == true}>
+              <%= cond do %>
+                <% busy -> %>{String.capitalize(busy)}…
+                <% assigns[:game_update_pending] -> %>Limbus update pending
+                <% true -> %>Open Limbus
+              <% end %>
             </button>
             <button type="button" phx-click="settings_open" phx-value-tab="scheduler" onclick="document.activeElement.blur()" class="link mt-2 block text-center">
               Launcher settings
