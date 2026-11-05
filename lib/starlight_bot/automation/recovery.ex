@@ -1,19 +1,42 @@
 defmodule StarlightBot.Automation.Recovery do
   import StarlightBot.Navigation.DSL
-  alias StarlightBot.Ctx
-  alias StarlightBot.Navigation.{Catalog, Runner}
+  alias StarlightBot.{Ctx, Scheduler}
+  alias StarlightBot.Navigation.{Catalog, Navigator, Runner}
 
   @escape_hook :safe_corner
   @escape_click_sleep_ms 300
   @max_escape_hops 3
   @server_error_close_from_error 3
   @fresh_check_ms 1
+  @maintenance_cancel_wait_ms 10_000
+  @maintenance_click_gap_ms 1_000
+  @maintenance_hold_hours "4"
+  @maintenance_screens [:scheduled_maintenance, :cannot_operate_game]
 
   def steps(keep, errors, then),
     do: close_server_error(errors) ++ [locate_screen(then: {__MODULE__, :located, [keep, @max_escape_hops, then]})]
 
+  def located(_keep, _hops_left, _then, {:ok, screen}, _frame, ctx) when screen in @maintenance_screens do
+    Ctx.log(ctx, :error, "#{screen} popup, dismissing it and canceling the run (Limbus will close)")
+
+    {:steps,
+     [
+       attempt([click(:scheduled_maintenance)], else: []),
+       sleep(@maintenance_click_gap_ms),
+       attempt([click(:cannot_operate_game)], else: []),
+       call(__MODULE__, :cancel_run),
+       sleep(@maintenance_cancel_wait_ms)
+     ]}
+  end
+
   def located(keep, hops_left, then, {:ok, screen}, _frame, ctx), do: escape(screen, keep, hops_left, then, ctx)
   def located(_keep, _hops_left, then, :unknown, _frame, ctx), do: {:steps, fallback(then, ctx)}
+
+  def cancel_run(_frame, _ctx) do
+    Navigator.cancel()
+    Scheduler.hold(@maintenance_hold_hours)
+    {:ok, nil}
+  end
 
   def escaped(keep, hops_left, then, _result, _frame, _ctx),
     do: {:steps, [locate_screen(then: {__MODULE__, :located, [keep, hops_left - 1, then]})]}
