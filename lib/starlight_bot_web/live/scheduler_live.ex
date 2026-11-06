@@ -2,7 +2,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   use StarlightBotWeb, :live_view
   alias StarlightBot.{AppSettings, DailyProgress, EnkephalinSchedule, Scheduler}
   alias StarlightBot.Scheduler.Server
-  alias StarlightBotWeb.Live.LuxcavationLive
+  alias StarlightBotWeb.Live.RunnerLive
 
   @clock_tick_ms 30_000
   @md_modules_per_run 5
@@ -201,8 +201,8 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
 
   def progress_rows(settings, progress) do
     [
-      {"EXP", progress["exp"], settings.exp_waves, "waves", LuxcavationLive.exp_enkephalin_cost()},
-      {"THREAD", progress["thread"], settings.thread_waves, "waves", LuxcavationLive.thread_enkephalin_cost()},
+      {"EXP", progress["exp"], settings.exp_waves, "waves", RunnerLive.exp_enkephalin_cost()},
+      {"THREAD", progress["thread"], settings.thread_waves, "waves", RunnerLive.thread_enkephalin_cost()},
       {"MD", progress["md"], settings.md_runs, "runs", @md_modules_per_run}
     ]
   end

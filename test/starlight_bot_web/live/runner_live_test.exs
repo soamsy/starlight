@@ -1,9 +1,9 @@
-defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
+defmodule StarlightBotWeb.Live.RunnerLiveTest do
   use ExUnit.Case, async: true
 
   import Phoenix.LiveViewTest, only: [render_component: 2]
   alias StarlightBot.RunnerForms
-  alias StarlightBotWeb.Live.MirrorDungeonLive, as: Live
+  alias StarlightBotWeb.Live.RunnerLive, as: Live
 
   @teams [%{id: 5, name: "Burn", hooks: ["team_burn"]}, %{id: 10, name: "Saikai", hooks: ["team_slash", "team_pierce"]}]
   @burn %{id: 5, hook: "team_burn", mode: "default", search: "default"}
@@ -203,10 +203,11 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     assert Live.format_elapsed(3_725_999) == "1:02:05"
   end
 
-  test "the run times sidebar lists each run's floors and the total" do
+  test "the run times sidebar lists each run's floors and the group subtotal" do
     splits = [%{run: 1, floor: 1, start_ms: 0, team: "WildSinking"}, %{run: 1, floor: 2, start_ms: 60_000, team: "WildSinking"}]
-    runs = Live.run_times(splits, %{elapsed_ms: 75_000, running?: false, received_ms: 0}, 0, %{failed_runs: [1]})
-    html = %{runs: runs, live_last?: false} |> Live.run_times() |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
+    runs = StarlightBot.Navigation.RunSplits.summary(splits, 75_000, [1])
+    groups = StarlightBot.Navigation.RunArchive.groups([%{kind: :mirror_dungeon, started_at: DateTime.utc_now(), runs: runs}])
+    html = %{groups: groups, live_last?: false} |> Live.run_times() |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
 
     assert html =~ "Run 1"
     assert html =~ "WildSinking"
@@ -214,27 +215,20 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLiveTest do
     assert html =~ "Floor 2"
     assert html =~ "00:15"
     assert html =~ "01:15"
+    assert html =~ "Mirror dungeon subtotal"
   end
 
   test "the run times sidebar shows a luxcavation run with exp and thread rows" do
     splits = [%{run: 1, floor: :exp, start_ms: 0}, %{run: 1, floor: :thread, start_ms: 40_000}]
-    runs = Live.run_times(splits, %{elapsed_ms: 70_000, running?: false, received_ms: 0}, 0, %{})
-    html = %{runs: runs, live_last?: false, kind: :luxcavation} |> Live.run_times() |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
+    runs = StarlightBot.Navigation.RunSplits.summary(splits, 70_000)
+    groups = StarlightBot.Navigation.RunArchive.groups([%{kind: :luxcavation, started_at: DateTime.utc_now(), runs: runs}])
+    html = %{groups: groups, live_last?: false} |> Live.run_times() |> Phoenix.HTML.Safe.to_iodata() |> IO.iodata_to_binary()
 
     assert html =~ "Luxcavation"
     assert html =~ "EXP"
     assert html =~ "Thread"
     assert html =~ "00:30"
     assert html =~ "01:10"
-  end
-
-  test "times_clock and times_splits only apply to the kind that produced them" do
-    nav = %{run_times_kind: :luxcavation, run_clock: %{elapsed_ms: 1}, run_splits: [:x]}
-
-    assert Live.times_clock(nav, :luxcavation) == %{elapsed_ms: 1}
-    assert Live.times_clock(nav, :mirror_dungeon) == nil
-    assert Live.times_splits(nav, :luxcavation) == [:x]
-    assert Live.times_splits(nav, :mirror_dungeon) == []
   end
 
   @segments [

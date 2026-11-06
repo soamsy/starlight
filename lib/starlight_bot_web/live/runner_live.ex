@@ -1,14 +1,17 @@
-defmodule StarlightBotWeb.Live.MirrorDungeonLive do
+defmodule StarlightBotWeb.Live.RunnerLive do
   use StarlightBotWeb, :live_view
   import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1]
   alias StarlightBot.Automation.RunMemory
-  alias StarlightBot.Navigation.{Navigator, RunSplits, ScreenTimes}
-  alias StarlightBot.{AppSettings, EgoGifts, GiftPlans, Plans, RunHistory, RunnerForms, Teams}
+  alias StarlightBot.Navigation.{Navigator, RunArchive, ScreenTimes}
+  alias StarlightBot.{AppSettings, EgoGifts, GiftPlans, LuxSchedule, Plans, RunHistory, RunnerForms, Teams}
   alias StarlightBot.PackPlans.Resolver
-  alias StarlightBotWeb.Live.{GiftPlanEditorLive, LuxcavationLive}
+  alias StarlightBotWeb.Live.GiftPlanEditorLive
 
   @countdown_secs 2
+  @day_tick_ms 60_000
   @clock_tick_ms 1_000
+  @exp_enkephalin_cost 3
+  @thread_enkephalin_cost 2
 
   @impl true
   def mount(_params, _session, socket) do
@@ -17,6 +20,7 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
       RunHistory.subscribe()
       RunnerForms.subscribe()
       Process.send_after(self(), :clock_tick, @clock_tick_ms)
+      Process.send_after(self(), :day_tick, @day_tick_ms)
     end
 
     nav = Navigator.status()
@@ -24,16 +28,9 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
     {:ok,
      socket
-     |> assign(:current_screen, nav.current_screen)
-     |> assign(:phase, nav.phase)
-     |> assign(:pause_requested, nav.pause_requested)
-     |> assign(:other_running?, nav.run_kind == :luxcavation)
-     |> assign(:run_memory, nav.run_memory)
+     |> assign(:tab, socket.assigns[:live_action] || nav.run_kind || :mirror_dungeon)
      |> assign(:gifts_by_name, Map.new(EgoGifts.list_gifts(), &{&1.name, &1}))
-     |> assign_milestones()
-     |> assign_clock(times_clock(nav, :mirror_dungeon))
-     |> assign(:run_splits, times_splits(nav, :mirror_dungeon))
-     |> assign(:screen_times, nav.screen_times)
+     |> assign_nav(nav)
      |> assign(:show_screen_times, false)
      |> assign(:screen_view, "breakdown")
      |> assign(:screen_source, "live")
@@ -52,13 +49,54 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
      |> assign(:battle_debug, AppSettings.battle_debug?())
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)
-     |> restore_form(RunnerForms.get("mirror_dungeon"))}
+     |> restore_form(RunnerForms.get("mirror_dungeon"))
+     |> assign(:today, LuxSchedule.today())
+     |> assign(:exp_pin, nil)
+     |> assign(:thread_pin, nil)
+     |> assign(:exp_picks, List.duplicate(nil, LuxSchedule.exp_slot_count()))
+     |> assign(:thread_picks, List.duplicate(nil, LuxSchedule.thread_slot_count()))
+     |> assign(:exp_waves, "1")
+     |> assign(:thread_waves, "3")
+     |> assign(:lux_collect_xp, true)
+     |> assign(:lux_collect_enkephalin, true)
+     |> assign(:md_next, RunnerForms.mirror_dungeon_action())
+     |> assign(:then_md, false)
+     |> restore_lux_form(RunnerForms.get("luxcavation"))}
   end
 
   @impl true
   def handle_event("localize", _, socket) do
     Navigator.localize()
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("set_tab", %{"tab" => tab}, socket) when tab in ~w(mirror_dungeon luxcavation) do
+    {:noreply, socket |> assign(:tab, String.to_existing_atom(tab)) |> assign_other_running()}
+  end
+
+  @impl true
+  def handle_event("restore_tab", %{"tab" => tab}, socket) when tab in ~w(mirror_dungeon luxcavation) do
+    {:noreply, socket |> assign(:tab, String.to_existing_atom(tab)) |> assign_other_running()}
+  end
+
+  @impl true
+  def handle_event("run", %{"exp_waves" => _} = params, socket) do
+    pins = %{"exp_pin" => to_string(socket.assigns.exp_pin), "thread_pin" => to_string(socket.assigns.thread_pin)}
+
+    case RunnerForms.luxcavation_action(Map.merge(params, pins)) do
+      {:ok, lux} ->
+        action =
+          case {params["then"], socket.assigns.md_next} do
+            {"mirror_dungeon", {:run_mirror_dungeon, _, _, _} = md} -> {:then, lux, md}
+            _ -> lux
+          end
+
+        {:noreply, start_countdown(socket, action)}
+
+      :error ->
+        {:noreply, put_flash(socket, :error, "Pick a team for today's slots, and keep waves non-negative.")}
+    end
   end
 
   @impl true
@@ -75,6 +113,38 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     AppSettings.put_battle_debug(enabled?)
     {:noreply, assign(socket, :battle_debug, enabled?)}
   end
+
+  @impl true
+  def handle_event("update_form", %{"exp_waves" => exp_waves, "thread_waves" => thread_waves} = params, socket) do
+    {:noreply,
+     socket
+     |> assign_picks(params)
+     |> assign(:then_md, params["then"] == "mirror_dungeon")
+     |> assign(:exp_waves, exp_waves)
+     |> assign(:thread_waves, thread_waves)
+     |> assign(:lux_collect_xp, Map.get(params, "collect_xp") == "true")
+     |> assign(:lux_collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
+     |> save_lux_form()}
+  end
+
+  @impl true
+  def handle_event("toggle_pin", %{"kind" => kind}, socket) do
+    key = pin_key(kind)
+    pin = if socket.assigns[key] == nil, do: active_slot(kind, nil, socket.assigns.today)
+    {:noreply, socket |> assign(key, pin) |> save_lux_form()}
+  end
+
+  @impl true
+  def handle_event("set_pin", %{"kind" => kind, "index" => index}, socket) do
+    count = if kind == "exp", do: LuxSchedule.exp_slot_count(), else: LuxSchedule.thread_slot_count()
+    {:noreply, socket |> assign(pin_key(kind), RunnerForms.parse_pin(index, count)) |> save_lux_form()}
+  end
+
+  @impl true
+  def handle_event("reorder_exp", %{"ids" => ids}, socket), do: {:noreply, reorder(socket, :exp_picks, ids)}
+
+  @impl true
+  def handle_event("reorder_thread", %{"ids" => ids}, socket), do: {:noreply, reorder(socket, :thread_picks, ids)}
 
   @impl true
   def handle_event("update_form", %{"run_count" => run_count} = params, socket) do
@@ -164,7 +234,8 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   @impl true
   def handle_event("resume", _, socket) do
-    {:noreply, start_countdown(socket, :resume_mirror_dungeon)}
+    action = if socket.assigns.run_kind == :luxcavation, do: :resume_luxcavation, else: :resume_mirror_dungeon
+    {:noreply, start_countdown(socket, action)}
   end
 
   @impl true
@@ -244,23 +315,23 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   @impl true
   def handle_info({:nav_state, nav}, socket) do
-    {:noreply,
-     socket
-     |> assign(:current_screen, nav.current_screen)
-     |> assign(:phase, nav.phase)
-     |> assign(:pause_requested, nav.pause_requested)
-     |> assign(:other_running?, nav.run_kind == :luxcavation)
-     |> assign(:run_memory, nav.run_memory)
-     |> assign_milestones()
-     |> assign_clock(times_clock(nav, :mirror_dungeon))
-     |> assign(:run_splits, times_splits(nav, :mirror_dungeon))
-     |> assign(:screen_times, nav.screen_times)}
+    {:noreply, assign_nav(socket, nav)}
+  end
+
+  @impl true
+  def handle_info(:day_tick, socket) do
+    Process.send_after(self(), :day_tick, @day_tick_ms)
+    {:noreply, assign(socket, :today, LuxSchedule.today())}
   end
 
   @impl true
   def handle_info({:runner_form, "mirror_dungeon"}, socket) do
     params = RunnerForms.get("mirror_dungeon") || %{}
-    {:noreply, assign(socket, :start_index, RunnerForms.parse_start_index(params["start_index"], socket.assigns.picks))}
+
+    {:noreply,
+     socket
+     |> assign(:start_index, RunnerForms.parse_start_index(params["start_index"], socket.assigns.picks))
+     |> assign(:md_next, RunnerForms.mirror_dungeon_action())}
   end
 
   @impl true
@@ -288,11 +359,27 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 
-  def times_clock(%{run_times_kind: kind, run_clock: clock}, kind), do: clock
-  def times_clock(_nav, _kind), do: nil
+  defp assign_nav(socket, nav) do
+    socket
+    |> assign(:current_screen, nav.current_screen)
+    |> assign(:phase, nav.phase)
+    |> assign(:pause_requested, nav.pause_requested)
+    |> assign(:run_kind, nav.run_kind)
+    |> assign(:run_memory, nav.run_memory)
+    |> assign_milestones()
+    |> assign_clock(nav.run_clock)
+    |> assign(:run_splits, nav.run_splits)
+    |> assign(:run_times_kind, nav.run_times_kind)
+    |> assign(:run_started_at, nav.run_started_at)
+    |> assign(:run_archive, nav.run_archive)
+    |> assign(:screen_times, nav.screen_times)
+    |> assign_other_running()
+  end
 
-  def times_splits(%{run_times_kind: kind, run_splits: splits}, kind), do: splits
-  def times_splits(_nav, _kind), do: []
+  defp assign_other_running(socket) do
+    %{run_kind: run_kind, tab: tab} = socket.assigns
+    assign(socket, :other_running?, run_kind != nil and run_kind != tab)
+  end
 
   def elapsed_ms(nil, _now_ms), do: nil
   def elapsed_ms(%{running?: true, elapsed_ms: ms, received_ms: at}, now_ms), do: ms + max(now_ms - at, 0)
@@ -310,44 +397,51 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
 
   def run_progress(run_memory), do: Map.get(run_memory, :run_progress)
 
-  attr :runs, :list, required: true
+  attr :groups, :list, required: true
   attr :live_last?, :boolean, required: true
-  attr :kind, :atom, default: :mirror_dungeon
 
   def run_times(assigns) do
     ~H"""
-    <%= if @runs == [] do %>
-      <div class="text-xs text-base-content/30">No runs timed yet</div>
+    <%= if @groups == [] do %>
+      <div class="text-xs text-base-content/30">No runs in the last 24 hours</div>
     <% else %>
-      <%= for {run, index} <- Enum.with_index(@runs, 1) do %>
-        <div class={"flex flex-col gap-0.5 rounded-lg p-1.5 " <> if(@live_last? and index == length(@runs), do: "bg-primary/10", else: "bg-base-100/50")}>
-          <div class="flex items-center justify-between text-xs font-semibold">
-            <span class="flex items-center gap-1 min-w-0">
-              <%= run_label(@kind, run.run) %>
-              <span :if={run.team} class="font-normal text-base-content/60 truncate"><%= run.team %></span>
-              <span :if={run.failed?} class="badge badge-error badge-xs">failed</span>
-            </span>
-            <span class="font-mono"><%= format_elapsed(run.ms) %></span>
-          </div>
-          <div :for={floor <- run.floors} class="flex items-center justify-between gap-2 text-[11px] text-base-content/60 pl-2">
-            <span class="flex items-center gap-1 min-w-0">
-              <span class="shrink-0"><%= floor_label(floor.floor) %></span>
-              <span :if={floor.pack} class="text-base-content/40 truncate" title={floor.pack}><%= floor.pack %></span>
-            </span>
-            <span class="font-mono"><%= format_elapsed(floor.ms) %></span>
+      <%= for {group, group_index} <- Enum.with_index(@groups, 1) do %>
+        <% last_group? = group_index == length(@groups) %>
+        <div class="flex flex-col gap-1">
+          <%= for {run, index} <- Enum.with_index(group.runs, 1) do %>
+            <div class={"flex flex-col gap-0.5 rounded-lg p-1.5 " <> if(@live_last? and last_group? and index == length(group.runs), do: "bg-primary/10", else: "bg-base-100/50")}>
+              <div class="flex items-center justify-between text-xs font-semibold">
+                <span class="flex items-center gap-1 min-w-0">
+                  <%= run_label(group.kind, run.run) %>
+                  <span :if={run.team} class="font-normal text-base-content/60 truncate"><%= run.team %></span>
+                  <span :if={run.failed?} class="badge badge-error badge-xs">failed</span>
+                </span>
+                <span class="font-mono"><%= format_elapsed(run.ms) %></span>
+              </div>
+              <div :for={floor <- run.floors} class="flex items-center justify-between gap-2 text-[11px] text-base-content/60 pl-2">
+                <span class="flex items-center gap-1 min-w-0">
+                  <span class="shrink-0"><%= floor_label(floor.floor) %></span>
+                  <span :if={floor.pack} class="text-base-content/40 truncate" title={floor.pack}><%= floor.pack %></span>
+                </span>
+                <span class="font-mono"><%= format_elapsed(floor.ms) %></span>
+              </div>
+            </div>
+          <% end %>
+          <div class="flex items-center justify-between text-xs text-base-content/60 border-t border-base-300 pt-1">
+            <span><%= group_label(group.kind) %> subtotal</span>
+            <span class="font-mono"><%= format_elapsed(group.ms) %></span>
           </div>
         </div>
       <% end %>
-      <div class="flex items-center justify-between text-xs font-semibold border-t border-base-300 pt-1">
-        <span>Total</span>
-        <span class="font-mono"><%= format_elapsed(@runs |> Enum.map(& &1.ms) |> Enum.sum()) %></span>
-      </div>
     <% end %>
     """
   end
 
   defp run_label(:luxcavation, _run), do: "Luxcavation"
   defp run_label(_kind, run), do: "Run #{run}"
+
+  defp group_label(:luxcavation), do: "Luxcavation"
+  defp group_label(_kind), do: "Mirror dungeon"
 
   defp floor_label(:exp), do: "EXP"
   defp floor_label(:thread), do: "Thread"
@@ -507,14 +601,14 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     """
   end
 
-  def run_times(splits, run_clock, now_ms, run_memory),
-    do:
-      RunSplits.summary(
-        splits,
-        elapsed_ms(run_clock, now_ms) || 0,
-        Map.get(run_memory || %{}, :failed_runs, []),
-        Map.get(run_memory || %{}, :picked_packs, %{})
-      )
+  def run_time_groups(assigns) do
+    now = DateTime.utc_now()
+    current = RunArchive.entry(%{run_times_kind: assigns.run_times_kind, run_splits: assigns.run_splits, run_started_at: assigns.run_started_at, run_memory: assigns.run_memory}, elapsed_ms(assigns.run_clock, assigns.now_ms) || 0)
+
+    assigns.run_archive
+    |> RunArchive.push(current, now)
+    |> RunArchive.groups()
+  end
 
   defp assign_milestones(socket) do
     assign(socket, :milestones, milestone_statuses(socket.assigns.run_memory, socket.assigns.gifts_by_name))
@@ -778,6 +872,75 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     end
   end
 
+  defp assign_picks(socket, params) do
+    teams = socket.assigns.teams
+
+    socket
+    |> assign(:exp_picks, parse_picks(params["exp_team_ids"], params["exp_team_hooks"], teams, socket.assigns.exp_picks))
+    |> assign(:thread_picks, parse_picks(params["thread_team_ids"], params["thread_team_hooks"], teams, socket.assigns.thread_picks))
+  end
+
+  defp parse_picks(ids, hooks, teams, fallback) do
+    case RunnerForms.parse_slot_picks(ids, hooks, length(fallback)) do
+      {:ok, picks} -> Enum.map(picks, &normalize_pick(&1, teams))
+      :error -> fallback
+    end
+  end
+
+  defp normalize_pick(nil, _teams), do: nil
+
+  defp normalize_pick(%{id: id, hook: hook}, teams) do
+    case Enum.find(teams, &(&1.id == id)) do
+      nil -> nil
+      team -> %{id: id, hook: Teams.pick_hook(team, hook)}
+    end
+  end
+
+  defp reorder(socket, key, ids) do
+    picks = Map.fetch!(socket.assigns, key)
+    order = Enum.map(ids, &String.to_integer/1)
+
+    if Enum.sort(order) == Enum.to_list(0..(length(picks) - 1)//1) do
+      socket |> assign(key, Enum.map(order, &Enum.at(picks, &1))) |> save_lux_form()
+    else
+      socket
+    end
+  end
+
+  defp restore_lux_form(socket, nil), do: socket
+
+  defp restore_lux_form(socket, params) do
+    socket
+    |> assign_picks(params)
+    |> assign(:then_md, params["then"] == "mirror_dungeon")
+    |> assign(:exp_pin, RunnerForms.parse_pin(params["exp_pin"], LuxSchedule.exp_slot_count()))
+    |> assign(:thread_pin, RunnerForms.parse_pin(params["thread_pin"], LuxSchedule.thread_slot_count()))
+    |> assign(:exp_waves, Map.get(params, "exp_waves", socket.assigns.exp_waves))
+    |> assign(:thread_waves, Map.get(params, "thread_waves", socket.assigns.thread_waves))
+    |> assign(:lux_collect_xp, Map.get(params, "collect_xp") == "true")
+    |> assign(:lux_collect_enkephalin, Map.get(params, "collect_enkephalin") == "true")
+  end
+
+  defp save_lux_form(socket) do
+    a = socket.assigns
+
+    RunnerForms.put("luxcavation", %{
+      "exp_team_ids" => Enum.map(a.exp_picks, &pick_id/1),
+      "exp_team_hooks" => Enum.map(a.exp_picks, &pick_hook/1),
+      "thread_team_ids" => Enum.map(a.thread_picks, &pick_id/1),
+      "thread_team_hooks" => Enum.map(a.thread_picks, &pick_hook/1),
+      "then" => if(a.then_md, do: "mirror_dungeon", else: ""),
+      "exp_pin" => to_string(a.exp_pin),
+      "thread_pin" => to_string(a.thread_pin),
+      "exp_waves" => a.exp_waves,
+      "thread_waves" => a.thread_waves,
+      "collect_xp" => to_string(a.lux_collect_xp),
+      "collect_enkephalin" => to_string(a.lux_collect_enkephalin)
+    })
+
+    socket
+  end
+
   defp start_countdown(socket, action) do
     Process.send_after(self(), :countdown_tick, 1_000)
 
@@ -785,6 +948,26 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
     |> assign(:pending_action, action)
     |> assign(:countdown, @countdown_secs)
   end
+
+  defp run_pending_action({:then, lux, md}) do
+    run_pending_action(lux)
+    Navigator.queue_after_run(md)
+  end
+
+  defp run_pending_action(
+         {:run_luxcavation, team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count}
+       ),
+       do:
+         Navigator.run_luxcavation(
+           team,
+           exp_waves,
+           thread_waves,
+           collect_xp?,
+           collect_enkephalin?,
+           enkephalin_convert_count
+         )
+
+  defp run_pending_action(:resume_luxcavation), do: Navigator.resume_luxcavation()
 
   defp run_pending_action({:run_mirror_dungeon, picks, run_count, config}),
     do: Navigator.run_mirror_dungeon(picks, run_count, config)
@@ -812,6 +995,115 @@ defmodule StarlightBotWeb.Live.MirrorDungeonLive do
   end
 
   def pending_action_label(:resume_mirror_dungeon), do: "resume mirror dungeon"
+
+  def pending_action_label(
+        {:run_luxcavation, _team_id, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count}
+      ) do
+    enkephalin_prefix = if collect_enkephalin?, do: "enkephalin (#{enkephalin_convert_count}x lunacy) + ", else: ""
+    xp_suffix = if collect_xp?, do: " + battle pass xp", else: ""
+
+    "luxcavation: #{enkephalin_prefix}#{exp_waves} exp wave(s), #{thread_waves} thread wave(s)#{xp_suffix}"
+  end
+
+  def pending_action_label({:then, lux, md}), do: pending_action_label(lux) <> ", then " <> pending_action_label(md)
+  def pending_action_label(:resume_luxcavation), do: "resume luxcavation"
+
+
+  defp pin_key("exp"), do: :exp_pin
+  defp pin_key("thread"), do: :thread_pin
+
+  defp pick_id(nil), do: ""
+  defp pick_id(%{id: id}), do: to_string(id)
+
+  defp pick_hook(nil), do: ""
+  defp pick_hook(%{hook: hook}), do: hook || ""
+
+  attr :id, :string, required: true
+  attr :kind, :string, required: true
+  attr :event, :string, required: true
+  attr :picks, :list, required: true
+  attr :teams, :list, required: true
+  attr :labels, :list, required: true
+  attr :current, :integer, required: true
+  attr :pinned?, :boolean, required: true
+  slot :icon, required: true
+
+  def pick_list(assigns) do
+    ~H"""
+    <div class="relative flex items-stretch gap-1">
+      <div class="absolute inset-x-0 h-8 rounded bg-primary/10 ring-1 ring-primary pointer-events-none"
+           style={"top: #{@current * 2.25}rem"}></div>
+      <div class="relative flex flex-col gap-1 shrink-0">
+        <div :for={{label, index} <- Enum.with_index(@labels)} class="h-8 flex items-center gap-1 pl-1">
+          <button :if={@pinned?} type="button" phx-click="set_pin" phx-value-kind={@kind} phx-value-index={index}
+                  title="Always use this slot's team"
+                  class={"w-4 text-center " <> if(index == @current, do: "text-primary", else: "text-base-content/30 hover:text-primary")}>
+            {if index == @current, do: "★", else: "☆"}
+          </button>
+          <span :if={not @pinned?} class={"w-4 text-center " <> if(index == @current, do: "text-primary", else: "text-transparent")}>★</span>
+          <span class="text-xs text-base-content/60 w-14">{label}</span>
+        </div>
+      </div>
+      <div id={@id} phx-hook="SortableList" data-sort-event={@event} class="relative flex flex-col gap-1 flex-1 min-w-0">
+        <div :for={{pick, index} <- Enum.with_index(@picks)} data-sort-id={index} class="h-8 flex items-center gap-1">
+          <span data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to move this team to another day">⠿</span>
+          <select name={"#{@kind}_team_ids[]"} class="select select-sm select-bordered flex-1 min-w-0" disabled={@teams == []}>
+            <option value="" selected={pick == nil}>None selected</option>
+            <option :for={team <- @teams} value={team.id} selected={pick != nil and team.id == pick.id}>{team.name}</option>
+          </select>
+          <.hook_select name={"#{@kind}_team_hooks[]"} hooks={if(pick, do: team_hooks(@teams, pick.id), else: [])} selected={pick && pick.hook} disabled={@teams == []} />
+        </div>
+      </div>
+      <div class="relative flex flex-col gap-1 shrink-0">
+        <div :for={index <- 0..(length(@picks) - 1)} class="h-8 w-6 flex items-center justify-end">
+          {render_slot(@icon, index)}
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  def exp_slot_label(slot), do: LuxSchedule.exp_slot_label(slot)
+  def exp_slot_types(slot), do: LuxSchedule.exp_slot_types(slot)
+  def thread_slot_label(slot), do: LuxSchedule.thread_slot_label(slot)
+  def thread_slot_sin(slot), do: LuxSchedule.thread_slot_sin(slot)
+
+  def active_slot("exp", nil, today), do: LuxSchedule.exp_slot(today)
+  def active_slot("thread", nil, today), do: today
+  def active_slot(_kind, pin, _today), do: pin
+
+  def then_md?(then_md, md_next), do: then_md and md_next != nil
+
+  def pin_title(nil), do: "Locked: follows the daily schedule. Unlock to choose the team yourself."
+  def pin_title(_pin), do: "Unlocked: always uses the starred slot, whatever the day. Click to follow the daily schedule again."
+
+  def type_icon(type), do: "/images/affinity/#{type}.webp"
+
+  def sin_icon(sin), do: "/images/sin/#{sin}.webp"
+
+  @enkephalin_cumulative_costs [0, 26, 78, 156, 260]
+
+  def enkephalin_cumulative_cost(count) when count in 0..4, do: Enum.at(@enkephalin_cumulative_costs, count)
+
+  def total_waves(waves) do
+    case Integer.parse(to_string(waves)) do
+      {waves, ""} when waves >= 0 -> waves
+      _ -> 0
+    end
+  end
+
+  def exp_enkephalin_cost, do: @exp_enkephalin_cost
+  def thread_enkephalin_cost, do: @thread_enkephalin_cost
+
+  def module_terms(exp_waves, thread_waves) do
+    [
+      {"EXP", total_waves(exp_waves), @exp_enkephalin_cost},
+      {"THREAD", total_waves(thread_waves), @thread_enkephalin_cost}
+    ]
+  end
+
+  defdelegate modules_total(terms), to: StarlightBotWeb.Live.SchedulerLive
+  defdelegate term_badge_class(label), to: StarlightBotWeb.Live.SchedulerLive
 
   def screen_label(nil), do: "Not localized"
   def screen_label(:unknown), do: "Unknown"

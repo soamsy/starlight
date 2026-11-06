@@ -8,12 +8,11 @@ defmodule StarlightBotWeb.Live.PageHook do
   alias StarlightBot.Vision.Capture
   alias StarlightBotWeb.Components.WindowGate
 
-  @gated_pages [:luxcavation, :mirror_dungeon]
+  @gated_pages [:runner]
 
   @self_subscribed_views [
-    StarlightBotWeb.Live.MirrorDungeonLive,
+    StarlightBotWeb.Live.RunnerLive,
     StarlightBotWeb.Live.TeamEditorLive,
-    StarlightBotWeb.Live.LuxcavationLive,
     StarlightBotWeb.Live.TransitionsLive,
     StarlightBotWeb.Live.BattleInspectorLive,
     StarlightBotWeb.Live.ShopRunnerLive,
@@ -35,9 +34,8 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.EventInspectorLive => :events,
     StarlightBotWeb.Live.TransitionsLive => :transitions,
     StarlightBotWeb.Live.TeamEditorLive => :teams,
-    StarlightBotWeb.Live.LuxcavationLive => :luxcavation,
     StarlightBotWeb.Live.RewardsLive => :rewards,
-    StarlightBotWeb.Live.MirrorDungeonLive => :mirror_dungeon,
+    StarlightBotWeb.Live.RunnerLive => :runner,
     StarlightBotWeb.Live.ShopRunnerLive => :shop_runner,
     StarlightBotWeb.Live.LogLive => :log,
     StarlightBotWeb.Live.LinuxChecksLive => :linux_checks

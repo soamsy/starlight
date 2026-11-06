@@ -1665,6 +1665,23 @@ const TeamNavMemory = {
   }
 }
 
+const RunnerTabMemory = {
+  mounted() {
+    if (this.el.dataset.restore === "true") {
+      const tab = localStorage.getItem("starlight-runner-tab")
+      if (tab) this.pushEvent("restore_tab", { tab })
+    }
+    this.store()
+  },
+  updated() {
+    this.store()
+  },
+  store() {
+    const { tab } = this.el.dataset
+    if (tab) localStorage.setItem("starlight-runner-tab", tab)
+  }
+}
+
 const ViewMemory = {
   mounted() {
     this.key = null
@@ -2100,7 +2117,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
+  hooks: { RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
 })
 
 liveSocket.connect()

@@ -3,15 +3,10 @@
 <div class="h-screen overflow-hidden flex">
   <nav class="flex flex-col items-center gap-1 w-8 lg:w-12 shrink-0 py-1 lg:py-3 bg-base-100 border-r border-base-300">
     <%!-- Runners --%>
-    <.link navigate={~p"/mirror-dungeon"}
-           class={"tooltip tooltip-right btn btn-square btn-xs lg:btn-sm " <> if(assigns[:page] == :mirror_dungeon, do: "btn-primary", else: "btn-ghost text-base-content/50")}
-           data-tip="Mirror Dungeon Runner">
-      <img src={~p"/images/icons/starlight.webp"} alt="Mirror Dungeon Runner" class="h-4 w-4 lg:h-5 lg:w-5" style="filter: drop-shadow(1px 0 0 var(--color-primary-content)) drop-shadow(-1px 0 0 var(--color-primary-content)) drop-shadow(0 1px 0 var(--color-primary-content)) drop-shadow(0 -1px 0 var(--color-primary-content));" />
-    </.link>
-    <.link navigate={~p"/luxcavation"}
-           class={"tooltip tooltip-right btn btn-square btn-xs lg:btn-sm " <> if(assigns[:page] == :luxcavation, do: "btn-primary", else: "btn-ghost text-base-content/50")}
-           data-tip="Luxcavation Runner">
-      <img src={~p"/images/icons/luxcavation.webp"} alt="Luxcavation Runner" class="h-4 w-4 lg:h-5 lg:w-5" style="filter: drop-shadow(1px 0 0 var(--color-primary-content)) drop-shadow(-1px 0 0 var(--color-primary-content)) drop-shadow(0 1px 0 var(--color-primary-content)) drop-shadow(0 -1px 0 var(--color-primary-content));" />
+    <.link navigate={~p"/"}
+           class={"tooltip tooltip-right btn btn-square btn-xs lg:btn-sm " <> if(assigns[:page] == :runner, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           data-tip="Runner">
+      <img src={~p"/images/icons/starlight.webp"} alt="Runner" class="h-4 w-4 lg:h-5 lg:w-5" style="filter: drop-shadow(1px 0 0 var(--color-primary-content)) drop-shadow(-1px 0 0 var(--color-primary-content)) drop-shadow(0 1px 0 var(--color-primary-content)) drop-shadow(0 -1px 0 var(--color-primary-content));" />
     </.link>
 
     <div class="divider my-0 lg:my-1"></div>
@@ -333,7 +328,7 @@
           <select name="enkephalin_convert_count" class="select select-sm select-bordered w-52">
             <%= for n <- 0..StarlightBot.Automation.EnkephalinCharger.max_convert_count() do %>
               <option value={n} selected={n == @enkephalin_convert_count}>
-                {n}x ({StarlightBotWeb.Live.LuxcavationLive.enkephalin_cumulative_cost(n)} lunacy, {StarlightBotWeb.Live.LuxcavationLive.enkephalin_cumulative_cost(n) * 7}/week)
+                {n}x ({StarlightBotWeb.Live.RunnerLive.enkephalin_cumulative_cost(n)} lunacy, {StarlightBotWeb.Live.RunnerLive.enkephalin_cumulative_cost(n) * 7}/week)
               </option>
             <% end %>
           </select>

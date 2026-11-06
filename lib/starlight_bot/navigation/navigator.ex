@@ -4,7 +4,7 @@ defmodule StarlightBot.Navigation.Navigator do
   alias StarlightBot.Automation.Scripts.ShopRunner
   alias StarlightBot.{Ctx, EnkephalinSchedule, LogStore, RunHistory, Teams}
   alias StarlightBot.Automation.Scripts.{ClaimRewards, EnkephalinConversion, LuxcavationRunner, MirrorDungeonRunner, PrepareLineups, SelectTeamOnScreen}
-  alias StarlightBot.Navigation.{Catalog, DSL, Machine, RunClock, RunSplits, Runner, ScreenTimes}
+  alias StarlightBot.Navigation.{Catalog, DSL, Machine, RunArchive, RunClock, RunSplits, Runner, ScreenTimes}
 
   @topic "navigation"
   @log_limit 1000
@@ -24,6 +24,8 @@ defmodule StarlightBot.Navigation.Navigator do
     run_clock: nil,
     run_splits: [],
     run_times_kind: nil,
+    run_started_at: nil,
+    run_archive: [],
     screen_times: %ScreenTimes{},
     next_run: nil
   ]
@@ -273,7 +275,7 @@ defmodule StarlightBot.Navigation.Navigator do
         {:run_luxcavation, team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count},
         state
       ) do
-    state = cancel_running(state)
+    state = state |> cancel_running() |> archive_run_times()
 
     state =
       add_log(
@@ -306,7 +308,8 @@ defmodule StarlightBot.Navigation.Navigator do
         pause_flag: pause_flag,
         run_clock: RunClock.start(now_ms()),
         run_splits: [],
-        run_times_kind: :luxcavation
+        run_times_kind: :luxcavation,
+        run_started_at: DateTime.utc_now()
     }
 
     broadcast(state)
@@ -315,14 +318,14 @@ defmodule StarlightBot.Navigation.Navigator do
 
   @impl true
   def handle_cast({:run_mirror_dungeon, picks, run_count, config}, state) do
-    state = cancel_running(state)
+    state = state |> cancel_running() |> archive_run_times()
     state = %{state | run_memory: %{}}
     state = add_log(state, :info, "Running mirror dungeon: teams=#{inspect(picks)} runs=#{run_count} config=#{inspect(config)}")
     pause_flag = :atomics.new(1, [])
     ctx = nav_ctx(paused_to: {self(), :nav_paused}, pause_flag: pause_flag, run_memory_to: {self(), :nav_run_memory})
     state = launch(state, :run_script, MirrorDungeonRunner.program(picks, run_count, config), ctx, [])
 
-    state = %{state | phase: :running, goal: nil, run_kind: :mirror_dungeon, pause_flag: pause_flag, run_clock: RunClock.start(now_ms()), run_splits: [], run_times_kind: :mirror_dungeon, screen_times: ScreenTimes.track(%ScreenTimes{}, %{run: 1}, 0, DateTime.utc_now())}
+    state = %{state | phase: :running, goal: nil, run_kind: :mirror_dungeon, pause_flag: pause_flag, run_clock: RunClock.start(now_ms()), run_splits: [], run_times_kind: :mirror_dungeon, run_started_at: DateTime.utc_now(), screen_times: ScreenTimes.track(%ScreenTimes{}, %{run: 1}, 0, DateTime.utc_now())}
     broadcast(state)
     {:noreply, state}
   end
@@ -758,6 +761,12 @@ defmodule StarlightBot.Navigation.Navigator do
 
   defp persist_run(_state, _run, _result), do: :ok
 
+  defp archive_run_times(state) do
+    elapsed = state.run_clock && RunClock.elapsed_ms(state.run_clock, now_ms())
+    entry = RunArchive.entry(state, elapsed || 0)
+    %{state | run_archive: RunArchive.push(state.run_archive, entry, DateTime.utc_now())}
+  end
+
   defp update_clock(%{run_clock: nil} = state, _fun), do: state
   defp update_clock(%{run_clock: clock} = state, fun), do: %{state | run_clock: fun.(clock, now_ms())}
 
@@ -797,6 +806,8 @@ defmodule StarlightBot.Navigation.Navigator do
       run_clock: state.run_clock && %{elapsed_ms: RunClock.elapsed_ms(state.run_clock, now_ms()), running?: RunClock.running?(state.run_clock)},
       run_splits: state.run_splits,
       run_times_kind: state.run_times_kind,
+      run_started_at: state.run_started_at,
+      run_archive: state.run_archive,
       screen_times: state.screen_times
     }
   end

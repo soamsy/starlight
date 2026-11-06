@@ -1,0 +1,454 @@
+<div id="runner" phx-hook="RunnerTabMemory" data-tab={@tab} data-restore={to_string(@live_action == nil and @run_kind == nil)} class="flex flex-col lg:flex-row gap-2 h-full min-h-0 overflow-y-auto lg:overflow-hidden">
+
+  <div class="w-full lg:w-[28rem] shrink-0 flex flex-col gap-3 lg:overflow-y-auto">
+
+    <div class="flex flex-col shrink-0">
+    <div role="tablist" class="flex items-end gap-1">
+      <button type="button" role="tab" phx-click="set_tab" phx-value-tab="mirror_dungeon" class={["flex flex-1 items-center justify-center gap-2 px-3 py-2 rounded-t-xl text-lg font-bold", if(@tab == :mirror_dungeon, do: "runner-pane", else: "bg-base-300 text-base-content/60 hover:text-base-content")]}>
+        <img src={~p"/images/icons/mirror_dungeon.webp"} alt="" class="size-6" />
+        Mirror Dungeon
+        <span :if={@run_kind == :mirror_dungeon} class="loading loading-spinner loading-xs"></span>
+      </button>
+      <button type="button" role="tab" phx-click="set_tab" phx-value-tab="luxcavation" class={["flex flex-1 items-center justify-center gap-2 px-3 py-2 rounded-t-xl text-lg font-bold", if(@tab == :luxcavation, do: "runner-pane", else: "bg-base-300 text-base-content/60 hover:text-base-content")]}>
+        <img src={~p"/images/icons/luxcavation.webp"} alt="" class="size-6" />
+        Luxcavation
+        <span :if={@run_kind == :luxcavation} class="loading loading-spinner loading-xs"></span>
+      </button>
+    </div>
+    <div class="runner-pane rounded-b-xl rounded-tr-xl p-3 flex flex-col gap-3">
+    <%= if @tab == :mirror_dungeon do %>
+      <%= if @teams == [] do %>
+        <div class="text-xs text-base-content/40 bg-base-300 rounded-xl p-3">
+          No teams with a team-select hook configured yet — set one up on the
+          <.link navigate={~p"/teams"} class="link">Teams</.link> page first.
+        </div>
+      <% end %>
+
+      <div class="grid grid-cols-2 gap-2 items-start shrink-0">
+        <details id="md-inventory" phx-mounted={JS.ignore_attributes(["open"])} class="group bg-base-300 rounded-xl p-3">
+          <summary class="flex items-center gap-1.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            <span class="text-xs text-base-content/50 group-open:hidden">▶</span>
+            <span class="text-xs text-base-content/50 hidden group-open:inline">▼</span>
+            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Inventory</span>
+            <span class="badge badge-sm ml-auto"><%= map_size(ego_gifts(@run_memory)) %></span>
+          </summary>
+          <%= if map_size(ego_gifts(@run_memory)) == 0 do %>
+            <div class="text-xs text-base-content/30 mt-2">None picked up yet</div>
+          <% else %>
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              <.gift_tile :for={{_gift_id, gift} <- ego_gifts(@run_memory)} owned={gift} gifts_by_name={@gifts_by_name} show_tier />
+            </div>
+          <% end %>
+        </details>
+
+        <details :if={@milestones != []} id="md-milestones" phx-mounted={JS.ignore_attributes(["open"])} class="group bg-base-300 rounded-xl p-3">
+          <summary class="flex items-center gap-1.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            <span class="text-xs text-base-content/50 group-open:hidden">▶</span>
+            <span class="text-xs text-base-content/50 hidden group-open:inline">▼</span>
+            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Milestones</span>
+            <span class="badge badge-sm ml-auto"><%= Enum.count(@milestones, & &1.reached?) %>/<%= length(@milestones) %></span>
+          </summary>
+          <div class="flex flex-col gap-2 mt-2">
+            <%= for milestone <- @milestones do %>
+              <div class="flex flex-col gap-1">
+                <span class={"badge badge-sm " <> if(milestone.reached?, do: "badge-success", else: "badge-outline")}>
+                  <%= if milestone.reached?, do: "✓ " %><%= milestone.name %>
+                </span>
+                <div class="flex flex-wrap gap-1.5">
+                  <.gift_tile :for={entry <- milestone.gifts} owned={%{name: entry.name, uptie: entry.uptie}} gifts_by_name={@gifts_by_name} show_tier dim={entry.status != :done} />
+                </div>
+              </div>
+            <% end %>
+          </div>
+        </details>
+      </div>
+
+      <label :if={StarlightBot.Data.authoring?()} class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@battle_debug} phx-click="toggle_battle_debug" />
+        <span class="text-sm">Save battle debug images</span>
+        <.link navigate={~p"/battle/history"} class="link text-xs text-base-content/60">history</.link>
+      </label>
+
+      <form
+        id="mirror-dungeon-runner-form"
+        phx-submit="run"
+        phx-change="update_form"
+        class="flex flex-col gap-3">
+        <% gate = StarlightBotWeb.Components.WindowGate.gate(assigns) %>
+        <% locked = cycle_locked?(@phase, @other_running?) %>
+        <% run_disabled = @teams == [] or @phase != :idle or @countdown != nil or @other_running? or gate != :ready %>
+        <div class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
+            <%= if length(@picks) > 1, do: "Team cycle (★ will run, goes down the list on completion)", else: "Team" %>
+          </span>
+          <input type="hidden" name="start_index" value={@start_index} />
+          <div id={"team-list-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_teams" class="flex flex-col gap-1">
+            <.pick_row :for={{pick, index} <- Enum.with_index(@picks)} pick={pick} index={index} list="cycle" teams={@teams} locked={locked}
+                       cycle_size={length(@picks)} start_index={@start_index} run_disabled={run_disabled} />
+            <div data-sort-id="split" class="flex items-center gap-2 py-0.5 text-base-content/40">
+              <span :if={not locked} data-sort-handle class="cursor-grab px-0.5" title="Drag to change which teams are in the cycle">⠿</span>
+              <span class="flex-1 border-t border-dashed border-base-content/30"></span>
+              <span class="text-[10px] uppercase tracking-wide">Reserve below (not cycled)</span>
+              <span class="flex-1 border-t border-dashed border-base-content/30"></span>
+            </div>
+            <.pick_row :for={{pick, index} <- Enum.with_index(@reserve)} pick={pick} index={index} list="reserve" teams={@teams} locked={locked}
+                       run_disabled={run_disabled} />
+          </div>
+          <button :if={@teams != [] and not locked} type="button" phx-click="add_team" class="btn btn-ghost btn-xs self-start">+ team</button>
+        </div>
+
+        <div class="flex gap-2">
+        <label class="flex flex-col gap-1 w-24 shrink-0">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Runs</span>
+          <input type="number" name="run_count" min="0" value={@run_count} class="input input-sm input-bordered w-full" />
+        </label>
+
+        <label class="flex flex-col gap-1 flex-1 min-w-0">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Rewards</span>
+          <select name="rewards" class="select select-sm select-bordered w-full">
+            <option value="auto" selected={@rewards == "auto"}>Claim rewards, with bonuses if hard from F1</option>
+            <option value="claim" selected={@rewards == "claim"}>Claim rewards</option>
+            <option value="weekly" selected={@rewards == "weekly"}>Claim rewards with weekly bonuses</option>
+          </select>
+        </label>
+        </div>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="collect_xp" value="true" checked={@collect_xp}
+                 class="checkbox checkbox-sm" />
+          <span class="text-sm">Collect battle pass xp after all runs</span>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="collect_enkephalin" value="true" checked={@collect_enkephalin}
+                 class="checkbox checkbox-sm" />
+          <span class="text-sm">Charge <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-5 inline-block align-text-bottom" /> before each run</span>
+        </label>
+
+        <%= if @collect_enkephalin do %>
+          <div class="flex flex-col gap-1">
+            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lunacy → enkephalin conversions</span>
+            <div class="flex items-center gap-2">
+              <img src="/images/icons/lunacy.webp" title="Lunacy" class="size-6 shrink-0" />
+              <span class="text-base-content/50">→</span>
+              <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-6 shrink-0" />
+              <span class="text-sm flex-1 min-w-0"><%= @enkephalin_convert_count %>x (<%= enkephalin_cumulative_cost(@enkephalin_convert_count) %> lunacy, <%= enkephalin_cumulative_cost(@enkephalin_convert_count) * 7 %>/week)</span>
+              <button type="button" phx-click="settings_open" phx-value-tab="enkephalin" class="tooltip tooltip-left btn btn-ghost btn-square btn-sm text-base-content/60" data-tip="Change in settings">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                  <path d="M15 3h6v6" />
+                  <path d="M10 14 21 3" />
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        <% end %>
+
+        <%= if @other_running? do %>
+          <span class="text-xs text-warning">Luxcavation is running. Cancel it from its tab before starting this.</span>
+        <% end %>
+
+        <%= if @phase == :paused and not @other_running? do %>
+          <button
+            type="button"
+            phx-click="resume"
+            disabled={@countdown != nil or gate == :resize}
+            class="btn btn-warning btn-sm">
+            Resume
+          </button>
+          <StarlightBotWeb.Components.WindowGate.gate_button gate={gate} busy={@game_window_busy} />
+        <% else %>
+          <StarlightBotWeb.Components.WindowGate.gate_button :if={gate != :ready} gate={gate} busy={@game_window_busy}
+            disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?} />
+          <button
+            :if={gate == :ready}
+            type="submit"
+            disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
+            class="btn btn-primary btn-sm">
+            Run
+          </button>
+        <% end %>
+
+        <%= if @phase == :running and not @other_running? do %>
+          <button
+            type="button"
+            phx-click="pause"
+            disabled={@pause_requested}
+            class="btn btn-warning btn-outline btn-sm">
+            <%= if @pause_requested, do: "Pausing…", else: "Pause" %>
+          </button>
+        <% end %>
+
+        <%= if @phase != :idle and not @other_running? do %>
+          <button type="button" phx-click="cancel" class="btn btn-ghost btn-sm btn-error">Cancel</button>
+        <% end %>
+      </form>
+
+    <% else %>
+      <%= if @teams == [] do %>
+        <div class="text-xs text-base-content/40 bg-base-300 rounded-xl p-3">
+          No teams with a team-select hook configured yet — set one up on the
+          <.link navigate={~p"/teams"} class="link">Teams</.link> page first.
+        </div>
+      <% end %>
+
+      <form
+        id="lux-runner-form"
+        phx-submit="run"
+        phx-change="update_form"
+        class="flex flex-col gap-3">
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center gap-2">
+            <span class="w-12 shrink-0 text-xs font-semibold text-base-content/50 uppercase tracking-wide">Exp</span>
+            <div class="flex items-center justify-end gap-1 flex-1 min-w-0">
+              <label class="flex items-center gap-1 min-w-0">
+                <span class="text-xs text-base-content/40 truncate">Waves</span>
+                <input type="number" name="exp_waves" min="0" value={@exp_waves}
+                       class="input input-sm input-bordered w-14 shrink-0" />
+              </label>
+            </div>
+              <button type="button" phx-click="toggle_pin" phx-value-kind="exp" title={pin_title(@exp_pin)}
+                    class={"btn btn-xs h-5 min-h-0 px-1 " <> if(@exp_pin == nil, do: "btn-info text-black", else: "btn-ghost")}>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5">
+                <path :if={@exp_pin == nil} stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                <path :if={@exp_pin != nil} stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+            </button>
+          </div>
+          <.pick_list id="lux-exp-teams" kind="exp" event="reorder_exp" picks={@exp_picks} teams={@teams}
+                      labels={Enum.map(0..3, &exp_slot_label/1)} current={active_slot("exp", @exp_pin, @today)} pinned?={@exp_pin != nil}>
+            <:icon :let={index}>
+              <%= if length(exp_slot_types(index)) == 1 do %>
+                <img :for={type <- exp_slot_types(index)} src={type_icon(type)} title={type} class="size-4" />
+              <% else %>
+                <span class="relative size-6 shrink-0" title="slash, pierce, blunt">
+                  <img src={type_icon(:slash)} class="absolute top-0 left-1/2 -translate-x-1/2 size-3.5 object-contain" />
+                  <img src={type_icon(:pierce)} class="absolute bottom-0 left-0 size-3.5 object-contain" />
+                  <img src={type_icon(:blunt)} class="absolute bottom-0 right-0 size-3.5 object-contain" />
+                </span>
+              <% end %>
+            </:icon>
+          </.pick_list>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center gap-2">
+            <span class="w-12 shrink-0 text-xs font-semibold text-base-content/50 uppercase tracking-wide">Thread</span>
+            <div class="flex items-center justify-end gap-1 flex-1 min-w-0">
+              <label class="flex items-center gap-1 min-w-0">
+                <span class="text-xs text-base-content/40 truncate">Waves</span>
+                <input type="number" name="thread_waves" min="0" value={@thread_waves}
+                       class="input input-sm input-bordered w-14 shrink-0" />
+              </label>
+            </div>
+              <button type="button" phx-click="toggle_pin" phx-value-kind="thread" title={pin_title(@thread_pin)}
+                    class={"btn btn-xs h-5 min-h-0 px-1 " <> if(@thread_pin == nil, do: "btn-info text-black", else: "btn-ghost")}>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5">
+                <path :if={@thread_pin == nil} stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                <path :if={@thread_pin != nil} stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+            </button>
+          </div>
+          <.pick_list id="lux-thread-teams" kind="thread" event="reorder_thread" picks={@thread_picks} teams={@teams}
+                      labels={Enum.map(0..6, &thread_slot_label/1)} current={active_slot("thread", @thread_pin, @today)} pinned?={@thread_pin != nil}>
+            <:icon :let={index}>
+              <img src={sin_icon(thread_slot_sin(index))} title={thread_slot_sin(index)} class="size-5" />
+            </:icon>
+          </.pick_list>
+        </div>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="collect_xp" value="true" checked={@lux_collect_xp}
+                 class="checkbox checkbox-sm" />
+          <span class="text-sm">Collect battle pass xp at end</span>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="collect_enkephalin" value="true" checked={@lux_collect_enkephalin}
+                 class="checkbox checkbox-sm" />
+          <span class="text-sm">Charge <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-5 inline-block align-text-bottom" /> at start</span>
+        </label>
+
+        <%= if @lux_collect_enkephalin do %>
+          <div class="flex flex-col gap-1">
+            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lunacy → enkephalin conversions</span>
+            <div class="flex items-center gap-2">
+              <img src="/images/icons/lunacy.webp" title="Lunacy" class="size-6 shrink-0" />
+              <span class="text-base-content/50">→</span>
+              <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-6 shrink-0" />
+              <span class="text-sm flex-1 min-w-0"><%= @enkephalin_convert_count %>x (<%= enkephalin_cumulative_cost(@enkephalin_convert_count) %> lunacy, <%= enkephalin_cumulative_cost(@enkephalin_convert_count) * 7 %>/week)</span>
+              <button type="button" phx-click="settings_open" phx-value-tab="enkephalin" class="tooltip tooltip-left btn btn-ghost btn-square btn-sm text-base-content/60" data-tip="Change in settings">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
+                  <path d="M15 3h6v6" />
+                  <path d="M10 14 21 3" />
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        <% end %>
+
+        <%= if @other_running? do %>
+          <span class="text-xs text-warning">Mirror dungeon is running. Cancel it from its tab before starting this.</span>
+        <% end %>
+
+        <% gate = StarlightBotWeb.Components.WindowGate.gate(assigns) %>
+        <%= if @phase == :paused and not @other_running? do %>
+          <button
+            type="button"
+            phx-click="resume"
+            disabled={@countdown != nil or gate == :resize}
+            class="btn btn-warning btn-sm">
+            Resume
+          </button>
+          <StarlightBotWeb.Components.WindowGate.gate_button gate={gate} busy={@game_window_busy} />
+        <% else %>
+          <StarlightBotWeb.Components.WindowGate.gate_button :if={gate != :ready} gate={gate} busy={@game_window_busy}
+            disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?} />
+          <div :if={gate == :ready} class="join w-full">
+            <button
+              type="submit"
+              disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
+              class={"btn btn-sm join-item flex-1 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary", else: "btn-primary")}>
+              <%= if then_md?(@then_md, @md_next), do: "Run, then mirror dungeon", else: "Run" %>
+            </button>
+            <div class="dropdown dropdown-end">
+              <div tabindex="0" role="button"
+                   class={"btn btn-sm join-item w-12 px-0 border-l-2 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary border-l-[hsla(320,20%,80%,50%)]", else: "btn-primary border-l-[hsla(0,0%,20%,50%)]")}>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="size-3.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                </svg>
+              </div>
+              <div tabindex="0" class="dropdown-content z-10 mt-1 w-64 rounded-box bg-base-100 p-3 shadow">
+                <div class="flex flex-col gap-1">
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" name="then" value="mirror_dungeon" checked={@then_md} disabled={is_nil(@md_next)}
+                           class="checkbox checkbox-sm" />
+                    <span class="text-sm">Run mirror dungeon after</span>
+                  </label>
+                  <span :if={is_nil(@md_next)} class="text-xs text-base-content/50">Set up a mirror dungeon run on its page first.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% end %>
+
+        <%= if @phase == :running and not @other_running? do %>
+          <button
+            type="button"
+            phx-click="pause"
+            disabled={@pause_requested}
+            class="btn btn-warning btn-outline btn-sm">
+            <%= if @pause_requested, do: "Pausing…", else: "Pause" %>
+          </button>
+        <% end %>
+
+        <%= if @phase != :idle and not @other_running? do %>
+          <button type="button" phx-click="cancel" class="btn btn-ghost btn-sm btn-error">Cancel</button>
+        <% end %>
+      </form>
+
+      <%!-- Enkephalin usage summary --%>
+      <% terms = module_terms(@exp_waves, @thread_waves) %>
+      <div class="flex flex-col gap-1.5 bg-base-300 rounded-xl p-3 text-sm shrink-0">
+        <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Enkephalin usage</span>
+        <div class="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1">
+          <%= for {label, waves, cost} <- terms do %>
+            <span class={["badge badge-sm font-semibold", term_badge_class(label)]}>{label}</span>
+            <span class="flex items-center gap-1 font-mono text-base-content/60">{waves} × {cost}<img src="/images/icons/enkephalin.webp" alt="modules" class="h-4 w-4" /></span>
+            <span class="flex items-center justify-end gap-1 font-mono">
+              {waves * cost}
+              <img src="/images/icons/enkephalin.webp" alt="modules" class="h-4 w-4" />
+            </span>
+          <% end %>
+          <span class="col-span-2 border-t border-base-content/10 pt-1 font-semibold">Total</span>
+          <span class="flex items-center justify-end gap-1 border-t border-base-content/10 pt-1 font-mono font-semibold">
+            {modules_total(terms)}
+            <img src="/images/icons/enkephalin.webp" alt="modules" class="h-4 w-4" />
+          </span>
+        </div>
+      </div>
+
+    <% end %>
+
+      <%!-- Countdown overlay --%>
+      <%= if @countdown do %>
+        <div class="bg-warning/10 border border-warning/30 rounded-xl p-3 shrink-0 flex items-center justify-between gap-2">
+          <div>
+            <div class="text-xs text-warning font-semibold">Focus the game window now</div>
+            <div class="font-mono text-sm text-base-content/70"><%= pending_action_label(@pending_action) %></div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-2xl font-bold text-warning"><%= @countdown %></span>
+            <button phx-click="cancel_pending" class="btn btn-ghost btn-xs text-base-content/40">✕</button>
+          </div>
+        </div>
+      <% end %>
+
+    </div>
+    </div>
+  </div>
+
+  <div class="flex-1 min-w-0 min-h-80 lg:min-h-0 flex flex-col gap-2">
+    <div class="flex items-center gap-3 shrink-0 flex-wrap">
+      <span class={"#{screen_badge_class(@current_screen)} font-mono"}>
+        <%= screen_label(@current_screen) %>
+      </span>
+
+      <button phx-click="localize" disabled={@phase != :idle} class="btn btn-ghost btn-xs">
+        Localize
+      </button>
+
+      <%= if @run_times_kind == :mirror_dungeon do %>
+        <span class="badge badge-ghost font-mono">Floor <%= current_floor(@run_memory) %></span>
+
+        <%= if cost = current_cost(@run_memory) do %>
+          <span class="badge badge-ghost font-mono">Cost <%= cost %></span>
+        <% end %>
+
+        <span class={mode_badge_class(current_mode(@run_memory))}><%= current_mode(@run_memory) %></span>
+
+        <%= if progress = run_progress(@run_memory) do %>
+          <span class="badge badge-ghost font-mono">Run <%= progress.current %> / <%= progress.total %></span>
+        <% end %>
+      <% end %>
+
+      <%= if label = phase_label(@phase) do %>
+        <span class={"flex items-center gap-1 text-sm #{if @phase == :paused, do: "text-warning", else: "text-base-content/60"}"}>
+          <%= if @phase != :paused do %>
+            <span class="loading loading-spinner loading-xs"></span>
+          <% end %>
+          <%= label %>
+        </span>
+      <% end %>
+    </div>
+
+    <StarlightBotWeb.Live.LogLive.panel socket={@socket} id="runner-log" class="flex-1 min-h-0" />
+  </div>
+
+  <% groups = run_time_groups(assigns) %>
+  <div class="w-full lg:w-56 shrink-0 bg-base-200 rounded-xl p-3 flex flex-col gap-2 lg:min-h-0 lg:overflow-hidden">
+    <div class="flex items-center justify-between shrink-0">
+      <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Run times</span>
+      <button type="button" phx-click="toggle_screen_times" class="btn btn-ghost btn-xs">By screen</button>
+    </div>
+    <div class="flex items-center justify-between shrink-0 border-b border-base-300 pb-2">
+      <span class="text-sm font-semibold">Total (24h)</span>
+      <span class="font-mono text-sm font-semibold"><%= format_elapsed(RunArchive.total_ms(groups)) %></span>
+    </div>
+    <div class="flex flex-col gap-3 lg:flex-1 lg:min-h-0 lg:overflow-y-auto">
+      <.run_times groups={groups} live_last?={@run_clock != nil and @run_clock.running?} />
+    </div>
+    <StarlightBotWeb.Components.GameStream.game_stream id="runner-game-stream" class="mt-auto pt-2 shrink-0" />
+  </div>
+
+  <.screen_times
+    :if={@show_screen_times}
+    segments={screen_segments(@screen_source, @screen_times, @history_segments, @run_clock, @now_ms)}
+    view={@screen_view}
+    source={@screen_source}
+    filter={@screen_filter}
+    history_runs={@history_runs}
+  />
+
+</div>

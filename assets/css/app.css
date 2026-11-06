@@ -177,3 +177,9 @@ body {
   border: 1px solid oklch(28% 0.04 42);
   box-shadow: inset 0 0 40px rgb(0 0 0 / 0.55);
 }
+
+.runner-pane {
+  background-image: url('/images/bg/log.webp');
+  background-size: cover;
+  background-attachment: fixed;
+}
