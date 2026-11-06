@@ -36,28 +36,11 @@ defmodule StarlightBotWeb.Layouts do
 
   def flash_toasts(assigns) do
     ~H"""
-    <div id="flash-toasts">
-    <%= if msg = @flash["info"] do %>
-      <div id="flash-info" class="fixed top-4 left-3/4 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md bg-success/90 text-success-content text-xs cursor-pointer select-none"
-           role="alert"
-           phx-click="lv:clear-flash" phx-value-key="info">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-        </svg>
-        <span><%= msg %></span>
-      </div>
-    <% end %>
-
-    <%= if msg = @flash["error"] do %>
-      <div id="flash-error" class="fixed top-4 left-3/4 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md bg-error/90 text-error-content text-xs cursor-pointer select-none"
-           role="alert"
-           phx-click="lv:clear-flash" phx-value-key="error">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-        <span><%= msg %></span>
-      </div>
-    <% end %>
+    <div id="flash-toasts" phx-hook="Toasts">
+      <%= for kind <- ["info", "error"], msg = @flash[kind] do %>
+        <span hidden data-kind={kind} data-msg={msg}></span>
+      <% end %>
+      <div id="flash-toasts-view" phx-update="ignore"></div>
     </div>
     """
   end

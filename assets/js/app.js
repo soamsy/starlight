@@ -645,6 +645,87 @@ const EditableNotes = {
   }
 }
 
+const TOAST_STYLES = {
+  info: { classes: "bg-success/90 text-success-content", icon: "M5 13l4 4L19 7" },
+  error: { classes: "bg-error/90 text-error-content", icon: "M6 18L18 6M6 6l12 12" }
+}
+
+const Toasts = {
+  mounted() {
+    this.queue = []
+    this.index = 0
+    this.seen = {}
+    this.view = this.el.querySelector("#flash-toasts-view")
+    this.sync()
+  },
+  updated() {
+    this.sync()
+  },
+  sync() {
+    for (const kind of Object.keys(TOAST_STYLES)) {
+      const source = this.el.querySelector(`[data-kind="${kind}"]`)
+      const msg = source ? source.dataset.msg : null
+      if (msg === null) {
+        this.seen[kind] = null
+      } else if (this.seen[kind] !== msg) {
+        this.seen[kind] = msg
+        this.queue.push({ kind, msg })
+        this.index = this.queue.length - 1
+      }
+    }
+    this.render()
+  },
+  step(delta) {
+    const n = this.queue.length
+    this.index = (this.index + delta + n) % n
+    this.render()
+  },
+  dismissAll() {
+    this.queue = []
+    this.index = 0
+    for (const kind of Object.keys(TOAST_STYLES)) {
+      if (this.seen[kind] !== null && this.seen[kind] !== undefined) this.pushEvent("lv:clear-flash", { key: kind })
+    }
+    this.render()
+  },
+  render() {
+    this.view.replaceChildren()
+    if (this.queue.length === 0) return
+    const { kind, msg } = this.queue[this.index]
+    const style = TOAST_STYLES[kind]
+    const toast = document.createElement("div")
+    toast.id = `flash-${kind}`
+    toast.setAttribute("role", "alert")
+    toast.className = `fixed top-4 right-[15%] z-50 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md text-xs select-none cursor-pointer ${style.classes}`
+    toast.addEventListener("click", () => this.dismissAll())
+    toast.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="${style.icon}" /></svg>`
+    const text = document.createElement("span")
+    text.textContent = msg
+    toast.appendChild(text)
+    if (this.queue.length > 1) {
+      const pager = document.createElement("span")
+      pager.className = "flex items-center gap-1 shrink-0 pl-1 border-l border-current/30 cursor-default"
+      pager.addEventListener("click", e => e.stopPropagation())
+      const prev = document.createElement("button")
+      prev.type = "button"
+      prev.className = "cursor-pointer px-0.5"
+      prev.textContent = "\u25C0"
+      prev.addEventListener("click", () => this.step(-1))
+      const count = document.createElement("span")
+      count.className = "tabular-nums"
+      count.textContent = `${this.index + 1}/${this.queue.length}`
+      const next = document.createElement("button")
+      next.type = "button"
+      next.className = "cursor-pointer px-0.5"
+      next.textContent = "\u25B6"
+      next.addEventListener("click", () => this.step(1))
+      pager.append(prev, count, next)
+      toast.appendChild(pager)
+    }
+    this.view.appendChild(toast)
+  }
+}
+
 const PreserveScroll = {
   beforeUpdate() {
     this.scrollTop = this.el.scrollTop
@@ -2124,7 +2205,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
+  hooks: { Toasts, RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
 })
 
 liveSocket.connect()
