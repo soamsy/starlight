@@ -18,22 +18,46 @@
         <button phx-click="new_profile" class="btn btn-primary btn-sm">+ New</button>
       </div>
 
-      <div class="overflow-y-auto flex-1 min-h-0">
-        <table class="table table-xs table-pin-rows">
-          <thead>
-            <tr><th>Profile</th><th>Used by</th><th></th></tr>
-          </thead>
-          <tbody>
-            <%= for profile <- visible_profiles(@profiles, @search) do %>
-              <tr>
-                <td>
-                  <form phx-change="save_profile" class="flex items-center gap-2">
-                    <input type="hidden" name="profile_id" value={profile.id} />
-                    <%= if @profile_thumbs[profile.id] do %>
-                      <img src={"data:image/png;base64,#{@profile_thumbs[profile.id]}"} class="h-8 w-12 rounded shrink-0 object-contain" title={profile.locator_hook} />
-                    <% else %>
-                      <div class="h-8 w-12 rounded bg-base-200 shrink-0" title={profile.locator_hook}></div>
-                    <% end %>
+      <div class="grid flex-1 min-h-0 gap-2 grid-cols-2 auto-rows-[20rem] overflow-y-auto xl:grid-cols-6 xl:grid-rows-2 xl:auto-rows-auto xl:overflow-hidden">
+        <%= for {sinner, group} <- grouped_profiles(@profiles, @search) do %>
+          <section class="flex flex-col min-h-0 rounded-lg border border-base-300">
+            <header class="flex items-center gap-2 px-2 py-1 border-b border-base-300 bg-base-200/50 rounded-t-lg">
+              <img :if={sinner} src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-5 w-5 object-contain" />
+              <span class="text-sm font-semibold truncate"><%= if sinner, do: sinner_label(sinner), else: "No sinner" %></span>
+              <span class="badge badge-neutral badge-sm ml-auto"><%= length(group) %></span>
+            </header>
+            <div class="flex-1 min-h-0 overflow-y-auto p-1 flex flex-col gap-1">
+              <%= for profile <- group do %>
+                <form phx-change="save_profile" class="flex gap-1.5 rounded-md bg-base-200/40 p-1.5">
+                  <%= if @profile_thumbs[profile.id] do %>
+                    <img src={"data:image/png;base64,#{@profile_thumbs[profile.id]}"} class="w-14 shrink-0 self-stretch rounded object-contain" title={profile.locator_hook} />
+                  <% else %>
+                    <div class="w-14 shrink-0 self-stretch rounded bg-base-200" title={profile.locator_hook}></div>
+                  <% end %>
+                  <div class="flex min-w-0 flex-1 flex-col gap-1">
+                  <input type="hidden" name="profile_id" value={profile.id} />
+                  <div class="flex items-center gap-1">
+                    <input type="text" name="name" value={profile.name} phx-debounce="blur"
+                           disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
+                           phx-mounted={if profile.id == @focus_id, do: JS.focus()}
+                           class="input input-bordered input-xs min-w-0 flex-1" />
+                    <details class="dropdown dropdown-end">
+                      <summary title={"Sinner: " <> if(profile.sinner, do: sinner_label(profile.sinner), else: "none")}
+                               class="btn btn-xs btn-ghost px-1">
+                        <img :if={profile.sinner} src={StarlightBot.SinnerProfiles.icon(profile.sinner)} class="sinner-icon h-5 w-5 object-contain" />
+                        <span :if={is_nil(profile.sinner)} class="text-base-content/40">?</span>
+                      </summary>
+                      <div class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg"><div class="grid grid-cols-4 gap-1">
+                        <label :for={option <- StarlightBot.SinnerProfiles.sinners()} title={sinner_label(option)}
+                               class="btn btn-sm btn-ghost px-1 has-[:checked]:btn-primary has-[:disabled]:opacity-50">
+                          <input type="radio" name="sinner" value={option} checked={profile.sinner == option}
+                                 disabled={!StarlightBot.SinnerProfiles.writable?(profile)} class="hidden" />
+                          <img src={StarlightBot.SinnerProfiles.icon(option)} class="sinner-icon h-6 w-6 object-contain" />
+                        </label>
+                      </div></div>
+                    </details>
+                  </div>
+                  <div class="flex items-center gap-1">
                     <details class="dropdown">
                       <summary title={"Locator hook: " <> (profile.locator_hook || "none")}
                                class={"btn btn-xs btn-square " <> if(is_nil(profile.locator_hook) or profile.locator_hook not in @locator_names, do: "btn-error btn-outline", else: "btn-ghost")}>
@@ -43,54 +67,28 @@
                         <input type="text" name="locator_hook" value={profile.locator_hook} list="locator-hook-names" phx-debounce="blur"
                                disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
                                placeholder="hook name"
-                               class={"input input-bordered input-xs w-72 font-mono " <> if(profile.locator_hook && profile.locator_hook not in @locator_names, do: "input-error", else: "")} />
+                               class={"input input-bordered input-xs w-64 font-mono " <> if(profile.locator_hook && profile.locator_hook not in @locator_names, do: "input-error", else: "")} />
                       </div>
                     </details>
-                    <button type="button" phx-click="capture_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost"
-                            title="Capture sinner png from live battle">Capture</button>
-                    <button type="button" phx-click="reset_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost"
+                    <button type="button" phx-click="capture_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost px-1"
+                            title="Capture sinner png from live battle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    <button type="button" phx-click="reset_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost px-1"
                             data-confirm="Reset the hook image to the placeholder?"
-                            title="Reset hook image to the placeholder circle">Reset</button>
-                    <button type="button" phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost">Test</button>
-                    <input type="text" name="name" value={profile.name} phx-debounce="blur"
-                           disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
-                           phx-mounted={if profile.id == @focus_id, do: JS.focus()}
-                           class="input input-bordered input-xs w-48" />
-                    <details class="dropdown">
-                      <summary title={"Sinner: " <> if(profile.sinner, do: sinner_label(profile.sinner), else: "none")}
-                               class="btn btn-xs btn-ghost px-1">
-                        <img :if={profile.sinner} src={StarlightBot.SinnerProfiles.icon(profile.sinner)} class="sinner-icon h-5 w-5 object-contain" />
-                        <span :if={is_nil(profile.sinner)} class="text-base-content/40">?</span>
-                      </summary>
-                      <div class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg"><div class="grid grid-cols-6 gap-1">
-                        <label :for={sinner <- StarlightBot.SinnerProfiles.sinners()} title={sinner_label(sinner)}
-                               class="btn btn-sm btn-ghost px-1 has-[:checked]:btn-primary has-[:disabled]:opacity-50">
-                          <input type="radio" name="sinner" value={sinner} checked={profile.sinner == sinner}
-                                 disabled={!StarlightBot.SinnerProfiles.writable?(profile)} class="hidden" />
-                          <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-6 w-6 object-contain" />
-                        </label>
-                        </div>
-                      </div>
-                    </details>
-                  </form>
-                </td>
-                <td class="text-center"><%= Map.get(@profile_usage, profile.id, 0) %></td>
-                <td class="text-right whitespace-nowrap">
-                  <button phx-click="delete_profile" phx-value-id={profile.id}
-                          disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
-                          data-confirm={"Delete '#{profile.name}'?"}
-                          class="btn btn-xs btn-ghost text-error">Del</button>
-                </td>
-              </tr>
-              <%= if @profile_tests[profile.id] do %>
-                <tr><td colspan="3" class="text-xs text-base-content/60 pl-4"><%= @profile_tests[profile.id] %></td></tr>
+                            title="Reset hook image to the placeholder circle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M9 9l6 6M15 9l-6 6" stroke="currentColor"/></svg></button>
+                    <button type="button" phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost px-1">Test</button>
+                    <button type="button" phx-click="delete_profile" phx-value-id={profile.id}
+                            disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
+                            data-confirm={delete_message(profile, @profile_usage)}
+                            class="btn btn-xs btn-ghost text-error px-1 ml-auto">Del</button>
+                  </div>
+                  <p :if={@profile_tests[profile.id]} class="text-xs text-base-content/60"><%= @profile_tests[profile.id] %></p>
+                  </div>
+                </form>
               <% end %>
-            <% end %>
-            <%= if @profiles == [] do %>
-              <tr><td colspan="3" class="text-center text-base-content/40 py-4">No sinner profiles yet.</td></tr>
-            <% end %>
-          </tbody>
-        </table>
+              <p :if={group == []} class="text-center text-xs text-base-content/40 py-4">None</p>
+            </div>
+          </section>
+        <% end %>
       </div>
     </div>
   </div>

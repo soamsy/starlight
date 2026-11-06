@@ -6,7 +6,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
 
   @portrait_x_offset 0
   @portrait_w 33
-  @edge_pull 5
+  @edge_pull -3
 
   @impl true
   def mount(_params, _session, socket) do
@@ -162,6 +162,23 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
           [p.name, p.name_en, p.sinner, p.locator_hook]
           |> Enum.any?(&(is_binary(&1) and String.contains?(String.downcase(&1), q)))
         end)
+    end
+  end
+
+  defp grouped_profiles(profiles, search) do
+    visible = visible_profiles(profiles, search)
+    known = StarlightBot.SinnerProfiles.sinners()
+    grouped = Enum.group_by(visible, & &1.sinner)
+    extra = Enum.filter(visible, &(&1.sinner not in known))
+
+    Enum.map(known, &{&1, Map.get(grouped, &1, [])}) ++
+      if(extra == [], do: [], else: [{nil, extra}])
+  end
+
+  defp delete_message(profile, usage) do
+    case Map.get(usage, profile.id, 0) do
+      0 -> "Delete '#{profile.name}'?"
+      n -> "Delete '#{profile.name}'? It is used by #{n}."
     end
   end
 
