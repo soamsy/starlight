@@ -1,7 +1,7 @@
 defmodule StarlightBot.Navigation.Machine do
   @behaviour :gen_statem
 
-  alias StarlightBot.Automation.RunMemory
+  alias StarlightBot.Automation.{Recovery, RunMemory}
   alias StarlightBot.{Ctx, EnkephalinSchedule, FailureShot, GameWindow}
   alias StarlightBot.Input.{Keyboard, Mouse, Premove}
   alias StarlightBot.Navigation.{Catalog, MachineStatus, Offload, Runner, Screen}
@@ -9,6 +9,7 @@ defmodule StarlightBot.Navigation.Machine do
 
   @poll_interval_ms 100
   @verify_timeout_ms 1_800
+  @goto_recovery_attempts 3
   @refinement_timeout_ms 1_000
   @hold_poll_ms 30
   @locate_poll_ms 200
@@ -321,7 +322,9 @@ defmodule StarlightBot.Navigation.Machine do
   defp exec_internal({:ensure, steps, cleanup}, data),
     do: push(steps ++ [{:__ensure__, cleanup}], data.frame, data)
 
-  defp exec_internal({:goto, from, to, then}, data) do
+  defp exec_internal({:goto, from, to, then}, data), do: exec_internal({:goto, from, to, then, @goto_recovery_attempts}, data)
+
+  defp exec_internal({:goto, from, to, then, attempts_left}, data) do
     steps =
       if from == to do
         [{:log, :ok, "already at #{from}"}, {:__done__, {:ok, from}}]
@@ -334,7 +337,7 @@ defmodule StarlightBot.Navigation.Machine do
         end
       end
 
-    push(with_delivery(steps, then), data.frame, data)
+    push(with_delivery(steps, recovering(then, to, attempts_left)), data.frame, data)
   end
 
   defp exec_internal({:capture, steps, then}, data), do: push(with_delivery(steps, then), data.frame, %{data | result: nil})
@@ -628,6 +631,9 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   defp handler?(step), do: elem(step, 0) in [:__rescue__, :__ensure__, :__deliver__]
+
+  defp recovering(nil, _to, _attempts_left), do: nil
+  defp recovering(then, to, attempts_left), do: {Recovery, :goto_delivered, [to, then, attempts_left]}
 
   defp with_delivery(steps, nil), do: steps
   defp with_delivery(steps, then), do: steps ++ [{:__deliver__, then}]

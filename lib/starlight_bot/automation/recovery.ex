@@ -12,6 +12,7 @@ defmodule StarlightBot.Automation.Recovery do
   @maintenance_click_gap_ms 1_000
   @maintenance_hold_hours "4"
   @maintenance_screens [:scheduled_maintenance, :cannot_operate_game]
+  @goto_recoverable [:verification_failed, :retry_exhausted, :timeout]
 
   def steps(keep, errors, then),
     do: close_server_error(errors) ++ [locate_screen(then: {__MODULE__, :located, [keep, @max_escape_hops, then]})]
@@ -31,6 +32,20 @@ defmodule StarlightBot.Automation.Recovery do
 
   def located(keep, hops_left, then, {:ok, screen}, _frame, ctx), do: escape(screen, keep, hops_left, then, ctx)
   def located(_keep, _hops_left, then, :unknown, _frame, ctx), do: {:steps, fallback(then, ctx)}
+
+  def keeps_all?(_screen), do: true
+
+  def goto_delivered(to, then, attempts_left, {:error, {kind, _}} = err, _frame, ctx)
+      when attempts_left > 0 and kind in @goto_recoverable do
+    Ctx.log(ctx, :error, "goto #{to} failed (#{inspect(err)}), relocalizing (#{attempts_left} attempt(s) left)")
+    {:steps, steps({__MODULE__, :keeps_all?}, 0, {__MODULE__, :goto_relocated, [to, then, attempts_left, err]})}
+  end
+
+  def goto_delivered(_to, then, _attempts_left, result, _frame, _ctx), do: deliver(then, result)
+
+  def goto_relocated(to, then, _attempts_left, _err, {:ok, to}, _frame, _ctx), do: deliver(then, {:ok, to})
+  def goto_relocated(to, then, attempts_left, _err, {:ok, screen}, _frame, _ctx), do: {:steps, [{:goto, screen, to, then, attempts_left - 1}]}
+  def goto_relocated(_to, then, _attempts_left, err, :unknown, _frame, _ctx), do: deliver(then, err)
 
   def cancel_run(_frame, _ctx) do
     Navigator.cancel()
