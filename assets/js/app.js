@@ -1880,6 +1880,47 @@ const HookPicker = {
   }
 }
 
+const FloatingDropdown = {
+  mounted() {
+    this.place = () => {
+      const content = this.el.querySelector(".dropdown-content")
+      if (!content) return
+      if (!this.el.open) {
+        if (content.matches(":popover-open")) content.hidePopover()
+        return
+      }
+      if (!content.matches(":popover-open")) content.showPopover()
+      const r = this.el.querySelector("summary").getBoundingClientRect()
+      const margin = 8
+      const style = content.style
+      style.position = "fixed"
+      style.translate = "none"
+      style.margin = "0"
+      style.right = "auto"
+      const below = window.innerHeight - r.bottom - margin
+      const openUp = below < content.offsetHeight && r.top - margin > below
+      style.left = `${Math.max(margin, Math.min(r.left, window.innerWidth - content.offsetWidth - margin))}px`
+      style.top = openUp ? "auto" : `${r.bottom + 4}px`
+      style.bottom = openUp ? `${window.innerHeight - r.top + 4}px` : "auto"
+    }
+    this.close = (event) => {
+      if (this.el.open && !this.el.contains(event.target)) this.el.open = false
+    }
+    this.el.addEventListener("toggle", this.place)
+    window.addEventListener("resize", this.place)
+    window.addEventListener("scroll", this.place, true)
+    document.addEventListener("click", this.close)
+  },
+  updated() {
+    this.place()
+  },
+  destroyed() {
+    window.removeEventListener("resize", this.place)
+    window.removeEventListener("scroll", this.place, true)
+    document.removeEventListener("click", this.close)
+  },
+}
+
 const AnchoredPopup = {
   mounted() {
     this.place = () => {
@@ -2059,7 +2100,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
+  hooks: { ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
 })
 
 liveSocket.connect()

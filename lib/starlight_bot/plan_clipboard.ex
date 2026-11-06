@@ -101,6 +101,6 @@ defmodule StarlightBot.PlanClipboard do
   defp valid_action?(%{"type" => type}) when type not in ["if", "schedule"], do: is_binary(type)
   defp valid_action?(_action), do: false
 
-  defp usable?(%{locator_hook: hook}) when is_binary(hook) and hook != "", do: true
-  defp usable?(_profile), do: false
+  defp usable?(nil), do: false
+  defp usable?(profile), do: SinnerProfiles.locator_hooks(profile) != []
 end

@@ -19,6 +19,12 @@ defmodule StarlightBot.SinnerProfiles do
 
   def label(sinner) when is_binary(sinner), do: sinner |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
 
+  def locator_hooks(profile) do
+    [profile.locator_hook, profile.base_locator_hook]
+    |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    |> Enum.uniq()
+  end
+
   def user_id_floor, do: @user_id_floor
 
   def writable?(%{id: id}), do: Data.base_writable?() or id >= @user_id_floor
@@ -37,6 +43,7 @@ defmodule StarlightBot.SinnerProfiles do
         name: p.name,
         sinner: p.sinner,
         locator_hook: p.locator_hook,
+        base_locator_hook: p.base_locator_hook,
         name_en: p.name_en,
         released_on: p.released_on
       }
@@ -63,7 +70,7 @@ defmodule StarlightBot.SinnerProfiles do
 
   def save(%{name: name} = attrs) when is_binary(name) and name != "" do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
-    fields = [name: name, sinner: attrs[:sinner], locator_hook: attrs[:locator_hook]]
+    fields = [name: name, sinner: attrs[:sinner], locator_hook: attrs[:locator_hook], base_locator_hook: attrs[:base_locator_hook]]
 
     case attrs[:id] do
       id when is_integer(id) ->

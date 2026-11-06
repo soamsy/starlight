@@ -585,8 +585,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp position_leaf(leaf, %{scan: {:ok, frame, %SkillTray{sinner_of_slot: [_ | _] = sinner_of_slot} = tray}}, ctx) do
     with {:ok, profile} <- fetch_profile(profiles(ctx), leaf["sinner"], ctx),
-         {:ok, hook} <- locator_hook(profile, ctx),
-         {:ok, column} <- locate(frame, tray, hook, profile, ctx) do
+         {:ok, hooks} <- locator_hooks(profile, ctx),
+         {:ok, column} <- locate(frame, tray, hooks, profile, ctx) do
       index = Enum.at(sinner_of_slot, column)
       count = List.last(sinner_of_slot) + 1
       Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, sinner_names())} (#{profile.name} is sinner #{index + 1} of #{count})")
@@ -963,8 +963,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     groups =
       Enum.flat_map(ids, fn id ->
         with {:ok, profile} <- fetch_profile(profiles, id, ctx),
-             {:ok, hook} <- locator_hook(profile, ctx),
-             {:ok, column} <- locate(frame, tray, hook, profile, ctx) do
+             {:ok, hooks} <- locator_hooks(profile, ctx),
+             {:ok, column} <- locate(frame, tray, hooks, profile, ctx) do
           [{SkillTray.owned_columns(tray, column), profile}]
         else
           :skip -> []
@@ -980,14 +980,14 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp located_groups(ids, frame, tray, profiles, missing_note, ctx) do
     Enum.reduce_while(ids, {:ok, []}, fn id, {:ok, acc} ->
       with {:ok, profile} <- fetch_profile(profiles, id, ctx),
-           {:ok, hook} <- locator_hook(profile, ctx) do
-        case Matcher.find_all(frame, hook) do
-          [] ->
-            Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) not found in the skill tray, #{missing_note} #{profile.name}")
-            save_tray_miss(frame, hook, ctx)
+           {:ok, hooks} <- locator_hooks(profile, ctx) do
+        case find_locator(frame, hooks) do
+          nil ->
+            Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook_names(hooks)}) not found in the skill tray, #{missing_note} #{profile.name}")
+            save_tray_miss(frame, hooks, ctx)
             {:cont, {:ok, acc}}
 
-          rects ->
+          {hook, rects} ->
             {x, _y, w, _h} = Enum.min_by(rects, &elem(&1, 0))
             column = SkillTray.column_at(tray, x + w / 2)
             Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) found at slot #{column + 1}")
@@ -999,12 +999,12 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end)
   end
 
-  defp save_tray_miss(frame, hook, ctx) do
+  defp save_tray_miss(frame, hooks, ctx) do
     if Application.get_env(:starlight_bot, :save_timeout_frames, false) do
       stamp = NaiveDateTime.local_now() |> NaiveDateTime.to_string() |> String.replace([" ", ":", "."], "_")
       dir = Path.join(StarlightBot.Data.log_dir(), "timeouts")
       File.mkdir_p!(dir)
-      path = Path.expand(Path.join(dir, "#{stamp}_tray_miss_#{hook}.png"))
+      path = Path.expand(Path.join(dir, "#{stamp}_tray_miss_#{hook_names(hooks, "_")}.png"))
       Evision.imwrite(path, frame.mat)
       Ctx.log(ctx, :info, "saved the screen at the tray miss to #{path}")
     end
@@ -1034,25 +1034,39 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp locator_hook(%{locator_hook: name} = profile, ctx) do
-    case Enum.find(HookRegistry.all_names(), &(Atom.to_string(&1) == name)) do
-      nil ->
-        Ctx.log(ctx, :error, "playbook: #{profile.name} locator hook #{inspect(name)} isn't loaded, skipping")
+  defp locator_hooks(profile, ctx) do
+    names = SinnerProfiles.locator_hooks(profile)
+    loaded = Map.new(HookRegistry.all_names(), &{Atom.to_string(&1), &1})
+
+    case Enum.flat_map(names, &List.wrap(loaded[&1])) do
+      [] ->
+        Ctx.log(ctx, :error, "playbook: #{profile.name} locator hooks #{inspect(names)} aren't loaded, skipping")
         :skip
 
-      hook ->
-        {:ok, hook}
+      hooks ->
+        {:ok, hooks}
     end
   end
 
-  defp locate(frame, tray, hook, profile, ctx) do
-    case Matcher.find_all(frame, hook) do
-      [] ->
-        Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) not found in the skill tray, skipping")
-        save_tray_miss(frame, hook, ctx)
+  defp find_locator(frame, hooks) do
+    Enum.find_value(hooks, fn hook ->
+      case Matcher.find_all(frame, hook) do
+        [] -> nil
+        rects -> {hook, rects}
+      end
+    end)
+  end
+
+  defp hook_names(hooks, joiner \\ "/"), do: Enum.map_join(hooks, joiner, &Atom.to_string/1)
+
+  defp locate(frame, tray, hooks, profile, ctx) do
+    case find_locator(frame, hooks) do
+      nil ->
+        Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook_names(hooks)}) not found in the skill tray, skipping")
+        save_tray_miss(frame, hooks, ctx)
         :skip
 
-      rects ->
+      {hook, rects} ->
         {x, _y, w, _h} = Enum.min_by(rects, &elem(&1, 0))
         column = SkillTray.column_at(tray, x + w / 2)
 

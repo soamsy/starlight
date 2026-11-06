@@ -29,6 +29,7 @@
 }
 
 @theme {
+  --breakpoint-3xl: 120rem;
   --font-sans: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --font-display: 'Barlow Condensed', 'Inter', sans-serif;

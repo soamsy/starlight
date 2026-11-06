@@ -10,15 +10,15 @@
       <div class="flex items-center gap-3">
         <h2 class="card-title text-lg">Sinner Profiles</h2>
         <span class="badge badge-neutral badge-sm"><%= length(@profiles) %></span>
-        <span class="text-xs text-base-content/50">A profile's locator hook finds the sinner in the battle skill tray.</span>
-        <form phx-change="search" phx-submit="search" class="ml-auto">
+        <span class="min-w-0 shrink-[4] truncate text-xs text-base-content/50">A profile's uptie and base locator hooks find the sinner in the battle skill tray.</span>
+        <form phx-change="search" phx-submit="search" class="ml-auto min-w-0 shrink">
           <input type="search" name="q" value={@search} placeholder="Search profiles..." phx-debounce="150"
-                 autocomplete="off" class="input input-bordered input-sm w-64" />
+                 autocomplete="off" class="input input-bordered input-sm w-64 min-w-0 max-w-full" />
         </form>
         <button phx-click="new_profile" class="btn btn-primary btn-sm">+ New</button>
       </div>
 
-      <div class="grid flex-1 min-h-0 gap-2 grid-cols-2 auto-rows-[20rem] overflow-y-auto xl:grid-cols-6 xl:grid-rows-2 xl:auto-rows-auto xl:overflow-hidden">
+      <div class="grid flex-1 min-h-0 gap-2 grid-cols-2 auto-rows-[20rem] overflow-y-auto lg:grid-cols-3 lg:auto-rows-[minmax(18rem,1fr)] xl:grid-cols-4 xl:auto-rows-[minmax(16rem,1fr)] 3xl:grid-cols-6 3xl:grid-rows-2 3xl:auto-rows-auto 3xl:overflow-hidden">
         <%= for {sinner, group} <- grouped_profiles(@profiles, @search) do %>
           <section class="flex flex-col min-h-0 rounded-lg border border-base-300">
             <header class="flex items-center gap-2 px-2 py-1 border-b border-base-300 bg-base-200/50 rounded-t-lg">
@@ -29,11 +29,14 @@
             <div class="flex-1 min-h-0 overflow-y-auto p-1 flex flex-col gap-1">
               <%= for profile <- group do %>
                 <form phx-change="save_profile" class="flex gap-1.5 rounded-md bg-base-200/40 p-1.5">
-                  <%= if @profile_thumbs[profile.id] do %>
-                    <img src={"data:image/png;base64,#{@profile_thumbs[profile.id]}"} class="w-14 shrink-0 self-stretch rounded object-contain" title={profile.locator_hook} />
-                  <% else %>
-                    <div class="w-14 shrink-0 self-stretch rounded bg-base-200" title={profile.locator_hook}></div>
-                  <% end %>
+                  <div class="flex shrink-0 gap-0.5 self-stretch">
+                    <button :for={{kind, label, hook} <- [{"base", "Base", profile.base_locator_hook}, {"uptie", "Uptie", profile.locator_hook}]}
+                            type="button" phx-click="capture_locator" phx-value-id={profile.id} phx-value-kind={kind}
+                            title={"Capture #{label} png from live battle (#{hook || "no hook set"})"}
+                            class="w-9 rounded bg-base-200 hover:ring-2 hover:ring-primary overflow-hidden">
+                      <img :if={@profile_thumbs[profile.id][kind]} src={"data:image/png;base64,#{@profile_thumbs[profile.id][kind]}"} class="h-full w-full object-contain" />
+                    </button>
+                  </div>
                   <div class="flex min-w-0 flex-1 flex-col gap-1">
                   <input type="hidden" name="profile_id" value={profile.id} />
                   <div class="flex items-center gap-1">
@@ -58,23 +61,25 @@
                     </details>
                   </div>
                   <div class="flex items-center gap-1">
-                    <details class="dropdown">
-                      <summary title={"Locator hook: " <> (profile.locator_hook || "none")}
-                               class={"btn btn-xs btn-square " <> if(is_nil(profile.locator_hook) or profile.locator_hook not in @locator_names, do: "btn-error btn-outline", else: "btn-ghost")}>
+                    <details id={"locator-dropdown-#{profile.id}"} phx-hook="FloatingDropdown" class="dropdown">
+                      <summary title={"Locator hooks: " <> (profile.locator_hook || "none") <> ", " <> (profile.base_locator_hook || "none")}
+                               class={"btn btn-xs btn-square " <> if(locator_missing?(profile, @locator_names), do: "btn-error btn-outline", else: "btn-ghost")}>
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                       </summary>
-                      <div class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
-                        <input type="text" name="locator_hook" value={profile.locator_hook} list="locator-hook-names" phx-debounce="blur"
-                               disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
-                               placeholder="hook name"
-                               class={"input input-bordered input-xs w-64 font-mono " <> if(profile.locator_hook && profile.locator_hook not in @locator_names, do: "input-error", else: "")} />
+                      <div popover="manual" class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg flex flex-col gap-2">
+                        <div :for={{kind, label, field, hook} <- [{"base", "Base", "base_locator_hook", profile.base_locator_hook}, {"uptie", "Uptie", "locator_hook", profile.locator_hook}]}
+                             class="flex items-center gap-1">
+                          <span class="w-10 text-xs text-base-content/60"><%= label %></span>
+                          <button type="button" phx-click="reset_locator" phx-value-id={profile.id} phx-value-kind={kind}
+                                  data-confirm="Reset the hook image to the placeholder?"
+                                  title="Reset hook image to the placeholder circle" class="btn btn-xs btn-ghost px-1">Reset</button>
+                          <input type="text" name={field} value={hook} list="locator-hook-names" phx-debounce="blur"
+                                 disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
+                                 placeholder="hook name"
+                                 class={"input input-bordered input-xs w-64 font-mono " <> if(hook && hook not in @locator_names, do: "input-error", else: "")} />
+                        </div>
                       </div>
                     </details>
-                    <button type="button" phx-click="capture_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost px-1"
-                            title="Capture sinner png from live battle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><circle cx="12" cy="12" r="3"/></svg></button>
-                    <button type="button" phx-click="reset_locator" phx-value-id={profile.id} class="btn btn-xs btn-ghost px-1"
-                            data-confirm="Reset the hook image to the placeholder?"
-                            title="Reset hook image to the placeholder circle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M9 9l6 6M15 9l-6 6" stroke="currentColor"/></svg></button>
                     <button type="button" phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost px-1">Test</button>
                     <button type="button" phx-click="delete_profile" phx-value-id={profile.id}
                             disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
@@ -114,9 +119,9 @@
   <%= if @capture do %>
     <div class="modal modal-open">
       <div class="modal-box max-w-3xl">
-        <h3 class="font-bold">Pick <%= @capture.profile.name %></h3>
+        <h3 class="font-bold">Pick <%= @capture.profile.name %> (<%= if @capture.kind == "base", do: "Base", else: "Uptie" %>)</h3>
         <p class="text-xs text-base-content/60 mb-3">
-          Click the slot that shows this sinner. Its crop replaces <span class="font-mono"><%= @capture.profile.locator_hook %></span>.
+          Click the slot that shows this sinner. Its crop replaces <span class="font-mono"><%= @capture.hook_name %></span>.
         </p>
         <div class="flex flex-wrap gap-3">
           <%= for candidate <- @capture.candidates do %>

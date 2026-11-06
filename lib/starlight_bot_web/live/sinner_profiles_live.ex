@@ -28,26 +28,30 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
   def handle_event("cancel_new", _, socket), do: {:noreply, assign(socket, :picking_sinner, false)}
 
   @impl true
-  def handle_event("capture_locator", %{"id" => id}, socket) do
+  def handle_event("capture_locator", %{"id" => id, "kind" => kind}, socket) do
     id = String.to_integer(id)
     profile = Enum.find(socket.assigns.profiles, &(&1.id == id))
+    hook_name = locator_name(profile, kind)
 
-    case capture_candidates(profile) do
-      {:ok, candidates} -> {:noreply, assign(socket, :capture, %{profile: profile, candidates: candidates})}
-      {:error, message} -> {:noreply, put_flash(socket, :error, message)}
+    case capture_candidates(hook_name) do
+      {:ok, candidates} ->
+        {:noreply, assign(socket, :capture, %{profile: profile, kind: kind, hook_name: hook_name, candidates: candidates})}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
     end
   end
 
   @impl true
   def handle_event("pick_capture", %{"column" => column}, socket) do
-    %{profile: profile, candidates: candidates} = socket.assigns.capture
+    %{hook_name: hook_name, candidates: candidates} = socket.assigns.capture
     candidate = Enum.find(candidates, &(&1.column == String.to_integer(column)))
     {x, y, w, h} = candidate.region
 
-    ensure_editable_hook(profile.locator_hook)
+    ensure_editable_hook(hook_name)
 
     attrs =
-      profile.locator_hook
+      hook_name
       |> Hooks.get_hook()
       |> Map.merge(%{image: candidate.png, region_x: x, region_y: y, region_w: w, region_h: h})
 
@@ -57,7 +61,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
          socket
          |> assign(:capture, nil)
          |> assign_profiles()
-         |> put_flash(:info, "Updated #{profile.locator_hook} from slot #{candidate.column + 1}.")}
+         |> put_flash(:info, "Updated #{hook_name} from slot #{candidate.column + 1}.")}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Save failed: #{inspect(reason)}")}
@@ -65,14 +69,15 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
   end
 
   @impl true
-  def handle_event("reset_locator", %{"id" => id}, socket) do
+  def handle_event("reset_locator", %{"id" => id, "kind" => kind}, socket) do
     id = String.to_integer(id)
     profile = Enum.find(socket.assigns.profiles, &(&1.id == id))
+    hook_name = locator_name(profile, kind)
 
-    with %{} <- profile.locator_hook && Hooks.get_hook(profile.locator_hook),
-         _ <- ensure_editable_hook(profile.locator_hook),
-         {:ok, _} <- Hooks.update_hook_image(profile.locator_hook, SinnerProfiles.placeholder_png()) do
-      {:noreply, socket |> assign_profiles() |> put_flash(:info, "Replaced #{profile.locator_hook} image with the placeholder.")}
+    with %{} <- hook_name && Hooks.get_hook(hook_name),
+         _ <- ensure_editable_hook(hook_name),
+         {:ok, _} <- Hooks.update_hook_image(hook_name, SinnerProfiles.placeholder_png()) do
+      {:noreply, socket |> assign_profiles() |> put_flash(:info, "Replaced #{hook_name} image with the placeholder.")}
     else
       _ -> {:noreply, put_flash(socket, :error, "Set a locator hook first.")}
     end
@@ -104,7 +109,8 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
       id: String.to_integer(id),
       name: String.trim(params["name"] || ""),
       sinner: blank_to_nil(params["sinner"]),
-      locator_hook: blank_to_nil(String.trim(params["locator_hook"] || ""))
+      locator_hook: blank_to_nil(String.trim(params["locator_hook"] || "")),
+      base_locator_hook: blank_to_nil(String.trim(params["base_locator_hook"] || ""))
     }
 
     case SinnerProfiles.save(attrs) do
@@ -129,7 +135,13 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
   def handle_event("test_profile", %{"id" => id}, socket) do
     id = String.to_integer(id)
     profile = Enum.find(socket.assigns.profiles, &(&1.id == id))
-    {:noreply, update(socket, :profile_tests, &Map.put(&1, id, test_locator(profile)))}
+
+    result =
+      Enum.map_join(["base", "uptie"], " | ", fn kind ->
+        "#{String.capitalize(kind)}: #{test_locator(locator_name(profile, kind))}"
+      end)
+
+    {:noreply, update(socket, :profile_tests, &Map.put(&1, id, result))}
   end
 
   defp assign_profiles(socket) do
@@ -142,14 +154,29 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
 
     thumbs =
       Map.new(profiles, fn p ->
-        image = p.locator_hook && Hooks.get_hook(p.locator_hook)
-        {p.id, image && image.image && Base.encode64(image.image)}
+        {p.id, %{"uptie" => thumb(p.locator_hook), "base" => thumb(p.base_locator_hook)}}
       end)
 
     socket
     |> assign(:profiles, profiles)
     |> assign(:profile_usage, usage)
     |> assign(:profile_thumbs, thumbs)
+  end
+
+  defp thumb(nil), do: nil
+
+  defp thumb(hook_name) do
+    case Hooks.get_hook(hook_name) do
+      %{image: image} when is_binary(image) -> Base.encode64(image)
+      _ -> nil
+    end
+  end
+
+  defp locator_name(profile, "uptie"), do: profile.locator_hook
+  defp locator_name(profile, "base"), do: profile.base_locator_hook
+
+  defp locator_missing?(profile, locator_names) do
+    Enum.any?([profile.locator_hook, profile.base_locator_hook], &(is_nil(&1) or &1 not in locator_names))
   end
 
   defp visible_profiles(profiles, search) do
@@ -159,7 +186,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
 
       q ->
         Enum.filter(profiles, fn p ->
-          [p.name, p.name_en, p.sinner, p.locator_hook]
+          [p.name, p.name_en, p.sinner, p.locator_hook, p.base_locator_hook]
           |> Enum.any?(&(is_binary(&1) and String.contains?(String.downcase(&1), q)))
         end)
     end
@@ -194,9 +221,9 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(value), do: value
 
-  defp capture_candidates(%{locator_hook: hook}) when hook in [nil, ""], do: {:error, "Set a locator hook first."}
+  defp capture_candidates(hook_name) when hook_name in [nil, ""], do: {:error, "Set a locator hook first."}
 
-  defp capture_candidates(%{locator_hook: hook_name}) do
+  defp capture_candidates(hook_name) do
     with %{} = hook <- Hooks.get_hook(hook_name) || {:error, "Hook '#{hook_name}' doesn't exist."},
          {:ok, frame} <- Capture.grab_frame(),
          {:ok, tray} <- SkillTray.scan(frame) do
@@ -229,9 +256,9 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
     if half_span > 0, do: x - @edge_pull * (x - mid) / half_span, else: x
   end
 
-  defp test_locator(%{locator_hook: hook}) when hook in [nil, ""], do: "No locator hook set."
+  defp test_locator(hook) when hook in [nil, ""], do: "No locator hook set."
 
-  defp test_locator(%{locator_hook: hook}) do
+  defp test_locator(hook) do
     hook_atom = String.to_existing_atom(hook)
 
     with {:ok, frame} <- Capture.grab_frame(),

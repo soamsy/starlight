@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.SinnerProfiles.Import do
   @shortdoc "Import identities from gll-fun as sinner profiles with placeholder locator hooks"
   @moduledoc """
-  Add-only: inserts a `sinner_profiles` row, with a placeholder locator hook, for each
+  Add-only: inserts a `sinner_profiles` row, with placeholder uptie and base locator hooks, for each
   gll-fun identity whose `game_id` isn't already present. Existing profiles and hooks
   are never modified, and no identity images are downloaded.
 
@@ -101,7 +101,8 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
     else
       now = DateTime.utc_now() |> DateTime.truncate(:second)
       name = unique_profile_name(display_name(identity), identity.game_id)
-      {hook, created?} = ensure_hook(identity, name)
+      {hook, created?} = ensure_hook(identity, name, "")
+      {base_hook, base_created?} = ensure_hook(identity, "#{name} (base)", "_base")
 
       Repo.insert_all("sinner_profiles", [
         %{
@@ -111,12 +112,13 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
           name_en: identity.name_en,
           released_on: identity.released_on,
           locator_hook: hook,
+          base_locator_hook: base_hook,
           inserted_at: now,
           updated_at: now
         }
       ])
 
-      %{acc | inserted: acc.inserted + 1, hooks: acc.hooks + if(created?, do: 1, else: 0)}
+      %{acc | inserted: acc.inserted + 1, hooks: acc.hooks + Enum.count([created?, base_created?], & &1)}
     end
   end
 
@@ -131,13 +133,13 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
       else: name
   end
 
-  defp ensure_hook(identity, notes) do
-    base = "locator_#{identity.sinner}_#{slugify(identity.name_en)}"
+  defp ensure_hook(identity, notes, suffix) do
+    base = "locator_#{identity.sinner}_#{slugify(identity.name_en)}#{suffix}"
 
-    name =
-      if Repo.exists?(from p in "sinner_profiles", where: p.locator_hook == ^base),
-        do: "#{base}_#{identity.game_id}",
-        else: base
+    taken? =
+      Repo.exists?(from p in "sinner_profiles", where: p.locator_hook == ^base or p.base_locator_hook == ^base)
+
+    name = if taken?, do: "#{base}_#{identity.game_id}", else: base
 
     if Hooks.get_hook(name) do
       {name, false}
