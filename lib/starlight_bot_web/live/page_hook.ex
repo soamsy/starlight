@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.PageHook do
   import Phoenix.Component, only: [assign: 3, assign_new: 3]
   import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1, put_flash: 3]
-  alias StarlightBot.{AppSettings, Data, EnkephalinSchedule, GameWindow, LauncherDeps, Scheduler}
+  alias StarlightBot.{AppSettings, Data, EnkephalinSchedule, GameWindow, LauncherDeps, LogStore, Scheduler}
   alias StarlightBot.Automation.EnkephalinCharger
   alias StarlightBot.Scheduler.Overview
   alias StarlightBot.Navigation.Navigator
@@ -50,10 +50,12 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:game_window_rect, nil)
       |> assign(:game_window_busy, nil)
       |> assign(:run_live, false)
+      |> assign(:run_paused, false)
       |> assign(:game_launch_label, nil)
       |> assign(:game_launcher_label, nil)
       |> assign(:game_update_pending, false)
       |> assign(:game_launcher_missing, [])
+      |> assign(:latest_log, latest_log())
       |> assign(:settings_open, false)
       |> assign(:settings_tab, "scheduler")
       |> assign(:scheduler_view, "progress")
@@ -66,11 +68,13 @@ defmodule StarlightBotWeb.Live.PageHook do
       if connected?(socket) do
         Scheduler.subscribe()
         EnkephalinSchedule.subscribe()
+        if socket.view != StarlightBotWeb.Live.LogLive, do: LogStore.subscribe()
         Process.send_after(self(), :scheduler_clock, @scheduler_clock_ms)
 
         socket
         |> attach_hook(:settings, :handle_event, &handle_settings_event/3)
         |> attach_hook(:scheduler, :handle_info, &handle_scheduler_message/2)
+        |> attach_hook(:latest_log, :handle_info, &handle_log_entry/2)
       else
         socket
       end
@@ -83,6 +87,7 @@ defmodule StarlightBotWeb.Live.PageHook do
         socket
         |> assign(:game_window_rect, Capture.window_rect())
         |> assign(:run_live, Scheduler.busy?())
+        |> assign(:run_paused, run_paused?())
         |> assign_launch()
         |> attach_hook(:game_window_rect, :handle_info, &handle_window_rect/2)
         |> attach_hook(:game_window_actions, :handle_event, &handle_window_event/3)
@@ -187,6 +192,21 @@ defmodule StarlightBotWeb.Live.PageHook do
 
   defp handle_scheduler_message(_msg, socket), do: {:cont, socket}
 
+  defp run_paused? do
+    GenServer.whereis(Navigator) != nil and Navigator.status().phase == :paused
+  end
+
+  defp latest_log do
+    case LogStore.recent(1) do
+      [entry | _] -> entry
+      [] -> nil
+    end
+  end
+
+  defp handle_log_entry({:log_entry, entry}, %{view: StarlightBotWeb.Live.LogLive} = socket), do: {:cont, assign(socket, :latest_log, entry)}
+  defp handle_log_entry({:log_entry, entry}, socket), do: {:halt, assign(socket, :latest_log, entry)}
+  defp handle_log_entry(_msg, socket), do: {:cont, socket}
+
   defp assign_scheduler(socket, settings) do
     socket
     |> assign(:scheduler_settings, settings)
@@ -242,7 +262,8 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp handle_window_rect({:window_rect, rect}, socket),
     do: {:halt, assign(socket, :game_window_rect, rect)}
 
-  defp handle_window_rect({:nav_state, _}, socket), do: {:cont, assign(socket, :run_live, Scheduler.busy?())}
+  defp handle_window_rect({:nav_state, state}, socket),
+    do: {:cont, socket |> assign(:run_live, Scheduler.busy?()) |> assign(:run_paused, state.phase == :paused)}
 
   defp handle_window_rect({:game_window_result, kind, msg}, socket),
     do: {:halt, socket |> assign(:game_window_busy, nil) |> put_flash(kind, msg)}

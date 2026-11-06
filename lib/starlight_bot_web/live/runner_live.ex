@@ -128,10 +128,8 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   end
 
   @impl true
-  def handle_event("toggle_pin", %{"kind" => kind}, socket) do
-    key = pin_key(kind)
-    pin = if socket.assigns[key] == nil, do: active_slot(kind, nil, socket.assigns.today)
-    {:noreply, socket |> assign(key, pin) |> save_lux_form()}
+  def handle_event("clear_pin", %{"kind" => kind}, socket) do
+    {:noreply, socket |> assign(pin_key(kind), nil) |> save_lux_form()}
   end
 
   @impl true
@@ -1025,23 +1023,28 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   attr :teams, :list, required: true
   attr :labels, :list, required: true
   attr :current, :integer, required: true
+  attr :auto_slot, :integer, required: true
   attr :pinned?, :boolean, required: true
   slot :icon, required: true
 
   def pick_list(assigns) do
     ~H"""
     <div class="relative flex items-stretch gap-1">
-      <div class="absolute inset-x-0 h-8 rounded bg-primary/10 ring-1 ring-primary pointer-events-none"
+      <div class={["absolute inset-x-0 h-8 rounded ring-1 pointer-events-none", if(@pinned?, do: "bg-primary/10 ring-primary", else: "bg-info/10 ring-info")]}
            style={"top: #{@current * 2.25}rem"}></div>
       <div class="relative flex flex-col gap-1 shrink-0">
         <div :for={{label, index} <- Enum.with_index(@labels)} class="h-8 flex items-center gap-1 pl-1">
-          <button :if={@pinned?} type="button" phx-click="set_pin" phx-value-kind={@kind} phx-value-index={index}
+          <button type="button" phx-click="set_pin" phx-value-kind={@kind} phx-value-index={index}
                   title="Always use this slot's team"
-                  class={"w-4 text-center " <> if(index == @current, do: "text-primary", else: "text-base-content/30 hover:text-primary")}>
-            {if index == @current, do: "★", else: "☆"}
+                  class={"w-4 text-center " <> if(@pinned? and index == @current, do: "text-primary", else: "text-base-content/30 hover:text-primary")}>
+            {if @pinned? and index == @current, do: "★", else: "☆"}
           </button>
-          <span :if={not @pinned?} class={"w-4 text-center " <> if(index == @current, do: "text-primary", else: "text-transparent")}>★</span>
-          <span class="text-xs text-base-content/60 w-14">{label}</span>
+          <button :if={index == @auto_slot} type="button" phx-click="clear_pin" phx-value-kind={@kind}
+                  title={if(@pinned?, do: "Follow the daily schedule again", else: "Following the daily schedule")}
+                  class={"btn btn-xs w-14 px-1 " <> if(@pinned?, do: "btn-ghost border border-base-content/20", else: "btn-info")}>
+            {label}
+          </button>
+          <span :if={index != @auto_slot} class="text-xs text-base-content/60 w-14 px-1">{label}</span>
         </div>
       </div>
       <div id={@id} phx-hook="SortableList" data-sort-event={@event} class="relative flex flex-col gap-1 flex-1 min-w-0">
@@ -1073,9 +1076,6 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   def active_slot(_kind, pin, _today), do: pin
 
   def then_md?(then_md, md_next), do: then_md and md_next != nil
-
-  def pin_title(nil), do: "Locked: follows the daily schedule. Unlock to choose the team yourself."
-  def pin_title(_pin), do: "Unlocked: always uses the starred slot, whatever the day. Click to follow the daily schedule again."
 
   def type_icon(type), do: "/images/affinity/#{type}.webp"
 

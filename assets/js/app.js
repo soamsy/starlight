@@ -771,6 +771,12 @@ const logKindClass = (kind) => LOG_KIND_CLASS[kind] || LOG_DEFAULT_CLASS
 
 const LogVirtual = {
   mounted() {
+    this.onLogBottom = () => {
+      if (!this.el.closest("#runner-log")) return
+      this.pinned = true
+      this.stickToBottom()
+    }
+    window.addEventListener("starlight:log-bottom", this.onLogBottom)
     this.scroller = this.el.firstElementChild
     this.count = document.getElementById(this.el.dataset.countId)
     this.sizer = document.createElement("div")
@@ -818,6 +824,7 @@ const LogVirtual = {
   },
 
   destroyed() {
+    window.removeEventListener("starlight:log-bottom", this.onLogBottom)
     this.resizer.disconnect()
     this.scroller.removeEventListener("scroll", this.onScroll)
     cancelAnimationFrame(this.frame)
