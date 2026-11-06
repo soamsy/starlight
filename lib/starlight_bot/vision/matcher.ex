@@ -65,6 +65,43 @@ defmodule StarlightBot.Vision.Matcher do
     end
   end
 
+  def find_any(%Frame{} = frame, hook_names) when is_list(hook_names) do
+    hooks = for name <- hook_names, {:ok, hook} <- [HookRegistry.find(name)], do: {name, hook}
+
+    crops =
+      hooks
+      |> Enum.map(fn {_name, hook} -> search_region(hook) end)
+      |> Enum.uniq()
+      |> Map.new(fn region ->
+        {mat, offset} = crop_to_region(frame, region)
+        gray = if Enum.any?(hooks, fn {_name, hook} -> hook.method == :gray and search_region(hook) == region end), do: Evision.cvtColor(mat, @color_bgr2gray)
+        {region, {mat, gray, offset}}
+      end)
+
+    hooks
+    |> Task.async_stream(
+      fn {name, hook} -> {name, match_in_crop(Map.fetch!(crops, search_region(hook)), hook)} end,
+      max_concurrency: System.schedulers_online(),
+      timeout: :infinity
+    )
+    |> Enum.find_value(fn {:ok, {name, rects}} -> rects != [] && {name, rects} end)
+  end
+
+  defp match_in_crop({_mat, gray, offset}, %Hook{method: :gray} = hook) do
+    gray
+    |> match_template(hook.gray_mat, @tm_ccoeff_normed, hook.mask_mat)
+    |> extract_matches(hook.gray_mat, hook.confidence, :all)
+    |> Enum.map(&add_offset(&1, offset))
+  rescue
+    e in ArgumentError ->
+      Logger.warning("Matcher: #{hook.name} raised #{Exception.message(e)} during match — treating as not found", module: __MODULE__)
+      []
+  end
+
+  defp match_in_crop({mat, _gray, offset}, hook) do
+    mat |> run_match(hook, hook.confidence, :all) |> Enum.map(&add_offset(&1, offset))
+  end
+
   def find_all_with_scores(%Frame{} = frame, hook_name, opts \\ []) when is_atom(hook_name) do
     case HookRegistry.find(hook_name) do
       {:error, :not_found} ->

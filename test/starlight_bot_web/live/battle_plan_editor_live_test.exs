@@ -399,8 +399,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     socket =
       socket
       |> event("select_playbook", %{"id" => focused["id"]})
-      |> event("set_sinner_profile", %{"sinner" => "faust", "profile_id" => to_string(faust_profile)})
-      |> event("set_sinner_profile", %{"sinner" => "ryoshu", "profile_id" => to_string(ryoshu_profile)})
+      |> event("set_sinner_profile", %{"sinner" => "faust", "profile_ids" => to_string(faust_profile)})
+      |> event("set_sinner_profile", %{"sinner" => "ryoshu", "profile_ids" => to_string(ryoshu_profile)})
       |> event("add_action", %{"container" => "root", "type" => "ego"})
 
     [_, _, ego] = actions(socket, focused["id"])

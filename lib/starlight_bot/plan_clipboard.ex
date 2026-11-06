@@ -63,7 +63,7 @@ defmodule StarlightBot.PlanClipboard do
   def warnings(:battle_plans, data) do
     by_id = Map.new(SinnerProfiles.list(), &{&1.id, &1})
 
-    case for({sinner, id} <- BattlePlans.profiles(data), not usable?(by_id[id]), do: SinnerProfiles.label(sinner)) do
+    case for({sinner, ids} <- BattlePlans.profiles(data), not Enum.any?(ids, &usable?(by_id[&1])), do: SinnerProfiles.label(sinner)) do
       [] -> []
       sinners -> ["No usable sinner profile here for #{sinners |> Enum.sort() |> Enum.join(", ")}. Their rules are skipped until you pick one."]
     end

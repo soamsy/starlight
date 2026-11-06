@@ -272,11 +272,16 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.profiles(data) == %{}
 
       data = data |> BattlePlans.put_profile("ryoshu", 2) |> BattlePlans.put_profile("faust", 1)
-      assert BattlePlans.profiles(data) == %{"ryoshu" => 2, "faust" => 1}
+      assert BattlePlans.profiles(data) == %{"ryoshu" => [2], "faust" => [1]}
       assert BattlePlans.profile_ids_used(data) == MapSet.new([1, 2])
 
-      data = BattlePlans.put_profile(data, "ryoshu", nil)
-      assert BattlePlans.profiles(data) == %{"faust" => 1}
+      data = BattlePlans.put_profile(data, "faust", [1, 3, 1])
+      assert BattlePlans.profiles(data)["faust"] == [1, 3]
+
+      data = BattlePlans.put_profile(data, "ryoshu", [])
+      assert BattlePlans.profiles(data) == %{"faust" => [1, 3]}
+
+      assert BattlePlans.profiles(%{"profiles" => %{"faust" => 4}}) == %{"faust" => [4]}
     end
   end
 

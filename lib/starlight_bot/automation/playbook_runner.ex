@@ -831,10 +831,10 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp profiles(ctx) do
     by_id = Map.new(SinnerProfiles.list(), &{&1.id, &1})
 
-    for {sinner, profile_id} <- BattlePlans.profiles(RunMemory.battle_plan(ctx)),
-        profile = by_id[profile_id],
+    for {sinner, ids} <- BattlePlans.profiles(RunMemory.battle_plan(ctx)),
+        [first | _] = chosen <- [Enum.flat_map(ids, &List.wrap(by_id[&1]))],
         into: %{},
-        do: {sinner, %{profile | name: SinnerProfiles.label(sinner)}}
+        do: {sinner, first |> Map.put(:name, SinnerProfiles.label(sinner)) |> Map.put(:hook_names, chosen |> Enum.flat_map(&SinnerProfiles.locator_hooks/1) |> Enum.uniq())}
   end
 
   defp sinner_names, do: Map.new(SinnerProfiles.sinners(), &{&1, SinnerProfiles.label(&1)})
@@ -1035,7 +1035,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp locator_hooks(profile, ctx) do
-    names = SinnerProfiles.locator_hooks(profile)
+    names = profile.hook_names
     loaded = Map.new(HookRegistry.all_names(), &{Atom.to_string(&1), &1})
 
     case Enum.flat_map(names, &List.wrap(loaded[&1])) do
@@ -1048,14 +1048,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp find_locator(frame, hooks) do
-    Enum.find_value(hooks, fn hook ->
-      case Matcher.find_all(frame, hook) do
-        [] -> nil
-        rects -> {hook, rects}
-      end
-    end)
-  end
+  defp find_locator(frame, hooks), do: Matcher.find_any(frame, hooks)
 
   defp hook_names(hooks, joiner \\ "/"), do: Enum.map_join(hooks, joiner, &Atom.to_string/1)
 

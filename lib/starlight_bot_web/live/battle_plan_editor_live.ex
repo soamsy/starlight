@@ -225,7 +225,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   @impl true
   def handle_event("set_sinner_profile", %{"sinner" => sinner} = params, socket) do
     if sinner in SinnerProfiles.sinners() do
-      data = BattlePlans.put_profile(socket.assigns.data, sinner, parse_id(params["profile_id"]))
+      data = BattlePlans.put_profile(socket.assigns.data, sinner, parse_ids(params["profile_ids"]))
       {:noreply, socket |> assign(:data, data) |> persist()}
     else
       {:noreply, socket}
@@ -561,7 +561,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     assigned = BattlePlans.profiles(data)
 
     Enum.map(SinnerProfiles.sinners(), fn sinner ->
-      profile = profiles_by_id[assigned[sinner]]
+      profile = Enum.find_value(Map.get(assigned, sinner, []), &profiles_by_id[&1])
       %{id: sinner, name: sinner_label(sinner), profiled?: not is_nil(profile), thumb: profile_thumb(profile, locator_thumbs)}
     end)
   end
@@ -1572,6 +1572,9 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     |> Map.put("who", if(params["who"] in ["except", "after", "before"], do: params["who"], else: "only"))
     |> Map.put("sinners", sinners)
   end
+
+  defp parse_ids(str) when is_binary(str), do: str |> String.split(",", trim: true) |> Enum.flat_map(&List.wrap(parse_id(&1)))
+  defp parse_ids(_), do: []
 
   defp parse_id(nil), do: nil
   defp parse_id(""), do: nil

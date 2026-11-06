@@ -1057,12 +1057,17 @@ defmodule StarlightBot.BattlePlans do
     end)
   end
 
-  def profiles(data), do: (is_map(data) && data["profiles"]) || %{}
+  def profiles(data) do
+    raw = (is_map(data) && data["profiles"]) || %{}
+    Map.new(raw, fn {sinner, ids} -> {sinner, List.wrap(ids)} end)
+  end
 
-  def put_profile(data, sinner, nil), do: Map.put(data, "profiles", Map.delete(profiles(data), sinner))
+  def put_profile(data, sinner, ids) do
+    case ids |> List.wrap() |> Enum.uniq() do
+      [] -> Map.put(data, "profiles", Map.delete(profiles(data), sinner))
+      ids -> Map.put(data, "profiles", Map.put(profiles(data), sinner, ids))
+    end
+  end
 
-  def put_profile(data, sinner, profile_id) when is_integer(profile_id),
-    do: Map.put(data, "profiles", Map.put(profiles(data), sinner, profile_id))
-
-  def profile_ids_used(data), do: data |> profiles() |> Map.values() |> MapSet.new()
+  def profile_ids_used(data), do: data |> profiles() |> Map.values() |> List.flatten() |> MapSet.new()
 end

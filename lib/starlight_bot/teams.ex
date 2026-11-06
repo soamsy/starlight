@@ -361,7 +361,7 @@ defmodule StarlightBot.Teams do
     profile_ids =
       if decoded do
         assigned = BattlePlans.profiles(decoded)
-        for sinner <- @all_sinners, is_integer(assigned[sinner]), do: assigned[sinner]
+        Enum.flat_map(@all_sinners, &Map.get(assigned, &1, []))
       else
         []
       end
