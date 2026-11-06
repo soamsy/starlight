@@ -829,12 +829,28 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp profiles(ctx) do
-    by_id = Map.new(SinnerProfiles.list(), &{&1.id, &1})
+    all = SinnerProfiles.list()
+    by_id = Map.new(all, &{&1.id, &1})
 
-    for {sinner, ids} <- BattlePlans.profiles(RunMemory.battle_plan(ctx)),
-        [first | _] = chosen <- [Enum.flat_map(ids, &List.wrap(by_id[&1]))],
-        into: %{},
-        do: {sinner, first |> Map.put(:name, SinnerProfiles.label(sinner)) |> Map.put(:hook_names, chosen |> Enum.flat_map(&SinnerProfiles.locator_hooks/1) |> Enum.uniq())}
+    planned =
+      for {sinner, ids} <- BattlePlans.profiles(RunMemory.battle_plan(ctx)),
+          [_ | _] = chosen <- [Enum.flat_map(ids, &List.wrap(by_id[&1]))],
+          into: %{},
+          do: {sinner, merged_profile(sinner, chosen)}
+
+    fallback =
+      all
+      |> Enum.group_by(& &1.sinner)
+      |> Map.reject(fn {sinner, _} -> Map.has_key?(planned, sinner) end)
+      |> Map.new(fn {sinner, chosen} -> {sinner, merged_profile(sinner, chosen)} end)
+
+    Map.merge(fallback, planned)
+  end
+
+  defp merged_profile(sinner, [first | _] = chosen) do
+    first
+    |> Map.put(:name, SinnerProfiles.label(sinner))
+    |> Map.put(:hook_names, chosen |> Enum.flat_map(&SinnerProfiles.locator_hooks/1) |> Enum.uniq())
   end
 
   defp sinner_names, do: Map.new(SinnerProfiles.sinners(), &{&1, SinnerProfiles.label(&1)})
