@@ -33,7 +33,7 @@
         <% locked = cycle_locked?(@phase, @other_running?) %>
         <% run_disabled = @teams == [] or @phase != :idle or @countdown != nil or @other_running? or gate != :ready %>
         <%= if @other_running? do %>
-          <span class="text-xs text-warning">Luxcavation is running. Cancel it from its tab before starting this.</span>
+          <span class="text-xs text-warning"><%= other_running_notice(@run_kind) %></span>
         <% end %>
 
         <%= if @phase == :paused and not @other_running? do %>
@@ -202,7 +202,7 @@
         phx-change="update_form"
         class="flex flex-col gap-3">
         <%= if @other_running? do %>
-          <span class="text-xs text-warning">Mirror dungeon is running. Cancel it from its tab before starting this.</span>
+          <span class="text-xs text-warning"><%= other_running_notice(@run_kind) %></span>
         <% end %>
 
         <% gate = StarlightBotWeb.Components.WindowGate.gate(assigns) %>

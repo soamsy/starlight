@@ -274,6 +274,11 @@ defmodule StarlightBotWeb.Live.PageHook do
        when busy != nil and event in ["game_window_resize", "game_window_launch", "game_window_close", "run"],
        do: {:halt, socket}
 
+  defp handle_window_event("run_cancel", _params, socket) do
+    Navigator.cancel()
+    {:halt, socket}
+  end
+
   defp handle_window_event("game_window_resize", _params, socket) do
     settings = Scheduler.get_settings()
 
