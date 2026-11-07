@@ -119,7 +119,7 @@
                   </div>
                 </div>
                 <div class="flex flex-col gap-1">
-                  <table class="text-[11px] border-separate border-spacing-0.5 self-start">
+                  <table style={lineup_paint_style(@data, @lineup_id, @lineup_erase?)} class="text-[11px] border-separate border-spacing-0.5 self-start">
                     <thead>
                       <tr>
                         <th></th>
@@ -145,7 +145,7 @@
                             <button phx-click="paint_lineup" phx-value-venue={venue} phx-value-floor={floor}
                                     title={lineup_tooltip(@data, entries, floor)}
                                     style={if painted, do: lineup_color(@data, id, if(start?, do: 0.9, else: 0.25))}
-                                    class={"w-8 h-6 rounded-full text-[10px] font-semibold " <> cond do
+                                    class={"w-8 h-6 rounded-full text-[10px] font-semibold cursor-pointer hover:bg-[var(--paint)]! hover:ring-2 hover:ring-base-content/50 " <> cond do
                                       is_nil(painted) -> "border border-dashed border-warning text-warning"
                                       start? -> "border-l-4 border-base-content/70 text-white"
                                       true -> "text-base-content/40"
@@ -189,7 +189,7 @@
           <div class="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-3 flex-1 min-h-0">
             <div class="flex flex-col gap-3 self-start lg:max-w-[45vw] min-w-0">
             <div class="overflow-x-auto">
-              <table class="text-[11px] border-separate border-spacing-0.5">
+              <table style={paint_style(@data, @paint)} class="text-[11px] border-separate border-spacing-0.5">
                 <thead>
                   <tr>
                     <th></th>
@@ -218,7 +218,7 @@
                                   id={"cell-#{track}-#{floor}"} phx-hook="RightClickEvent" data-event="erase_cell" data-track={track} data-floor={floor}
                                   title={if lux?, do: find_playbook(@data, id)["name"], else: run_tooltip(@data, entries, floor)}
                                   style={playbook_color(@data, id, if(start?, do: 0.9, else: 0.25))}
-                                  class={"w-8 h-6 rounded text-[10px] font-semibold " <> if(start?, do: "border-l-4 border-base-content/70 text-white", else: "text-base-content/40")}>
+                                  class={"w-8 h-6 rounded text-[10px] font-semibold " <> if(paintable_track?(@data, @paint, track), do: "cursor-pointer hover:bg-[var(--paint)]! hover:text-white hover:ring-2 hover:ring-base-content/50 ", else: "") <> if(start?, do: "border-l-4 border-base-content/70 text-white", else: "text-base-content/40")}>
                             <%= if start?, do: playbook_tag(find_playbook(@data, id)), else: "··" %>
                           </button>
                         </td>

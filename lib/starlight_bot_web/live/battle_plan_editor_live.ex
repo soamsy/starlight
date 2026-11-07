@@ -645,6 +645,29 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     "background-color: hsl(#{rem(index * 67 + 200, 360)} 65% 50% / #{alpha});"
   end
 
+  def paint_style(data, paint) do
+    cond do
+      paint == "erase" -> "--paint: hsl(0 75% 50% / 0.85);"
+      find_playbook(data, paint) -> String.replace(playbook_color(data, paint, 0.85), "background-color:", "--paint:")
+      true -> "--paint: hsl(0 0% 50% / 0.4);"
+    end
+  end
+
+  def paintable_track?(data, paint, track) do
+    case find_playbook(data, paint) do
+      %{"kind" => kind} -> kind == BattlePlans.track_kind(track)
+      _ -> true
+    end
+  end
+
+  def lineup_paint_style(data, lineup_id, erase?) do
+    cond do
+      erase? -> "--paint: hsl(0 75% 50% / 0.85);"
+      BattlePlans.find_lineup(data, lineup_id) -> String.replace(lineup_color(data, lineup_id, 0.85), "background-color:", "--paint:")
+      true -> "--paint: hsl(0 0% 50% / 0.4);"
+    end
+  end
+
   def playbook_tag(nil), do: "?"
 
   def playbook_tag(%{"name" => name}) do
