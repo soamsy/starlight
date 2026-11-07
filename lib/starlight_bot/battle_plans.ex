@@ -15,9 +15,10 @@ defmodule StarlightBot.BattlePlans do
   @enemy_picks ~w(none first last)
   @enemy_steps ~w(left right)
   @chain_actions ~w(chain_fast chain_a_res)
-  @common_actions ~w(win_rate damage_rate commit dodge ego retry)
-  @focused_actions ~w(target)
-  @block_actions ~w(if)
+  @action_types %{
+    "chain" => ~w(chain_fast chain_a_res win_rate damage_rate ego if commit retry),
+    "focused" => ~w(win_rate damage_rate target if commit retry)
+  }
   @branches ~w(then else)
   @hook_leaf %{"op" => "hook_on", "hook" => ""}
   @sinner_ops ~w(sinners_eq sinners_gte sinners_lte)
@@ -29,22 +30,18 @@ defmodule StarlightBot.BattlePlans do
   @count_cmps ~w(eq gte lte)
   @grades ~w(zayin teth he waw)
   @rows ~w(top bottom priority)
-  @chosen_value_kinds ~w(using not_using bottom_is bottom_is_not top_is top_is_not has has_no)
+  @chosen_value_kinds ~w(using bottom_is top_is has)
+  @negated_kinds %{"not_using" => "using", "bottom_is_not" => "bottom_is", "top_is_not" => "top_is", "has_no" => "has"}
+  @negated_labels %{"using" => "not using", "bottom_is" => "bottom is not", "top_is" => "top is not", "has" => "has no"}
   @chosen_kinds [
-    {"top", "using a top skill"},
-    {"bottom", "using a bottom skill"},
     {"using", "using"},
-    {"not_using", "not using"},
     {"bottom_is", "bottom is"},
-    {"bottom_is_not", "bottom is not"},
     {"top_is", "top is"},
-    {"top_is_not", "top is not"},
-    {"has", "has"},
-    {"has_no", "has no"}
+    {"has", "has"}
   ]
   @sins ~w(wrath lust sloth gluttony gloom pride envy)
   @tiers ~w(s3 s2 s1)
-  @priority_values @tiers ++ @sins ++ ["dodge"]
+  @priority_values @tiers ++ @sins ++ ["dodge", "top", "bottom"]
   @default_priority_order @tiers
 
   def tracks, do: @tracks
@@ -78,12 +75,15 @@ defmodule StarlightBot.BattlePlans do
 
   def parse_enemy(pick, n, step) when pick in ~w(first last) do
     %{"pick" => pick, "n" => max(parse_count(n) || 1, 1)}
-    |> then(&if(step in @enemy_steps, do: Map.put(&1, "step", step), else: &1))
+    |> Map.put("step", if(step in ["same" | @enemy_steps], do: step, else: default_step(pick)))
   end
 
   def parse_enemy("none", _n, _step), do: %{"pick" => "none"}
   def parse_enemy("continue", _n, _step), do: %{"pick" => "continue"}
   def parse_enemy(_pick, n, step), do: parse_enemy("first", n, step)
+
+  def default_step("first"), do: "right"
+  def default_step("last"), do: "left"
 
   def ignore_sides, do: @ignore_sides
 
@@ -233,6 +233,12 @@ defmodule StarlightBot.BattlePlans do
       "dodge" ->
         :dodge
 
+      "top" ->
+        :top
+
+      "bottom" ->
+        :bottom
+
       value ->
         cond do
           priority_match?(value, bottom) -> :bottom
@@ -301,10 +307,7 @@ defmodule StarlightBot.BattlePlans do
     if String.ends_with?(track, "_chain"), do: "chain", else: "focused"
   end
 
-  def action_types(kind), do: branch_action_types(kind) ++ @block_actions
-
-  def branch_action_types("chain"), do: (@common_actions -- ~w(dodge)) ++ @chain_actions
-  def branch_action_types("focused"), do: @common_actions ++ @focused_actions
+  def action_types(kind), do: Map.fetch!(@action_types, kind)
 
   def branches, do: @branches
   def hook_leaf, do: @hook_leaf
@@ -420,7 +423,18 @@ defmodule StarlightBot.BattlePlans do
 
   def new_chosen_filter, do: %{"join" => "and", "conditions" => [new_chosen_condition()]}
 
-  def new_chosen_condition, do: %{"kind" => "top"}
+  def new_chosen_condition, do: %{"kind" => "using", "values" => ["top"]}
+
+  def where_extras, do: ~w(top bottom)
+
+  def normalize_chosen_filter(%{"conditions" => conditions} = filter), do: %{filter | "conditions" => Enum.map(conditions, &normalize_chosen_condition/1)}
+
+  def normalize_chosen_condition(%{"kind" => kind}) when kind in ~w(top bottom), do: %{"kind" => "using", "values" => [kind]}
+
+  def normalize_chosen_condition(%{"kind" => kind} = condition) when is_map_key(@negated_kinds, kind),
+    do: %{condition | "kind" => @negated_kinds[kind]} |> Map.put("not", true)
+
+  def normalize_chosen_condition(condition), do: condition
 
   def chosen_kinds, do: @chosen_kinds
 
@@ -428,7 +442,7 @@ defmodule StarlightBot.BattlePlans do
 
   def chip_values, do: @tiers ++ @sins
 
-  def priority_term?(value), do: value == "dodge" or chip_term?(value)
+  def priority_term?(value), do: value in ~w(dodge top bottom) or chip_term?(value)
 
   def chip_term?(value) when is_binary(value) do
     case String.split(value, "+") do
@@ -455,14 +469,20 @@ defmodule StarlightBot.BattlePlans do
     end
   end
 
-  defp parse_chosen_condition(%{"kind" => kind} = condition) when kind in @chosen_value_kinds,
-    do: %{"kind" => kind, "values" => condition["values"] |> List.wrap() |> Enum.filter(&chip_term?/1) |> Enum.uniq()}
+  defp parse_chosen_condition(%{"kind" => kind} = condition) when kind in @chosen_value_kinds or is_map_key(@negated_kinds, kind) do
+    negated? = condition["not"] in [true, "true"] or is_map_key(@negated_kinds, kind)
+    kind = Map.get(@negated_kinds, kind, kind)
+    values = condition["values"] |> List.wrap() |> Enum.filter(&(chip_term?(&1) or (kind == "using" and &1 in ~w(top bottom)))) |> Enum.uniq()
+    base = %{"kind" => kind, "values" => values}
+    if negated?, do: Map.put(base, "not", true), else: base
+  end
 
-  defp parse_chosen_condition(%{"kind" => kind}) when kind in ~w(top bottom), do: %{"kind" => kind}
+  defp parse_chosen_condition(%{"kind" => kind}) when kind in ~w(top bottom), do: normalize_chosen_condition(%{"kind" => kind})
   defp parse_chosen_condition(_condition), do: new_chosen_condition()
 
-  def chosen_columns(%{"join" => join, "conditions" => conditions}, bottom_columns, column_count, {top, bottom}) do
+  def chosen_columns(%{"join" => join} = filter, bottom_columns, column_count, {top, bottom}) do
     combine = if join == "or", do: &Enum.any?/2, else: &Enum.all?/2
+    %{"conditions" => conditions} = normalize_chosen_filter(filter)
 
     Enum.filter(0..(column_count - 1)//1, fn column ->
       cells = %{top: Enum.at(top, column), bottom: Enum.at(bottom, column), bottom?: column in bottom_columns}
@@ -470,28 +490,36 @@ defmodule StarlightBot.BattlePlans do
     end)
   end
 
-  defp chosen_condition_met?(%{"kind" => "bottom"}, cells), do: cells.bottom?
-  defp chosen_condition_met?(%{"kind" => "top"}, cells), do: not cells.bottom?
-  defp chosen_condition_met?(%{"kind" => "using", "values" => values}, cells), do: any_match?(values, [used_cell(cells)])
-  defp chosen_condition_met?(%{"kind" => "not_using", "values" => values}, cells), do: not any_match?(values, [used_cell(cells)])
-  defp chosen_condition_met?(%{"kind" => "bottom_is", "values" => values}, cells), do: any_match?(values, [cells.bottom])
-  defp chosen_condition_met?(%{"kind" => "bottom_is_not", "values" => values}, cells), do: not any_match?(values, [cells.bottom])
-  defp chosen_condition_met?(%{"kind" => "top_is", "values" => values}, cells), do: any_match?(values, [cells.top])
-  defp chosen_condition_met?(%{"kind" => "top_is_not", "values" => values}, cells), do: not any_match?(values, [cells.top])
-  defp chosen_condition_met?(%{"kind" => "has", "values" => values}, cells), do: any_match?(values, [cells.top, cells.bottom])
-  defp chosen_condition_met?(%{"kind" => "has_no", "values" => values}, cells), do: not any_match?(values, [cells.top, cells.bottom])
+  defp chosen_condition_met?(%{"kind" => kind, "values" => values} = condition, cells) do
+    matched = condition_matches?(kind, values, cells)
+    if condition["not"], do: not matched, else: matched
+  end
+
+  defp condition_matches?("using", values, cells), do: using_match?(values, cells)
+  defp condition_matches?("bottom_is", values, cells), do: any_match?(values, [cells.bottom])
+  defp condition_matches?("top_is", values, cells), do: any_match?(values, [cells.top])
+  defp condition_matches?("has", values, cells), do: any_match?(values, [cells.top, cells.bottom])
+
+  defp using_match?(values, cells) do
+    Enum.any?(values, fn
+      "bottom" -> cells.bottom?
+      "top" -> not cells.bottom?
+      value -> cell_matches?(value, used_cell(cells))
+    end)
+  end
 
   defp used_cell(cells), do: if(cells.bottom?, do: cells.bottom, else: cells.top)
 
   defp any_match?(values, cells), do: Enum.any?(values, fn value -> Enum.any?(cells, &cell_matches?(value, &1)) end)
 
-  def chosen_filter_label(%{"join" => join, "conditions" => conditions}),
-    do: "slots " <> Enum.map_join(conditions, " #{join} ", &chosen_condition_label/1)
+  def chosen_filter_label(%{"join" => join} = filter) do
+    %{"conditions" => conditions} = normalize_chosen_filter(filter)
+    "slots " <> Enum.map_join(conditions, " #{join} ", &chosen_condition_label/1)
+  end
 
-  defp chosen_condition_label(%{"kind" => "top"}), do: "using a top skill"
-  defp chosen_condition_label(%{"kind" => "bottom"}), do: "using a bottom skill"
-  defp chosen_condition_label(%{"kind" => kind, "values" => values}) do
+  defp chosen_condition_label(%{"kind" => kind, "values" => values} = condition) do
     {_kind, label} = List.keyfind(@chosen_kinds, kind, 0)
+    label = if condition["not"], do: @negated_labels[kind], else: label
     "#{label} #{Enum.join(values, "/")}"
   end
 
@@ -642,7 +670,7 @@ defmodule StarlightBot.BattlePlans do
   def new_action(type) when type in ~w(win_rate damage_rate commit retry), do: %{"id" => GiftPlans.new_id("ac"), "type" => type}
 
   def new_action("dodge"),
-    do: %{"id" => GiftPlans.new_id("ac"), "type" => "dodge", "who" => "everyone", "sinners" => [], "skill" => first_slot(), "enemy" => %{"pick" => "none"}, "skip_bottom_target" => true}
+    do: %{"id" => GiftPlans.new_id("ac"), "type" => "dodge", "who" => "everyone", "sinners" => [], "skill" => %{"pick" => "all"}, "enemy" => %{"pick" => "none"}, "skip_bottom_target" => true}
 
   def new_action("ego") do
     %{
@@ -650,7 +678,7 @@ defmodule StarlightBot.BattlePlans do
       "type" => "ego",
       "who" => "everyone",
       "sinners" => [],
-      "skill" => first_slot(),
+      "skill" => %{"pick" => "all"},
       "grade" => "zayin",
       "corrode" => false,
       "enemy" => %{"pick" => "none"}
@@ -664,8 +692,8 @@ defmodule StarlightBot.BattlePlans do
         "type" => "target",
         "who" => "everyone",
         "sinners" => [],
-        "skill" => first_slot(),
-        "enemy" => %{"pick" => "first"}
+        "skill" => %{"pick" => "all"},
+        "enemy" => %{"pick" => "first", "step" => "right"}
       },
       "priority",
       nil
@@ -678,7 +706,19 @@ defmodule StarlightBot.BattlePlans do
 
   def new_action(type) when type in @chain_actions, do: %{"id" => GiftPlans.new_id("ac"), "type" => type, "pins" => []}
 
+  def normalize_dodge(%{"type" => "dodge"} = holder) do
+    holder
+    |> Map.put("type", "target")
+    |> Map.put("row", "priority")
+    |> Map.put("priority", %{"order" => ["dodge"]})
+    |> Map.put_new("skip_bottom_target", true)
+  end
+
+  def normalize_dodge(holder), do: holder
+
   def convert_action(action, kind) when kind in ~w(top bottom priority) do
+    action = normalize_dodge(action)
+
     action
     |> Map.drop(~w(grade corrode))
     |> Map.put("type", "target")
@@ -711,7 +751,10 @@ defmodule StarlightBot.BattlePlans do
 
   def convert_action(action, _kind), do: action
 
-  def new_pin, do: put_row(%{"type" => "target", "who" => "everyone", "sinners" => [], "skill" => first_slot()}, "priority", nil)
+  def seed_sinner(%{"sinners" => []} = holder, sinner) when is_binary(sinner), do: %{holder | "sinners" => [sinner]}
+  def seed_sinner(holder, _sinner), do: holder
+
+  def new_pin, do: put_row(%{"type" => "target", "who" => "everyone", "sinners" => [], "skill" => %{"pick" => "all"}}, "priority", nil)
 
   def paint(entries, floor, id, key \\ "playbook") do
     entries

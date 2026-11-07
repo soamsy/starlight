@@ -22,13 +22,15 @@ defmodule StarlightBot.Automation.SlotPlan do
           {enemy, continued?} = resolve_enemy(holder["enemy"], previous)
           start = if continued?, do: offset, else: 0
           holder = Map.put(holder, "enemy", enemy)
-          untargeted = untargeted_columns(holder, taken, env)
+          bottom_columns = bottom_columns_to_skip(holder, env)
 
           {steps, next} =
             Enum.map_reduce(taken, start, fn column, index ->
-              if column in untargeted,
-                do: {step(holder, %{"pick" => "none"}, column, index, env), index},
-                else: {step(holder, enemy, column, index, env), index + 1}
+              planned = step(holder, enemy, column, index, env)
+
+              if keeps_target?(planned, bottom_columns),
+                do: {kept_step(planned, holder, column, index, env), index},
+                else: {planned, index + 1}
             end)
 
           {steps, {next, enemy}}
@@ -37,18 +39,25 @@ defmodule StarlightBot.Automation.SlotPlan do
     {steps, Enum.flat_map(steps, & &1.notes)}
   end
 
-  defp untargeted_columns(%{"type" => "dodge", "enemy" => %{"pick" => pick}} = holder, taken, env) do
+  defp bottom_columns_to_skip(%{"enemy" => %{"pick" => pick}} = holder, env) do
     if pick != "none" and Map.get(holder, "skip_bottom_target", true) do
       case env.bottom_columns.() do
-        {:ok, bottom_columns} -> Enum.filter(taken, &(&1 in bottom_columns))
-        :skip -> []
+        {:ok, bottom_columns} -> bottom_columns
+        :skip -> nil
       end
-    else
-      []
     end
   end
 
-  defp untargeted_columns(_holder, _taken, _env), do: []
+  defp bottom_columns_to_skip(_holder, _env), do: nil
+
+  defp kept_step(%{action: "target", row: row} = planned, holder, column, _index, _env) when row in [:top, :bottom],
+    do: %{action: "nothing", holder: holder, column: column, row: nil, enemy: nil, notes: planned.notes}
+
+  defp kept_step(_planned, holder, column, index, env), do: step(holder, %{"pick" => "none"}, column, index, env)
+
+  defp keeps_target?(_step, nil), do: false
+  defp keeps_target?(%{row: :top, column: column}, bottom_columns), do: column not in bottom_columns
+  defp keeps_target?(%{column: column}, bottom_columns), do: column in bottom_columns
 
   def describe(%{action: "nothing", column: column}), do: "plan: slot #{column + 1} left alone"
   def describe(%{action: "dodge", column: column, enemy: enemy}), do: "plan: slot #{column + 1} dodge#{enemy_text(enemy)}"

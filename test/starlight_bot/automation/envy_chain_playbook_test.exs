@@ -161,7 +161,7 @@ defmodule StarlightBot.Automation.EnvyChainPlaybookTest do
                "slots has envy and not using envy -> slot(s) 1",
                "rest takes slot(s) 1",
                "bottom skill chosen in slot(s) []",
-               "slots has no envy and using a top skill -> slot(s) 2",
+               "slots has no envy and using top -> slot(s) 2",
                "rest takes slot(s) 2",
                "bottom skill chosen in slot(s) []",
                "slots has no envy -> no free slot(s) left",

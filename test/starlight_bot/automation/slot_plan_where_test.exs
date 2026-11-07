@@ -44,4 +44,20 @@ defmodule StarlightBot.Automation.SlotPlanWhereTest do
   test "dodge keeps targeting bottom-skill slots when the option is off" do
     assert columns(dodge(%{"skip_bottom_target" => false}), [1]) == [{0, "first", 0}, {1, "first", 1}, {2, "first", 2}]
   end
+
+  defp target(row, extra) do
+    Map.merge(
+      %{"type" => "target", "who" => "before", "sinners" => ["faust"], "skill" => %{"pick" => "all"}, "enemy" => %{"pick" => "first", "n" => 1, "step" => "right"}, "skip_bottom_target" => true, "row" => row},
+      extra
+    )
+  end
+
+  test "target keeps the existing target only when the picked row is already the active one" do
+    assert columns(target("top", %{}), [1]) == [{0, nil, nil}, {1, "first", 0}, {2, nil, nil}]
+    assert columns(target("bottom", %{}), [1]) == [{0, "first", 0}, {1, nil, nil}, {2, "first", 1}]
+  end
+
+  test "target retargets everything when the option is off" do
+    assert columns(target("top", %{"skip_bottom_target" => false}), [1]) == [{0, "first", 0}, {1, "first", 1}, {2, "first", 2}]
+  end
 end

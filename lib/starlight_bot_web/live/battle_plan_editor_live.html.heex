@@ -91,6 +91,7 @@
                                     <img :if={profile_thumb(p, @locator_thumbs)} src={profile_thumb(p, @locator_thumbs)} class="h-5 w-auto rounded shrink-0" />
                                     <span :if={!profile_thumb(p, @locator_thumbs)} class="truncate"><%= p.name %></span>
                                   <% end %>
+                                  <span class="ml-auto min-w-0 truncate pl-1 text-base-content/40">+ add</span>
                                 <% end %>
                               </div>
                               <div tabindex="0" class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">

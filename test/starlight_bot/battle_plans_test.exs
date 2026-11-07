@@ -430,6 +430,9 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "top_is", "values" => ["envy", "s1"]}]), [], 5, classified) == [0, 2, 3, 4]
       assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "top_is_not", "values" => ["envy"]}]), [], 5, classified) == [1, 2, 4]
       assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "has", "values" => ["lust"]}]), [], 5, classified) == [4]
+      assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "has", "not" => true, "values" => ["pride"]}]), [], 5, classified) == [0, 1, 4]
+      assert BattlePlans.parse_chosen_filter(%{"where_c" => %{"0" => %{"kind" => "top_is", "not" => "true", "values" => ["envy"]}, "1" => %{"kind" => "has", "not" => "false", "values" => ["envy"]}}})["conditions"] ==
+               [%{"kind" => "top_is", "not" => true, "values" => ["envy"]}, %{"kind" => "has", "values" => ["envy"]}]
       assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "has_no", "values" => ["pride"]}]), [], 5, classified) == [0, 1, 4]
       assert BattlePlans.chosen_columns(filter.("and", [%{"kind" => "has_no", "values" => ["envy", "wrath"]}]), [], 5, classified) == []
       assert BattlePlans.chosen_columns(filter.("or", [%{"kind" => "bottom"}, %{"kind" => "using", "values" => ["lust"]}]), [1, 3], 5, classified) == [1, 3, 4]
@@ -437,7 +440,7 @@ defmodule StarlightBot.BattlePlansTest do
 
     test "parse_chosen_filter reads indexed conditions and drops unknown chips" do
       params = %{"where_join" => "or", "where_c" => %{"1" => %{"kind" => "bottom"}, "0" => %{"kind" => "not_using", "values" => ["envy", "bogus", "envy", "s3"]}}}
-      assert BattlePlans.parse_chosen_filter(params) == %{"join" => "or", "conditions" => [%{"kind" => "not_using", "values" => ["envy", "s3"]}, %{"kind" => "bottom"}]}
+      assert BattlePlans.parse_chosen_filter(params) == %{"join" => "or", "conditions" => [%{"kind" => "using", "not" => true, "values" => ["envy", "s3"]}, %{"kind" => "using", "values" => ["bottom"]}]}
       assert BattlePlans.parse_chosen_filter(%{}) == BattlePlans.new_chosen_filter()
       fused = %{"where_c" => %{"0" => %{"kind" => "bottom_is", "values" => ["s3+envy", "envy+s3", "dodge", "wrath"]}}}
       assert BattlePlans.parse_chosen_filter(fused)["conditions"] == [%{"kind" => "bottom_is", "values" => ["s3+envy", "wrath"]}]
@@ -528,9 +531,9 @@ defmodule StarlightBot.BattlePlansTest do
     test "labels and parsing" do
       assert BattlePlans.enemy_label(%{"pick" => "last", "n" => 2, "step" => "left", "ignore" => [%{"side" => "top", "n" => 1}]}) == "2 from last, then left, ignoring top 1"
       assert BattlePlans.enemy_label(%{"pick" => "none"}) == "none"
-      assert BattlePlans.parse_enemy("last", "0", "up") == %{"pick" => "last", "n" => 1}
+      assert BattlePlans.parse_enemy("last", "0", "up") == %{"pick" => "last", "n" => 1, "step" => "left"}
       assert BattlePlans.parse_enemy("first", "4", "right") == %{"pick" => "first", "n" => 4, "step" => "right"}
-      assert BattlePlans.parse_enemy("exact", "2", nil) == %{"pick" => "first", "n" => 2}
+      assert BattlePlans.parse_enemy("exact", "2", nil) == %{"pick" => "first", "n" => 2, "step" => "right"}
       assert BattlePlans.parse_enemy("none", "2", "left") == %{"pick" => "none"}
     end
   end
