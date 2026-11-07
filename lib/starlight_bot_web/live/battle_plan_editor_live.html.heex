@@ -73,9 +73,14 @@
                         <div class="flex flex-col gap-0.5 min-w-0">
                           <button type="button" phx-click="toggle_lineup_sinner" phx-value-sinner={sinner}
                                   title={sinner_label(sinner)}
-                                  class={"btn btn-xs relative min-w-0 flex-nowrap gap-1 px-1 " <> if(pos, do: "btn-primary", else: "btn-outline")}>
+                                  style={sinner_slot_style(pos)}
+                                  class={"btn btn-xs relative min-w-0 flex-nowrap gap-1 overflow-hidden px-1 " <> cond do
+                                    is_nil(pos) -> "btn-outline"
+                                    pos < StarlightBot.BattlePlans.front_line_size() -> "btn-error"
+                                    true -> "btn-info"
+                                  end}>
                             <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-4 w-4 shrink-0 object-contain" /><span class="truncate"><%= sinner_label(sinner) %></span>
-                            <span :if={pos} class={"absolute -top-2 -right-2 z-10 badge badge-xs " <> if(pos <StarlightBot.BattlePlans.front_line_size(), do: "badge-secondary", else: "badge-neutral")}><%= pos + 1 %></span>
+                            <span :if={pos} class={"ml-auto -mr-1 flex h-full min-w-6 shrink-0 items-center justify-center self-stretch border-l border-black/25 px-1 font-mono text-[11px] font-bold " <> if(pos == 0, do: "bg-primary text-primary-content", else: "bg-black/20 text-white")}><%= pos + 1 %></span>
                           </button>
                           <form phx-change="set_sinner_profile" class="flex items-center gap-0.5 min-w-0">
                             <input type="hidden" name="sinner" value={sinner} />

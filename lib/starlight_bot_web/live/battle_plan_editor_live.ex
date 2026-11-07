@@ -560,6 +560,19 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   def sinner_label(key), do: key |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
 
+  def sinner_slot_style(nil), do: nil
+
+  def sinner_slot_style(pos) do
+    front = BattlePlans.front_line_size()
+    {color, index, total} = if pos < front, do: {"error", pos, front}, else: {"info", pos - front, 5}
+    strength = 1.0 - 0.65 * index / max(total - 1, 1)
+    border = round(strength * 100)
+    fill = round(strength * 50)
+
+    "background-color: color-mix(in oklab, var(--color-#{color}) #{fill}%, transparent); " <>
+      "border: 2px solid color-mix(in oklab, var(--color-#{color}) #{border}%, transparent); color: white;"
+  end
+
   def lineup_color(data, id, alpha) do
     index = Enum.find_index(BattlePlans.lineups(data), &(&1["id"] == id)) || 0
     "background-color: hsl(#{rem(index * 67 + 20, 360)} 45% 42% / #{alpha});"
