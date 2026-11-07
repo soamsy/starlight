@@ -112,12 +112,7 @@ defmodule StarlightBot.Automation.BattleChain do
           waypoints_by_streak(tray, Enum.map(top_results, & &1.sin), Enum.map(bottom_results, & &1.sin), forced)
 
         _ ->
-          waypoints(
-            tray,
-            Enum.map(top_results, &{&1.tier, &1.tier_margin}),
-            Enum.map(bottom_results, &{&1.tier, &1.tier_margin}),
-            forced
-          )
+          waypoints(tray, Enum.map(top_results, & &1.tier), Enum.map(bottom_results, & &1.tier), forced)
       end
 
     {picks, top_results, bottom_results}
@@ -145,9 +140,7 @@ defmodule StarlightBot.Automation.BattleChain do
     "  #{String.pad_trailing(label, 6)} #{cells}"
   end
 
-  @type scored_tier :: {SinColor.tier(), float}
-
-  @spec waypoints(SkillTray.t(), [scored_tier], [scored_tier], %{non_neg_integer => :top | :bottom}) ::
+  @spec waypoints(SkillTray.t(), [SinColor.tier()], [SinColor.tier()], %{non_neg_integer => :top | :bottom}) ::
           [{:top | :bottom, number, number}]
   def waypoints(%SkillTray{} = tray, top_skills, bottom_skills, forced \\ %{}) do
     top_skills
@@ -165,25 +158,25 @@ defmodule StarlightBot.Automation.BattleChain do
   defp steady_rows(columns, forced) do
     columns
     |> Enum.with_index()
-    |> Enum.reduce(%{start: {{0, 0, 0.0}, []}}, fn {{top_skill, bottom_skill}, index}, paths ->
+    |> Enum.reduce(%{start: {{0, 0}, []}}, fn {{top_skill, bottom_skill}, index}, paths ->
       rows = if row = Map.get(forced, index), do: [row], else: [:bottom, :top]
 
       Map.new(rows, fn row ->
-        {tier, margin} = if row == :top, do: top_skill, else: bottom_skill
+        tier = if row == :top, do: top_skill, else: bottom_skill
 
         best =
           paths
-          |> Enum.map(fn {prev_row, {{ranks, switches, margins}, picked}} ->
+          |> Enum.map(fn {prev_row, {{ranks, switches}, picked}} ->
             switched = if prev_row in [:start, row], do: 0, else: 1
-            {{ranks + tier_rank(tier), switches + switched, margins + margin}, [row | picked], prev_row == :top}
+            {{ranks + tier_rank(tier), switches + switched}, [row | picked], prev_row != :top}
           end)
-          |> Enum.min_by(fn {cost, _picked, from_top?} -> {cost, from_top?} end)
+          |> Enum.min_by(fn {cost, _picked, from_other?} -> {cost, from_other?} end)
           |> Tuple.delete_at(2)
 
         {row, best}
       end)
     end)
-    |> Enum.min_by(fn {row, {cost, _picked}} -> {cost, row == :top} end)
+    |> Enum.min_by(fn {row, {cost, _picked}} -> {cost, row != :top} end)
     |> elem(1)
     |> elem(1)
     |> Enum.reverse()

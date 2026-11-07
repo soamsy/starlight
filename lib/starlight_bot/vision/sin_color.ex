@@ -46,7 +46,6 @@ defmodule StarlightBot.Vision.SinColor do
           wedge_area: non_neg_integer,
           tier_pct: float,
           flame: float,
-          tier_margin: float,
           match_mask: term,
           reference_mask: term,
           wedge_mask: term,
@@ -165,7 +164,6 @@ defmodule StarlightBot.Vision.SinColor do
       wedge_area: wedge_area,
       tier_pct: tier_pct,
       flame: flame,
-      tier_margin: tier_margin(winner, tier, tier_pct),
       match_mask: mask,
       reference_mask: ref_mask,
       wedge_mask: wedge,
@@ -227,16 +225,6 @@ defmodule StarlightBot.Vision.SinColor do
       tier3? -> :skill3
       tier2? -> :skill2
       true -> :skill1
-    end
-  end
-
-  defp tier_margin(sin, tier, pct) do
-    {tier2_min_pct, tier3_min_pct} = Keyword.fetch!(@tier_thresholds, sin)
-
-    case tier do
-      :skill3 -> pct - tier3_min_pct
-      :skill2 -> pct - tier2_min_pct
-      :skill1 -> pct
     end
   end
 
