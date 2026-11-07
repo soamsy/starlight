@@ -50,4 +50,17 @@ defmodule StarlightBot.PlanClipboardTest do
     assert {:error, _} = PlanClipboard.decode_entries(~s({"starlight_entries": [{"id": "e"}]}))
     assert {:error, _} = PlanClipboard.decode_entries(PlanClipboard.encode_milestone(%{"id" => "a", "name" => "b"}))
   end
+  test "clipboard text carries a format version and rejects newer ones" do
+    assert %{"v" => 1} = :gift_plans |> PlanClipboard.encode("T", %{}) |> Jason.decode!()
+    assert %{"v" => 1} = %{"id" => "a", "name" => "b"} |> PlanClipboard.encode_milestone() |> Jason.decode!()
+    newer = ~s({"v": 2, "starlight_milestone": {"id": "a", "name": "b"}})
+    assert {:error, "That clipboard was made by a newer version" <> _} = PlanClipboard.decode_milestone(newer)
+    assert {:ok, _} = PlanClipboard.decode_milestone(~s({"starlight_milestone": {"id": "a", "name": "b"}}))
+  end
+
+  test "plan data from a newer version is rejected" do
+    for {table, data} <- [gift_plans: %{"version" => 99}, pack_plans: %{"version" => 99}, battle_plans: %{"version" => 99}] do
+      assert {:error, "That clipboard was made by a newer version" <> _} = table |> PlanClipboard.encode("T", data) |> PlanClipboard.decode(table)
+    end
+  end
 end

@@ -2,36 +2,44 @@ defmodule StarlightBot.PlanClipboard do
   alias StarlightBot.{BattlePlans, SinnerProfiles, ThemePacks}
   alias StarlightBot.PackPlans.{Legacy, Resolver}
 
+  @gift_version StarlightBot.GiftPlans.version()
   @kinds %{gift_plans: "gift", battle_plans: "battle", pack_plans: "pack"}
+  @format_version 1
+  @pack_version 2
+  @battle_version 4
+  @newer "That clipboard was made by a newer version of Starlight. Update the app to paste it."
 
   def encode(table, team_name, data) do
-    Jason.encode!(%{"starlight_plan" => Map.fetch!(@kinds, table), "name" => team_name, "data" => data})
+    Jason.encode!(%{"v" => @format_version, "starlight_plan" => Map.fetch!(@kinds, table), "name" => team_name, "data" => data})
   end
 
   def decode(text, table) do
     kind = Map.fetch!(@kinds, table)
 
     case Jason.decode(text) do
+      {:ok, %{"v" => v}} when is_integer(v) and v > @format_version -> {:error, @newer}
       {:ok, %{"starlight_plan" => ^kind, "data" => %{} = data}} -> validate(table, data)
       {:ok, %{"starlight_plan" => other}} when is_binary(other) -> {:error, "That clipboard holds a #{other} plan, not a #{kind} plan."}
       _ -> {:error, "The clipboard doesn't hold a Starlight plan."}
     end
   end
 
-  def encode_milestone(milestone), do: Jason.encode!(%{"starlight_milestone" => milestone})
+  def encode_milestone(milestone), do: Jason.encode!(%{"v" => @format_version, "starlight_milestone" => milestone})
 
   def decode_milestone(text) do
     case Jason.decode(text) do
+      {:ok, %{"v" => v}} when is_integer(v) and v > @format_version -> {:error, @newer}
       {:ok, %{"starlight_milestone" => %{"id" => id, "name" => name} = milestone}} when is_binary(id) and is_binary(name) -> validate_milestone(milestone)
       {:ok, %{"starlight_plan" => kind}} when is_binary(kind) -> {:error, "That clipboard holds a whole #{kind} plan, not a milestone."}
       _ -> {:error, "The clipboard doesn't hold a Starlight milestone."}
     end
   end
 
-  def encode_entries(entries), do: Jason.encode!(%{"starlight_entries" => entries})
+  def encode_entries(entries), do: Jason.encode!(%{"v" => @format_version, "starlight_entries" => entries})
 
   def decode_entries(text) do
     case Jason.decode(text) do
+      {:ok, %{"v" => v}} when is_integer(v) and v > @format_version -> {:error, @newer}
       {:ok, %{"starlight_entries" => [_ | _] = entries}} when is_list(entries) ->
         if Enum.all?(entries, &(is_map(&1) and is_list(&1["floors"]))),
           do: {:ok, entries},
@@ -42,10 +50,11 @@ defmodule StarlightBot.PlanClipboard do
     end
   end
 
-  def encode_playbook(playbook), do: Jason.encode!(%{"starlight_playbook" => playbook})
+  def encode_playbook(playbook), do: Jason.encode!(%{"v" => @format_version, "starlight_playbook" => playbook})
 
   def decode_playbook(text, kind) do
     case Jason.decode(text) do
+      {:ok, %{"v" => v}} when is_integer(v) and v > @format_version -> {:error, @newer}
       {:ok, %{"starlight_playbook" => %{"id" => id, "name" => name, "kind" => ^kind, "actions" => actions} = playbook}} when is_binary(id) and is_binary(name) ->
         if valid_actions?(actions), do: {:ok, playbook}, else: {:error, "That playbook is malformed and can't be pasted."}
 
@@ -71,6 +80,9 @@ defmodule StarlightBot.PlanClipboard do
 
   def warnings(_table, _data), do: []
 
+  defp validate(:battle_plans, %{"version" => v}) when is_integer(v) and v > @battle_version, do: {:error, @newer}
+  defp validate(:pack_plans, %{"version" => v}) when is_integer(v) and v > @pack_version, do: {:error, @newer}
+  defp validate(:gift_plans, %{"version" => v}) when is_integer(v) and v > @gift_version, do: {:error, @newer}
   defp validate(:battle_plans, %{"version" => 4, "playbooks" => [_ | _], "profiles" => profiles} = data) when is_map(profiles), do: {:ok, data}
   defp validate(:battle_plans, %{"version" => 4, "playbooks" => [_ | _]} = data) when not is_map_key(data, "profiles"), do: {:ok, data}
   defp validate(:battle_plans, _data), do: {:error, "That battle plan isn't a version 4 plan this app can read."}

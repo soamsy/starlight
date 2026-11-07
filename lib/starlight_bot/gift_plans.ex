@@ -204,6 +204,8 @@ defmodule StarlightBot.GiftPlans do
   def encounter_reward_hooks(order), do: Enum.map(order, &Map.fetch!(@encounter_reward_hooks, &1)) ++ @encounter_reward_tier_hooks
   def encounter_reward_default_order, do: @encounter_reward_default_order
 
+  def version, do: @version
+
   def blank(affinity \\ nil) do
     milestone = new_milestone("Shop Done")
 
