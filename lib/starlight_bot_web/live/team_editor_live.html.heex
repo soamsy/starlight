@@ -48,14 +48,8 @@
                   </td>
                   <td class="text-xs text-base-content/60 @max-[26rem]:w-full @max-[26rem]:max-w-0 @max-[26rem]:min-w-14">
                     <span class="inline-flex flex-wrap items-center gap-x-2 @max-[26rem]:hidden">
-                      <span :for={hook <- team.hooks} class="inline-flex items-center gap-1">
-                        <img src={Teams.hook_icon(hook) || Teams.default_hook_icon()} class="size-4 object-contain" />
-                        <%= Teams.hook_label(hook) %>
-                      </span>
-                      <span :if={team.hooks == []} class="inline-flex items-center gap-1">
-                        <img src={Teams.default_hook_icon()} class="size-4 object-contain" />
-                        —
-                      </span>
+                      <img :for={hook <- team.hooks} src={Teams.hook_icon(hook) || Teams.default_hook_icon()} title={Teams.hook_label(hook)} class="size-4 object-contain" />
+                      <img :if={team.hooks == []} src={Teams.default_hook_icon()} class="size-4 object-contain" />
                       <% icons = profile_icons(team.profile_ids, @profiles_by_id, @locator_thumbs) %>
                       <img :for={icon <- icons} src={icon.src} title={icon.name} class="h-4 w-auto rounded object-contain" />
                     </span>
