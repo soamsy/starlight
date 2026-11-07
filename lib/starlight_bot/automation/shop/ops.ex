@@ -244,6 +244,20 @@ defmodule StarlightBot.Automation.Shop.Ops do
     end
   end
 
+  def sinner_statuses(sinners) do
+    hooks =
+      sinners
+      |> Enum.flat_map(&[dead_hook(&1), full_hook(&1, :sp), full_hook(&1, :hp)])
+      |> Enum.filter(&match?({:ok, _}, HookRegistry.find(&1)))
+
+    checks = Engine.check_all(hooks)
+
+    Map.new(sinners, fn sinner ->
+      full = Map.get(checks, full_hook(sinner, :sp), false) and Map.get(checks, full_hook(sinner, :hp), false)
+      {sinner, %{dead: Map.get(checks, dead_hook(sinner), false), full: full}}
+    end)
+  end
+
   def sinner_full?(sinner, stat) do
     hook = full_hook(sinner, stat)
 

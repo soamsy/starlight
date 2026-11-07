@@ -85,16 +85,29 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
   end
 
   defp heal_need(milestones, state) do
-    sinners = Teams.all_sinners()
-    dead = Enum.filter(sinners, &(Ops.sinner_dead?(&1) == true))
-    hurt = Enum.filter(sinners -- dead, &Heal.hurt?/1)
+    entries =
+      milestones
+      |> Enum.flat_map(&GiftPlans.resolved_entries(&1, state.floor))
+      |> GiftPlans.heal_entries()
 
-    milestones
-    |> Enum.flat_map(&GiftPlans.resolved_entries(&1, state.floor))
-    |> GiftPlans.heal_entries()
-    |> Enum.map(&entry_heal_need(&1, dead, hurt))
-    |> Enum.sum()
+    if entries == [] do
+      0
+    else
+      all = Teams.all_sinners()
+      fullness_sinners = entries |> Enum.filter(&(&1.subject["action"] in ["heal", "heal_all"])) |> Enum.flat_map(&entry_sinners(&1, all)) |> Enum.uniq()
+      sinners = entries |> Enum.flat_map(&entry_sinners(&1, all)) |> Enum.uniq()
+      statuses = Heal.statuses(sinners, fullness_sinners)
+      dead = for {sinner, %{dead: true}} <- statuses, do: sinner
+      hurt = for sinner <- fullness_sinners, not statuses[sinner].dead, not statuses[sinner].full, do: sinner
+
+      entries
+      |> Enum.map(&entry_heal_need(&1, dead, hurt))
+      |> Enum.sum()
+    end
   end
+
+  defp entry_sinners(%{subject: %{"action" => "heal_all"}}, all), do: all
+  defp entry_sinners(%{sinners: sinners}, _all), do: sinners
 
   defp entry_heal_need(%{subject: %{"action" => "heal_all"}, repeat: repeat}, _dead, hurt) do
     times = if repeat == "until_full", do: 1, else: GiftPlans.heal_all_times(repeat)

@@ -115,7 +115,19 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
 
   defp everyone_healed?(state), do: Enum.all?(Teams.all_sinners(), &(Ops.sinner_dead?(&1) == true or settled_full?(&1, state)))
 
-  def hurt?(sinner), do: not settled_full?(sinner, %{})
+  def statuses(sinners, fullness_sinners), do: poll_statuses(sinners, fullness_sinners, now() + @first_check_settle_ms)
+
+  defp poll_statuses(sinners, fullness_sinners, deadline) do
+    statuses = Ops.sinner_statuses(sinners)
+    settled? = Enum.all?(fullness_sinners, &(statuses[&1].dead or statuses[&1].full))
+
+    if settled? or now() >= deadline do
+      statuses
+    else
+      Process.sleep(@first_check_poll_ms)
+      poll_statuses(sinners, fullness_sinners, deadline)
+    end
+  end
 
   defp settled_full?(sinner, %{last_heal: healed}) when healed == sinner or healed == :all do
     Process.sleep(400)
