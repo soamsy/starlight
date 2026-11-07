@@ -439,10 +439,10 @@ defmodule StarlightBot.BattlePlansTest do
   describe "tray_count leaves" do
     test "condition_leaf fills defaults and labels the count" do
       leaf = BattlePlans.condition_leaf(%{"op" => "tray_count", "hook" => "battle_chain"})
-      assert leaf == %{"op" => "tray_count", "match" => "wrath", "cmp" => "gte", "value" => 1, "sinner" => nil}
+      assert leaf == %{"op" => "tray_count", "match" => "any", "cmp" => "gte", "value" => 1, "sinner" => nil}
       assert BattlePlans.tray_leaf?(leaf)
       refute BattlePlans.sinner_leaf?(leaf)
-      assert BattlePlans.condition_label(%{"op" => "and", "children" => [leaf]}) == "wrath slots >= 1"
+      assert BattlePlans.condition_label(%{"op" => "and", "children" => [leaf]}) == "any slots >= 1"
 
       leaf = BattlePlans.condition_leaf(%{"op" => "tray_count", "match" => "s3", "cmp" => "eq", "value" => "0", "sinner" => "ryoshu"})
       assert leaf == %{"op" => "tray_count", "match" => "s3", "cmp" => "eq", "value" => 0, "sinner" => "ryoshu"}
@@ -457,6 +457,8 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.tray_count(leaf, classified, :all) == 3
       assert BattlePlans.tray_count(leaf, classified, [1, 2]) == 2
       assert BattlePlans.tray_count(%{"match" => "s3"}, classified, [0, 2]) == 0
+      assert BattlePlans.tray_count(%{"match" => "any"}, classified, :all) == 3
+      assert BattlePlans.tray_count(%{"match" => "any"}, {[cell(:wrath, :skill1), nil], [nil, nil]}, :all) == 1
     end
 
     test "chosen_columns combines row and used-skill conditions with and/or" do

@@ -1055,7 +1055,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
               <input type="hidden" name={field_name(@prefix, "chip") <> "[#{index}][at]"} value={at} />
               <button type="button" phx-click="step_slot_chip" phx-value-action={@action_id} phx-value-path={@prefix} phx-value-index={index} phx-value-delta={left_delta(@pick)}
                       disabled={at == 0 and left_delta(@pick) == "-1"} title={left_title(@pick)} class="join-item btn btn-xs px-1.5 text-[9px]">◀</button>
-              <label class="join-item cursor-pointer">
+              <label class="join-item relative cursor-pointer">
                 <input type="checkbox" name={field_name(@prefix, "chip") <> "[#{index}][on]"} value="true" checked={on} class="peer sr-only" />
                 <span class={chip_toggle_class(true)}><%= BattlePlans.chip_name(@pick, at) %></span>
               </label>
@@ -1065,7 +1065,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <% {:gap, key, on, lo, hi} -> %>
             <span class="inline-flex items-center" title={gap_title(@pick, lo, hi)}>
               <input type="hidden" name={gap_field(@prefix, key)} value="false" />
-              <label class="cursor-pointer">
+              <label class="relative cursor-pointer">
                 <input type="checkbox" name={gap_field(@prefix, key)} value="true" checked={on} class="peer sr-only" />
                 <span class={chip_toggle_class()}>...</span>
               </label>
@@ -1288,7 +1288,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <div :for={{condition, index} <- @conditions} class="flex flex-col gap-1 rounded border border-base-content/10 p-1">
         <div class="flex items-center gap-1">
           <input type="hidden" name={field_name(@prefix, "where_c") <> "[#{index}][not]"} value="false" />
-          <label title="Negate this condition" class="cursor-pointer">
+          <label title="Negate this condition" class="relative cursor-pointer">
             <input type="checkbox" name={field_name(@prefix, "where_c") <> "[#{index}][not]"} value="true" checked={condition["not"] == true} class="peer sr-only" />
             <span class="inline-flex items-center justify-center h-6 w-6 rounded border border-dashed border-base-content/20 text-sm text-base-content/25 select-none peer-checked:hidden">≠</span>
             <span class="hidden items-center h-6 px-1.5 rounded bg-error text-[11px] font-semibold text-error-content select-none peer-checked:inline-flex">NOT</span>
@@ -1443,6 +1443,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         <% end %>
       </select>
       <select name="match" class="select select-bordered select-xs">
+        <option value="any" selected={@node["match"] in [nil, "any"]}>any</option>
         <%= for {group, values} <- [{"skill", BattlePlans.tiers()}, {"sin", BattlePlans.sins()}] do %>
           <optgroup label={group}>
             <option :for={value <- values} value={value} selected={@node["match"] == value}><%= value %></option>

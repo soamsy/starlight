@@ -635,7 +635,11 @@ defmodule StarlightBot.BattlePlans do
   defp cell_matches?(match, %{sin: _sin, tier: _tier} = cell), do: priority_match?(match, cell)
   defp cell_matches?(_match, _cell), do: false
 
+  defp slot_matches?("any", top_cell, bottom_cell), do: skill_cell?(top_cell) or skill_cell?(bottom_cell)
   defp slot_matches?(match, top_cell, bottom_cell), do: priority_match?(match, top_cell) or priority_match?(match, bottom_cell)
+
+  defp skill_cell?(%{sin: _sin, tier: _tier}), do: true
+  defp skill_cell?(_cell), do: false
 
   def tray_count_matches?(%{"cmp" => "eq", "value" => n}, count), do: count == n
   def tray_count_matches?(%{"cmp" => "gte", "value" => n}, count), do: count >= n
@@ -656,7 +660,7 @@ defmodule StarlightBot.BattlePlans do
   def condition_leaf(%{"op" => @tray_count_op} = params) do
     %{
       "op" => @tray_count_op,
-      "match" => if(params["match"] in @tiers ++ @sins, do: params["match"], else: "wrath"),
+      "match" => if(params["match"] in ["any" | @tiers ++ @sins], do: params["match"], else: "any"),
       "cmp" => if(params["cmp"] in @count_cmps, do: params["cmp"], else: "gte"),
       "value" => parse_count(params["value"]) || 1,
       "sinner" => parse_sinner(params["sinner"])

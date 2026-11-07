@@ -203,8 +203,8 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
   defp order_steps(%{front: front, backup: backup}, ctx) do
     clear_steps(ctx) ++
-      Enum.map(front, &click(sinner_hook(&1, :selected), duration_mult: 1.1)) ++
-      Enum.map(backup, &click(sinner_hook(&1, :backup), duration_mult: 1.1))
+      Enum.map(front, &click(sinner_hook(&1, :selected), duration_mult: 0.8)) ++
+      Enum.map(backup, &click(sinner_hook(&1, :backup), duration_mult: 0.8))
   end
 
   defp formation(order), do: order |> alive_order() |> BattlePlans.formation()
