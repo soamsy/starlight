@@ -251,7 +251,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     assert [%{"type" => "ego"}, %{"type" => "if"} = block] = actions(socket, chain["id"])
     assert Enum.map(block["then"], & &1["type"]) == ["chain_a_res"]
     assert Enum.map(block["else"], & &1["type"]) == ["chain_fast"]
-    assert BattlePlans.action_types("chain") == ~w(chain_fast chain_a_res win_rate damage_rate ego if commit retry)
+    assert BattlePlans.action_types("chain") == ~w(chain_fast chain_a_res win_rate damage_rate ego dodge if commit retry)
     assert BattlePlans.action_types("focused") == ~w(win_rate damage_rate target if commit retry)
   end
 
@@ -439,9 +439,18 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [_, _, target] = actions(socket, playbook_id)
     assert target["priority"] == %{"order" => ["s3", "wrath", "dodge"]}
 
-    socket = event(socket, "update_action", %{"action" => target["id"], "pick" => "last", "slot_from" => "2", "slot_to" => "3", "enemy_pick" => "first_with", "row" => "top"})
+    socket = event(socket, "update_action", %{"action" => target["id"], "pick" => "last", "chip" => %{"0" => %{"at" => "1", "on" => "true"}, "1" => %{"at" => "2", "on" => "true"}}, "gap_lead" => "false", "gap_trail" => "false", "enemy_pick" => "first_with", "row" => "top"})
     [_, _, target] = actions(socket, playbook_id)
-    assert target["skill"] == %{"pick" => "last", "start" => 2, "end" => 3}
+    assert target["skill"] == %{"pick" => "last", "chips" => [%{"at" => 1, "on" => true}, %{"at" => 2, "on" => true}], "gaps" => %{"lead" => false, "mid" => [], "trail" => false}}
+
+    socket = event(socket, "add_slot_chip", %{"action" => target["id"], "path" => ""})
+    [_, _, target] = actions(socket, playbook_id)
+    assert Enum.map(target["skill"]["chips"], & &1["at"]) == [1, 2, 3]
+    assert render(socket) =~ ~s(name="chip[2][at]")
+
+    socket = event(socket, "step_slot_chip", %{"action" => target["id"], "path" => "", "index" => "2", "delta" => "1"})
+    [_, _, target] = actions(socket, playbook_id)
+    assert Enum.map(target["skill"]["chips"], & &1["at"]) == [1, 2, 4]
     assert target["enemy"] == %{"pick" => "first", "n" => 1, "step" => "right"}
     socket = event(socket, "update_action", %{"action" => target["id"], "pick" => "first", "enemy_pick" => "last", "row" => "priority", "priority_order" => ["s3", "wrath", "dodge"]})
     html = render(socket)
@@ -475,13 +484,19 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     assert %{"type" => "target", "row" => "priority", "who" => "everyone", "skill" => %{"pick" => "all"}} = pin["rest"]
     assert render(socket) =~ ~s(name="pins[0][rest][kind]")
 
-    rest_params = %{"kind" => "dodge", "pick" => "last", "slot_from" => "1", "slot_to" => "2", "who" => "everyone"}
+    rest_params = %{"kind" => "dodge", "pick" => "last", "chip" => %{"0" => %{"at" => "0", "on" => "true"}, "1" => %{"at" => "1", "on" => "true"}}, "gap_trail" => "false", "who" => "everyone"}
     socket = event(socket, "add_rest", %{"action" => chain_action["id"], "path" => "pins[0][rest]"})
     socket = event(socket, "update_action", %{"action" => chain_action["id"], "pins" => %{"0" => Map.put(pin_params, "rest", rest_params)}})
     [chain_action] = actions(socket, chain["id"])
-    assert %{"type" => "dodge", "skill" => %{"pick" => "last", "start" => 1, "end" => 2}, "rest" => %{"type" => "target"}} = hd(chain_action["pins"])["rest"]
+    assert %{"type" => "dodge", "skill" => %{"pick" => "last", "chips" => [%{"at" => 0, "on" => true}, %{"at" => 1, "on" => true}]}, "rest" => %{"type" => "target"}} = hd(chain_action["pins"])["rest"]
     assert render(socket) =~ ~s(name="pins[0][rest][rest][kind]")
     assert render(socket) =~ ~s(phx-value-path="pins[0][rest][rest]")
+
+    socket = event(socket, "add_where", %{"action" => chain_action["id"], "path" => "pins[0]"})
+    [chain_action] = actions(socket, chain["id"])
+    assert hd(chain_action["pins"])["where"]["conditions"] == [%{"kind" => "has", "values" => []}]
+    refute render(socket) =~ ~s(value="using")
+    socket = event(socket, "remove_where", %{"action" => chain_action["id"], "path" => "pins[0]"})
 
     socket = event(socket, "remove_rest", %{"action" => chain_action["id"], "path" => "pins[0]"})
     [chain_action] = actions(socket, chain["id"])

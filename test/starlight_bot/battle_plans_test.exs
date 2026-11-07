@@ -367,18 +367,60 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.pick_columns([2, 3], %{"pick" => "first", "start" => 3, "end" => 4}) == []
     end
 
-    test "parse_skill reads the range, keeps end at or past start, and falls back to the first slot" do
-      assert BattlePlans.parse_skill("all", nil, nil) == %{"pick" => "all"}
-      assert BattlePlans.parse_skill("first", "2", "4") == %{"pick" => "first", "start" => 2, "end" => 4}
-      assert BattlePlans.parse_skill("last", "3", "1") == %{"pick" => "last", "start" => 3, "end" => 3}
-      assert BattlePlans.parse_skill("first", nil, nil) == %{"pick" => "first", "start" => 1, "end" => 1}
-      assert BattlePlans.parse_skill("exact", "2", "2") == %{"pick" => "first", "start" => 1, "end" => 1}
+    test "parse_skill reads chips and gap toggles, merges duplicate positions, and falls back to the first slot" do
+      assert BattlePlans.parse_skill(%{"pick" => "all"}) == %{"pick" => "all"}
+      assert BattlePlans.parse_skill(%{"pick" => "first"}) == BattlePlans.first_slot()
+      assert BattlePlans.parse_skill(%{"pick" => "last"}) == %{BattlePlans.first_slot() | "pick" => "last"}
+      assert BattlePlans.parse_skill(%{"pick" => "exact"}) == BattlePlans.first_slot()
+
+      params = %{
+        "pick" => "first",
+        "chip" => %{"1" => %{"at" => "3", "on" => "true"}, "0" => %{"at" => "0", "on" => "false"}, "2" => %{"at" => "0", "on" => "true"}},
+        "gap_lead" => "false",
+        "gap_mid" => %{"0" => "false"},
+        "gap_trail" => "true"
+      }
+
+      assert BattlePlans.parse_skill(params) == %{
+               "pick" => "first",
+               "chips" => [%{"at" => 0, "on" => true}, %{"at" => 3, "on" => true}],
+               "gaps" => %{"lead" => false, "mid" => [false], "trail" => true}
+             }
     end
 
-    test "skill_label spells the range" do
+    test "gaps appear between chips that are two or more apart and each toggles its slots" do
+      skill = %{"pick" => "first", "chips" => [%{"at" => 0, "on" => true}, %{"at" => 3, "on" => true}], "gaps" => %{"lead" => true, "mid" => [false], "trail" => false}}
+      assert BattlePlans.pick_columns([10, 11, 12, 13, 14], skill) == [10, 13]
+      assert BattlePlans.pick_columns([10, 11, 12, 13, 14], put_in(skill, ["gaps", "mid"], [true])) == [10, 11, 12, 13]
+      assert BattlePlans.pick_columns([10, 11, 12, 13, 14], put_in(skill, ["gaps", "trail"], true)) == [10, 13, 14]
+
+      adjacent = %{"pick" => "first", "chips" => [%{"at" => 0, "on" => true}, %{"at" => 1, "on" => true}], "gaps" => %{"lead" => true, "mid" => [], "trail" => false}}
+      assert Enum.map(BattlePlans.skill_view(adjacent), &elem(&1, 0)) == [:chip, :chip, :gap]
+    end
+
+    test "an off chip is skipped, and a chip past the first leaves a leading gap" do
+      skill = %{"pick" => "last", "chips" => [%{"at" => 1, "on" => true}, %{"at" => 2, "on" => false}], "gaps" => %{"lead" => true, "mid" => [], "trail" => false}}
+      assert BattlePlans.pick_columns([2, 3, 4, 5], skill) == [4, 5]
+      assert Enum.map(BattlePlans.skill_view(skill), &elem(&1, 0)) == [:gap, :chip, :chip, :gap]
+    end
+
+    test "add_skill_chip adds one position past the furthest chip and converts old ranges" do
+      assert BattlePlans.add_skill_chip(BattlePlans.first_slot())["chips"] == [%{"at" => 0, "on" => true}, %{"at" => 1, "on" => true}]
+      assert BattlePlans.add_skill_chip(%{"pick" => "last", "start" => 2, "end" => 3})["chips"] == Enum.map(1..3, &%{"at" => &1, "on" => true})
+    end
+
+    test "step_skill_chip moves one chip, stops at position 0 and merges chips that land together" do
+      skill = %{"pick" => "first", "chips" => [%{"at" => 0, "on" => true}, %{"at" => 2, "on" => false}], "gaps" => %{"lead" => true, "mid" => [], "trail" => true}}
+      assert Enum.map(BattlePlans.step_skill_chip(skill, 1, 1)["chips"], & &1["at"]) == [0, 3]
+      assert Enum.map(BattlePlans.step_skill_chip(skill, 0, -1)["chips"], & &1["at"]) == [0, 2]
+      assert BattlePlans.step_skill_chip(%{skill | "chips" => [%{"at" => 0, "on" => true}, %{"at" => 1, "on" => false}]}, 0, 1)["chips"] == [%{"at" => 1, "on" => true}]
+    end
+
+    test "skill_label spells the chips" do
       assert BattlePlans.skill_label(%{"pick" => "all"}) == "all"
-      assert BattlePlans.skill_label(%{"pick" => "first"}) == "slots 1 from first"
-      assert BattlePlans.skill_label(%{"pick" => "last", "start" => 2, "end" => 3}) == "slots 2-3 from last"
+      assert BattlePlans.skill_label(%{"pick" => "first"}) == "slots first"
+      assert BattlePlans.skill_label(%{"pick" => "last", "start" => 2, "end" => 3}) == "slots last-1, last-2"
+      assert BattlePlans.skill_label(BattlePlans.first_slot()) == "slots first, rest"
     end
   end
 

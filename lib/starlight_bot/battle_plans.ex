@@ -16,7 +16,7 @@ defmodule StarlightBot.BattlePlans do
   @enemy_steps ~w(left right)
   @chain_actions ~w(chain_fast chain_a_res)
   @action_types %{
-    "chain" => ~w(chain_fast chain_a_res win_rate damage_rate ego if commit retry),
+    "chain" => ~w(chain_fast chain_a_res win_rate damage_rate ego dodge if commit retry),
     "focused" => ~w(win_rate damage_rate target if commit retry)
   }
   @branches ~w(then else)
@@ -190,32 +190,139 @@ defmodule StarlightBot.BattlePlans do
 
   def uses_priority?(holder), do: Enum.any?(holders(holder), &(&1["row"] == "priority"))
 
-  def first_slot, do: %{"pick" => "first", "start" => 1, "end" => 1}
+  def first_slot, do: %{"pick" => "first", "chips" => [%{"at" => 0, "on" => true}], "gaps" => %{"lead" => true, "mid" => [], "trail" => true}}
 
-  def parse_skill("all", _from, _to), do: %{"pick" => "all"}
+  def parse_skill(%{"pick" => "all"}), do: %{"pick" => "all"}
 
-  def parse_skill(pick, from, to) when pick in ~w(first last) do
-    start = max(parse_count(from) || 1, 1)
-    %{"pick" => pick, "start" => start, "end" => max(parse_count(to) || start, start)}
+  def parse_skill(%{"pick" => pick} = params) when pick in ~w(first last) do
+    chips =
+      (params["chip"] || %{})
+      |> Enum.sort_by(fn {index, _} -> parse_count(index) || 0 end)
+      |> Enum.map(fn {_index, chip} -> {parse_count(chip["at"]) || 0, chip["on"] == "true"} end)
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+      |> Enum.map(fn {at, ons} -> %{"at" => at, "on" => Enum.any?(ons)} end)
+      |> Enum.sort_by(& &1["at"])
+
+    if chips == [] do
+      %{first_slot() | "pick" => pick}
+    else
+      mid =
+        (params["gap_mid"] || %{})
+        |> Enum.sort_by(fn {index, _} -> parse_count(index) || 0 end)
+        |> Enum.map(fn {_index, value} -> value == "true" end)
+
+      %{"pick" => pick, "chips" => chips, "gaps" => %{"lead" => params["gap_lead"] != "false", "mid" => mid, "trail" => params["gap_trail"] != "false"}}
+    end
   end
 
-  def parse_skill(_pick, _from, _to), do: first_slot()
+  def parse_skill(_params), do: first_slot()
+
+  def normalize_skill(%{"pick" => "all"} = skill), do: skill
+
+  def normalize_skill(%{"chips" => chips} = skill) when chips != [] do
+    gaps = Map.merge(%{"lead" => true, "mid" => [], "trail" => true}, skill["gaps"] || %{})
+    %{skill | "chips" => Enum.sort_by(chips, & &1["at"]), "gaps" => gaps}
+  end
+
+  def normalize_skill(%{"pick" => pick} = skill) do
+    start = max(skill["start"] || 1, 1)
+    stop = max(skill["end"] || start, start)
+    %{"pick" => pick, "chips" => for(at <- (start - 1)..(stop - 1), do: %{"at" => at, "on" => true}), "gaps" => %{"lead" => false, "mid" => [], "trail" => false}}
+  end
+
+  def add_skill_chip(skill) do
+    %{"chips" => chips} = skill = normalize_skill(skill)
+    %{skill | "chips" => chips ++ [%{"at" => List.last(chips)["at"] + 1, "on" => true}]}
+  end
+
+  def step_skill_chip(skill, index, delta) do
+    %{"chips" => chips} = skill = normalize_skill(skill)
+
+    stepped =
+      chips
+      |> List.update_at(index, &%{&1 | "at" => max(&1["at"] + delta, 0)})
+      |> Enum.group_by(& &1["at"], & &1["on"])
+      |> Enum.map(fn {at, ons} -> %{"at" => at, "on" => Enum.any?(ons)} end)
+      |> Enum.sort_by(& &1["at"])
+
+    %{skill | "chips" => stepped}
+  end
+
+  def gap_ranges(chips) do
+    ats = Enum.map(chips, & &1["at"])
+    lead = if hd(ats) > 0, do: [{:lead, 0, hd(ats) - 1}], else: []
+
+    mid =
+      ats
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.filter(fn [a, b] -> b - a >= 2 end)
+      |> Enum.with_index()
+      |> Enum.map(fn {[a, b], index} -> {{:mid, index}, a + 1, b - 1} end)
+
+    lead ++ mid ++ [{:trail, List.last(ats) + 1, :inf}]
+  end
+
+  def gap_on?(gaps, :lead), do: Map.get(gaps, "lead", true)
+  def gap_on?(gaps, :trail), do: Map.get(gaps, "trail", true)
+  def gap_on?(gaps, {:mid, index}), do: Enum.at(Map.get(gaps, "mid", []), index, true)
+
+  def skill_view(skill) do
+    %{"chips" => chips, "gaps" => gaps} = normalize_skill(skill)
+    ranges = Map.new(gap_ranges(chips), fn {key, lo, hi} -> {key, {lo, hi}} end)
+    gap = fn key -> {lo, hi} = ranges[key]; {:gap, key, gap_on?(gaps, key), lo, hi} end
+    last = length(chips) - 1
+
+    {items, _mid} =
+      chips
+      |> Enum.with_index()
+      |> Enum.reduce({if(Map.has_key?(ranges, :lead), do: [gap.(:lead)], else: []), 0}, fn {chip, index}, {acc, mid} ->
+        at = chip["at"]
+        acc = acc ++ [{:chip, index, at, chip["on"]}]
+
+        case Enum.at(chips, index + 1) do
+          %{"at" => next} when index < last and next - at >= 2 -> {acc ++ [gap.({:mid, mid})], mid + 1}
+          _ -> {acc, mid}
+        end
+      end)
+
+    items ++ [gap.(:trail)]
+  end
 
   def pick_columns(columns, %{"pick" => "all"}), do: columns
 
-  def pick_columns(columns, %{"pick" => pick} = skill) do
-    start = skill["start"] || 1
+  def pick_columns(columns, skill) do
+    %{"pick" => pick, "chips" => chips, "gaps" => gaps} = normalize_skill(skill)
+    ranges = for {key, lo, hi} <- gap_ranges(chips), gap_on?(gaps, key), do: {lo, hi}
+    ats = for %{"at" => at, "on" => true} <- chips, do: at
     ordered = if pick == "last", do: Enum.reverse(columns), else: columns
-    ordered |> Enum.slice((start - 1)..((skill["end"] || start) - 1)//1) |> Enum.sort()
+
+    ordered
+    |> Enum.with_index()
+    |> Enum.filter(fn {_column, position} -> position in ats or Enum.any?(ranges, fn {lo, hi} -> position >= lo and (hi == :inf or position <= hi) end) end)
+    |> Enum.map(&elem(&1, 0))
+    |> Enum.sort()
   end
 
   def skill_label(%{"pick" => "all"}), do: "all"
 
-  def skill_label(%{"pick" => pick} = skill) do
-    start = skill["start"] || 1
-    stop = skill["end"] || start
-    "slots #{if start == stop, do: start, else: "#{start}-#{stop}"} from #{pick}"
+  def skill_label(skill) do
+    %{"pick" => pick, "chips" => chips, "gaps" => gaps} = normalize_skill(skill)
+
+    tokens =
+      skill_view(%{"pick" => pick, "chips" => chips, "gaps" => gaps})
+      |> Enum.flat_map(fn
+        {:chip, _index, at, true} -> [chip_name(pick, at)]
+        {:gap, :trail, true, _lo, _hi} -> ["rest"]
+        {:gap, _key, true, _lo, _hi} -> ["..."]
+        _ -> []
+      end)
+
+    "slots " <> if(tokens == [], do: "none", else: Enum.join(tokens, ", "))
   end
+
+  def chip_name(pick, 0), do: pick
+  def chip_name("last", at), do: "last-#{at}"
+  def chip_name(pick, at), do: "#{pick}+#{at}"
 
   defp parse_count(value) when is_binary(value) do
     case Integer.parse(value) do
@@ -421,9 +528,10 @@ defmodule StarlightBot.BattlePlans do
     end)
   end
 
-  def new_chosen_filter, do: %{"join" => "and", "conditions" => [new_chosen_condition()]}
+  def new_chosen_filter(pin? \\ false), do: %{"join" => "and", "conditions" => [new_chosen_condition(pin?)]}
 
-  def new_chosen_condition, do: %{"kind" => "using", "values" => ["top"]}
+  def new_chosen_condition(true), do: %{"kind" => "has", "values" => []}
+  def new_chosen_condition(_pin?), do: %{"kind" => "using", "values" => ["top"]}
 
   def where_extras, do: ~w(top bottom)
 
@@ -436,7 +544,8 @@ defmodule StarlightBot.BattlePlans do
 
   def normalize_chosen_condition(condition), do: condition
 
-  def chosen_kinds, do: @chosen_kinds
+  def chosen_kinds(true), do: List.keydelete(@chosen_kinds, "using", 0)
+  def chosen_kinds(_pin?), do: @chosen_kinds
 
   def chosen_value_kinds, do: @chosen_value_kinds
 
@@ -478,7 +587,7 @@ defmodule StarlightBot.BattlePlans do
   end
 
   defp parse_chosen_condition(%{"kind" => kind}) when kind in ~w(top bottom), do: normalize_chosen_condition(%{"kind" => kind})
-  defp parse_chosen_condition(_condition), do: new_chosen_condition()
+  defp parse_chosen_condition(_condition), do: new_chosen_condition(false)
 
   def chosen_columns(%{"join" => join} = filter, bottom_columns, column_count, {top, bottom}) do
     combine = if join == "or", do: &Enum.any?/2, else: &Enum.all?/2
