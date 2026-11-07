@@ -195,7 +195,8 @@
             <rect x="14" y="14" width="7" height="7" rx="1" />
           </svg>
         </div>
-        <div tabindex="0" class="dropdown-content z-50 mt-2 w-max grid grid-cols-4 gap-1 rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+        <div tabindex="0" class="dropdown-content z-50 mt-2 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+        <div class="grid grid-cols-4 gap-1">
     <%!-- Inspectors / debug tools --%>
     <.link navigate={~p"/hooks"}
            class={"tooltip tooltip-bottom btn btn-square btn-sm " <> if(assigns[:page] == :hooks, do: "btn-primary", else: "btn-ghost text-base-content/50")}
@@ -313,6 +314,7 @@
         <path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3" />
       </svg>
     </.link>
+        </div>
         </div>
       </div>
     </div>
