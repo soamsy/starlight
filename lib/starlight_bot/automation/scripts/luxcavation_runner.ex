@@ -119,12 +119,17 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
 
   def at_battle(lux, kind, size, queue, errors, error, frame, ctx), do: battle_done(lux, kind, size, queue, errors, error, frame, ctx)
 
-  def battle_done(lux, kind, size, queue, _errors, {:ok, screen}, frame, ctx) do
-    if RunMemory.give_up?(ctx) do
-      gave_up(ctx)
-    else
-      record_batch(kind, size, ctx)
-      post_battle(lux, queue, screen, @post_battle_settle_tries, frame, ctx)
+  def battle_done(lux, kind, size, queue, errors, {:ok, screen}, frame, ctx) do
+    cond do
+      RunMemory.give_up?(ctx) ->
+        gave_up(ctx)
+
+      screen == :battle_turn_or_over and not RunMemory.get(ctx, :battle_confirmed, false) ->
+        stalled(lux, kind, size, queue, errors, ctx)
+
+      true ->
+        record_batch(kind, size, ctx)
+        post_battle(lux, queue, screen, @post_battle_settle_tries, frame, ctx)
     end
   end
 
@@ -132,6 +137,15 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
     do: {:steps, [checkpoint(), locate_screen(then: {__MODULE__, :resumed, [lux, kind, size, queue]})]}
 
   def battle_done(lux, kind, size, queue, errors, error, frame, ctx), do: recover(lux, kind, size, queue, errors, error, frame, ctx)
+
+  def stalled_located(lux, kind, size, queue, errors, {:ok, :battle_turn_or_over}, _frame, ctx),
+    do: stalled(lux, kind, size, queue, errors + 1, ctx)
+
+  def stalled_located(lux, kind, size, queue, errors, {:ok, screen}, frame, ctx),
+    do: batch(lux, kind, size, queue, screen, errors + 1, frame, ctx)
+
+  def stalled_located(lux, kind, size, queue, errors, :unknown, frame, ctx),
+    do: recover(lux, kind, size, queue, errors + 1, :battle_stalled, frame, ctx)
 
   def resumed(lux, kind, size, queue, {:ok, screen}, frame, ctx) do
     Ctx.log(ctx, :ok, "on screen: #{screen}")
@@ -194,6 +208,22 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   defp record_batch(kind, size, ctx) do
     if RunMemory.get(ctx, :battle_confirmed, false), do: DailyProgress.record(Atom.to_string(kind), size)
     RunMemory.put(ctx, :battle_confirmed, false)
+  end
+
+  defp stalled(_lux, _kind, _size, _queue, errors, ctx) when errors >= @max_navigation_retries do
+    Ctx.log(ctx, :error, "battle never reached a turn or the end after #{errors} attempt(s), giving up")
+    {:error, :battle_stalled}
+  end
+
+  defp stalled(lux, kind, size, queue, errors, ctx) do
+    Ctx.log(ctx, :info, "battle stalled with no turn or result, clicking the safe spot and relocalizing (attempt #{errors + 1}/#{@max_navigation_retries})")
+
+    {:steps,
+     [
+       attempt([click(:battle_safe_click_spot)], else: []),
+       sleep(@post_battle_settle_ms),
+       locate_screen(then: {__MODULE__, :stalled_located, [lux, kind, size, queue, errors]})
+     ]}
   end
 
   defp recover(_lux, _kind, _size, _queue, errors, error, _frame, ctx) when errors >= @max_navigation_retries do

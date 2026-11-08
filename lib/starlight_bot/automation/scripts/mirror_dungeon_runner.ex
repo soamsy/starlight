@@ -584,6 +584,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       screen == :battle_over_confirm ->
         [goto(:battle_over_confirm, :battle_turn_or_over, then: resume_at(run, run_state))]
 
+      screen == :battle_turn_or_over ->
+        [log(:info, "battle ended on #{screen} without a result, clicking the safe spot"), attempt([click(:battle_safe_click_spot)], else: []), sleep(500), call(__MODULE__, :unhandled, [run, screen])]
+
       screen == :back_available ->
         [goto(:back_available, :any?, then: resume_after(run, run_state))]
 
