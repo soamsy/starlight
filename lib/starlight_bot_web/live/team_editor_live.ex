@@ -1,8 +1,8 @@
 defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{BattlePlans, EgoGifts, GiftPlans, Hooks, PlanCounts, Plans, SinnerProfiles, StarlightBudget, TeamTemplates, Teams, ThemePacks}
-  alias StarlightBot.PackPlans.{Odds, Resolver}
+  alias StarlightBot.{EgoGifts, Hooks, PlanCounts, Plans, SinnerProfiles, StarlightBudget, TeamBudget, TeamTemplates, Teams, ThemePacks}
+  alias StarlightBot.PackPlans.Odds
   alias StarlightBotWeb.Live.{BattlePlanEditorLive, GiftPlanEditorLive, PackPlanEditorLive}
   alias StarlightBot.Navigation.Navigator
   import StarlightBotWeb.Components.PlanPicker, only: [pane_icon: 1, pane_tabs: 1]
@@ -96,7 +96,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
     case Teams.get_team(socket.assigns.editing_id) do
       nil -> socket
-      team -> assign(socket, :selected_ids, selected_ids(team))
+      team -> socket |> assign(:selected_ids, TeamBudget.selected_ids(team)) |> assign(:budget_inputs, blank_budget_inputs(team))
     end
   end
 
@@ -276,11 +276,21 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   @impl true
   def handle_event("budget_change", params, socket) do
-    inputs = %{
-      sinner_bonus: parse_id(params["sinner_bonus"]) || 0
-    }
+    team_id = socket.assigns.editing_id
+    team = Teams.get_team(team_id)
 
-    {:noreply, assign(socket, :budget_inputs, inputs)}
+    case params["_target"] do
+      ["estimate"] ->
+        estimate? = params["estimate"] == "on"
+        free = if estimate?, do: StarlightBudget.default_free_sinners(TeamBudget.first_lineup_size(team)), else: socket.assigns.budget_inputs.free_sinners
+        Teams.set_free_sinners(team_id, if(estimate?, do: nil, else: free))
+        {:noreply, assign(socket, :budget_inputs, %{free_sinners: free, estimate?: estimate?})}
+
+      _ ->
+        free = min(parse_id(params["free_sinners"]) || 0, StarlightBudget.max_free_sinners())
+        Teams.set_free_sinners(team_id, free)
+        {:noreply, assign(socket, :budget_inputs, %{free_sinners: free, estimate?: false})}
+    end
   end
 
   @impl true
@@ -293,7 +303,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
     case socket.assigns.editing_id && Teams.get_team(socket.assigns.editing_id) do
       nil -> {:noreply, socket}
-      team -> {:noreply, assign(socket, :selected_ids, selected_ids(team))}
+      team -> {:noreply, assign(socket, :selected_ids, TeamBudget.selected_ids(team))}
     end
   end
 
@@ -359,25 +369,8 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         |> assign(:tab_counts, PlanCounts.for_team(team.id))
         |> assign(:hooks, team.hooks)
         |> assign(:editing_hooks?, false)
-        |> assign(:selected_ids, selected_ids(team))
+        |> assign(:selected_ids, TeamBudget.selected_ids(team))
         |> assign(:budget_inputs, blank_budget_inputs(team))
-    end
-  end
-
-  defp selected_ids(team) do
-    %{
-      "gift_plan" => team.gift_plan_id,
-      "battle_plan" => team.battle_plan_id,
-      "pack_plan" => team.pack_plan_id,
-      "gift_override" => template_override(team, :gift_plans),
-      "pack_override" => template_override(team, :pack_plans)
-    }
-  end
-
-  defp template_override(team, table) do
-    case Plans.for_team(team, table) do
-      %{template_id: template_id, data: data} when is_integer(template_id) -> data
-      _ -> nil
     end
   end
 
@@ -429,84 +422,14 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     %{"gift_plan" => nil, "battle_plan" => nil, "pack_plan" => nil, "gift_override" => nil, "pack_override" => nil}
   end
 
+  defp blank_budget_inputs(%{free_sinners: free_sinners}) when is_integer(free_sinners), do: %{free_sinners: free_sinners, estimate?: false}
+
   defp blank_budget_inputs(team) do
-    %{sinner_bonus: StarlightBudget.default_sinner_bonus(first_lineup_size(team))}
-  end
-
-  defp first_lineup_size(nil), do: 0
-
-  defp first_lineup_size(team) do
-    case Plans.for_team(team, :battle_plans) do
-      %{data: data} -> length((data |> BattlePlans.lineups() |> List.first() || %{})["sinners"] || [])
-      _ -> 0
-    end
+    %{free_sinners: TeamBudget.free_sinners(team), estimate?: true}
   end
 
   def starlight_budget(gift_plans, pack_plans, theme_packs, selected_ids, inputs) do
-    gift_data = selected_ids["gift_override"] || plan_data_for(gift_plans, selected_ids["gift_plan"])
-    plan_data = selected_ids["pack_override"] || plan_data_for(pack_plans, selected_ids["pack_plan"])
-    floors = StarlightBudget.floor_rewards(plan_data["mode_schedule"] || [])
-    floor_total = floors |> Enum.map(& &1.starlight) |> Enum.sum()
-    max_pack_searches = StarlightBudget.max_pack_searches(plan_data)
-    schedule = plan_data["mode_schedule"] || []
-    floor_modes = Enum.map(1..5, &{&1, Resolver.mode_for_floor(schedule, &1)})
-    plannable = Enum.filter(theme_packs, &ThemePacks.plannable?/1)
-    run = Odds.run(plan_data, plannable, floor_modes, gift_data["grace_picks"] || [])
-    run_odds = run.floors
-    railway_by_floor = Map.new(run_odds, fn {floor, odds} -> {floor, odds.railway} end)
-    railway_packs = railway_by_floor |> Map.values() |> Enum.sum()
-    gift_searches = length(gift_data["gift_search"] || [])
-    order_for = encounter_order_for(gift_data)
-    continuing? = Resolver.extreme?(plan_data)
-
-    encounter_floors =
-      for floor <- 1..5 do
-        screens = StarlightBudget.encounter_screens(floor, run_odds[floor].floating, continuing?)
-        order = order_for.(floor)
-        chance = StarlightBudget.starlight_pick_chance(order)
-        position = Enum.find_index(order, &(&1 == "starlight"))
-        %{floor: floor, floating: run_odds[floor].floating, screens: screens, position: position && position + 1, chance: chance, starlight: screens.total * chance * StarlightBudget.starlight_reward_mean()}
-      end
-
-    encounter_starlight = encounter_floors |> Enum.map(& &1.starlight) |> Enum.sum()
-
-    income = %{
-      base: StarlightBudget.base(),
-      sinner_bonus: inputs.sinner_bonus,
-      exploration: StarlightBudget.exploration_gain(floor_total, railway_packs, inputs.sinner_bonus),
-      encounters: round(encounter_starlight)
-    }
-
-    costs = %{
-      grace: if(gift_data == %{}, do: 0, else: GiftPlanEditorLive.grace_total_cost(GiftPlans.normalize(gift_data))),
-      gift_search: GiftPlans.gift_search_starlight_cost(gift_searches),
-      pack_search: round(Odds.expected_search_cost(run.searches))
-    }
-
-    %{
-      income: income,
-      costs: costs,
-      floors: floors,
-      floor_total: floor_total,
-      railway_packs: railway_packs,
-      railway_by_floor: railway_by_floor,
-      rest_multiplier: StarlightBudget.rest_multiplier_milli(inputs.sinner_bonus) / 1000,
-      encounter_floors: encounter_floors,
-      encounter_screens: encounter_floors |> Enum.map(& &1.screens.total) |> Enum.sum(),
-      encounter_pulls: encounter_floors |> Enum.map(&(&1.screens.total * &1.chance)) |> Enum.sum(),
-      encounter_starlight: encounter_starlight,
-      gift_searches: gift_searches,
-      gift_search_names: gift_data["gift_search"] || [],
-      pack_searches: Odds.expected_searches(run.searches),
-      search_by_floor: Map.new(run_odds, fn {floor, odds} -> {floor, odds.search} end),
-      search_counts: run.searches,
-      search_floors: Enum.filter(plan_data["search_floors"] || [], &(&1 in 1..5)) |> Enum.sort(),
-      search_average_cost: Odds.expected_search_cost(run.searches),
-      max_pack_searches: max_pack_searches,
-      has_gift_plan?: gift_data != %{},
-      has_pack_plan?: plan_data != %{},
-      net: Enum.sum(Map.values(income)) - Enum.sum(Map.values(costs))
-    }
+    TeamBudget.build(gift_plans, pack_plans, theme_packs, selected_ids, StarlightBudget.rest_bonus(inputs.free_sinners))
   end
 
   defp publish_net(%{assigns: %{editing_id: id}} = socket) when is_integer(id) do
@@ -522,15 +445,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   defp publish_net(socket), do: socket
-
-  defp encounter_order_for(gift_data) when gift_data == %{}, do: fn _floor -> GiftPlans.encounter_reward_default_order() end
-
-  defp encounter_order_for(gift_data) do
-    normalized = GiftPlans.normalize(gift_data)
-    &GiftPlans.encounter_reward_order(normalized, &1)
-  end
-
-  defp plan_data_for(plans, id), do: Enum.find_value(plans, %{}, &(&1.id == id && &1.data)) || %{}
 
   def search_breakdown(%{search_counts: counts}) do
     counts |> Enum.sort() |> Enum.map_join(", ", fn {count, prob} -> "#{count}: #{Odds.percent(prob)}" end)

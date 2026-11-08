@@ -3,8 +3,8 @@ defmodule StarlightBot.StarlightBudget do
 
   @base 60
   @floors 1..5
-  @max_sinner_bonus 60
-  @sinner_bonus_per_deployed 5
+  @max_free_sinners 12
+  @rest_per_free_sinner 5
   @max_deployed 7
   @rest_mult_per_point_milli 17
   @max_rest_mult_milli 2000
@@ -22,8 +22,17 @@ defmodule StarlightBot.StarlightBudget do
   @focused_share 1 / 3
 
   def base, do: @base
-  def max_sinner_bonus, do: @max_sinner_bonus
-  def default_sinner_bonus(sinner_count), do: @max_sinner_bonus - @sinner_bonus_per_deployed * min(sinner_count, @max_deployed)
+
+  def format(value), do: value |> round() |> Integer.to_string()
+
+  def signed(value) do
+    text = format(value)
+    if String.starts_with?(text, "-"), do: text, else: "+" <> text
+  end
+  def max_free_sinners, do: @max_free_sinners
+  def rest_per_free_sinner, do: @rest_per_free_sinner
+  def rest_bonus(free_sinners), do: @rest_per_free_sinner * free_sinners
+  def default_free_sinners(locked_count), do: @max_free_sinners - min(locked_count, @max_deployed)
   def railway_bonus, do: @railway_bonus
 
   def floor_reward(floor, "hard"), do: 4 * min(floor, 5)

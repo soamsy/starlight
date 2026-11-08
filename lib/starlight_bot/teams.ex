@@ -45,6 +45,7 @@ defmodule StarlightBot.Teams do
           id: t.id,
           name: t.name,
           hooks: t.hooks,
+          free_sinners: t.free_sinners,
           gift_plan_id: t.gift_plan_id,
           gift_plan_name: g.name,
           battle_plan_id: t.battle_plan_id,
@@ -75,6 +76,7 @@ defmodule StarlightBot.Teams do
           hooks: t.hooks,
           gift_plan_id: t.gift_plan_id,
           gift_plan_data: g.data,
+          free_sinners: t.free_sinners,
           battle_plan_id: t.battle_plan_id,
           pack_plan_id: t.pack_plan_id,
           gift_template_id: t.gift_template_id,
@@ -221,6 +223,12 @@ defmodule StarlightBot.Teams do
       |> Enum.with_index()
       |> Enum.each(fn {id, position} -> Repo.update_all(from(t in "teams", where: t.id == ^id), set: [position: position]) end)
     end)
+  end
+
+  def set_free_sinners(team_id, free_sinners) when is_integer(team_id) and (is_integer(free_sinners) or is_nil(free_sinners)) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    {n, _} = Repo.update_all(from(t in "teams", where: t.id == ^team_id), set: [free_sinners: free_sinners, updated_at: now])
+    if n > 0, do: {:ok, team_id}, else: {:error, :not_found}
   end
 
   def template_field(field), do: Keyword.fetch!(@template_fields, field)

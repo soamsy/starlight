@@ -28,8 +28,7 @@ defmodule StarlightBotWeb.Components.PlanPicker do
   defp tab_count(counts, "stats") do
     case counts[:starlight_net] do
       nil -> nil
-      net when net >= 0 -> "+#{net}"
-      net -> "#{net}"
+      net -> StarlightBot.StarlightBudget.signed(net)
     end
   end
 

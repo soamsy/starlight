@@ -175,87 +175,102 @@
           <.pane_tabs team_id={@editing_id} pane="stats" counts={@tab_counts} />
           <% budget = starlight_budget(@gift_plans, @pack_plans, @theme_packs, @selected_ids, @budget_inputs) %>
           <h3 class="font-medium text-sm">Expected Starlight</h3>
-          <form phx-change="budget_change" class="flex flex-wrap items-stretch gap-1.5 font-mono">
-            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="Every run starts with this">
-              <span class="text-[10px] font-sans text-base-content/50">Base</span>
-              <span class="text-sm text-success">+<%= budget.income.base %></span>
+          <form phx-change="budget_change" class="flex flex-col max-w-3xl rounded-xl border border-base-300 bg-base-200 shadow-md divide-y divide-base-300 font-mono">
+            <div class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2" title="Every run starts with this">
+              <span class="text-success text-center">+</span>
+              <span class="font-sans text-sm">Base</span>
+              <span class="text-sm text-success text-right"><%= budget.income.base %></span>
             </div>
-            <span class="self-center text-base-content/40">+</span>
-            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
-                 title="1 per rest charge, up to 5 per sinner. Also sets the multiplier.">
-              <span class="text-[10px] font-sans text-base-content/50">Rest bonus</span>
-              <span class="text-sm text-success">+<%= budget.income.sinner_bonus %></span>
-              <input type="range" name="sinner_bonus" min="0" max={StarlightBudget.max_sinner_bonus()} step="5" value={budget.income.sinner_bonus}
-                     class="range range-success range-xs" />
+            <div class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2" title="Sinners this team doesn't lock in, so they rest a full 5 charges. Rest bonus is 1 per charge. Also sets the multiplier.">
+              <span class="text-success text-center">+</span>
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span class="font-sans text-sm w-24">Rest bonus</span>
+                <input type="range" name="free_sinners" min="0" max={StarlightBudget.max_free_sinners()} step="1" value={@budget_inputs.free_sinners}
+                       class="range range-success range-xs w-40" />
+                <span class="text-xs text-base-content/60"><%= @budget_inputs.free_sinners %> free × <%= StarlightBudget.rest_per_free_sinner() %></span>
+                <label class="flex items-center gap-1 font-sans text-xs text-base-content/60 cursor-pointer" title="On: free sinners are 12 minus the first lineup. Moving the slider turns this off and saves your value for the team.">
+                  <input type="checkbox" name="estimate" checked={@budget_inputs.estimate?} class="checkbox checkbox-success checkbox-xs" />
+                  Estimate from lineup
+                </label>
+              </div>
+              <span class="text-sm text-success text-right"><%= budget.income.sinner_bonus %></span>
             </div>
-            <span class="self-center text-base-content/40">+ ⌊(</span>
-            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title={floor_breakdown(budget.floors)}>
-              <span class="text-[10px] font-sans text-base-content/50">
-                Floor clears<%= if not budget.has_pack_plan?, do: " (no plan, all normal)" %>
-              </span>
-              <span class="text-sm"><%= budget.floor_total %></span>
+            <div class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2">
+              <span class="text-success text-center">+</span>
+              <div class="flex flex-col gap-1">
+                <span class="font-sans text-sm">Exploration</span>
+                <div class="flex flex-wrap items-stretch gap-1.5">
+                  <span class="self-center text-base-content/40">⌊(</span>
+                  <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title={floor_breakdown(budget.floors)}>
+                    <span class="text-[10px] font-sans text-base-content/50">
+                      Floor clears<%= if not budget.has_pack_plan?, do: " (no plan, all normal)" %>
+                    </span>
+                    <span class="text-sm"><%= budget.floor_total %></span>
+                  </div>
+                  <span class="self-center text-base-content/40">+</span>
+                  <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center"
+                       title={"#{StarlightBudget.railway_bonus()} per cleared Line theme pack. Expected Line packs per floor from the pack plan odds: #{railway_breakdown(budget.railway_by_floor)}"}>
+                    <span class="text-[10px] font-sans text-base-content/50">
+                      Railway (avg <%= :erlang.float_to_binary(budget.railway_packs, decimals: 2) %> packs)
+                    </span>
+                    <span class="text-sm"><%= :erlang.float_to_binary(budget.railway_packs * StarlightBudget.railway_bonus(), decimals: 1) %></span>
+                  </div>
+                  <span class="self-center text-base-content/40">) ×</span>
+                  <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="min(2, 1 + 0.017 × rest bonus), rounded down after multiplying">
+                    <span class="text-[10px] font-sans text-base-content/50">Rest mult</span>
+                    <span class="text-sm"><%= :erlang.float_to_binary(budget.rest_multiplier, decimals: 3) %></span>
+                  </div>
+                  <span class="self-center text-base-content/40">⌋</span>
+                </div>
+              </div>
+              <span class="text-sm text-success text-right"><%= budget.income.exploration %></span>
             </div>
-            <span class="self-center text-base-content/40">+</span>
-            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center"
-                 title={"#{StarlightBudget.railway_bonus()} per cleared Line theme pack. Expected Line packs per floor from the pack plan odds: #{railway_breakdown(budget.railway_by_floor)}"}>
-              <span class="text-[10px] font-sans text-base-content/50">
-                Railway (avg <%= :erlang.float_to_binary(budget.railway_packs, decimals: 2) %> packs)
-              </span>
-              <span class="text-sm"><%= :erlang.float_to_binary(budget.railway_packs * StarlightBudget.railway_bonus(), decimals: 1) %></span>
-            </div>
-            <span class="self-center text-base-content/40">) ×</span>
-            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="min(2, 1 + 0.017 × rest bonus), rounded down after multiplying">
-              <span class="text-[10px] font-sans text-base-content/50">Rest mult</span>
-              <span class="text-sm"><%= :erlang.float_to_binary(budget.rest_multiplier, decimals: 3) %></span>
-            </div>
-            <span class="self-center text-base-content/40">⌋</span>
-            <div class="rounded-lg bg-base-200 px-2 py-1 flex flex-col justify-center">
-              <span class="text-[10px] font-sans text-base-content/50">Exploration</span>
-              <span class="text-sm text-success">+<%= budget.income.exploration %></span>
-            </div>
-            <span class="self-center text-base-content/40">+</span>
-            <div class="basis-full h-0"></div>
-            <div phx-click="toggle_encounter_info" role="button"
-                 class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center cursor-pointer hover:bg-base-200"
-                 title="Click for how this is calculated">
-              <span class="text-[10px] font-sans text-base-content/50">
-                Encounter rewards (avg <%= encounter_decimal(budget.encounter_pulls) %> starlight grabs)
+            <div phx-click="toggle_encounter_info" role="button" title="Click for how this is calculated"
+                 class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60">
+              <span class="text-success text-center">+</span>
+              <span class="font-sans text-sm">
+                Encounter rewards
+                <span class="text-xs text-base-content/50">(avg <%= encounter_decimal(budget.encounter_pulls) %> starlight grabs)</span>
                 <span class="ml-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full border border-current align-middle text-[8px] italic leading-none">i</span>
               </span>
-              <span class="text-sm text-success">+<%= budget.income.encounters %></span>
+              <span class="text-sm text-success text-right"><%= StarlightBudget.format(budget.income.encounters) %></span>
             </div>
-            <span class="self-center text-base-content/40">−</span>
             <div phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=gifts") |> JS.dispatch("click", to: "#gift-loadout-btn")} title="Open the gift loadout"
-                 class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center cursor-pointer hover:bg-base-200">
-              <span class="text-[10px] font-sans text-base-content/50">Graces</span>
-              <span class="text-sm text-error"><%= if budget.has_gift_plan?, do: budget.costs.grace, else: "—" %></span>
+                 class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60">
+              <span class="text-error text-center">−</span>
+              <span class="flex items-center gap-1.5 font-sans text-sm">
+                Graces
+                <img :for={grace <- budget.graces} src={"/images/graces/grace_#{grace.index}.webp"} title={grace.title} class="w-5 h-5 object-contain" />
+              </span>
+              <span class="text-sm text-error text-right"><%= if budget.has_gift_plan?, do: budget.costs.grace, else: "—" %></span>
             </div>
-            <span class="self-center text-base-content/40">−</span>
             <div phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=gifts") |> JS.dispatch("click", to: "#gift-loadout-btn")} title="Open the gift loadout"
-                 class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center cursor-pointer hover:bg-base-200">
-              <span class="text-[10px] font-sans text-base-content/50">Gift search (<%= budget.gift_searches %>)</span>
-              <span class="flex items-center gap-1.5">
-                <span class="text-sm text-error"><%= if budget.has_gift_plan?, do: budget.costs.gift_search, else: "—" %></span>
+                 class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60">
+              <span class="text-error text-center">−</span>
+              <span class="flex items-center gap-1.5 font-sans text-sm">
+                Gift search (<%= budget.gift_searches %>)
                 <img :for={name <- budget.gift_search_names} :if={@gifts_by_name[name]} src={@gifts_by_name[name].image_path} title={name}
                      class="w-4 h-4 rounded object-cover bg-slate-500/40 ring-1 ring-slate-400/40" />
               </span>
+              <span class="text-sm text-error text-right"><%= if budget.has_gift_plan?, do: budget.costs.gift_search, else: "—" %></span>
             </div>
-            <span class="self-center text-base-content/40">−</span>
             <div phx-click="toggle_search_info" role="button"
-                 class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center cursor-pointer hover:bg-base-200"
+                 class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-200"
                  title={"Click for how this is calculated. 20 for the first search in the run, 10 more for each after. A floor only searches when every refresh misses. Searches in a run: #{search_breakdown(budget)}"}>
-              <span class="text-[10px] font-sans text-base-content/50">
-                Pack search (avg <%= :erlang.float_to_binary(budget.pack_searches, decimals: 2) %> of <%= budget.max_pack_searches %> floors)
+              <span class="text-error text-center">−</span>
+              <span class="font-sans text-sm">
+                Pack search
+                <span class="text-xs text-base-content/50">(avg <%= :erlang.float_to_binary(budget.pack_searches, decimals: 2) %> of <%= budget.max_pack_searches %> floors)</span>
                 <span class="ml-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full border border-current align-middle text-[8px] italic leading-none">i</span>
               </span>
-              <span class="text-sm text-error"><%= budget.costs.pack_search %></span>
+              <span class="text-sm text-error text-right"><%= StarlightBudget.format(budget.costs.pack_search) %></span>
             </div>
-            <span class="self-center text-base-content/40">=</span>
-            <div class={"rounded-lg border-2 px-3 py-1 flex flex-col justify-center " <> if(budget.net >= 0, do: "border-success", else: "border-error")}>
-              <span class="text-[10px] font-sans text-base-content/50">Net</span>
-              <span class={"flex items-center gap-1 text-lg font-bold " <> if(budget.net >= 0, do: "text-success", else: "text-error")}>
+            <div class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 rounded-b-xl border-t-2 " <> if(budget.net >= 0, do: "!border-success", else: "!border-error")}>
+              <span class="text-center text-base-content/60">=</span>
+              <span class="font-sans text-sm font-semibold">Expected starlight</span>
+              <span class={"flex items-center justify-end gap-1 text-lg font-bold " <> if(budget.net >= 0, do: "text-success", else: "text-error")}>
                 <img src={~p"/images/icons/starlight.webp"} alt="Starlight" class="h-5 w-5" />
-                <%= if budget.net >= 0, do: "+" %><%= budget.net %>
+                <%= StarlightBudget.format(budget.net) %>
               </span>
             </div>
           </form>
@@ -342,7 +357,7 @@
                   <p class="text-xs text-base-content/60">The first search costs 20 and each one after costs 10 more, so k searches cost 20k + 10·k(k−1)/2. The cost grows faster than the count, so the average cost is each count's cost weighted by its chance, not the cost of the average count.</p>
                   <div class="rounded-lg bg-base-200 p-2 font-mono text-xs flex flex-col gap-1">
                     <span><%= Enum.map_join(Enum.sort(budget.search_counts), " + ", fn {count, prob} -> "#{search_pct(prob)} × #{search_cost(count)}" end) %></span>
-                    <span class="font-semibold">= <%= :erlang.float_to_binary(budget.search_average_cost, decimals: 1) %> average cost, shown as <%= budget.costs.pack_search %></span>
+                    <span class="font-semibold">= <%= :erlang.float_to_binary(budget.search_average_cost, decimals: 1) %> average cost, shown as <%= StarlightBudget.format(budget.costs.pack_search) %></span>
                     <span class="text-base-content/50">Average searches per run: <%= :erlang.float_to_binary(budget.pack_searches, decimals: 2) %></span>
                   </div>
                 </section>

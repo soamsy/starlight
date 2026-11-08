@@ -3,7 +3,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1]
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Navigation.{Navigator, RunArchive, ScreenTimes}
-  alias StarlightBot.{AppSettings, EgoGifts, GiftPlans, LuxSchedule, Plans, RunHistory, RunnerForms, Teams}
+  alias StarlightBot.{AppSettings, EgoGifts, GiftPlans, LuxSchedule, Plans, RestCycle, RunHistory, RunnerForms, StarlightBudget, TeamBudget, Teams}
   alias StarlightBot.PackPlans.Resolver
   alias StarlightBotWeb.Live.GiftPlanEditorLive
 
@@ -32,6 +32,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
      |> assign(:gifts_by_name, Map.new(EgoGifts.list_gifts(), &{&1.name, &1}))
      |> assign_nav(nav)
      |> assign(:show_screen_times, false)
+     |> assign(:show_forecast_info, false)
      |> assign(:screen_view, "breakdown")
      |> assign(:screen_source, "live")
      |> assign(:screen_filter, %{run: nil, floor: nil})
@@ -63,6 +64,9 @@ defmodule StarlightBotWeb.Live.RunnerLive do
      |> assign(:then_md, false)
      |> restore_lux_form(RunnerForms.get("luxcavation"))}
   end
+
+  @impl true
+  def handle_event("toggle_forecast_info", _, socket), do: {:noreply, update(socket, :show_forecast_info, &(!&1))}
 
   @impl true
   def handle_event("localize", _, socket) do
@@ -689,10 +693,11 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   def mode_badge_label("hard_" <> floor), do: "F#{floor}"
 
   attr :search, :string, required: true
+  attr :class, :string, default: nil
 
   def search_badge(assigns) do
     ~H"""
-    <span title={search_override_label(@search)} class="badge badge-sm badge-secondary px-1">
+    <span title={search_override_label(@search)} class={["badge badge-sm badge-secondary px-1", @class]}>
       <svg viewBox="0 0 16 16" class="size-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
         <circle cx="6.5" cy="6.5" r="4.5" />
         <path d="M10 10 14.5 14.5" />
@@ -707,7 +712,61 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   def mode_override_label("extreme"), do: "Extreme"
   def mode_override_label("hard_" <> floor), do: "F#{floor} Hard"
 
+  def cycle_forecast(picks, teams) do
+    key = {picks, Enum.map(teams, &{&1.id, &1.free_sinners, &1.gift_plan_id, &1.pack_plan_id})}
+
+    case Process.get(:cycle_forecast) do
+      {^key, forecast} ->
+        forecast
+
+      _ ->
+        forecast = build_forecast(picks, teams)
+        Process.put(:cycle_forecast, {key, forecast})
+        forecast
+    end
+  end
+
+  defp build_forecast(picks, teams) do
+    sources = TeamBudget.sources()
+    entries = for pick <- picks, team = Enum.find(teams, &(&1.id == pick.id)), do: {pick, team}
+
+    bonuses =
+      entries
+      |> Enum.map(fn {pick, team} -> %{team: team.id, hook: pick.hook, free: TeamBudget.free_sinners(team)} end)
+      |> RestCycle.bonuses()
+
+    budgets =
+      entries
+      |> Enum.map(fn {pick, team} -> {team, pick.mode, pick.search} end)
+      |> Enum.uniq_by(fn {team, mode, search} -> {team.id, mode, search} end)
+      |> Map.new(fn {team, mode, search} -> {{team.id, mode, search}, TeamBudget.for_team(team, 0, [mode: mode, search: search], sources)} end)
+
+    rows =
+      for {{pick, team}, bonus} <- Enum.zip(entries, bonuses) do
+        budget = Map.fetch!(budgets, {team.id, pick.mode, pick.search})
+        exploration = StarlightBudget.exploration_gain(budget.floor_total, budget.railway_packs, bonus)
+
+        lines = %{
+          base: budget.income.base,
+          rest: bonus,
+          exploration: exploration,
+          encounters: budget.income.encounters,
+          grace: budget.costs.grace,
+          gift_search: budget.costs.gift_search,
+          pack_search: budget.costs.pack_search
+        }
+
+        %{team_id: team.id, name: team.name, hook: pick.hook, rest_bonus: bonus, net: TeamBudget.net_at(budget, bonus), lines: lines}
+      end
+
+    total = rows |> Enum.map(& &1.net) |> Enum.sum()
+    %{rows: rows, total: total, average: if(rows == [], do: 0.0, else: total / length(rows))}
+  end
+
+  def signed(value), do: StarlightBudget.signed(value)
+
   attr :pick, :map, required: true
+  attr :forecast, :map, default: nil
   attr :index, :integer, required: true
   attr :list, :string, required: true
   attr :teams, :list, required: true
@@ -746,10 +805,16 @@ defmodule StarlightBotWeb.Live.RunnerLive do
         <% end %>
       </select>
       <.hook_select name={"#{@prefix}_hooks[]"} hooks={team_hooks(@teams, @pick.id)} selected={@pick.hook} disabled={@teams == [] or @locked} />
+      <span :if={@forecast} class="relative">
+        <span title={"Expected starlight per run with #{@forecast.rest_bonus} rest bonus"}
+              class={"badge badge-sm font-mono " <> if(@forecast.net >= 0, do: "badge-success", else: "badge-error")}><%= signed(@forecast.net) %></span>
+        <span :if={@pick.mode != "default"} title={mode_override_label(@pick.mode)} class="badge badge-sm badge-primary font-mono absolute -top-2 -left-2 scale-75 px-1"><%= mode_badge_label(@pick.mode) %></span>
+        <.search_badge :if={@pick.search != "default"} search={@pick.search} class="absolute -top-2 -right-2 scale-75" />
+      </span>
       <input type="hidden" name={"#{@prefix}_modes[]"} value={@pick.mode} />
       <input type="hidden" name={"#{@prefix}_searches[]"} value={@pick.search} />
-      <span :if={@pick.mode != "default"} title={mode_override_label(@pick.mode)} class="badge badge-sm badge-primary font-mono"><%= mode_badge_label(@pick.mode) %></span>
-      <.search_badge :if={@pick.search != "default"} search={@pick.search} />
+      <span :if={@pick.mode != "default" and is_nil(@forecast)} title={mode_override_label(@pick.mode)} class="badge badge-sm badge-primary font-mono"><%= mode_badge_label(@pick.mode) %></span>
+      <.search_badge :if={@pick.search != "default" and is_nil(@forecast)} search={@pick.search} />
       <div class="relative" phx-click-away={Phoenix.LiveView.JS.hide(to: "##{@list}-options-#{@index}")}>
         <button type="button" phx-click={Phoenix.LiveView.JS.toggle(to: "##{@list}-options-#{@index}", display: "flex")} disabled={@locked}
                 title={"Pack plan: " <> mode_override_label(@pick.mode) <> ", " <> search_override_label(@pick.search)}

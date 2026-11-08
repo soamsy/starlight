@@ -88,12 +88,58 @@
         </div>
 
         <div class="flex flex-col gap-1">
-          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
-            <%= if length(@picks) > 1, do: "Team cycle (★ will run, goes down the list on completion)", else: "Team" %>
-          </span>
+          <% forecast = cycle_forecast(@picks, @teams) %>
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
+              <%= if length(@picks) > 1, do: "Team cycle", else: "Team" %>
+            </span>
+            <button :if={forecast.rows != []} type="button" phx-click="toggle_forecast_info"
+                    class={"btn btn-xs btn-outline gap-1 font-mono " <> if(forecast.total >= 0, do: "btn-success", else: "btn-error")}>
+              <%= signed(forecast.total) %>
+              <img src={~p"/images/icons/starlight.webp"} alt="Starlight" class="h-4 w-4" />
+            </button>
+          </div>
           <input type="hidden" name="start_index" value={@start_index} />
+          <div :if={@show_forecast_info} class="modal modal-open" phx-window-keydown="toggle_forecast_info" phx-key="Escape">
+            <div class="modal-box max-w-4xl max-h-[85vh] flex flex-col gap-3 text-sm">
+              <div class="overflow-y-auto flex flex-col gap-4 pr-1">
+                <section class="flex flex-col gap-1">
+                  <table class="table table-xs font-mono">
+                    <thead>
+                      <tr>
+                        <th>Team</th><th class="text-right">Base</th><th class="text-right">Rest</th><th class="text-right">Explor.</th><th class="text-right">Enc.</th>
+                        <th class="text-right">Graces</th><th class="text-right">Gift s.</th><th class="text-right">Pack s.</th><th class="text-right">Net</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr :for={row <- forecast.rows}>
+                        <td class="font-sans"><.link navigate={~p"/teams?team=#{row.team_id}&pane=stats"} class="link link-primary inline-flex items-center gap-1" title="Open this team's starlight formula"><%= row.name %><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg></.link> <span class="text-base-content/50"><%= row.hook %></span></td>
+                        <td class="text-right text-success"><%= row.lines.base %></td>
+                        <td class="text-right text-success"><%= row.lines.rest %></td>
+                        <td class="text-right text-success"><%= row.lines.exploration %></td>
+                        <td class="text-right text-success"><%= StarlightBudget.format(row.lines.encounters) %></td>
+                        <td class="text-right text-error"><%= row.lines.grace %></td>
+                        <td class="text-right text-error"><%= row.lines.gift_search %></td>
+                        <td class="text-right text-error"><%= StarlightBudget.format(row.lines.pack_search) %></td>
+                        <td class={"text-right font-semibold " <> if(row.net >= 0, do: "text-success", else: "text-error")}><%= signed(row.net) %></td>
+                      </tr>
+                      <tr class="font-semibold">
+                        <td colspan="8">Total (<%= length(forecast.rows) %> <%= if length(forecast.rows) == 1, do: "run", else: "runs" %>, <%= StarlightBudget.format(forecast.average) %> avg per run)</td>
+                        <td class={"text-right " <> if(forecast.total >= 0, do: "text-success", else: "text-error")}><%= signed(forecast.total) %></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </section>
+              </div>
+              <div class="modal-action mt-0">
+                <button type="button" phx-click="toggle_forecast_info" class="btn btn-sm">Close</button>
+              </div>
+            </div>
+            <div class="modal-backdrop" phx-click="toggle_forecast_info"></div>
+          </div>
           <div id={"team-list-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_teams" class="flex flex-col gap-1">
             <.pick_row :for={{pick, index} <- Enum.with_index(@picks)} pick={pick} index={index} list="cycle" teams={@teams} locked={locked}
+                       forecast={Enum.at(cycle_forecast(@picks, @teams).rows, index)}
                        cycle_size={length(@picks)} start_index={@start_index} run_disabled={run_disabled} />
             <div data-sort-id="split" class="flex items-center gap-2 py-0.5 text-base-content/40">
               <span :if={not locked} data-sort-handle class="cursor-grab px-0.5" title="Drag to change which teams are in the cycle">⠿</span>
