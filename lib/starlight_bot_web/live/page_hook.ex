@@ -2,7 +2,8 @@ defmodule StarlightBotWeb.Live.PageHook do
   import Phoenix.Component, only: [assign: 3, assign_new: 3]
   import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1, put_flash: 3]
   alias StarlightBot.{AppSettings, Data, EnkephalinSchedule, GameWindow, LauncherDeps, LogStore, Scheduler}
-  alias StarlightBot.Automation.EnkephalinCharger
+  import StarlightBot.Navigation.DSL, only: [click: 1]
+  alias StarlightBot.Automation.{EnkephalinCharger, Engine}
   alias StarlightBot.Scheduler.Overview
   alias StarlightBot.Navigation.Navigator
   alias StarlightBot.Vision.Capture
@@ -297,6 +298,14 @@ defmodule StarlightBotWeb.Live.PageHook do
           {:error, "Resize failed: #{inspect(reason)}"}
       end
     end)
+  end
+
+  defp handle_window_event("game_window_poke", _params, socket) do
+    Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn ->
+      Engine.act([click(:safe_corner)])
+    end)
+
+    {:halt, socket}
   end
 
   defp handle_window_event("game_window_launch", _params, %{assigns: %{game_update_pending: true}} = socket),
