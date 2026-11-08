@@ -296,9 +296,11 @@
                     <% pick = grace_pick(@plan_data, grace.index) %>
                     <% level = if pick, do: pick["enhance"], else: 0 %>
                     <div phx-click="toggle_grace" phx-value-index={grace.index}
-                         class={"cursor-pointer rounded-lg border p-2 flex flex-col gap-1 min-w-0 " <>
+                         class={"relative cursor-pointer rounded-lg border p-2 flex flex-col gap-1 min-w-0 " <>
                            if(pick, do: "bg-primary/10 border-primary", else: "border-base-300 hover:bg-base-200")}>
-                      <span class="text-xs font-semibold"><%= number %>. <%= grace.name %></span>
+                      <img src={"/images/graces/grace_#{grace.index}.webp"} alt=""
+                           class={"absolute top-1.5 right-1.5 h-6 w-6 object-contain " <> if(pick, do: "opacity-100", else: "opacity-40")} />
+                      <span class="text-xs font-semibold pr-7"><%= number %>. <%= grace.name %></span>
                       <span class="badge badge-ghost badge-xs self-start max-w-full"><span class="truncate"><%= grace_level_cost(grace, level) %> Starlight</span></span>
                       <p class="text-[11px] text-base-content/60 leading-snug"><%= grace_effect(grace, level) %></p>
                       <div class="join w-full mt-auto pt-1">
