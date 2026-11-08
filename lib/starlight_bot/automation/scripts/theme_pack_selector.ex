@@ -262,7 +262,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     end
   end
 
-  defp select(frame, plan_data, theme_packs, mode, floor, limits, ctx) do
+  def hunt_and_backup(plan_data, theme_packs, mode, floor) do
     {favorites, others} =
       plan_data
       |> packs_with_priority(theme_packs, mode, floor, "hunt")
@@ -271,6 +271,11 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
     {hunt, backup} = if favorites == [], do: {others, []}, else: {favorites, others}
     hunt = if hunt == [], do: packs_with_priority(plan_data, theme_packs, mode, floor, "fine"), else: hunt
+    {hunt, backup}
+  end
+
+  defp select(frame, plan_data, theme_packs, mode, floor, limits, ctx) do
+    {hunt, backup} = hunt_and_backup(plan_data, theme_packs, mode, floor)
 
     Ctx.log(ctx, :info, "theme pack selector: floor #{floor} (#{mode}) hunting for #{pack_names(hunt)}#{backup_suffix(backup)}, expecting #{limits.packs} packs and #{limits.refreshes} refreshes")
 

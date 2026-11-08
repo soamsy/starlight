@@ -5,12 +5,12 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   import StarlightBotWeb.Components.PlanTemplates
 
   alias StarlightBot.{PlanCounts, Plans, Teams, ThemePacks}
-  alias StarlightBot.PackPlans.Resolver
+  alias StarlightBot.PackPlans.{Odds, Resolver}
 
   @modes ~w(normal hard)
   @cell_actions ~w(hunt favorite banned)
   @hunted ~w(hunt favorite)
-  @read_only_events ~w(set_floor_filter set_view filter_packs toggle_help copy_plan clipboard_status plan_clipboard_failed)
+  @read_only_events ~w(set_floor_filter set_view filter_packs toggle_help toggle_odds copy_plan clipboard_status plan_clipboard_failed)
 
   def read_only_events, do: @read_only_events
 
@@ -29,17 +29,22 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       |> read_only_guard(@read_only_events)
       |> assign_templates(:pack_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
+      |> assign(:grace_picks, (team && team.grace_picks) || [])
       |> assign(:theme_packs, theme_packs)
       |> assign(:packs_by_id, Map.new(theme_packs, &{&1.id, &1}))
       |> assign(:view, "plan")
       |> assign(:show_help, false)
+      |> assign(:show_odds, false)
       |> reset_editor()
 
     {:ok, if(team && team.pack_plan_id, do: load_plan(socket, team.pack_plan_id, team.pack_template_id), else: socket)}
   end
 
   @impl true
-  def handle_info({:plan_count, team_id, table, count}, %{assigns: %{team_id: team_id}} = socket), do: {:noreply, update(socket, :tab_counts, &Map.put(&1, table, count))}
+  def handle_info({:plan_count, team_id, table, count}, %{assigns: %{team_id: team_id}} = socket) do
+    socket = update(socket, :tab_counts, &Map.put(&1, table, count))
+    {:noreply, if(table == :gift_plans, do: refresh_grace_picks(socket), else: socket)}
+  end
 
   @impl true
   def handle_info({:plan_count, _team_id, _table, _count}, socket), do: {:noreply, socket}
@@ -249,6 +254,9 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   @impl true
   def handle_event("toggle_help", _, socket), do: {:noreply, update(socket, :show_help, &(!&1))}
 
+  @impl true
+  def handle_event("toggle_odds", _, socket), do: {:noreply, update(socket, :show_odds, &(!&1))}
+
   # --- Display helpers (used from the template) ---
 
   def max_floor(true), do: 15
@@ -262,6 +270,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
         <span data-sort-handle class="cursor-grab text-base-content/50 select-none" title="Drag to reorder, or between lists to change favorite">⠿</span>
         <img src={@alt.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
         <span class="truncate flex-1"><%= @alt.name_en %></span>
+        <span :if={@percent} class="shrink-0 text-[9px] font-mono text-base-content/70"><%= @percent %></span>
         <span class="shrink-0 text-[9px] text-base-content/60"><%= @index + 1 %></span>
         <button type="button" phx-click="path_remove" phx-value-pack_id={@alt.id} phx-value-mode={@mode} phx-value-floor={@floor}
                 class="shrink-0 leading-none text-base-content/50 hover:text-error cursor-pointer" title="Remove from Hunt">
@@ -468,6 +477,48 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
 
   defp matches_filter?(_pack, ""), do: true
   defp matches_filter?(pack, filter), do: String.contains?(String.downcase(pack.name_en || ""), String.downcase(filter))
+
+  defp refresh_grace_picks(socket) do
+    case Teams.get_team(socket.assigns.team_id) do
+      %{grace_picks: picks} -> assign(socket, :grace_picks, picks)
+      _ -> socket
+    end
+  end
+
+  def run_odds(plan_data, theme_packs, floor_count, view, grace_picks) do
+    floor_modes = Enum.map(1..floor_count, &{&1, path_mode(plan_data, &1, view)})
+    Odds.for_run(plan_data, theme_packs, floor_modes, grace_picks)
+  end
+
+  def odds_percent(%{probs: probs}, pack_id) do
+    case probs[pack_id] do
+      nil -> nil
+      prob -> Odds.percent(prob)
+    end
+  end
+
+  def odds_choose({n, k}), do: "C(#{n},#{k})"
+
+  def odds_pct(prob), do: Odds.percent(prob)
+
+  def odds_decimal(prob), do: :erlang.float_to_binary(prob * 1.0, decimals: 4)
+
+  def odds_bar(%{rows: rows, fallback: fallback}) do
+    segments =
+      Enum.map(rows, &%{label: &1.pack.name_en, kind: &1.kind, rank: &1.rank, prob: &1.final}) ++
+        [%{label: "No hunted or backup pack (default or fallback pick)", kind: :rest, rank: 0, prob: fallback}]
+
+    Enum.reject(segments, &(&1.prob <= 0.0))
+  end
+
+  def odds_segment_style(%{kind: :wanted, rank: rank}, count), do: "background: color-mix(in oklab, var(--color-warning) #{round(100 - 60 * (rank - 1) / max(count - 1, 1))}%, transparent)"
+  def odds_segment_style(%{kind: :backup}, _count), do: "background: color-mix(in oklab, var(--color-info) 55%, transparent)"
+  def odds_segment_style(%{kind: :rest}, _count), do: "background: color-mix(in oklab, var(--color-base-content) 20%, transparent)"
+
+  def odds_summary(%{any: any, shown: shown, looks: looks, searching?: searching?}) do
+    base = "#{shown} packs shown, #{looks - 1} refreshes"
+    if searching?, do: "#{base}, then pack search: top pack guaranteed", else: "#{Odds.percent(any)} chance a hunted pack appears (#{base})"
+  end
 
   defp reset_editor(socket) do
     socket

@@ -41,7 +41,7 @@ defmodule StarlightBot.GiftPlans do
     "resources" => "Resources",
     "cost_plus_gift" => "Cost + % chance of gift"
   }
-  @encounter_reward_default_order ~w(gain_cost random_gift starlight cost_plus_gift resources)
+  @encounter_reward_default_order ~w(gain_cost starlight random_gift cost_plus_gift resources)
   @encounter_reward_tier_hooks [:encounter_reward_tier_7, :encounter_reward_tier_5, :encounter_reward_tier_4, :encounter_reward_tier_3]
   @fragment_slot "gift_0"
   @sin_fragments [

@@ -25,6 +25,14 @@ defmodule StarlightBotWeb.Components.PlanPicker do
   defp tab_count(counts, "battle"), do: counts[:battle_plans]
   defp tab_count(counts, "packs"), do: counts[:pack_plans]
   defp tab_count(counts, "gifts"), do: counts[:gift_plans]
+  defp tab_count(counts, "stats") do
+    case counts[:starlight_net] do
+      nil -> nil
+      net when net >= 0 -> "+#{net}"
+      net -> "#{net}"
+    end
+  end
+
   defp tab_count(_counts, _pane), do: nil
 
   attr :pane, :string, required: true

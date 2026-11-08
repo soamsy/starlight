@@ -5,6 +5,8 @@ defmodule StarlightBot.ThemePacks do
 
   @unplannable_ids ["thm_117"]
 
+  def plannable?(pack), do: pack.id not in @unplannable_ids
+
   def list_plannable_theme_packs do
     Enum.reject(list_theme_packs(), &(&1.id in @unplannable_ids))
   end
@@ -18,6 +20,7 @@ defmodule StarlightBot.ThemePacks do
           name_en: t.name_en,
           name_ru: t.name_ru,
           description_en: t.description_en,
+          node_count: t.node_count,
           normal_floors: t.normal_floors,
           hard_floors: t.hard_floors,
           tip: t.tip,
@@ -52,6 +55,23 @@ defmodule StarlightBot.ThemePacks do
       {:error, :read_only}
     end
   end
+
+  @base_nodes 4
+
+  def floating_nodes(%{node_count: count}) when is_integer(count), do: max(count - @base_nodes, 0)
+  def floating_nodes(_pack), do: 0
+
+  def parse_node_count(nil), do: nil
+
+  def parse_node_count(description) do
+    case Regex.run(~r/Len(?:gth|ght):\s*(\d+)\s*nodes/i, description) do
+      [_, count] -> String.to_integer(count)
+      nil -> nil
+    end
+  end
+
+  def fix_description(nil), do: nil
+  def fix_description(description), do: String.replace(description, "Lenght", "Length")
 
   @doc "Decode a normal_floors/hard_floors JSON string column into a list of floor integers."
   def decode_floors(nil), do: []

@@ -6,6 +6,11 @@ defmodule StarlightBot.PlanCounts do
 
   def subscribe, do: Phoenix.PubSub.subscribe(StarlightBot.PubSub, @topic)
 
+  def broadcast(team_id, :starlight_net, net) when is_integer(team_id) do
+    :persistent_term.put({__MODULE__, :starlight_net, team_id}, net)
+    Phoenix.PubSub.broadcast(StarlightBot.PubSub, @topic, {:plan_count, team_id, :starlight_net, net})
+  end
+
   def broadcast(team_id, table, data) when is_integer(team_id) do
     Phoenix.PubSub.broadcast(StarlightBot.PubSub, @topic, {:plan_count, team_id, table, count(table, data)})
   end
@@ -15,15 +20,24 @@ defmodule StarlightBot.PlanCounts do
   def for_team(team_id) when is_integer(team_id) do
     team = Teams.get_team(team_id)
 
-    Map.new(@tables, fn table ->
+    @tables
+    |> Map.new(fn table ->
       case Plans.for_team(team, table) do
         %{data: data} -> {table, count(table, data)}
         _ -> {table, 0}
       end
     end)
+    |> put_net(team_id)
   end
 
   def for_team(_team_id), do: %{}
+
+  defp put_net(counts, team_id) do
+    case :persistent_term.get({__MODULE__, :starlight_net, team_id}, nil) do
+      nil -> counts
+      net -> Map.put(counts, :starlight_net, net)
+    end
+  end
 
   def count(:battle_plans, %{"playbooks" => playbooks}) when is_list(playbooks), do: length(playbooks)
 

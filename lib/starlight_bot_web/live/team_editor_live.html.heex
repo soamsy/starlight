@@ -196,14 +196,12 @@
               <span class="text-sm"><%= budget.floor_total %></span>
             </div>
             <span class="self-center text-base-content/40">+</span>
-            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
-                 title={"#{StarlightBudget.railway_bonus()} per cleared Line theme pack. Max counts floors where the plan doesn't ban every eligible Line pack."}>
+            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center"
+                 title={"#{StarlightBudget.railway_bonus()} per cleared Line theme pack. Expected Line packs per floor from the pack plan odds: #{railway_breakdown(budget.railway_by_floor)}"}>
               <span class="text-[10px] font-sans text-base-content/50">
-                Railway (<%= budget.railway_packs %>/<%= budget.max_railway_packs %>)
+                Railway (avg <%= :erlang.float_to_binary(budget.railway_packs, decimals: 2) %> packs)
               </span>
-              <span class="text-sm"><%= budget.railway_packs * StarlightBudget.railway_bonus() %></span>
-              <input type="range" name="railway_packs" min="0" max={budget.max_railway_packs} value={budget.railway_packs}
-                     disabled={budget.max_railway_packs == 0} class="range range-xs" />
+              <span class="text-sm"><%= :erlang.float_to_binary(budget.railway_packs * StarlightBudget.railway_bonus(), decimals: 1) %></span>
             </div>
             <span class="self-center text-base-content/40">) ×</span>
             <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="min(2, 1 + 0.017 × rest bonus), rounded down after multiplying">
@@ -217,11 +215,14 @@
             </div>
             <span class="self-center text-base-content/40">+</span>
             <div class="basis-full h-0"></div>
-            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32">
-              <span class="text-[10px] font-sans text-base-content/50">Encounter Reward Cards (<%= budget.reward_cards %>)</span>
-              <span class="text-sm text-success">+<%= budget.income.cards %></span>
-              <input type="range" name="reward_cards" min="0" max={StarlightBudget.max_reward_cards()} value={budget.reward_cards}
-                     class="range range-success range-xs" />
+            <div phx-click="toggle_encounter_info" role="button"
+                 class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center cursor-pointer hover:bg-base-200"
+                 title="Click for how this is calculated">
+              <span class="text-[10px] font-sans text-base-content/50">
+                Encounter rewards (avg <%= encounter_decimal(budget.encounter_pulls) %> starlight grabs)
+                <span class="ml-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full border border-current align-middle text-[8px] italic leading-none">i</span>
+              </span>
+              <span class="text-sm text-success">+<%= budget.income.encounters %></span>
             </div>
             <span class="self-center text-base-content/40">−</span>
             <div phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=gifts") |> JS.dispatch("click", to: "#gift-loadout-btn")} title="Open the gift loadout"
@@ -240,14 +241,14 @@
               </span>
             </div>
             <span class="self-center text-base-content/40">−</span>
-            <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center gap-0.5 w-32"
-                 title="20 for the first search in the run, 10 more for each one after">
+            <div phx-click="toggle_search_info" role="button"
+                 class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center cursor-pointer hover:bg-base-200"
+                 title={"Click for how this is calculated. 20 for the first search in the run, 10 more for each after. A floor only searches when every refresh misses. Searches in a run: #{search_breakdown(budget)}"}>
               <span class="text-[10px] font-sans text-base-content/50">
-                Pack search (<%= budget.pack_searches %>/<%= budget.max_pack_searches %>)
+                Pack search (avg <%= :erlang.float_to_binary(budget.pack_searches, decimals: 2) %> of <%= budget.max_pack_searches %> floors)
+                <span class="ml-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full border border-current align-middle text-[8px] italic leading-none">i</span>
               </span>
               <span class="text-sm text-error"><%= budget.costs.pack_search %></span>
-              <input type="range" name="pack_searches" min="0" max={budget.max_pack_searches} value={budget.pack_searches}
-                     disabled={budget.max_pack_searches == 0} class="range range-error range-xs" />
             </div>
             <span class="self-center text-base-content/40">=</span>
             <div class={"rounded-lg border-2 px-3 py-1 flex flex-col justify-center " <> if(budget.net >= 0, do: "border-success", else: "border-error")}>
@@ -258,6 +259,101 @@
               </span>
             </div>
           </form>
+          <div :if={@show_encounter_info} class="modal modal-open" phx-window-keydown="toggle_encounter_info" phx-key="Escape">
+            <div class="modal-box max-w-3xl max-h-[85vh] flex flex-col gap-3 text-sm">
+              <h2 class="font-bold text-base">How the encounter reward starlight is calculated</h2>
+              <div class="overflow-y-auto flex flex-col gap-4 pr-1">
+                <section class="flex flex-col gap-1">
+                  <h4 class="font-semibold">1. How many encounter reward screens a floor gives</h4>
+                  <p class="text-xs text-base-content/60">Every floor traverses 2 events, 1 shop and 1 boss. The boss always gives an encounter reward, except the F5 boss when the run stops there. A theme pack with more than 4 nodes adds floating nodes: on F1 they are all regular encounters, on F2 and later two thirds are regular and one third focused. Each kind rolls its own chance of giving a reward. The number of floating nodes is the expected value over the theme pack odds from the pack plan.</p>
+                  <div class="rounded-lg bg-base-200 p-2 font-mono text-xs flex flex-col gap-0.5">
+                    <span>screens = boss + regular nodes × regular chance + focused nodes × focused chance</span>
+                    <span class="text-base-content/50">regular chance: F1 7.5%, F2 10%, F3 10%, F4 12.5%, F5 12.5%</span>
+                    <span class="text-base-content/50">focused chance: F2 20%, F3 20%, F4 25%, F5 25%</span>
+                  </div>
+                </section>
+                <section class="flex flex-col gap-1">
+                  <h4 class="font-semibold">2. How often a screen ends in starlight</h4>
+                  <p class="text-xs text-base-content/60">A screen shows 3 of the 5 rewards, so there are 10 possible layouts. The bot takes the highest priority reward on the screen. With starlight at position p in the gift plan's encounter reward order, it is picked in the layouts that contain it and none of the options above it: C(5 − p, 2) of the 10. Position 1 wins 6 of 10 layouts, position 2 wins 3, position 3 wins 1, and position 4 or 5 never win. Starlight pays 8 to 14, 11 on average.</p>
+                </section>
+                <section class="flex flex-col gap-1">
+                  <h4 class="font-semibold">3. Per floor</h4>
+                  <table class="table table-xs font-mono">
+                    <thead>
+                      <tr><th>Floor</th><th class="text-right">Floating</th><th class="text-right">Boss</th><th class="text-right">Regular</th><th class="text-right">Focused</th><th class="text-right">Screens</th><th class="text-right">Starlight pos</th><th class="text-right">Picked</th><th class="text-right">Starlight</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr :for={row <- budget.encounter_floors}>
+                        <td>F<%= row.floor %></td>
+                        <td class="text-right"><%= encounter_decimal(row.floating) %></td>
+                        <td class="text-right"><%= encounter_decimal(row.screens.boss) %></td>
+                        <td class="text-right"><%= encounter_decimal(row.screens.regular) %></td>
+                        <td class="text-right"><%= encounter_decimal(row.screens.focused) %></td>
+                        <td class="text-right"><%= encounter_decimal(row.screens.total) %></td>
+                        <td class="text-right"><%= row.position || "none" %></td>
+                        <td class="text-right"><%= encounter_pct(row.chance) %></td>
+                        <td class="text-right text-success"><%= encounter_decimal(row.starlight, 1) %></td>
+                      </tr>
+                      <tr class="font-semibold">
+                        <td colspan="5">Total</td>
+                        <td class="text-right"><%= encounter_decimal(budget.encounter_screens) %></td>
+                        <td colspan="2"></td>
+                        <td class="text-right text-success"><%= encounter_decimal(budget.encounter_starlight, 1) %></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p class="text-xs">Average starlight grabs per run: <span class="font-mono font-semibold"><%= encounter_decimal(budget.encounter_pulls) %></span> from <%= encounter_decimal(budget.encounter_screens) %> encounter reward screens.</p>
+                  <p class="text-xs text-base-content/60">Starlight = screens × picked × 11. The starlight position follows the gift plan's encounter reward order for each floor, or the default order when no gift plan is selected. The F5 boss only counts when the pack plan goes extreme. Assumes the route never takes risky nodes. Simplification: on F5 one fewer theme pack is assumed to be shown than the graces give, to account for one of the theme packs typically being from the latest event.</p>
+                </section>
+              </div>
+              <div class="modal-action mt-0">
+                <button type="button" phx-click="toggle_encounter_info" class="btn btn-sm">Close</button>
+              </div>
+            </div>
+            <div class="modal-backdrop" phx-click="toggle_encounter_info"></div>
+          </div>
+          <div :if={@show_search_info} class="modal modal-open" phx-window-keydown="toggle_search_info" phx-key="Escape">
+            <div class="modal-box max-w-2xl max-h-[85vh] flex flex-col gap-3 text-sm">
+              <h2 class="font-bold text-base">How the pack search cost is calculated</h2>
+              <div class="overflow-y-auto flex flex-col gap-4 pr-1">
+                <p>Pack search is only used on floors where search is turned on in the pack plan, and only when it is needed. The bot refreshes first. It searches only if every look, including the last one after the refreshes run out, shows none of your wanted packs. A floor where a refresh finds your pack costs nothing.</p>
+                <section class="flex flex-col gap-1">
+                  <h4 class="font-semibold">1. Chance each search floor needs a search</h4>
+                  <p class="text-xs text-base-content/60">q<sup>L</sup>, where q is the chance one look misses every wanted pack and L is looks (refreshes + 1). It depends on the packs shown, the refreshes from your graces, and which wanted packs were already taken on earlier floors.</p>
+                  <div :if={budget.search_floors == []} class="text-xs italic text-base-content/50">No search floors in this pack plan, so no search cost.</div>
+                  <div :for={floor <- budget.search_floors} class="flex items-center gap-2 font-mono text-xs">
+                    <span class="w-8">F<%= floor %></span>
+                    <div class="h-2 flex-1 rounded-full bg-base-300 overflow-hidden"><div class="h-full bg-error/70" style={"width: #{budget.search_by_floor[floor] * 100}%"}></div></div>
+                    <span class="w-12 text-right"><%= search_pct(budget.search_by_floor[floor]) %></span>
+                  </div>
+                </section>
+                <section class="flex flex-col gap-1">
+                  <h4 class="font-semibold">2. How many searches a whole run needs</h4>
+                  <p class="text-xs text-base-content/60">Every combination of earlier outcomes is followed through the floors and weighted by how likely it is, which gives the chance of exactly 0, 1, 2 or more searches.</p>
+                  <div :for={{count, prob} <- Enum.sort(budget.search_counts)} class="flex items-center gap-2 font-mono text-xs">
+                    <span class="w-24"><%= count %> <%= if count == 1, do: "search", else: "searches" %></span>
+                    <div class="h-2 flex-1 rounded-full bg-base-300 overflow-hidden"><div class="h-full bg-primary/70" style={"width: #{prob * 100}%"}></div></div>
+                    <span class="w-12 text-right"><%= search_pct(prob) %></span>
+                    <span class="w-16 text-right text-error">cost <%= search_cost(count) %></span>
+                  </div>
+                </section>
+                <section class="flex flex-col gap-1">
+                  <h4 class="font-semibold">3. Average cost</h4>
+                  <p class="text-xs text-base-content/60">The first search costs 20 and each one after costs 10 more, so k searches cost 20k + 10·k(k−1)/2. The cost grows faster than the count, so the average cost is each count's cost weighted by its chance, not the cost of the average count.</p>
+                  <div class="rounded-lg bg-base-200 p-2 font-mono text-xs flex flex-col gap-1">
+                    <span><%= Enum.map_join(Enum.sort(budget.search_counts), " + ", fn {count, prob} -> "#{search_pct(prob)} × #{search_cost(count)}" end) %></span>
+                    <span class="font-semibold">= <%= :erlang.float_to_binary(budget.search_average_cost, decimals: 1) %> average cost, shown as <%= budget.costs.pack_search %></span>
+                    <span class="text-base-content/50">Average searches per run: <%= :erlang.float_to_binary(budget.pack_searches, decimals: 2) %></span>
+                  </div>
+                </section>
+                <p class="text-xs text-base-content/60">Search floors count only through floor 5. When search finds the pack, the top available wanted pack is credited at 100% on that floor. Simplification: on F5 one fewer theme pack is assumed to be shown than the graces give, to account for one of the theme packs not playing nice on refresh.</p>
+              </div>
+              <div class="modal-action mt-0">
+                <button type="button" phx-click="toggle_search_info" class="btn btn-sm">Close</button>
+              </div>
+            </div>
+            <div class="modal-backdrop" phx-click="toggle_search_info"></div>
+          </div>
         </div>
       </div>
       <div :for={pane <- ~w(battle packs gifts)} class={"flex-1 min-h-0 min-w-0 flex-col " <> if(pane == @pane, do: "flex", else: "hidden")}>

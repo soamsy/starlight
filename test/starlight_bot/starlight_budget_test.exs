@@ -49,27 +49,29 @@ defmodule StarlightBot.StarlightBudgetTest do
     assert StarlightBudget.max_pack_searches(%{}) == 0
   end
 
-  test "railway_floors/3 finds hard floors where a Line pack can appear at the given priorities" do
-    packs = [
-      %{id: "l2", name_en: "Line 2", normal_floors: "[]", hard_floors: "[4,5,6]"},
-      %{id: "l1", name_en: "Line 1", normal_floors: "[]", hard_floors: "[5,6]"},
-      %{id: "x", name_en: "Falling Flowers", normal_floors: "[3]", hard_floors: "[2,3]"}
-    ]
-
-    all_hard = %{"mode_schedule" => [%{"from_floor" => 1, "mode" => "hard"}]}
-    assert StarlightBudget.railway_floors(all_hard, packs, ~w(hunt fine)) == [4, 5]
-    assert StarlightBudget.railway_floors(all_hard, packs, ~w(hunt)) == []
-
-    hunt_l1 = Map.put(all_hard, "packs", %{"l1" => %{"hard" => %{"5" => "hunt", "6" => "hunt"}}, "l2" => %{"hard" => %{"4" => "banned", "5" => "banned", "6" => "banned"}}})
-    assert StarlightBudget.railway_floors(hunt_l1, packs, ~w(hunt fine)) == [5]
-    assert StarlightBudget.railway_floors(hunt_l1, packs, ~w(hunt)) == [5]
-
-    assert StarlightBudget.railway_floors(%{}, packs, ~w(hunt fine)) == []
+  test "starlight_pick_chance/1 counts the 3-of-5 layouts where starlight is the best option" do
+    order = ~w(gain_cost random_gift starlight cost_plus_gift resources)
+    chance = fn position -> StarlightBudget.starlight_pick_chance(List.insert_at(List.delete(order, "starlight"), position, "starlight")) end
+    assert Enum.map(0..4, chance) == [0.6, 0.3, 0.1, 0.0, 0.0]
+    assert StarlightBudget.starlight_pick_chance(~w(gain_cost random_gift)) == 0.0
   end
 
-  test "cards_gain/1 is a flat amount per card" do
-    assert StarlightBudget.cards_gain(0) == 0
-    assert StarlightBudget.cards_gain(1) == 8
-    assert StarlightBudget.cards_gain(2) == 16
+  test "encounter_screens/3 follows boss, regular and focused node rules" do
+    f1 = StarlightBudget.encounter_screens(1, 3.0, false)
+    assert_in_delta f1.regular, 0.225, 1.0e-9
+    assert f1.focused == 0.0
+    assert_in_delta f1.total, 1.225, 1.0e-9
+
+    f2 = StarlightBudget.encounter_screens(2, 3.0, false)
+    assert_in_delta f2.regular, 2.0 * 0.10, 1.0e-9
+    assert_in_delta f2.focused, 1.0 * 0.20, 1.0e-9
+
+    assert StarlightBudget.encounter_screens(5, 0.0, false).total == 0.0
+    assert StarlightBudget.encounter_screens(5, 0.0, true).boss == 1.0
+    assert StarlightBudget.encounter_screens(4, 0.0, false).total == 1.0
+  end
+
+  test "starlight_reward_mean/0 is the middle of the 8 to 14 range" do
+    assert StarlightBudget.starlight_reward_mean() == 11.0
   end
 end

@@ -28,6 +28,7 @@
             <% hard_col = hard_column(@plan_data, floor_count, overflow?) %>
             <% extreme_disabled? = extreme_disabled?(@plan_data) %>
             <% path = likely_path(@plan_data, @theme_packs, floor_count, @view) %>
+            <% run_odds = run_odds(@plan_data, @theme_packs, floor_count, @view, @grace_picks) %>
             <% rows = chart_rows(@plan_data, @theme_packs, @filter, @floor_filter, floor_count, @view) %>
             <div class="flex-1 min-h-0 flex flex-col gap-1">
               <div class="flex items-center gap-3">
@@ -54,7 +55,10 @@
                    style={"grid-template-columns: auto repeat(#{floor_count}, minmax(#{if extreme?, do: "calc(6rem + 100px)", else: "6rem"}, 1fr))#{if overflow?, do: " 9rem"}"}>
                 <div class="col-span-full grid grid-cols-subgrid sticky top-0 bg-base-100 z-10 border-b border-base-300">
                   <span class="row-start-2 col-start-1 sticky left-0 z-20 bg-base-100 text-[10px] text-base-content/40 px-1 whitespace-nowrap self-end" data-no-pan><span class="invisible group-data-[pan]/pan:visible">drag chart to pan ⇆</span></span>
-                  <span class="row-start-1 col-start-1 sticky left-0 z-20 bg-base-100 text-[10px] font-medium text-base-content/50 px-1 whitespace-nowrap self-center text-right" data-no-pan>likely path ▸</span>
+                  <button type="button" phx-click="toggle_odds" title="How the percentages are calculated" class="row-start-1 col-start-1 sticky left-0 z-20 bg-base-100 text-[10px] font-medium text-base-content/50 hover:text-base-content px-1 whitespace-nowrap self-center text-right cursor-pointer flex items-center justify-end gap-1" data-no-pan>
+                    likely path ▸
+                    <span class="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-current text-[9px] italic leading-none">i</span>
+                  </button>
                   <%= for floor <- 1..floor_count do %>
                     <% hard? = StarlightBot.PackPlans.Resolver.mode_for_floor(@plan_data["mode_schedule"], floor) == "hard" %>
                     <% path_hard? = path_mode(@plan_data, floor, @view) == "hard" %>
@@ -79,6 +83,7 @@
                       <% end %>
                       <% mode = path_mode(@plan_data, floor, @view) %>
                       <% others = max(length(path_candidates(path[floor])) - 1, 0) %>
+                      <% pill_odds = if path[floor], do: run_odds[floor] %>
                       <%= case path[floor] do %>
                         <% {pack, _rest} -> %>
                           <% favorite? = StarlightBot.PackPlans.Resolver.favorite?(@plan_data, pack.id, mode, floor) %>
@@ -87,6 +92,7 @@
                                title={"F#{floor}: #{pack.name_en}" <> if(favorite?, do: " (favorite)", else: "") <> if(others > 0, do: ", then #{others} more in Hunt order. Click to list them.", else: ". Click to see next in priority.")}>
                             <img src={pack.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
                             <span class="truncate font-medium flex-1"><%= if favorite?, do: "★ " %><%= pack.name_en %></span>
+                            <span :if={odds_percent(pill_odds, pack.id)} class="shrink-0 font-mono text-[9px] text-base-content/70" title={odds_summary(pill_odds)}><%= odds_percent(pill_odds, pack.id) %></span>
                             <%= if others > 0 do %>
                               <span class="shrink-0 rounded-full bg-base-content/10 px-1 text-[9px] text-base-content/60">+<%= others %></span>
                             <% end %>
@@ -108,12 +114,13 @@
                       <% end %>
                       <%= if @path_floor == floor do %>
                           <% candidates = floor_candidates(@plan_data, @theme_packs, floor, mode) %>
+                          <% odds = run_odds[floor] %>
                           <% {favorites, backups} = Enum.split_with(candidates, &StarlightBot.PackPlans.Resolver.favorite?(@plan_data, &1.id, mode, floor)) %>
                           <div class="absolute left-0 top-full mt-2 z-30 w-full min-w-56 rounded-lg border border-base-content/30 bg-base-200 p-1.5 shadow-2xl ring-4 ring-base-content/10 flex flex-col gap-0.5"
                                data-no-pan phx-click-away="close_path_floor">
                             <span class="absolute -top-[5px] left-5 h-2 w-2 rotate-45 border-l border-t border-base-content/30 bg-base-200"></span>
                             <div class="flex items-center justify-between">
-                              <span class="px-1 text-[9px] uppercase tracking-wide text-warning">★ Favorites (hunted first)</span>
+                              <span class="px-1 text-[9px] uppercase tracking-wide text-warning cursor-help" title={odds_summary(odds)}>★ Favorites (hunted first)</span>
                               <button type="button" phx-click="path_clear_floor" phx-value-floor={floor} data-confirm={"Clear every hunted pack from F#{floor} in #{mode} mode?"}
                                       class="btn btn-ghost btn-xs h-4 min-h-0 px-1 text-[9px] text-error"
                                       title={"Remove every hunted pack from F#{floor} in #{mode} mode"}>Clear F<%= floor %></button>
@@ -121,7 +128,7 @@
                             <div id={"path-fav-#{floor}"} phx-hook="SortableList" data-sort-event="path_reorder" data-sort-move-event="path_move"
                                  data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:#{floor}:fav"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
                               <%= for {alt, index} <- Enum.with_index(favorites) do %>
-                                <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} floor={floor} hard?={path_hard?} favorite?={true} />
+                                <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} floor={floor} hard?={path_hard?} favorite?={true} percent={odds_percent(odds, alt.id)} />
                               <% end %>
                               <span :if={favorites == []} class="px-1.5 text-[10px] italic text-base-content/40">drop here to favorite</span>
                             </div>
@@ -129,7 +136,7 @@
                             <div id={"path-rest-#{floor}"} phx-hook="SortableList" data-sort-event="path_reorder" data-sort-move-event="path_move"
                                  data-sort-shared={"path-#{floor}"} data-sort-scope={"#{mode}:#{floor}:rest"} data-sort-highlight class="flex flex-col gap-0.5 min-h-5 rounded">
                               <%= for {alt, index} <- Enum.with_index(backups, length(favorites)) do %>
-                                <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} floor={floor} hard?={path_hard?} favorite?={false} />
+                                <.path_row alt={alt} index={index} total={length(candidates)} mode={mode} floor={floor} hard?={path_hard?} favorite?={false} percent={odds_percent(odds, alt.id)} />
                               <% end %>
                               <span :if={backups == []} class="px-1.5 text-[10px] italic text-base-content/40">none</span>
                             </div>
@@ -294,6 +301,98 @@
         <% end %>
       </div>
     </div>
+  <%= if @show_odds do %>
+    <% odds_floors = if @editing_id, do: Enum.map(run_odds(@plan_data, @theme_packs, max_floor(@view == "extreme"), @view, @grace_picks), fn {floor, odds} -> {floor, path_mode(@plan_data, floor, @view), odds} end) |> Enum.sort(), else: [] %>
+    <div class="modal modal-open" phx-window-keydown="toggle_odds" phx-key="Escape">
+      <div class="modal-box max-w-4xl max-h-[88vh] flex flex-col gap-3 text-sm">
+        <h2 class="font-bold text-base">How the likely path percentages are calculated</h2>
+        <div class="overflow-y-auto flex flex-col gap-4 pr-1">
+          <section class="flex flex-col gap-2">
+            <p>Each look at the theme pack screen shows <span class="font-mono">n</span> packs drawn at random from the <span class="font-mono">N</span> packs eligible on that floor. A refresh redraws all of them. The bot takes the best-ranked wanted pack it sees, refreshes if none are shown, and only uses backups on the last look.</p>
+            <div class="rounded-lg bg-base-200 p-2 font-mono text-xs flex flex-col gap-1">
+              <span><span class="text-base-content/50">N</span> = packs eligible on the floor (banned ones still appear)</span>
+              <span><span class="text-base-content/50">n</span> = packs shown = 3 + 1 for each of Star of the Beginning, Interstellar Travel, Perfected Possibility (max 5), one fewer on F5 where a pinned pack takes a slot</span>
+              <span><span class="text-base-content/50">L</span> = looks = refreshes + 1, refreshes = 1, or 3 + enhance level with Interstellar Travel</span>
+              <span><span class="text-base-content/50">K</span> = wanted packs (favorites, or all hunted if none are favorites)</span>
+            </div>
+            <div class="rounded-lg border border-base-300 p-2 font-mono text-xs flex flex-col gap-1">
+              <span><span class="text-warning">miss</span> q = C(N−K, n) / C(N, n) <span class="text-base-content/50">chance one look shows no wanted pack</span></span>
+              <span><span class="text-warning">rank i, one look</span> = C(N−i, n−1) / C(N, n) <span class="text-base-content/50">pack i shown, none ranked above it shown</span></span>
+              <span><span class="text-warning">rank i, final</span> = one look × (1 − q<sup>L</sup>) / (1 − q) <span class="text-base-content/50">first look that hits, summed over L looks</span></span>
+              <span><span class="text-info">backup j, final</span> = q<sup>L−1</sup> × C(N−K−j, n−1) / C(N, n) <span class="text-base-content/50">every look missed, backup j best on the last</span></span>
+            </div>
+            <p class="text-xs">The game removes packs you already took from later floors. So each floor is computed once for every combination of earlier picks that could have happened, with the taken packs removed from the pool and from the ranking, and the results are averaged by how likely each combination is. <span class="font-semibold">Still available</span> is the chance a pack was not taken earlier. <span class="font-semibold">Final</span> is the chance it is this floor's pick across all of those branches, which is why it can differ from the fresh-run number times availability: when a higher-ranked pack was taken earlier, the pool is smaller and everyone below it moves up.</p>
+            <p class="text-xs text-base-content/60">When several wanted packs appear on the same look, the pick goes to the highest ranked one, so the one-look chance of rank i already excludes everything above it. Final chances over all ranks add up to 1 − q<sup>L</sup>. Assumes each look is a uniform draw of distinct packs, independent of earlier looks.</p>
+          </section>
+          <section :for={{floor, mode, odds} <- odds_floors} class="rounded-lg border border-base-300 p-2 flex flex-col gap-2">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span class="font-semibold">F<%= floor %></span>
+              <span class={"badge badge-sm " <> if(mode == "hard", do: "badge-warning", else: "badge-success")}><%= mode %></span>
+              <span class="font-mono text-xs text-base-content/70">N=<%= odds.pool %> n=<%= odds.shown %> L=<%= odds.looks %> (<%= odds.refreshes %> refreshes) K=<%= odds.wanted_count %> backups=<%= odds.backup_count %></span>
+              <span :if={odds.hunting?} class="ml-auto font-mono text-xs">any wanted: <span class="font-semibold"><%= odds_pct(odds.any) %></span></span>
+            </div>
+            <%= cond do %>
+              <% not odds.hunting? -> %>
+                <p class="text-xs italic text-base-content/50">No hunted pack on this floor, nothing to calculate.</p>
+              <% odds.searching? -> %>
+                <p class="text-xs">Search is on for this floor. After refreshes run out the bot finds the top priority pack that is still available in pack search, so that pack is counted as 100% and backups are never used. A pack already taken on an earlier floor is skipped, so the next one inherits its share.</p>
+                <div :for={row <- Enum.filter(odds.rows, &(&1.kind == :wanted))} class="flex items-center gap-1 text-xs">
+                  <img src={row.pack.image_path} class="w-4 h-4 rounded-full object-cover" />
+                  <span class="truncate"><%= row.pack.name_en %></span>
+                  <span class="ml-auto font-mono text-base-content/50">still available <%= odds_pct(row.available) %></span>
+                  <span class="w-12 text-right font-mono font-semibold"><%= odds_pct(row.final) %></span>
+                </div>
+              <% true -> %>
+                <% segments = odds_bar(odds) %>
+                <div class="flex h-4 w-full overflow-hidden rounded-full border border-base-300">
+                  <div :for={segment <- segments} style={"width: #{segment.prob * 100}%; " <> odds_segment_style(segment, odds.wanted_count)} title={"#{segment.label}: #{odds_pct(segment.prob)}"}></div>
+                </div>
+                <div class="font-mono text-xs flex flex-col gap-0.5">
+                  <span class="font-sans text-base-content/50">Fresh run, nothing taken yet on earlier floors:</span>
+                  <span>q = C(<%= odds.pool - odds.wanted_count %>,<%= odds.shown %>) / C(<%= odds.pool %>,<%= odds.shown %>) = <%= odds_decimal(odds.miss) %></span>
+                  <span>q<sup><%= odds.looks %></sup> = <%= odds_decimal(:math.pow(odds.miss, odds.looks)) %> chance every look misses, so <%= odds_pct(odds.any) %> to find a wanted pack</span>
+                  <span :if={odds.wanted_count > 0}>(1 − q<sup><%= odds.looks %></sup>) / (1 − q) = <%= odds_decimal(odds.scale) %></span>
+                </div>
+                <table class="table table-xs">
+                  <thead>
+                    <tr><th>Pack</th><th>Rank</th><th>With no earlier picks</th><th class="text-right">Still available</th><th class="text-right">Final</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr :for={row <- odds.rows}>
+                      <td>
+                        <span class="flex items-center gap-1">
+                          <img src={row.pack.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" />
+                          <span class="truncate"><%= row.pack.name_en %></span>
+                          <span :if={row.kind == :backup} class="badge badge-xs badge-info">backup</span>
+                        </span>
+                      </td>
+                      <td class="font-mono"><%= row.rank %></td>
+                      <td class="font-mono">
+                        <%= if row.kind == :wanted do %>
+                          <%= odds_choose(row.choose) %> / C(<%= odds.pool %>,<%= odds.shown %>) = <%= odds_pct(row.per_look) %> × <%= odds_decimal(odds.scale) %> = <%= odds_pct(row.fresh) %>
+                        <% else %>
+                          q<sup><%= odds.looks - 1 %></sup> (<%= odds_decimal(odds.last_miss) %>) × <%= odds_choose(row.choose) %> / C(<%= odds.pool %>,<%= odds.shown %>) = <%= odds_pct(row.fresh) %>
+                        <% end %>
+                      </td>
+                      <td class="text-right font-mono"><%= odds_pct(row.available) %></td>
+                      <td class="text-right font-mono font-semibold"><%= odds_pct(row.final) %></td>
+                    </tr>
+                    <tr class="text-base-content/50">
+                      <td colspan="4">None of the above (default or fallback pick)</td>
+                      <td class="text-right font-mono"><%= odds_pct(odds.fallback) %></td>
+                    </tr>
+                  </tbody>
+                </table>
+            <% end %>
+          </section>
+        </div>
+        <div class="modal-action mt-0">
+          <button phx-click="toggle_odds" class="btn btn-sm">Close</button>
+        </div>
+      </div>
+      <div class="modal-backdrop" phx-click="toggle_odds"></div>
+    </div>
+  <% end %>
   <%= if @show_help do %>
     <div class="modal modal-open" phx-window-keydown="toggle_help" phx-key="Escape">
       <div class="modal-box max-w-3xl max-h-[85vh] flex flex-col gap-3 text-sm">

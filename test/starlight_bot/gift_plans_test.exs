@@ -543,7 +543,7 @@ defmodule StarlightBot.GiftPlansTest do
 
   describe "encounter reward schedule" do
     test "defaults to the shipped order and the latest row at or below the floor wins" do
-      default = ~w(gain_cost random_gift starlight cost_plus_gift resources)
+      default = ~w(gain_cost starlight random_gift cost_plus_gift resources)
       assert GiftPlans.blank()["encounter_rewards"] == [%{"from_floor" => 1, "order" => default}]
       assert GiftPlans.normalize(Map.delete(GiftPlans.blank(), "encounter_rewards"))["encounter_rewards"] == [%{"from_floor" => 1, "order" => default}]
 

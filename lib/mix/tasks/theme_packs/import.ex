@@ -16,7 +16,7 @@ defmodule Mix.Tasks.ThemePacks.Import do
 
   @theme_image_base "https://gll-fun.com/images/md-themes"
 
-  @theme_columns ~w(id name_en name_ru description_en description_ru normal_floors hard_floors tip event_ids image_path)a
+  @theme_columns ~w(id name_en name_ru description_en description_ru normal_floors hard_floors tip event_ids image_path node_count)a
 
   @impl Mix.Task
   def run(_args) do
@@ -63,7 +63,8 @@ defmodule Mix.Tasks.ThemePacks.Import do
       id: id,
       name_en: name_en || name_ru,
       name_ru: name_ru,
-      description_en: desc_en,
+      description_en: StarlightBot.ThemePacks.fix_description(desc_en),
+      node_count: StarlightBot.ThemePacks.parse_node_count(desc_en),
       description_ru: desc_ru,
       normal_floors: Jason.encode!(parse_floor_range(normal_raw)),
       hard_floors: Jason.encode!(parse_floor_range(hard_raw)),
