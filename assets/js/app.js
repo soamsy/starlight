@@ -1768,7 +1768,7 @@ const ViewMemory = {
       try {
         saved = key && localStorage.getItem(key)
       } catch (e) {}
-      if (saved) {
+      if (saved && this.el.dataset.restore !== "false") {
         try {
           this.pushEvent("restore_view", JSON.parse(saved))
           return

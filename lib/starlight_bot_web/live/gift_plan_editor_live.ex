@@ -106,10 +106,40 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:route_templates, FusionRouteTemplates.all())
       |> assign(:gift_popup, nil)
       |> assign(:show_help, false)
+      |> assign(:view_from_url, false)
       |> reset_editor()
 
-    {:ok, if(team && team.gift_plan_id, do: load_plan(socket, team.gift_plan_id, team.gift_template_id), else: socket)}
+    socket = if team && team.gift_plan_id, do: socket |> load_plan(team.gift_plan_id, team.gift_template_id) |> apply_url_view(session), else: socket
+
+    {:ok, if(connected?(socket), do: attach_hook(socket, :gift_view_url, :after_render, &publish_view/1), else: socket)}
   end
+
+  defp apply_url_view(socket, session) do
+    milestone_id = session["milestone"]
+
+    cond do
+      session["tab"] == "loadout" -> socket |> assign(:active_tab, :loadout) |> assign(:view_from_url, true)
+      milestone_id && GiftPlans.find_milestone(socket.assigns.plan_data, milestone_id) -> socket |> assign(:selected_milestone_id, milestone_id) |> assign(:view_from_url, true)
+      true -> socket
+    end
+  end
+
+  defp publish_view(%{parent_pid: parent, assigns: %{editing_id: id, team_id: team_id}} = socket) when is_pid(parent) and id != nil do
+    view = {socket.assigns.active_tab, socket.assigns.selected_milestone_id}
+
+    if Process.get(:gift_view_published) != view do
+      Process.put(:gift_view_published, view)
+
+      case view do
+        {:loadout, _} -> send(parent, {:gift_view, team_id, "loadout", nil})
+        {_, milestone_id} -> send(parent, {:gift_view, team_id, nil, milestone_id})
+      end
+    end
+
+    socket
+  end
+
+  defp publish_view(socket), do: socket
 
   @impl true
   def handle_info({:plan_count, team_id, table, count}, %{assigns: %{team_id: team_id}} = socket), do: {:noreply, update(socket, :tab_counts, &Map.put(&1, table, count))}

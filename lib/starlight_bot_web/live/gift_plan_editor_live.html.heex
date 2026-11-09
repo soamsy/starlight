@@ -1,4 +1,4 @@
-<div id="gift-view-memory" phx-hook="ViewMemory" data-key={@editing_id && "starlight-gift-view-#{@editing_id}"} data-view={Jason.encode!(%{tab: @active_tab, milestone: @selected_milestone_id})} class="flex flex-col h-full gap-3 overflow-hidden">
+<div id="gift-view-memory" phx-hook="ViewMemory" data-restore={to_string(not @view_from_url)} data-key={@editing_id && "starlight-gift-view-#{@editing_id}"} data-view={Jason.encode!(%{tab: @active_tab, milestone: @selected_milestone_id})} class="flex flex-col h-full gap-3 overflow-hidden">
   <datalist id="gift-name-options">
     <option :for={gift <- @gifts} value={gift.name} />
   </datalist>

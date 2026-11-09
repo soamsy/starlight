@@ -207,7 +207,7 @@
         </div>
       </div>
       <div :for={pane <- ~w(battle packs gifts)} class={"flex-1 min-h-0 min-w-0 flex-col " <> if(pane == @pane, do: "flex", else: "hidden")}>
-        <%= live_render(@socket, pane_view(pane), id: "pane-#{pane}-#{@editing_id}", session: %{"team_id" => @editing_id}, container: {:div, class: "flex flex-col flex-1 min-h-0 min-w-0"}) %>
+        <%= live_render(@socket, pane_view(pane), id: "pane-#{pane}-#{@editing_id}", session: %{"team_id" => @editing_id, "tab" => @gift_view.tab, "milestone" => @gift_view.milestone}, container: {:div, class: "flex flex-col flex-1 min-h-0 min-w-0"}) %>
       </div>
     </div>
     <% true -> %>
