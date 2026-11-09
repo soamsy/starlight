@@ -100,15 +100,14 @@ h1, h2, h3, h4, .card-title, .btn, .tab, .menu-title {
 
 body {
   background-color: var(--color-base-200);
-  background-image: url('/images/bg/limbus_kit_lamancha_entrance.webp');
+  /* background-image: url('/images/bg/limbus_kit_lamancha_entrance.webp'); */
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
 }
 
 .card, .modal-box, .stats {
-  background-color: color-mix(in oklab, var(--color-base-100) 88%, transparent);
-  backdrop-filter: blur(14px);
+  background-color: color-mix(in oklab, var(--color-base-100) 94%, transparent);
   border: 1px solid oklch(34% 0.05 40);
   box-shadow: inset 0 1px 0 rgb(255 235 205 / 0.06), 0 6px 18px rgb(0 0 0 / 0.55);
 }
@@ -181,5 +180,4 @@ body {
 .runner-pane {
   background-image: url('/images/bg/log.webp');
   background-size: cover;
-  background-attachment: fixed;
 }

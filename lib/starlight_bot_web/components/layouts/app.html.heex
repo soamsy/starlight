@@ -170,7 +170,7 @@
     <div class="flex items-center gap-1">
     <%!-- Runners --%>
     <.link navigate={~p"/"}
-           class={"relative btn btn-xs lg:btn-sm gap-1 " <> if(assigns[:page] == :runner, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           class={"relative btn btn-xs lg:btn-sm gap-1 px-8 lg:px-12 " <> if(assigns[:page] == :runner, do: "btn-primary", else: "btn-ghost text-base-content/50")}
            title="Runner">
       <span :if={assigns[:run_live]} class={["absolute -right-1 -top-1 size-2 rounded-full ring-2 ring-base-100", if(assigns[:run_paused], do: "bg-warning", else: "bg-success")]}></span>
       <img src={~p"/images/icons/starlight.webp"} alt="Runner" class="h-4 w-4 lg:h-5 lg:w-5" style="filter: drop-shadow(1px 0 0 var(--color-primary-content)) drop-shadow(-1px 0 0 var(--color-primary-content)) drop-shadow(0 1px 0 var(--color-primary-content)) drop-shadow(0 -1px 0 var(--color-primary-content));" />
@@ -181,14 +181,15 @@
 
     <%!-- Config --%>
     <.link navigate={~p"/teams"}
-           class={"btn btn-xs lg:btn-sm gap-1 " <> if(assigns[:page] == :teams, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+           class={"btn btn-xs lg:btn-sm gap-1 px-8 lg:px-12 " <> if(assigns[:page] == :teams, do: "btn-primary", else: "btn-ghost text-base-content/50")}
            title="Teams">
       <img src={~p"/images/icons/team.webp"} alt="Teams" class="h-4 w-4 object-contain lg:h-5 lg:w-5" style="filter: drop-shadow(1px 0 0 var(--color-primary-content)) drop-shadow(-1px 0 0 var(--color-primary-content)) drop-shadow(0 1px 0 var(--color-primary-content)) drop-shadow(0 -1px 0 var(--color-primary-content));" />
       <span class="font-semibold">TEAM</span>
     </.link>
 
-    <div class="divider my-0 lg:my-1"></div>
-      <div class="dropdown dropdown-center">
+    </div>
+    <div class="flex items-center justify-end gap-1">
+      <div class="dropdown dropdown-end">
         <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(assigns[:page] in [:hooks, :screenshots, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :transitions, :shop_runner, :rewards, :linux_checks, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
             <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -319,8 +320,6 @@
         </div>
         </div>
       </div>
-    </div>
-    <div class="flex items-center justify-end">
     <button phx-click="settings_open" class="tooltip tooltip-bottom btn btn-ghost btn-square btn-xs lg:btn-sm text-base-content/50" data-tip="Settings">
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
         <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
