@@ -1,9 +1,0 @@
-#!/bin/sh
-set -e
-root=$(git rev-parse --show-toplevel)
-"$root/scripts/db-checkpoint"
-for db in priv/data/base.db priv/data/user_seed.db; do
-  if ! git diff --cached --quiet -- "$root/$db"; then
-    git add -- "$root/$db"
-  fi
-done
