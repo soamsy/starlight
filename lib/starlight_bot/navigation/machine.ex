@@ -9,8 +9,10 @@ defmodule StarlightBot.Navigation.Machine do
 
   @poll_interval_ms 100
   @verify_timeout_ms 1_800
+  @loading_hooks [:loading_stage_1, :loading_stage_2]
+  @loading_grace_ms 2_500
   @goto_recovery_attempts 3
-  @refinement_timeout_ms 1_000
+  @refinement_timeout_ms 1_500
   @hold_poll_ms 30
   @locate_poll_ms 200
   @fallback_settle_ms 2_000
@@ -439,6 +441,35 @@ defmodule StarlightBot.Navigation.Machine do
     settle(current, deadline, data)
   end
 
+  defp tick(%{poll: {{:verify, _screen_name, _hook} = kind, deadline}} = data) do
+    if mono() >= deadline do
+      expire(kind, nil, data)
+    else
+      case probe(kind) do
+        {:matched, frame, match} ->
+          matched(kind, frame, match, data)
+
+        {:miss, frame} ->
+          deadline = if loading_visible?(frame), do: mono() + @loading_grace_ms, else: deadline
+          {:next_state, :polling, %{data | poll: {kind, deadline}}, [{:state_timeout, poll_interval(kind), :tick}]}
+      end
+    end
+  end
+
+  defp tick(%{poll: {{:locate, _started_at} = kind, deadline}} = data) do
+    case probe(kind) do
+      {:matched, frame, match} ->
+        matched(kind, frame, match, data)
+
+      {:miss, _frame} ->
+        deadline = if loading_now?(), do: mono() + @loading_grace_ms, else: deadline
+
+        if mono() >= deadline,
+          do: expire(kind, nil, data),
+          else: {:next_state, :polling, %{data | poll: {kind, deadline}}, [{:state_timeout, poll_interval(kind), :tick}]}
+    end
+  end
+
   defp tick(%{poll: {kind, deadline}} = data) do
     if not grab_first?(kind) and mono() >= deadline do
       expire(kind, nil, data)
@@ -509,7 +540,18 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp watched_specs({:await_any, hooks}), do: hooks
   defp watched_specs({:branch, clauses, _default_steps, _wait_ms}), do: Enum.map(clauses, &elem(&1, 0))
+  defp watched_specs({:verify, _screen_name, hook}), do: [hook | @loading_hooks]
   defp watched_specs(kind), do: [watched_hook(kind)]
+
+  defp loading_now? do
+    case Runner.grab_for(@loading_hooks) do
+      {:ok, frame} -> loading_visible?(frame)
+      {:error, _} -> false
+    end
+  end
+
+  defp loading_visible?(nil), do: false
+  defp loading_visible?(frame), do: Enum.any?(@loading_hooks, &Runner.hook_matches?(frame, &1))
 
   defp watched_hook({:await, hook}), do: hook
   defp watched_hook({:retry_window, loop, _attempt}), do: loop.hook
