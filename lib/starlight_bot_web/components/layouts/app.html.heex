@@ -1,15 +1,50 @@
 <.flash_toasts flash={@flash} />
 
 <div class="h-screen overflow-hidden flex flex-col">
-  <nav class="grid grid-cols-[1fr_auto_1fr] items-center gap-2 shrink-0 px-2 py-1 bg-base-100 border-b border-base-300">
-    <div class="flex items-center gap-1 min-w-0">
+  <nav class="flex items-start gap-2 shrink-0 px-2 py-1 bg-base-100 border-b border-base-300">
+    <% on_runner = assigns[:page] == :runner %>
+    <% on_teams = assigns[:page] == :teams %>
+    <% run_link = fn path -> if on_runner, do: [patch: path], else: [navigate: path] end %>
+    <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1 xl:flex-none">
+      <.link {run_link.(~p"/mirror-dungeon")}
+             class={"btn btn-xs lg:btn-sm gap-1 " <> if(on_runner and assigns[:tab] == :mirror_dungeon, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+             title="Mirror Dungeon">
+        <img src={~p"/images/icons/mirror_dungeon.webp"} alt="" class="size-4 lg:size-5" />
+        <span class="font-semibold">MD</span>
+        <span :if={assigns[:run_kind] == :mirror_dungeon} class="loading loading-spinner loading-xs"></span>
+      </.link>
+      <.link {run_link.(~p"/luxcavation")}
+             class={"btn btn-xs lg:btn-sm gap-1 " <> if(on_runner and assigns[:tab] == :luxcavation, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+             title="Luxcavation">
+        <img src={~p"/images/icons/luxcavation.webp"} alt="" class="size-4 lg:size-5" />
+        <span class="font-semibold">Lux</span>
+        <span :if={assigns[:run_kind] == :luxcavation} class="loading loading-spinner loading-xs"></span>
+      </.link>
+      <%= if nav = assigns[:team_nav] do %>
+        <TeamNav.team_selector nav={nav} on_page={on_teams} />
+        <PlanPicker.pane_tabs team_id={nav.team_id} pane={nav.pane} counts={nav.counts} on_page={on_teams} />
+      <% end %>
+    </div>
+
+    <% latest = assigns[:latest_log] %>
+    <% latest_class = ["min-w-0 truncate text-left font-mono text-xs hover:underline", latest && latest.kind in [:error, "error"] && "text-error" || "text-base-content/60"] %>
+    <div class="hidden min-w-0 flex-1 items-center self-center xl:flex">
+      <%= if latest && on_runner do %>
+        <button type="button" phx-click={Phoenix.LiveView.JS.dispatch("starlight:log-bottom")} class={latest_class} title={latest.text}>{latest.text}</button>
+      <% end %>
+      <%= if latest && !on_runner do %>
+        <.link navigate={~p"/"} class={latest_class} title={latest.text}>{latest.text}</.link>
+      <% end %>
+    </div>
+
+    <div class="ml-auto flex shrink-0 items-center justify-end gap-1">
     <% overview = assigns[:scheduler_overview] %>
     <% runs_on = overview && overview.runs_on %>
     <% charger_on = overview && overview.charger_on %>
     <% scheduler_on = runs_on || charger_on %>
     <% status = window_status(assigns[:game_window_rect]) %>
     <% busy = assigns[:game_window_busy] %>
-    <div class="dropdown">
+    <div class="dropdown dropdown-end">
       <div tabindex="0" role="button"
            class={[
              "btn btn-square btn-xs lg:btn-sm",
@@ -113,7 +148,7 @@
       </div>
     </div>
 
-    <div class="dropdown">
+    <div class="dropdown dropdown-end">
       <div tabindex="0" role="button"
            class={["btn btn-square btn-xs lg:btn-sm", if(scheduler_on, do: "btn-success", else: "btn-ghost text-base-content/40")]}
            title={if(scheduler_on, do: "Scheduler on", else: "Scheduler off")}>
@@ -158,39 +193,9 @@
       </div>
     </div>
 
-    <% latest = assigns[:latest_log] %>
-      <% latest_class = ["ml-1 min-w-0 truncate text-left font-mono text-xs hover:underline", latest && latest.kind in [:error, "error"] && "text-error" || "text-base-content/60"] %>
-      <%= if latest && assigns[:page] == :runner do %>
-        <button type="button" phx-click={Phoenix.LiveView.JS.dispatch("starlight:log-bottom")} class={latest_class} title={latest.text}>{latest.text}</button>
-      <% end %>
-      <%= if latest && assigns[:page] != :runner do %>
-        <.link navigate={~p"/"} class={latest_class} title={latest.text}>{latest.text}</.link>
-      <% end %>
-    </div>
-    <div class="flex items-center gap-1">
-    <%!-- Runners --%>
-    <.link navigate={~p"/"}
-           class={"relative btn btn-xs lg:btn-sm gap-1 px-8 lg:px-12 " <> if(assigns[:page] == :runner, do: "btn-primary", else: "btn-ghost text-base-content/50")}
-           title="Runner">
-      <span :if={assigns[:run_live]} class={["absolute -right-1 -top-1 size-2 rounded-full ring-2 ring-base-100", if(assigns[:run_paused], do: "bg-warning", else: "bg-success")]}></span>
-      <img src={~p"/images/icons/starlight.webp"} alt="Runner" class="h-4 w-4 lg:h-5 lg:w-5" style="filter: drop-shadow(1px 0 0 var(--color-primary-content)) drop-shadow(-1px 0 0 var(--color-primary-content)) drop-shadow(0 1px 0 var(--color-primary-content)) drop-shadow(0 -1px 0 var(--color-primary-content));" />
-      <span class="font-semibold">RUN</span>
-    </.link>
-
-    <div class="divider my-0 lg:my-1"></div>
-
-    <%!-- Config --%>
-    <.link navigate={~p"/teams"}
-           class={"btn btn-xs lg:btn-sm gap-1 px-8 lg:px-12 " <> if(assigns[:page] == :teams, do: "btn-primary", else: "btn-ghost text-base-content/50")}
-           title="Teams">
-      <img src={~p"/images/icons/team.webp"} alt="Teams" class="h-4 w-4 object-contain lg:h-5 lg:w-5" style="filter: drop-shadow(1px 0 0 var(--color-primary-content)) drop-shadow(-1px 0 0 var(--color-primary-content)) drop-shadow(0 1px 0 var(--color-primary-content)) drop-shadow(0 -1px 0 var(--color-primary-content));" />
-      <span class="font-semibold">TEAM</span>
-    </.link>
-
-    </div>
-    <div class="flex items-center justify-end gap-1">
       <div class="dropdown dropdown-end">
-        <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(assigns[:page] in [:hooks, :screenshots, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :transitions, :shop_runner, :rewards, :linux_checks, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
+        <% profiles_on = on_teams and assigns[:team_nav] != nil and @team_nav.pane == "profiles" %>
+        <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :screenshots, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :transitions, :shop_runner, :rewards, :linux_checks, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
             <rect x="3" y="3" width="7" height="7" rx="1" />
             <rect x="14" y="3" width="7" height="7" rx="1" />
@@ -200,6 +205,52 @@
         </div>
         <div tabindex="0" class="dropdown-content z-50 mt-2 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
         <div class="grid grid-cols-4 gap-1">
+    <%= if nav = assigns[:team_nav] do %>
+    <.link {if on_teams, do: [patch: TeamNav.team_path(nav.team_id, if(profiles_on, do: TeamNav.plan_pane(nav.pane), else: "profiles"))], else: [navigate: TeamNav.team_path(nav.team_id, "profiles")]}
+           onclick="document.activeElement.blur()"
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(profiles_on, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+      <span class="text-[10px] font-normal leading-tight text-center">{if profiles_on, do: "Back to plans", else: "Sinner Profiles"}</span>
+    </.link>
+    <% end %>
+    <%= cond do %>
+      <% assigns[:run_phase] in [nil, :idle] -> %>
+        <button type="button" phx-click="prepare_lineups" onclick="document.activeElement.blur()"
+                title="Select each team in the Lux EXP team select and set its sinner order to the first lineup, then return home"
+                class="btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 btn-ghost text-base-content/50">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
+            <path d="m3 17 2 2 4-4" />
+            <path d="m3 7 2 2 4-4" />
+            <path d="M13 6h8" />
+            <path d="M13 12h8" />
+            <path d="M13 18h8" />
+          </svg>
+          <span class="text-[10px] font-normal leading-tight text-center">Prepare Lineups</span>
+        </button>
+      <% assigns[:run_kind] == :prepare_lineups -> %>
+        <button type="button" phx-click="run_cancel" onclick="document.activeElement.blur()"
+                class="btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 btn-ghost text-error">
+          <span class="loading loading-spinner loading-xs"></span>
+          <span class="text-[10px] font-normal leading-tight text-center">Cancel Lineups</span>
+        </button>
+      <% true -> %>
+        <button type="button" disabled title="Another run is in progress"
+                class="btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 btn-ghost">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
+            <path d="m3 17 2 2 4-4" />
+            <path d="m3 7 2 2 4-4" />
+            <path d="M13 6h8" />
+            <path d="M13 12h8" />
+            <path d="M13 18h8" />
+          </svg>
+          <span class="text-[10px] font-normal leading-tight text-center">Prepare Lineups</span>
+        </button>
+    <% end %>
     <%!-- Inspectors / debug tools --%>
     <.link navigate={~p"/hooks"}
            class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :hooks, do: "btn-primary", else: "btn-ghost text-base-content/50")}>

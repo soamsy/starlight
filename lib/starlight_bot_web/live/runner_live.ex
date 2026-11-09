@@ -66,17 +66,20 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   end
 
   @impl true
+  def handle_params(_params, _uri, %{assigns: %{live_action: tab}} = socket) when tab in [:mirror_dungeon, :luxcavation] do
+    {:noreply, socket |> assign(:tab, tab) |> assign_other_running()}
+  end
+
+  @impl true
+  def handle_params(_params, _uri, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_event("toggle_forecast_info", _, socket), do: {:noreply, update(socket, :show_forecast_info, &(!&1))}
 
   @impl true
   def handle_event("localize", _, socket) do
     Navigator.localize()
     {:noreply, socket}
-  end
-
-  @impl true
-  def handle_event("set_tab", %{"tab" => tab}, socket) when tab in ~w(mirror_dungeon luxcavation) do
-    {:noreply, socket |> assign(:tab, String.to_existing_atom(tab)) |> assign_other_running()}
   end
 
   @impl true
@@ -338,6 +341,12 @@ defmodule StarlightBotWeb.Live.RunnerLive do
 
   @impl true
   def handle_info({:runner_form, _runner}, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_info(:team_plans_changed, socket) do
+    teams = Teams.list_teams() |> Enum.reject(&(&1.hooks == []))
+    {:noreply, socket |> assign(:teams, teams)}
+  end
 
   @impl true
   def handle_info(:run_history_changed, socket) do

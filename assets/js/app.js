@@ -1735,24 +1735,6 @@ const LocalStorageForm = {
   }
 }
 
-const TeamNavMemory = {
-  mounted() {
-    if (this.el.dataset.team) this.store()
-    else this.pushEvent("restore_nav", {
-      team: localStorage.getItem("starlight-team-editor-team"),
-      pane: localStorage.getItem("starlight-team-editor-pane")
-    })
-  },
-  updated() {
-    this.store()
-  },
-  store() {
-    const { team, pane } = this.el.dataset
-    if (team) localStorage.setItem("starlight-team-editor-team", team)
-    if (["battle", "packs", "gifts"].includes(pane)) localStorage.setItem("starlight-team-editor-pane", pane)
-  }
-}
-
 const RunnerTabMemory = {
   mounted() {
     if (this.el.dataset.restore === "true") {
@@ -2205,7 +2187,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { Toasts, RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, TeamNavMemory, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
+  hooks: { Toasts, RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
 })
 
 liveSocket.connect()

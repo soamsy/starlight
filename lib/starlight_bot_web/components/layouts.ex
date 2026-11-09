@@ -1,6 +1,8 @@
 defmodule StarlightBotWeb.Layouts do
   use StarlightBotWeb, :html
 
+  alias StarlightBotWeb.Components.{PlanPicker, TeamNav}
+
   embed_templates "layouts/*"
 
   @target_ratio 16 / 9

@@ -6,14 +6,15 @@ defmodule StarlightBotWeb.Components.PlanPicker do
   attr :team_id, :integer, default: nil
   attr :pane, :string, required: true
   attr :counts, :map, default: %{}
+  attr :on_page, :boolean, default: true
 
   def pane_tabs(assigns) do
     ~H"""
-    <div :if={@team_id} class="join shrink-0">
+    <div :if={@team_id} class={["join shrink-0", !@on_page && "grayscale opacity-60 transition hover:opacity-100 hover:grayscale-0"]}>
       <.link :for={{pane, label} <- [{"battle", "Battle"}, {"packs", "Packs"}, {"gifts", "Gifts"}, {"stats", "Stats"}]}
-             patch={~p"/teams?team=#{@team_id}&pane=#{pane}"}
+             {pane_link(@on_page, ~p"/teams?team=#{@team_id}&pane=#{pane}")}
              title={label}
-             class={"btn btn-sm join-item " <> if(@pane == pane, do: "btn-primary", else: "btn-outline")}>
+             class={"btn btn-xs lg:btn-sm join-item " <> if(@on_page and @pane == pane, do: "btn-primary", else: "btn-outline")}>
         <img :if={pane == "stats"} src="/images/icons/starlight.webp" alt="Stats" class="h-4 w-4" style="filter: drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000);" />
         <.pane_icon :if={pane != "stats"} pane={pane} class="h-4 w-4" /><%= if pane != "stats", do: label %>
         <span :if={tab_count(@counts, pane)} class="badge badge-xs badge-ghost font-mono"><%= tab_count(@counts, pane) %></span>
@@ -21,6 +22,9 @@ defmodule StarlightBotWeb.Components.PlanPicker do
     </div>
     """
   end
+
+  defp pane_link(true, path), do: [patch: path]
+  defp pane_link(false, path), do: [navigate: path]
 
   defp tab_count(counts, "battle"), do: counts[:battle_plans]
   defp tab_count(counts, "packs"), do: counts[:pack_plans]
