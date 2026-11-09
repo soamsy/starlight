@@ -12,11 +12,12 @@ defmodule StarlightBot.Navigation.Screens.StartScreen do
   defp leave_start_screen do
     [
       retry_until(
-        any_of([not_hook(:clear_all_caches), :scheduled_maintenance, :cannot_operate_game]),
+        any_of([:home_lunacy, :scheduled_maintenance, :cannot_operate_game]),
         [
           branch([
             {:random_confirm, [click(:random_confirm)]},
-            {:default, [click(:clear_all_caches)]},
+            {:clear_all_caches, [click(:clear_all_caches)]},
+            {:default, [click(:safe_corner)]},
           ]),
           key(:enter),
         ],
