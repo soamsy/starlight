@@ -141,16 +141,10 @@
           <button :if={@teams != [] and not locked} type="button" phx-click="add_team" class="btn btn-ghost btn-xs self-start">+ team</button>
         </div>
 
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="collect_xp" value="true" checked={@collect_xp}
-                 class="checkbox checkbox-sm" />
-          <span class="text-sm">Collect battle pass xp after all runs</span>
-        </label>
-
         <div class="flex items-center gap-2">
           <label class="flex items-center gap-2">
             <input type="checkbox" name="collect_enkephalin" value="true" checked={@collect_enkephalin}
-                   class="checkbox checkbox-sm" />
+                   class="toggle toggle-sm" />
             <span class="text-sm">Charge <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-5 inline-block align-text-bottom" /> before each run</span>
           </label>
           <%= if @collect_enkephalin do %>
@@ -174,6 +168,12 @@
             </div>
           <% end %>
         </div>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="collect_xp" value="true" checked={@collect_xp}
+                 class="toggle toggle-sm" />
+          <span class="text-sm">Collect battle pass xp after all runs</span>
+        </label>
 
       </form>
 
@@ -337,16 +337,10 @@
           </.pick_list>
         </div>
 
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="collect_xp" value="true" checked={@lux_collect_xp}
-                 class="checkbox checkbox-sm" />
-          <span class="text-sm">Collect battle pass xp at end</span>
-        </label>
-
         <div class="flex items-center gap-2">
           <label class="flex items-center gap-2">
             <input type="checkbox" name="collect_enkephalin" value="true" checked={@lux_collect_enkephalin}
-                   class="checkbox checkbox-sm" />
+                   class="toggle toggle-sm" />
             <span class="text-sm">Charge <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-5 inline-block align-text-bottom" /> at start</span>
           </label>
           <%= if @lux_collect_enkephalin do %>
@@ -370,6 +364,12 @@
             </div>
           <% end %>
         </div>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="collect_xp" value="true" checked={@lux_collect_xp}
+                 class="toggle toggle-sm" />
+          <span class="text-sm">Collect battle pass xp at end</span>
+        </label>
 
       </form>
 
