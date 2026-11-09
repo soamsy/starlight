@@ -109,7 +109,7 @@
 
                   <%= if @active_tab == :loadout or milestone do %>
                     <div class="flex items-center gap-1 shrink-0">
-                      <input type="text" placeholder="Search gifts…" value={@gift_filter} phx-keyup="filter_gifts"
+                      <input id="gift-search-input" type="text" placeholder="Search gifts…" value={@gift_filter} phx-keyup="filter_gifts"
                              class="input input-bordered input-xs flex-1 min-w-0" />
                       <button :if={@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter} type="button" phx-click="clear_gift_filters" title="Clear all filters"
                               class="btn btn-ghost btn-xs btn-square">✕</button>
@@ -202,82 +202,44 @@
                      data-drop-event={if @active_tab == :loadout, do: "toggle_search_gift", else: milestone && "ms_add_gift"}
                      class="flex flex-col gap-3 overflow-y-auto min-h-0 pr-1 rounded-lg transition-colors">
                   <%= if @active_tab == :loadout do %>
-              <div class="flex items-end gap-3 flex-wrap">
+              <div class="flex items-start gap-3 flex-wrap">
                 <form phx-change="set_affinity" class="flex flex-col gap-1">
-                  <span class="text-xs font-medium text-base-content/70">Affinity</span>
                   <details class="dropdown">
-                    <summary class="btn btn-outline bg-base-100 font-normal normal-case gap-1.5 justify-start min-w-36">
-                      <img :if={@plan_data["affinity"] not in [nil, ""]} src={gift_affinity_icon(@plan_data["affinity"])} class="w-4 h-4 object-contain" />
-                      <%= if @plan_data["affinity"] in [nil, ""], do: "none", else: @plan_data["affinity"] %>
+                    <summary class="btn btn-outline capitalize! text-base gap-1.5 justify-between min-w-40 min-h-10 min-[600px]:min-h-[3.625rem]">
+                      <span class="flex items-center gap-1.5">
+                        <img :if={@plan_data["affinity"] not in [nil, ""]} src={gift_affinity_icon(@plan_data["affinity"])} class="w-4 h-4 object-contain" />
+                        <%= if @plan_data["affinity"] in [nil, ""], do: "Select affinity", else: @plan_data["affinity"] %>
+                      </span>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="m6 9 6 6 6-6" /></svg>
                     </summary>
                     <ul class="dropdown-content menu bg-base-100 rounded-box border border-base-300 shadow z-20 w-40 p-1">
-                      <li>
-                        <label class="cursor-pointer">
-                          <input type="radio" name="affinity" value="" checked={@plan_data["affinity"] in [nil, ""]} class="hidden" />none
-                        </label>
-                      </li>
                       <li :for={affinity <- affinities()}>
                         <label class="cursor-pointer">
                           <input type="radio" name="affinity" value={affinity} checked={@plan_data["affinity"] == affinity} class="hidden" />
-                          <img src={gift_affinity_icon(affinity)} class="w-4 h-4 object-contain" /><%= affinity %>
+                          <img src={gift_affinity_icon(affinity)} class="w-4 h-4 object-contain" /><span class="capitalize"><%= affinity %></span>
                         </label>
                       </li>
                     </ul>
                   </details>
                 </form>
-                <div :if={GiftPlans.cabinet_order(@plan_data) != []} id="cabinet-gift-order" phx-hook="SortableList"
+                <div :if={GiftPlans.cabinet_order(@plan_data) != []} id="cabinet-bracket" phx-hook="CabinetBracket" data-count={GiftPlans.cabinet_pick_count(@plan_data)} class="relative pb-8">
+                <div id="cabinet-gift-order" phx-hook="SortableList"
                      data-sort-event="reorder_cabinet_gifts" data-sort-scope="cabinet" data-sort-axis="x" class="flex items-center gap-1 min-[600px]:gap-2"
                      title="Starting gift pick order. The cabinet only allows as many picks as your graces give.">
+                  <% pick_count = GiftPlans.cabinet_pick_count(@plan_data) %>
                   <div :for={{name, index} <- Enum.with_index(GiftPlans.cabinet_order(@plan_data), 1)} data-sort-id={name}
-                       class="flex items-center gap-1 min-[600px]:gap-2 min-w-0 rounded-lg border border-base-300 bg-base-200 p-1 min-[600px]:p-2 min-h-10 min-[600px]:min-h-14">
+                       class={"relative flex items-center gap-1 min-[600px]:gap-2 min-w-0 rounded-lg border border-base-300 bg-base-200 p-1 min-[600px]:p-2 min-h-10 min-[600px]:min-h-14 transition-opacity " <> if(index > pick_count, do: "opacity-40", else: "")}>
+                    <span :if={index <= pick_count} class={"absolute -bottom-2 h-1.5 border-b-2 border-primary pointer-events-none " <> if(index == 1, do: "left-0 border-l rounded-bl", else: "-left-1 min-[600px]:-left-2") <> " " <> if(index == pick_count, do: "right-0 border-r rounded-br", else: "-right-1 min-[600px]:-right-2")}></span>
                     <span data-sort-handle class="cursor-grab text-base-content/40 select-none">⠿</span>
                     <span class="text-[10px] text-base-content/40"><%= index %></span>
                     <% gift = @gifts_by_name[name] %>
-                    <img :if={gift} src={gift.image_path} class="w-6 h-6 min-[600px]:w-10 min-[600px]:h-10 rounded object-cover" />
-                    <span class="text-[10px] min-[600px]:text-xs font-semibold truncate"><%= name %></span>
+                    <div data-gift-popup={name} class="flex items-center gap-1 min-[600px]:gap-2 min-w-0 cursor-pointer">
+                      <img :if={gift} src={gift.image_path} class="w-6 h-6 min-[600px]:w-10 min-[600px]:h-10 rounded object-cover" />
+                      <span class="text-[10px] min-[600px]:text-xs font-semibold truncate"><%= name %></span>
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              <div class="divider my-0"></div>
-
-              <% picks = @plan_data["gift_search"] %>
-              <% max = GiftPlans.gift_search_max() %>
-              <div class="flex flex-col gap-3">
-                <div class="flex items-center gap-2">
-                  <span class="text-xs font-medium text-base-content/70">
-                    Gifts to pick on the gift search screen after the cabinet, on every run. Up to <%= max %>, Tier 3 and under.
-                    Leave empty to skip gift search.
-                  </span>
-                  <span :if={picks != []} class="badge badge-warning badge-sm ml-auto whitespace-nowrap">
-                    <%= GiftPlans.gift_search_starlight_cost(length(picks)) %> Starlight
-                  </span>
-                  <span class={"badge badge-primary badge-sm whitespace-nowrap shrink-0 " <> if(picks == [], do: "ml-auto", else: "")}><%= length(picks) %> / <%= max %></span>
-                </div>
-                <div class="grid grid-cols-3 gap-2">
-                  <%= for slot <- 0..(max - 1) do %>
-                    <% name = Enum.at(picks, slot) %>
-                    <% gift = name && @gifts_by_name[name] %>
-                    <div class={"rounded-lg border p-2 flex items-center gap-2 min-h-14 " <>
-                           if(name, do: "bg-primary/10 border-primary", else: "border-dashed border-base-300")}>
-                      <%= if name do %>
-                        <div data-gift-popup={name} class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer">
-                          <img :if={gift} src={gift.image_path} class="w-10 h-10 rounded object-cover" />
-                          <div class="flex flex-col flex-1 min-w-0">
-                            <span class="text-xs font-semibold truncate" title={name}><%= name %></span>
-                            <span :if={gift} class="text-[10px] text-base-content/60">
-                              T<%= gift.tier %> · <%= GiftPlans.gift_search_tab(gift) %> tab
-                            </span>
-                          </div>
-                        </div>
-                        <span class="badge badge-warning badge-xs whitespace-nowrap"><%= GiftPlans.gift_search_slot_cost(slot) %> Starlight</span>
-                        <button phx-click="toggle_search_gift" phx-value-gift={name} class="btn btn-ghost btn-2xs px-1">✕</button>
-                      <% else %>
-                        <span class="text-[11px] text-base-content/40 italic flex-1">Empty slot</span>
-                        <span class="badge badge-ghost badge-xs whitespace-nowrap">+<%= GiftPlans.gift_search_slot_cost(slot) %> Starlight</span>
-                      <% end %>
-                    </div>
-                  <% end %>
+                <span id="cabinet-bracket-label" data-bracket-label phx-update="ignore" class="absolute bottom-0 text-center text-xs text-base-content/60 whitespace-nowrap">Starting E.G.O gifts</span>
                 </div>
               </div>
 
@@ -285,9 +247,6 @@
 
               <div class="flex flex-col gap-3">
                 <div class="flex items-center gap-2">
-                  <span class="text-xs font-medium text-base-content/70">
-                    Starter buffs to select at grace, on every run. Multi-select, pick an enhancement tier per grace.
-                  </span>
                   <span class="badge badge-primary badge-sm ml-auto whitespace-nowrap shrink-0"><%= grace_total_cost(@plan_data) %> Starlight total</span>
                 </div>
                 <div class="grid grid-cols-2 grid-rows-5 min-[600px]:grid-cols-5 min-[600px]:grid-rows-2 gap-2">
@@ -309,6 +268,54 @@
                           <%= grace_enhance_icon(enhance_level) %>
                         </button>
                       </div>
+                    </div>
+                  <% end %>
+                </div>
+              </div>
+
+              <div class="divider my-0"></div>
+
+              <% picks = @plan_data["gift_search"] %>
+              <% max = GiftPlans.gift_search_max() %>
+              <div class="flex flex-col gap-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-medium text-base-content/70">
+                    E.G.O Gift Search - Spend starlight to start with any gift up to Tier 3.
+                  </span>
+                  <span :if={picks != []} class="badge badge-warning badge-sm ml-auto whitespace-nowrap">
+                    <%= GiftPlans.gift_search_starlight_cost(length(picks)) %> Starlight
+                  </span>
+                  <span class={"badge badge-primary badge-sm whitespace-nowrap shrink-0 " <> if(picks == [], do: "ml-auto", else: "")}><%= length(picks) %> / <%= max %></span>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                  <%= for slot <- 0..(max - 1) do %>
+                    <% name = Enum.at(picks, slot) %>
+                    <% gift = name && @gifts_by_name[name] %>
+                    <div phx-click={!name && JS.focus(to: "#gift-search-input")}
+                         class={"rounded-lg border p-2 flex items-center gap-2 min-h-14 " <>
+                           cond do
+                             name -> "bg-primary/10 border-primary"
+                             slot == length(picks) -> "border-2 border-dashed border-primary/70 bg-primary/5 cursor-pointer hover:bg-primary/10 hover:border-primary"
+                             true -> "border-2 border-dashed border-base-content/20 cursor-pointer hover:border-primary/60 hover:bg-primary/5"
+                           end}>
+                      <%= if name do %>
+                        <div data-gift-popup={name} class="flex items-center gap-2 flex-1 min-w-0 text-left cursor-pointer">
+                          <img :if={gift} src={gift.image_path} class="w-10 h-10 rounded object-cover" />
+                          <div class="flex flex-col flex-1 min-w-0">
+                            <span class="text-xs font-semibold truncate" title={name}><%= name %></span>
+                            <span :if={gift} class="text-[10px] text-base-content/60">
+                              T<%= gift.tier %> · <%= GiftPlans.gift_search_tab(gift) %> tab
+                            </span>
+                          </div>
+                        </div>
+                        <span class="badge badge-warning badge-xs whitespace-nowrap"><%= GiftPlans.gift_search_slot_cost(slot) %> Starlight</span>
+                        <button phx-click="toggle_search_gift" phx-value-gift={name} class="btn btn-ghost btn-2xs px-1">✕</button>
+                      <% else %>
+                        <div class={"w-10 h-10 shrink-0 rounded border border-dashed flex items-center justify-center text-xl leading-none " <>
+                               if(slot == length(picks), do: "border-primary/70 text-primary animate-pulse", else: "border-base-content/30 text-base-content/40")}>+</div>
+                        <span class={"text-[11px] flex-1 " <> if(slot == length(picks), do: "text-base-content/80", else: "text-base-content/50")}>Drag or Add a gift from the list</span>
+                        <span class="badge badge-ghost badge-xs whitespace-nowrap">+<%= GiftPlans.gift_search_slot_cost(slot) %> Starlight</span>
+                      <% end %>
                     </div>
                   <% end %>
                 </div>

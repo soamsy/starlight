@@ -1909,6 +1909,26 @@ const WindowDrag = {
   }
 }
 
+const CabinetBracket = {
+  mounted() {
+    this.place = () => {
+      const label = this.el.querySelector("[data-bracket-label]")
+      const cards = this.el.querySelectorAll("[data-sort-id]")
+      const count = Math.min(parseInt(this.el.dataset.count, 10) || 0, cards.length)
+      if (!label || count === 0) return
+      const first = cards[0]
+      const last = cards[count - 1]
+      label.style.left = `${first.offsetLeft}px`
+      label.style.width = `${last.offsetLeft + last.offsetWidth - first.offsetLeft}px`
+    }
+    this.observer = new ResizeObserver(this.place)
+    this.observer.observe(this.el)
+    this.place()
+  },
+  updated() { this.place() },
+  destroyed() { this.observer.disconnect() }
+}
+
 const FocusSelect = {
   mounted() {
     this.el.focus()
@@ -2235,7 +2255,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { Toasts, RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, FocusSelect, TeamSearch, WindowDrag, GameStream }
+  hooks: { Toasts, RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, CabinetBracket, FocusSelect, TeamSearch, WindowDrag, GameStream }
 })
 
 liveSocket.connect()
