@@ -101,12 +101,12 @@
                 <% true -> %>Open Limbus
               <% end %>
             </button>
-            <button type="button" phx-click="settings_open" phx-value-tab="scheduler" onclick="document.activeElement.blur()" class="link mt-2 block text-center">
+            <button type="button" phx-click="settings_open" onclick="document.activeElement.blur()" class="link mt-2 block text-center">
               Launcher settings
             </button>
           <% else %>
             <div class="text-base-content/70">
-              Launching is off. Set a launch mode in the <button type="button" phx-click="settings_open" phx-value-tab="scheduler" class="link">Scheduler</button> tab to open Limbus from here.
+              Launching is off. Set a launch mode in the <button type="button" phx-click="settings_open" class="link">Scheduler</button> settings to open Limbus from here.
             </div>
           <% end %>
         <% else %>
@@ -170,7 +170,7 @@
             <input type="checkbox" class="toggle toggle-xs toggle-success" checked={runs_on} phx-click="scheduler_toggle" />
             <span class="font-semibold">Daily runs</span>
           </label>
-          <button type="button" phx-click="settings_open" phx-value-tab="scheduler" onclick="document.activeElement.blur()"
+          <button type="button" phx-click="settings_open" onclick="document.activeElement.blur()"
                   class="btn btn-ghost btn-square btn-xs text-base-content/60">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
               <line x1="4" x2="20" y1="7" y2="7" />
@@ -195,7 +195,7 @@
 
       <div class="dropdown dropdown-end">
         <% profiles_on = on_teams and assigns[:team_nav] != nil and @team_nav.pane == "profiles" %>
-        <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :screenshots, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :transitions, :shop_runner, :rewards, :linux_checks, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
+        <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :screenshots, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :transitions, :shop_runner, :rewards, :linux_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
             <rect x="3" y="3" width="7" height="7" rx="1" />
             <rect x="14" y="3" width="7" height="7" rx="1" />
@@ -358,6 +358,15 @@
       <span class="text-[10px] font-normal leading-tight text-center">Linux Checks</span>
     </.link>
     <% end %>
+    <.link navigate={~p"/data"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :data, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
+        <ellipse cx="12" cy="5" rx="9" ry="3" />
+        <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+        <path d="M3 12A9 3 0 0 0 21 12" />
+      </svg>
+      <span class="text-[10px] font-normal leading-tight text-center">Data</span>
+    </.link>
     <.link navigate={~p"/log"}
            class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :log, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
@@ -371,12 +380,6 @@
         </div>
         </div>
       </div>
-    <button phx-click="settings_open" class="tooltip tooltip-bottom btn btn-ghost btn-square btn-xs lg:btn-sm text-base-content/50" data-tip="Settings">
-      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:h-5 lg:w-5">
-        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-        <circle cx="12" cy="12" r="3" />
-      </svg>
-    </button>
     </div>
   </nav>
 
@@ -385,14 +388,11 @@
   </main>
 </div>
 
-<%= if assigns[:settings_open] && assigns[:app_settings] do %>
+<%= if assigns[:settings_open] do %>
   <div class="modal modal-open" phx-window-keydown="settings_close" phx-key="Escape">
     <div class="modal-box max-w-2xl" phx-click-away="settings_close">
       <div class="flex items-center justify-between gap-3 mb-3">
-        <div role="tablist" class="tabs tabs-bordered">
-          <button role="tab" phx-click="settings_tab" phx-value-tab="scheduler" class={["tab text-lg font-bold px-0 me-6", @settings_tab == "scheduler" && "tab-active"]}>Scheduler</button>
-          <button role="tab" phx-click="settings_tab" phx-value-tab="data" class={["tab text-lg font-bold px-0", @settings_tab == "data" && "tab-active"]}>Data</button>
-        </div>
+        <h2 class="text-lg font-bold">Scheduler</h2>
         <form phx-change="enkephalin_save" class="flex items-center gap-2">
           <span class="tooltip tooltip-left normal-case before:w-64 before:whitespace-normal before:text-left" data-tip="Whenever enkephalin is collected, ensure this much lunacy has been spent">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5 cursor-help text-base-content/50">
@@ -415,7 +415,6 @@
       </div>
 
       <div class="h-[40rem] max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-hidden">
-      <%= if @settings_tab == "scheduler" do %>
       <div class="flex min-h-full flex-col">
         <div>
           {live_render(@socket, StarlightBotWeb.Live.SchedulerLive, id: "scheduler-banner", session: %{"part" => "banner"})}
@@ -554,48 +553,7 @@
 
         {live_render(@socket, StarlightBotWeb.Live.SchedulerLive, id: "scheduler-launch", session: %{"part" => "launch"})}
       </div>
-      <% end %>
 
-      <%= if @settings_tab == "data" do %>
-        <p class="text-xs text-base-content/60 mb-3">Where Starlight keeps your data. Changes apply after restarting Starlight.</p>
-
-        <form phx-submit="settings_save" class="flex flex-col gap-3">
-          <div :if={StarlightBot.Data.authoring_allowed?()} class="form-control">
-            <span class="label-text text-xs font-semibold mb-1">Mode</span>
-            <label class="flex items-start gap-2 cursor-pointer">
-              <input type="radio" name="mode" value="user" checked={@app_settings.mode == :user} class="radio radio-sm mt-0.5" />
-              <span class="text-sm">User<span class="block text-xs text-base-content/60">Your teams, plans, hook overrides and run history live in your data folder. Shipped data is read-only.</span></span>
-            </label>
-            <label class="flex items-start gap-2 cursor-pointer mt-1">
-              <input type="radio" name="mode" value="authoring" checked={@app_settings.mode == :authoring} class="radio radio-sm mt-0.5" />
-              <span class="text-sm">Authoring (development)<span class="block text-xs text-base-content/60">Edits the shipped databases in the repository directly. Run history stays in <span class="font-mono">.starlight-dev/</span>.</span></span>
-            </label>
-          </div>
-
-          <div class="form-control">
-            <label class="label-text text-xs font-semibold mb-1" for="settings-data-dir">Data folder</label>
-            <input id="settings-data-dir" type="text" name="data_dir" value={@app_settings.config["data_dir"]} placeholder="~/.starlight"
-                   class="input input-bordered input-sm font-mono" />
-          </div>
-
-          <div class="flex gap-2 justify-end">
-            <button type="button" phx-click="settings_open_folder" class="btn btn-sm btn-ghost">Open data folder</button>
-            <button type="submit" class="btn btn-sm btn-primary">Save</button>
-          </div>
-        </form>
-
-        <div class="divider my-2 text-xs">In use right now ({@app_settings.mode}, set by {@app_settings.mode_source})</div>
-        <table class="table table-xs">
-          <tbody>
-            <tr><td class="whitespace-nowrap">Shipped data</td><td class="font-mono text-xs break-all">{@app_settings.paths.base}</td></tr>
-            <tr><td class="whitespace-nowrap">Your data</td><td class="font-mono text-xs break-all">{@app_settings.paths.user}</td></tr>
-            <tr><td class="whitespace-nowrap">Run history</td><td class="font-mono text-xs break-all">{@app_settings.paths.runs}</td></tr>
-            <tr><td class="whitespace-nowrap">Your hook images</td><td class="font-mono text-xs break-all">{@app_settings.paths.user_hooks_dir}</td></tr>
-            <tr><td class="whitespace-nowrap">Logs</td><td class="font-mono text-xs break-all">{@app_settings.paths.log_dir}</td></tr>
-            <tr><td class="whitespace-nowrap">Settings file</td><td class="font-mono text-xs break-all">{@app_settings.config_file}</td></tr>
-          </tbody>
-        </table>
-      <% end %>
       </div>
 
       <div class="modal-action">

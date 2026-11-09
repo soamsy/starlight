@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.PageHook do
   import Phoenix.Component, only: [assign: 3, assign_new: 3]
   import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1, put_flash: 3]
-  alias StarlightBot.{AppSettings, Data, EnkephalinSchedule, GameWindow, LauncherDeps, LogStore, PlanCounts, Scheduler}
+  alias StarlightBot.{AppSettings, EnkephalinSchedule, GameWindow, LauncherDeps, LogStore, PlanCounts, Scheduler}
   import StarlightBot.Navigation.DSL, only: [click: 1]
   alias StarlightBot.Automation.{EnkephalinCharger, Engine}
   alias StarlightBot.Scheduler.Overview
@@ -20,7 +20,6 @@ defmodule StarlightBotWeb.Live.PageHook do
   ]
 
   @scheduler_clock_ms 30_000
-  @settings_tabs ["scheduler", "data"]
   @enkephalin_form_keys ~w(enabled window_start window_end interval_hours close_game_after_charge)
 
   @pages %{
@@ -38,7 +37,8 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.RunnerLive => :runner,
     StarlightBotWeb.Live.ShopRunnerLive => :shop_runner,
     StarlightBotWeb.Live.LogLive => :log,
-    StarlightBotWeb.Live.LinuxChecksLive => :linux_checks
+    StarlightBotWeb.Live.LinuxChecksLive => :linux_checks,
+    StarlightBotWeb.Live.DataLive => :data
   }
 
   def on_mount(:default, _params, _session, %{parent_pid: parent} = socket) when is_pid(parent), do: {:cont, socket}
@@ -60,9 +60,7 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:game_launcher_missing, [])
       |> assign(:latest_log, latest_log())
       |> assign(:settings_open, false)
-      |> assign(:settings_tab, "scheduler")
       |> assign(:scheduler_view, "progress")
-      |> assign(:app_settings, nil)
       |> assign(:enkephalin_convert_count, AppSettings.enkephalin_convert_count())
       |> assign_scheduler(Scheduler.get_settings())
       |> assign_enkephalin_schedule(EnkephalinSchedule.get_settings())
@@ -108,16 +106,12 @@ defmodule StarlightBotWeb.Live.PageHook do
   end
 
   defp handle_settings_event("settings_open", params, socket) do
-    tab = if params["tab"] in @settings_tabs, do: params["tab"], else: "scheduler"
     socket = if params["tab"] == "enkephalin", do: assign(socket, :scheduler_view, "enkephalin"), else: socket
-    {:halt, socket |> assign(:settings_open, true) |> assign(:settings_tab, tab) |> assign(:app_settings, Data.settings())}
+    {:halt, socket |> assign(:settings_open, true)}
   end
 
   defp handle_settings_event("scheduler_view", %{"view" => view}, socket) when view in ["runners", "enkephalin", "progress"],
     do: {:halt, assign(socket, :scheduler_view, view)}
-
-  defp handle_settings_event("settings_tab", %{"tab" => tab}, socket) when tab in @settings_tabs,
-    do: {:halt, assign(socket, :settings_tab, tab)}
 
   defp handle_settings_event("scheduler_toggle", _params, socket) do
     case Scheduler.set_enabled(not socket.assigns.scheduler_settings.enabled) do
@@ -139,28 +133,6 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp handle_settings_event("enkephalin_schedule_save", params, socket), do: save_enkephalin_schedule(socket, params)
 
   defp handle_settings_event("settings_close", _params, socket), do: {:halt, socket |> assign(:settings_open, false) |> assign_launch()}
-
-  defp handle_settings_event("settings_save", %{"data_dir" => data_dir} = params, socket) do
-    mode = if Data.authoring_allowed?(), do: Map.get(params, "mode", "user"), else: "user"
-
-    case Data.write_config(mode: mode, data_dir: String.trim(data_dir)) do
-      :ok ->
-        {:halt,
-         socket
-         |> assign(:app_settings, Data.settings())
-         |> put_flash(:info, "Saved. Restart Starlight for the new location to take effect.")}
-
-      {:error, reason} ->
-        {:halt, put_flash(socket, :error, "Couldn't save settings: #{inspect(reason)}")}
-    end
-  end
-
-  defp handle_settings_event("settings_open_folder", _params, socket) do
-    dir = Data.settings().data_dir
-    File.mkdir_p(dir)
-    Task.Supervisor.start_child(StarlightBot.TaskSupervisor, fn -> System.cmd("xdg-open", [dir], stderr_to_stdout: true) end)
-    {:halt, socket}
-  end
 
   defp handle_settings_event("scheduler_hold", %{"for" => option}, socket) when option in ~w(1 2 4 8 day clear) do
     Scheduler.hold(option)

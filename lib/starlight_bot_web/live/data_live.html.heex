@@ -1,0 +1,41 @@
+<div class="mx-auto h-full w-full max-w-2xl overflow-y-auto">
+  <h2 class="mb-3 text-lg font-semibold">Data</h2>
+    <p class="text-xs text-base-content/60 mb-3">Where Starlight keeps your data. Changes apply after restarting Starlight.</p>
+  
+    <form phx-submit="settings_save" class="flex flex-col gap-3">
+      <div :if={StarlightBot.Data.authoring_allowed?()} class="form-control">
+        <span class="label-text text-xs font-semibold mb-1">Mode</span>
+        <label class="flex items-start gap-2 cursor-pointer">
+          <input type="radio" name="mode" value="user" checked={@settings.mode == :user} class="radio radio-sm mt-0.5" />
+          <span class="text-sm">User<span class="block text-xs text-base-content/60">Your teams, plans, hook overrides and run history live in your data folder. Shipped data is read-only.</span></span>
+        </label>
+        <label class="flex items-start gap-2 cursor-pointer mt-1">
+          <input type="radio" name="mode" value="authoring" checked={@settings.mode == :authoring} class="radio radio-sm mt-0.5" />
+          <span class="text-sm">Authoring (development)<span class="block text-xs text-base-content/60">Edits the shipped databases in the repository directly. Run history stays in <span class="font-mono">.starlight-dev/</span>.</span></span>
+        </label>
+      </div>
+  
+      <div class="form-control">
+        <label class="label-text text-xs font-semibold mb-1" for="settings-data-dir">Data folder</label>
+        <input id="settings-data-dir" type="text" name="data_dir" value={@settings.config["data_dir"]} placeholder="~/.starlight"
+               class="input input-bordered input-sm font-mono" />
+      </div>
+  
+      <div class="flex gap-2 justify-end">
+        <button type="button" phx-click="settings_open_folder" class="btn btn-sm btn-ghost">Open data folder</button>
+        <button type="submit" class="btn btn-sm btn-primary">Save</button>
+      </div>
+    </form>
+  
+    <div class="divider my-2 text-xs">In use right now ({@settings.mode}, set by {@settings.mode_source})</div>
+    <table class="table table-xs">
+      <tbody>
+        <tr><td class="whitespace-nowrap">Shipped data</td><td class="font-mono text-xs break-all">{@settings.paths.base}</td></tr>
+        <tr><td class="whitespace-nowrap">Your data</td><td class="font-mono text-xs break-all">{@settings.paths.user}</td></tr>
+        <tr><td class="whitespace-nowrap">Run history</td><td class="font-mono text-xs break-all">{@settings.paths.runs}</td></tr>
+        <tr><td class="whitespace-nowrap">Your hook images</td><td class="font-mono text-xs break-all">{@settings.paths.user_hooks_dir}</td></tr>
+        <tr><td class="whitespace-nowrap">Logs</td><td class="font-mono text-xs break-all">{@settings.paths.log_dir}</td></tr>
+        <tr><td class="whitespace-nowrap">Settings file</td><td class="font-mono text-xs break-all">{@settings.config_file}</td></tr>
+      </tbody>
+    </table>
+</div>
