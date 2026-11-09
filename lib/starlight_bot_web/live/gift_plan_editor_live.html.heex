@@ -44,7 +44,6 @@
           <% issues = GiftPlans.issues(@plan_data, @gifts_by_name) %>
 
           <div class="flex items-center gap-2 flex-wrap">
-            <.pane_tabs team_id={@team_id} pane="gifts" counts={@tab_counts} />
             <.template_picker id="gift-template-picker" templates={@templates} editing={@editing_template} current_count={@tab_counts[:gift_plans]} status={@paste_status} selected={@template_id} plans={@plans} plan_id={@editing_id} editing_plan={@editing_plan} label="gift plan" />
             <div class="ml-auto flex items-center gap-3">
               <span :if={issues != []} class="badge badge-warning badge-sm" title={Enum.join(issues, "\n")}>
@@ -639,9 +638,6 @@
           </div>
 
         <% else %>
-          <div class="flex items-center gap-3">
-            <.pane_tabs team_id={@team_id} pane="gifts" counts={@tab_counts} />
-          </div>
           <div class="flex-1 flex flex-col gap-2 items-center justify-center text-base-content/40 text-sm">
             This team has no gift plan.
             <button type="button" phx-click="new_plan" class="btn btn-primary btn-sm">+ New gift plan</button>

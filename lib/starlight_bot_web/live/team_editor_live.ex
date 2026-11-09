@@ -5,7 +5,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   alias StarlightBot.PackPlans.Odds
   alias StarlightBotWeb.Live.{BattlePlanEditorLive, GiftPlanEditorLive, PackPlanEditorLive}
   alias StarlightBot.Navigation.Navigator
-  import StarlightBotWeb.Components.PlanPicker, only: [pane_icon: 1, pane_tabs: 1]
+  import StarlightBotWeb.Components.PlanPicker, only: [pane_tabs: 1]
 
   @panes %{"packs" => PackPlanEditorLive, "gifts" => GiftPlanEditorLive, "battle" => BattlePlanEditorLive}
 
@@ -60,7 +60,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:editing_id, nil)
      |> assign(:tab_counts, %{})
      |> assign(:hooks, [])
-     |> assign(:expanded?, false)
+     |> assign(:renaming_team_id, nil)
      |> assign(:editing_hooks?, false)
      |> assign(:selected_ids, blank_selected_ids())
      |> assign(:budget_inputs, blank_budget_inputs(nil))
@@ -81,7 +81,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       |> assign(:pane, if(Map.has_key?(@panes, params["pane"]) or params["pane"] in ["profiles", "stats"], do: params["pane"], else: socket.assigns.pane))
 
     cond do
-      team_id && team_id != socket.assigns.editing_id -> {:noreply, socket |> load_team(team_id) |> assign(:expanded?, true)}
+      team_id && team_id != socket.assigns.editing_id -> {:noreply, load_team(socket, team_id)}
       is_nil(team_id) -> {:noreply, reset_editor(socket)}
       params["pane"] == "stats" -> {:noreply, refresh_budget_sources(socket)}
       true -> {:noreply, socket}
@@ -177,24 +177,32 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
-  def handle_event("click_team", %{"id" => id}, socket) do
-    case String.to_integer(id) do
-      id when id == socket.assigns.editing_id -> {:noreply, update(socket, :expanded?, &(not &1))}
-      id -> {:noreply, push_patch(socket, to: ~p"/teams?team=#{id}&pane=#{plan_pane(socket.assigns.pane)}")}
-    end
+  def handle_event("start_rename_team", %{"id" => id}, socket) do
+    {:noreply, assign(socket, :renaming_team_id, String.to_integer(id))}
   end
 
   @impl true
-  def handle_event("validate_team", %{"team" => params}, socket) do
-    socket = assign(socket, :form, build_form(params))
-    name = String.trim(params["name"] || "")
+  def handle_event("cancel_rename_team", _, socket) do
+    {:noreply, assign(socket, :renaming_team_id, nil)}
+  end
 
-    if name == "" do
+  @impl true
+  def handle_event("rename_team", %{"value" => value}, socket) do
+    id = socket.assigns.renaming_team_id
+    name = String.trim(value)
+    socket = assign(socket, :renaming_team_id, nil)
+    team = Enum.find(socket.assigns.teams, &(&1.id == id))
+
+    if is_nil(team) or name == "" or name == team.name do
       {:noreply, socket}
     else
-      case Teams.save_team(team_attrs(socket, name)) do
-        {:ok, _id} -> {:noreply, assign(socket, :teams, Teams.list_teams())}
-        {:error, reason} -> {:noreply, put_flash(socket, :error, "Save failed: #{inspect(reason)}")}
+      case Teams.save_team(%{team | name: name}) do
+        {:ok, _id} ->
+          socket = if id == socket.assigns.editing_id, do: assign(socket, :form, build_form(%{"name" => name})), else: socket
+          {:noreply, assign(socket, :teams, Teams.list_teams())}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Rename failed: #{inspect(reason)}")}
       end
     end
   end
@@ -323,6 +331,11 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   # --- Private ---
 
+  def team_menu_away(editing_hooks?) do
+    js = JS.hide(to: "#team-menu")
+    if editing_hooks?, do: JS.push(js, "close_edit_hooks"), else: js
+  end
+
   def running_label(:luxcavation), do: "Luxcavation is running"
   def running_label(:mirror_dungeon), do: "Mirror Dungeon is running"
   def running_label(:enkephalin), do: "Enkephalin charge is running"
@@ -413,7 +426,6 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     |> assign(:form, blank_form())
     |> assign(:editing_id, nil)
     |> assign(:hooks, [])
-    |> assign(:expanded?, false)
     |> assign(:editing_hooks?, false)
     |> assign(:selected_ids, blank_selected_ids())
   end
