@@ -6,18 +6,20 @@
     <% on_teams = assigns[:page] == :teams %>
     <% run_link = fn path -> if on_runner, do: [patch: path], else: [navigate: path] end %>
     <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1 xl:flex-none">
-      <.link {run_link.(~p"/mirror-dungeon")}
+      <.link {run_link.(~p"/mirror-dungeon")} data-hotkey="1"
              class={"btn btn-xs lg:btn-sm gap-1 " <> if(on_runner and assigns[:tab] == :mirror_dungeon, do: "btn-primary", else: "btn-ghost text-base-content/50")}
              title="Mirror Dungeon">
         <img src={~p"/images/icons/mirror_dungeon.webp"} alt="" class="size-4 lg:size-5" />
         <span class="font-semibold">MD</span>
+        <kbd class="kbd kbd-xs hidden lg:inline-flex">1</kbd>
         <span :if={assigns[:run_kind] == :mirror_dungeon} class="loading loading-spinner loading-xs"></span>
       </.link>
-      <.link {run_link.(~p"/luxcavation")}
+      <.link {run_link.(~p"/luxcavation")} data-hotkey="2"
              class={"btn btn-xs lg:btn-sm gap-1 " <> if(on_runner and assigns[:tab] == :luxcavation, do: "btn-primary", else: "btn-ghost text-base-content/50")}
              title="Luxcavation">
         <img src={~p"/images/icons/luxcavation.webp"} alt="" class="size-4 lg:size-5" />
         <span class="font-semibold">Lux</span>
+        <kbd class="kbd kbd-xs hidden lg:inline-flex">2</kbd>
         <span :if={assigns[:run_kind] == :luxcavation} class="loading loading-spinner loading-xs"></span>
       </.link>
       <%= if nav = assigns[:team_nav] do %>

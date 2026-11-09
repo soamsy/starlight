@@ -1922,6 +1922,25 @@ const FocusSelect = {
   }
 }
 
+const TeamSearch = {
+  mounted() {
+    this.el.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return
+      e.preventDefault()
+      this.pushEvent("team_nav_search_move", { dir: e.key === "ArrowUp" ? "up" : "down" })
+    })
+    this.scrollActive()
+  },
+
+  updated() {
+    this.scrollActive()
+  },
+
+  scrollActive() {
+    this.el.querySelector('[data-active="true"]')?.scrollIntoView({ block: "nearest" })
+  }
+}
+
 const HookPicker = {
   mounted() {
     const panel = this.el.querySelector(".dropdown-content")
@@ -2181,13 +2200,42 @@ const TemplateTransfer = {
   }
 }
 
+const NAV_HOTKEYS = { "1": "1", "2": "2", "3": "3", "4": "4", "5": "5", "6": "6" }
+
+const inTauri = "__TAURI_INTERNALS__" in window
+if (inTauri) document.documentElement.dataset.shell = "tauri"
+
+const isTypingTarget = (target) =>
+  !!target?.closest("input, textarea, select, [contenteditable='true'], [contenteditable='']")
+
+document.addEventListener("keydown", (e) => {
+  if (e.defaultPrevented || e.altKey || e.metaKey || e.repeat) return
+  const target = e.target instanceof Element ? e.target : null
+  const teamSearch = inTauri
+    ? e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "t"
+    : !e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "t" && !isTypingTarget(target)
+  if (teamSearch) {
+    const button = document.querySelector('[data-hotkey="team-search"]')
+    if (!button) return
+    e.preventDefault()
+    button.click()
+    return
+  }
+  if (e.ctrlKey || e.shiftKey || !(e.key in NAV_HOTKEYS)) return
+  if (isTypingTarget(target)) return
+  const link = document.querySelector(`[data-hotkey="${NAV_HOTKEYS[e.key]}"]`)
+  if (!link) return
+  e.preventDefault()
+  link.click()
+})
+
 // --- LiveSocket setup ---
 
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { Toasts, RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, FocusSelect, WindowDrag, GameStream }
+  hooks: { Toasts, RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, FocusSelect, TeamSearch, WindowDrag, GameStream }
 })
 
 liveSocket.connect()

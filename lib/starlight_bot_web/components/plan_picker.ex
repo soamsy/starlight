@@ -11,13 +11,15 @@ defmodule StarlightBotWeb.Components.PlanPicker do
   def pane_tabs(assigns) do
     ~H"""
     <div :if={@team_id} class={["join shrink-0", !@on_page && "grayscale opacity-60 transition hover:opacity-100 hover:grayscale-0"]}>
-      <.link :for={{pane, label} <- [{"battle", "Battle"}, {"packs", "Packs"}, {"gifts", "Gifts"}, {"stats", "Stats"}]}
+      <.link :for={{pane, label, key} <- [{"battle", "Battle", "3"}, {"packs", "Packs", "4"}, {"gifts", "Gifts", "5"}, {"stats", "Stats", "6"}]}
              {pane_link(@on_page, ~p"/teams?team=#{@team_id}&pane=#{pane}")}
+             data-hotkey={key}
              title={label}
              class={"btn btn-xs lg:btn-sm join-item " <> if(@on_page and @pane == pane, do: "btn-primary", else: "btn-outline")}>
         <img :if={pane == "stats"} src="/images/icons/starlight.webp" alt="Stats" class="h-4 w-4" style="filter: drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000);" />
         <.pane_icon :if={pane != "stats"} pane={pane} class="h-4 w-4" /><%= if pane != "stats", do: label %>
-        <span :if={tab_count(@counts, pane)} class="badge badge-xs badge-ghost font-mono"><%= tab_count(@counts, pane) %></span>
+        <span :if={pane == "stats" and tab_count(@counts, pane)} class={["badge badge-xs badge-ghost font-mono", net_class(tab_count(@counts, pane))]}><%= tab_count(@counts, pane) %></span>
+        <kbd class="kbd kbd-xs hidden lg:inline-flex"><%= key %></kbd>
       </.link>
     </div>
     """
@@ -26,9 +28,10 @@ defmodule StarlightBotWeb.Components.PlanPicker do
   defp pane_link(true, path), do: [patch: path]
   defp pane_link(false, path), do: [navigate: path]
 
-  defp tab_count(counts, "battle"), do: counts[:battle_plans]
-  defp tab_count(counts, "packs"), do: counts[:pack_plans]
-  defp tab_count(counts, "gifts"), do: counts[:gift_plans]
+  defp net_class("-" <> _), do: "text-error"
+  defp net_class("+" <> _), do: "text-success"
+  defp net_class(_text), do: nil
+
   defp tab_count(counts, "stats") do
     case counts[:starlight_net] do
       nil -> nil

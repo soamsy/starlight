@@ -10,7 +10,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
   @panes @plan_panes ++ ["profiles"]
 
   def init do
-    build(stored_team_id(), stored_pane(), %{renaming_id: nil, editing_hooks?: false})
+    build(stored_team_id(), stored_pane(), %{renaming_id: nil, editing_hooks?: false, searching?: false, query: "", cursor: 0})
   end
 
   def reload(socket) do
@@ -30,6 +30,8 @@ defmodule StarlightBotWeb.Components.TeamNav do
         %{nav | pane: pane}
       end
 
+    nav = %{nav | searching?: false, query: "", cursor: 0}
+
     if team_id && nav.team_id == team_id, do: AppSettings.put("team_nav_team", Integer.to_string(team_id))
     if pane in @plan_panes, do: AppSettings.put("team_nav_pane", pane)
 
@@ -48,6 +50,36 @@ defmodule StarlightBotWeb.Components.TeamNav do
   def handle_event("team_nav_open", _params, socket) do
     nav = socket.assigns.team_nav
     {:halt, push_navigate(socket, to: team_path(nav.team_id, plan_pane(nav.pane)))}
+  end
+
+  def handle_event("team_nav_search_open", _params, socket) do
+    nav = socket.assigns.team_nav
+    cursor = Enum.find_index(nav.teams, &(&1.id == nav.team_id)) || 0
+    {:halt, Phoenix.Component.assign(socket, :team_nav, %{nav | searching?: true, query: "", cursor: cursor, editing_hooks?: false, renaming_id: nil})}
+  end
+
+  def handle_event("team_nav_search_close", _params, socket), do: {:halt, close_search(socket)}
+
+  def handle_event("team_nav_search", %{"query" => query}, socket) do
+    nav = socket.assigns.team_nav
+    cursor = if String.trim(query) == "", do: Enum.find_index(nav.teams, &(&1.id == nav.team_id)) || 0, else: 0
+    {:halt, Phoenix.Component.assign(socket, :team_nav, %{nav | query: query, cursor: cursor})}
+  end
+
+  def handle_event("team_nav_search_move", %{"dir" => dir}, socket) do
+    nav = socket.assigns.team_nav
+    last = max(length(search_teams(nav.teams, nav.query)) - 1, 0)
+    step = if dir == "up", do: -1, else: 1
+    {:halt, put_ui(socket, :cursor, nav.cursor |> Kernel.+(step) |> max(0) |> min(last))}
+  end
+
+  def handle_event("team_nav_search_pick", %{"query" => query}, socket) do
+    nav = socket.assigns.team_nav
+
+    case nav.teams |> search_teams(query) |> Enum.at(nav.cursor) do
+      nil -> {:halt, socket}
+      team -> {:halt, socket |> close_search() |> select(team.id)}
+    end
   end
 
   def handle_event("team_nav_new", params, socket) do
@@ -190,10 +222,55 @@ defmodule StarlightBotWeb.Components.TeamNav do
   defp first_id([%{id: id} | _]), do: id
   defp first_id([]), do: nil
 
-  defp ui(nav), do: Map.take(nav, [:renaming_id, :editing_hooks?])
+  defp ui(nav), do: Map.take(nav, [:renaming_id, :editing_hooks?, :searching?, :query, :cursor])
 
   defp put_ui(socket, key, value),
     do: Phoenix.Component.assign(socket, :team_nav, Map.put(socket.assigns.team_nav, key, value))
+
+  defp close_search(socket) do
+    nav = socket.assigns.team_nav
+    Phoenix.Component.assign(socket, :team_nav, %{nav | searching?: false, query: ""})
+  end
+
+  def search_teams(teams, query) do
+    needle = query |> String.trim() |> String.downcase()
+
+    if needle == "" do
+      teams
+    else
+      teams
+      |> Enum.flat_map(fn team ->
+        case fuzzy_score(String.downcase(team.name), needle) do
+          nil -> []
+          score -> [{score, team}]
+        end
+      end)
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.map(&elem(&1, 1))
+    end
+  end
+
+  defp fuzzy_score(name, needle) do
+    case :binary.match(name, needle) do
+      {pos, _len} -> pos
+      :nomatch -> subsequence_score(String.graphemes(name), String.graphemes(needle))
+    end
+  end
+
+  defp subsequence_score(name, needle) do
+    positions =
+      Enum.reduce_while(needle, {name, 0, []}, fn char, {rest, index, acc} ->
+        case Enum.find_index(rest, &(&1 == char)) do
+          nil -> {:halt, nil}
+          offset -> {:cont, {Enum.drop(rest, offset + 1), index + offset + 1, [index + offset | acc]}}
+        end
+      end)
+
+    case positions do
+      {_rest, _index, [last | _]} -> 1000 + last
+      _ -> nil
+    end
+  end
 
   defp changed(socket) do
     send(self(), :team_plans_changed)
@@ -334,7 +411,8 @@ defmodule StarlightBotWeb.Components.TeamNav do
           <% else %>
             <span class="text-xs text-base-content/60 lg:text-sm">Select a team</span>
           <% end %>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="ml-auto size-4 text-primary"><path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
+          <kbd class="kbd kbd-xs ml-auto hidden lg:inline-flex"><span class="[html[data-shell=tauri]_&]:hidden">T</span><span class="hidden [html[data-shell=tauri]_&]:inline">Ctrl+T</span></kbd>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4 text-primary"><path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
         </button>
         <button :if={@current} id="edit-hooks-button" type="button" phx-click={if(@on_page, do: JS.push("team_nav_toggle_edit_hooks") |> JS.hide(to: "#team-menu"), else: JS.push("team_nav_open"))} title="Edit team selectors"
                 class={"flex items-center rounded-r-md border-l-2 px-2 cursor-pointer " <> if(@nav.editing_hooks?, do: "border-primary bg-primary text-primary-content", else: "border-primary/60 hover:bg-primary/10")}>
@@ -399,6 +477,25 @@ defmodule StarlightBotWeb.Components.TeamNav do
             </div>
           </div>
           <button type="button" phx-click={JS.toggle(to: "#new-team-menu", display: "flex")} class="btn btn-primary btn-sm w-full">+ New Team ▾</button>
+        </div>
+      </div>
+
+      <button type="button" data-hotkey="team-search" phx-click="team_nav_search_open" class="hidden" tabindex="-1" aria-hidden="true"></button>
+
+      <div :if={@nav.searching?} id="team-search" phx-hook="TeamSearch" phx-click-away="team_nav_search_close" phx-window-keydown="team_nav_search_close" phx-key="Escape"
+           class="absolute left-0 top-full z-50 mt-1 w-[24rem] max-w-[calc(100vw-1rem)] rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-xl">
+        <form phx-change="team_nav_search" phx-submit="team_nav_search_pick" autocomplete="off">
+          <input type="text" id="team-search-input" name="query" value={@nav.query} phx-mounted={JS.focus()} placeholder="Choose a team..."
+                 class="input input-bordered input-sm w-full font-mono" />
+        </form>
+        <div class="mt-1 flex max-h-[50vh] flex-col gap-0.5 overflow-y-auto">
+          <% results = search_teams(@nav.teams, @nav.query) %>
+          <div :for={{team, index} <- Enum.with_index(results)} data-active={index == @nav.cursor} phx-click="team_nav_select" phx-value-id={team.id}
+               class={"flex cursor-pointer items-center gap-2 rounded-md border-l-4 px-2 py-1 font-mono text-xs " <> if(index == @nav.cursor, do: "border-primary bg-primary/25 font-bold", else: "border-transparent hover:bg-base-200")}>
+            <span class="min-w-0 flex-1 truncate"><%= team.name %></span>
+            <img :for={hook <- team.hooks} src={Teams.hook_icon(hook) || Teams.default_hook_icon()} class="size-4 shrink-0 object-contain" />
+          </div>
+          <div :if={results == []} class="py-2 text-center text-xs text-base-content/40">No matching team.</div>
         </div>
       </div>
 
