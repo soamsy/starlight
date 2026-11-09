@@ -5,6 +5,8 @@ defmodule StarlightBot.Navigation.Screens.Battle do
 
   @battle_kind_wait_ms 3_000
   @hold_start_jitter_ms 500
+  @await_playing_tries 5
+  @await_playing_every_ms 1_500
 
   screen :battle, identity: any_of([:battle_settings, :battle_turn]) do
     transition to: :battle_turn_or_over do
@@ -101,7 +103,11 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   end
 
   defp await_playing do
-    wait_until(any_of([:battle_pause_button, :battle_playing_graph]), timeout: 8_000, every: 200)
+    retry_until(any_of([:battle_pause_button, :battle_playing_graph]), [key(:enter)],
+      tries: @await_playing_tries,
+      every: @await_playing_every_ms,
+      retry_if: :battle_turn
+    )
   end
 
   defp hold_mouse_during(steps), do: ensure([sleep_up_to(@hold_start_jitter_ms), mouse_down() | steps], [mouse_up()])
