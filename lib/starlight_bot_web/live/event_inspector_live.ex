@@ -61,6 +61,9 @@ defmodule StarlightBotWeb.Live.EventInspectorLive do
     {:noreply, assign(socket, :status, :done)}
   end
 
+  @impl true
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
   defp start_event_run do
     me = self()
 

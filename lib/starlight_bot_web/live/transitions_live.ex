@@ -184,6 +184,9 @@ defmodule StarlightBotWeb.Live.TransitionsLive do
     {:noreply, socket}
   end
 
+  @impl true
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
   # --- Hook testing ---
 
   defp match_hook(frame, hook_name) do

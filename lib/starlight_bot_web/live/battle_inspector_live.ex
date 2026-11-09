@@ -223,6 +223,9 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
      |> assign(:chain_preview_error, inspect(reason))}
   end
 
+  @impl true
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
   defp show_frame(socket, frame) do
     case encode_jpeg(frame.mat) do
       {:ok, jpeg} ->

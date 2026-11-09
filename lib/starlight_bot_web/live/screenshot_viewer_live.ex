@@ -115,6 +115,9 @@ defmodule StarlightBotWeb.Live.ScreenshotViewerLive do
   end
 
   @impl true
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
+  @impl true
   def terminate(_reason, _socket) do
     for {_id, path} <- Process.get(:sv_full_frames, %{}), do: File.rm(path)
     :ok

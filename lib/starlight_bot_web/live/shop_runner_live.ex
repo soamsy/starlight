@@ -88,6 +88,9 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
      |> assign(:run_memory, nav.run_memory)}
   end
 
+  @impl true
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
   def ego_gifts(run_memory), do: Map.get(run_memory, :ego_gifts, %{})
 
   def current_cost(run_memory), do: Map.get(run_memory, :cost, nil)

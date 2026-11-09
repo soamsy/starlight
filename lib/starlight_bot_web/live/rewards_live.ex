@@ -79,6 +79,9 @@ defmodule StarlightBotWeb.Live.RewardsLive do
     {:noreply, socket |> assign(:phase, nav.phase)}
   end
 
+  @impl true
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
   defp start_countdown(socket, action) do
     Process.send_after(self(), :countdown_tick, 1_000)
 

@@ -118,6 +118,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def handle_info({:plan_count, _team_id, _table, _count}, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
+  @impl true
   def handle_event("new_plan", _, socket) do
     attrs = %{name: Plans.new_name(:gift_plans, socket.assigns.team_id), data: GiftPlans.blank(), team_id: socket.assigns.team_id}
 

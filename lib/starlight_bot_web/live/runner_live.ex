@@ -363,6 +363,9 @@ defmodule StarlightBotWeb.Live.RunnerLive do
     end
   end
 
+  @impl true
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
   defp assign_clock(socket, run_clock) do
     now = now_ms()
     socket |> assign(:run_clock, run_clock && Map.put(run_clock, :received_ms, now)) |> assign(:now_ms, now)

@@ -97,6 +97,9 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   @impl true
   def handle_info({:plan_count, _team_id, _table, _count}, socket), do: {:noreply, socket}
 
+  @impl true
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
   # --- Private ---
 
   def log_kind_class(:ok), do: "text-success"

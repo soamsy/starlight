@@ -73,6 +73,8 @@ defmodule StarlightBotWeb.Live.LogLive do
     {:noreply, socket |> update(:oldest_seq, &(&1 || entry.seq)) |> update(:pending, &[entry | &1]) |> schedule_flush()}
   end
 
+  def handle_info(:flush_entries, %{assigns: %{pending: []}} = socket), do: {:noreply, assign(socket, :flush_scheduled?, false)}
+
   def handle_info(:flush_entries, %{assigns: %{pending: pending}} = socket) do
     last_seq = pending |> hd() |> Map.fetch!(:seq)
 

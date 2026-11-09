@@ -146,6 +146,9 @@ defmodule StarlightBotWeb.Live.ThemePackInspectorLive do
      |> put_flash(:error, "Scan failed: #{inspect(reason)}")}
   end
 
+  @impl true
+  def handle_info(_msg, socket), do: {:noreply, socket}
+
   defp start_search(pack) do
     me = self()
 
