@@ -100,7 +100,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
           <span class="lg:before:content-['('] lg:after:content-[')']"><%= length(@templates) %></span>
           <span class="max-lg:hidden">▾</span>
         </button>
-        <div id={"#{@id}-menu"} class="hidden absolute z-30 mt-1 w-[30rem] max-w-[90vw] rounded-box border border-base-300 bg-base-100 shadow-lg p-2">
+        <div id={"#{@id}-menu"} class="hidden absolute right-0 z-30 mt-1 w-[30rem] max-w-[90vw] rounded-box border border-base-300 bg-base-100 shadow-lg p-2">
           <div class="max-h-80 overflow-y-auto flex flex-col gap-0.5">
             <div :for={template <- @templates} class={["flex items-center gap-1 rounded px-1 py-0.5 hover:bg-base-200", @selected == template.id && "bg-primary/10"]}>
               <input :if={@editing == template.id} id={"#{@id}-name-#{template.id}"} type="text" value={template.name}

@@ -8,7 +8,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   alias StarlightBot.BattlePlans.Resolver
 
   @collapsed_floors 5
-  @read_only_events ~w(restore_view select_playbook select_lineup set_paint select_schedule_tab open_action_condition close_action_condition copy_playbook toggle_extreme copy_plan clipboard_status plan_clipboard_failed)
+  @read_only_events ~w(restore_view select_playbook select_lineup set_paint select_schedule_tab open_action_condition close_action_condition copy_playbook toggle_extreme toggle_help copy_plan clipboard_status plan_clipboard_failed)
 
   def read_only_events, do: @read_only_events
 
@@ -24,6 +24,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       socket
       |> assign(:team_id, team && team.id)
       |> assign(:paste_status, :unknown)
+      |> assign(:show_help, false)
       |> assign(:template_id, nil)
       |> read_only_guard(@read_only_events)
       |> assign_templates(:battle_plans)
@@ -78,6 +79,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_event("toggle_help", _, socket), do: {:noreply, update(socket, :show_help, &(!&1))}
+
   def handle_event("toggle_extreme", _, socket) do
     {:noreply, update(socket, :extreme?, &(not &1))}
   end
