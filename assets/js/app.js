@@ -739,6 +739,37 @@ const PreserveScroll = {
   }
 }
 
+const InfoArrow = {
+  mounted() {
+    this.place = () => this.position()
+    window.addEventListener("resize", this.place)
+    const row = document.getElementById(this.el.dataset.row)
+    this.scroller = row && row.closest(".overflow-y-auto")
+    if (this.scroller) this.scroller.addEventListener("scroll", this.place)
+    this.position()
+  },
+  updated() {
+    this.position()
+  },
+  destroyed() {
+    window.removeEventListener("resize", this.place)
+    if (this.scroller) this.scroller.removeEventListener("scroll", this.place)
+  },
+  position() {
+    const row = document.getElementById(this.el.dataset.row)
+    const arrow = this.el.querySelector("[data-arrow]")
+    if (!row || !arrow) return
+    this.el.style.marginTop = ""
+    if (getComputedStyle(arrow).display === "none") return
+    const rowRect = row.getBoundingClientRect()
+    const center = rowRect.top + rowRect.height / 2 - this.el.getBoundingClientRect().top
+    const height = this.el.offsetHeight
+    const margin = Math.max(0, center - height + 28)
+    this.el.style.marginTop = margin + "px"
+    arrow.style.top = Math.min(Math.max(center - margin, 20), height - 20) + "px"
+  }
+}
+
 const STREAM_TARGET_MS = 500
 const STREAM_MAX_BACKOFF_MS = 5000
 
@@ -2261,7 +2292,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { Toasts, RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, CabinetBracket, FocusSelect, TeamSearch, WindowDrag, GameStream }
+  hooks: { Toasts, RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, CabinetBracket, FocusSelect, TeamSearch, WindowDrag, GameStream, InfoArrow }
 })
 
 liveSocket.connect()

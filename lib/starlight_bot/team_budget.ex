@@ -105,6 +105,12 @@ defmodule StarlightBot.TeamBudget do
       pack_searches: Odds.expected_searches(run.searches),
       search_by_floor: Map.new(run_odds, fn {floor, odds} -> {floor, odds.search} end),
       search_counts: run.searches,
+      search_rows:
+        for floor <- 1..5 do
+          odds = run_odds[floor]
+          top = Enum.find(odds.rows, &(&1.kind == :wanted))
+          %{floor: floor, searching?: odds.searching?, chance: odds.search, pack: top && top.pack}
+        end,
       search_floors: Enum.filter(plan_data["search_floors"] || [], &(&1 in 1..5)) |> Enum.sort(),
       search_average_cost: Odds.expected_search_cost(run.searches),
       max_pack_searches: max_pack_searches,

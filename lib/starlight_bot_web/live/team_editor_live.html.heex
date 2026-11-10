@@ -6,9 +6,10 @@
     <%= live_render(@socket, StarlightBotWeb.Live.SinnerProfilesLive, id: "sinner-profiles", container: {:div, class: "flex flex-col flex-1 min-h-0 min-w-0"}) %>
     <% @editing_id -> %>
     <div class="flex flex-col flex-1 min-h-0 min-w-0">
-      <div :if={@pane == "stats"} class="card bg-base-100 shadow-lg flex-1 min-h-0 overflow-y-auto">
-        <div class="card-body p-3 gap-3">
+      <div :if={@pane == "stats"} class="card bg-base-100 shadow-lg flex-1 min-h-0 overflow-hidden">
+        <div class="card-body p-3 gap-3 flex-col xl:flex-row min-h-0 overflow-y-auto xl:overflow-hidden">
           <% budget = starlight_budget(@gift_plans, @pack_plans, @theme_packs, @selected_ids, @budget_inputs) %>
+          <div class="w-full max-w-3xl min-w-0 shrink-0 xl:shrink xl:min-h-0 xl:overflow-y-auto flex flex-col gap-3">
           <h3 class="font-medium text-sm">Expected Starlight</h3>
           <form phx-change="budget_change" class="flex flex-col max-w-3xl rounded-xl border border-base-300 bg-base-200 shadow-md divide-y divide-base-300 font-mono">
             <div class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2" title="Every run starts with this">
@@ -16,17 +17,34 @@
               <span class="font-sans text-sm">Base</span>
               <span class="text-sm text-success text-right"><%= budget.income.base %></span>
             </div>
-            <div class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2" title="Sinners this team doesn't lock in, so they rest a full 5 charges. Rest bonus is 1 per charge. Also sets the multiplier.">
+            <div id="info-row-rest" phx-click="show_info" phx-value-pane="rest" role="button" class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :rest, do: "bg-base-300/60", else: "")} title="Sinners this team doesn't lock in, so they rest a full 5 charges. Rest bonus is 1 per charge. Also sets the multiplier.">
               <span class="text-success text-center">+</span>
+              <div class="flex flex-col gap-2">
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span class="font-sans text-sm w-24">Rest bonus</span>
-                <input type="range" name="free_sinners" min="0" max={StarlightBudget.max_free_sinners()} step="1" value={@budget_inputs.free_sinners}
+                <span class="font-sans text-sm w-24 text-left">
+                  Rest bonus
+                  <span class="ml-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full border border-current align-middle text-[8px] italic leading-none">i</span>
+                </span>
+                <input type="range" onclick="event.stopPropagation()" name="free_sinners" min="0" max={StarlightBudget.max_free_sinners()} step="1" value={@budget_inputs.free_sinners}
                        class="range range-success range-xs w-40" />
                 <span class="text-xs text-base-content/60"><%= @budget_inputs.free_sinners %> free × <%= StarlightBudget.rest_per_free_sinner() %></span>
-                <label class="flex items-center gap-1 font-sans text-xs text-base-content/60 cursor-pointer" title="On: free sinners are 12 minus the first lineup. Moving the slider turns this off and saves your value for the team.">
+                <label onclick="event.stopPropagation()" class="flex items-center gap-1 font-sans text-xs text-base-content/60 cursor-pointer" title="On: free sinners are 12 minus the first lineup. Moving the slider turns this off and saves your value for the team.">
                   <input type="checkbox" name="estimate" checked={@budget_inputs.estimate?} class="checkbox checkbox-success checkbox-xs" />
                   Estimate from lineup
                 </label>
+              </div>
+              <div class="grid grid-cols-6 gap-2 w-fit" title={"#{@budget_inputs.free_sinners} of #{StarlightBudget.max_free_sinners()} sinners fully rested"}>
+                <div :for={i <- 1..StarlightBudget.max_free_sinners()} class="flex flex-col items-center">
+                  <span class={"font-display text-2xl font-semibold leading-none mb-1 " <> if(i <= @budget_inputs.free_sinners, do: "text-yellow-400", else: "text-base-content/30")}>
+                    +<%= if i <= @budget_inputs.free_sinners, do: StarlightBudget.rest_per_free_sinner(), else: 0 %>
+                  </span>
+                  <span class="h-0.5 w-3 rounded-t-sm bg-base-content/30"></span>
+                  <div class="flex flex-col-reverse gap-0.5 rounded border border-base-content/30 p-0.5">
+                    <span :for={_ <- 1..StarlightBudget.rest_per_free_sinner()}
+                          class={"h-1 w-5 rounded-[1px] " <> if(i <= @budget_inputs.free_sinners, do: "bg-yellow-400", else: "bg-base-300")}></span>
+                  </div>
+                </div>
+              </div>
               </div>
               <span class="text-sm text-success text-right"><%= budget.income.sinner_bonus %></span>
             </div>
@@ -60,8 +78,8 @@
               </div>
               <span class="text-sm text-success text-right"><%= budget.income.exploration %></span>
             </div>
-            <div phx-click="toggle_encounter_info" role="button" title="Click for how this is calculated"
-                 class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60">
+            <div id="info-row-encounter" phx-click="show_info" phx-value-pane="encounter" role="button" title="Click for how this is calculated"
+                 class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :encounter, do: "bg-base-300/60", else: "")}>
               <span class="text-success text-center">+</span>
               <span class="font-sans text-sm">
                 Encounter rewards
@@ -70,27 +88,8 @@
               </span>
               <span class="text-sm text-success text-right"><%= StarlightBudget.format(budget.income.encounters) %></span>
             </div>
-            <div phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=gifts") |> JS.dispatch("click", to: "#gift-loadout-btn")} title="Open the gift loadout"
-                 class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60">
-              <span class="text-error text-center">−</span>
-              <span class="flex items-center gap-1.5 font-sans text-sm">
-                Graces
-                <img :for={grace <- budget.graces} src={"/images/graces/grace_#{grace.index}.webp"} title={grace.title} class="w-5 h-5 object-contain" />
-              </span>
-              <span class="text-sm text-error text-right"><%= if budget.has_gift_plan?, do: budget.costs.grace, else: "—" %></span>
-            </div>
-            <div phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=gifts") |> JS.dispatch("click", to: "#gift-loadout-btn")} title="Open the gift loadout"
-                 class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60">
-              <span class="text-error text-center">−</span>
-              <span class="flex items-center gap-1.5 font-sans text-sm">
-                Gift search (<%= budget.gift_searches %>)
-                <img :for={name <- budget.gift_search_names} :if={@gifts_by_name[name]} src={@gifts_by_name[name].image_path} title={name}
-                     class="w-4 h-4 rounded object-cover bg-slate-500/40 ring-1 ring-slate-400/40" />
-              </span>
-              <span class="text-sm text-error text-right"><%= if budget.has_gift_plan?, do: budget.costs.gift_search, else: "—" %></span>
-            </div>
-            <div phx-click="toggle_search_info" role="button"
-                 class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-200"
+            <div id="info-row-search" phx-click="show_info" phx-value-pane="search" role="button"
+                 class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :search, do: "bg-base-300/60", else: "")}
                  title={"Click for how this is calculated. 20 for the first search in the run, 10 more for each after. A floor only searches when every refresh misses. Searches in a run: #{search_breakdown(budget)}"}>
               <span class="text-error text-center">−</span>
               <span class="font-sans text-sm">
@@ -99,6 +98,27 @@
                 <span class="ml-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full border border-current align-middle text-[8px] italic leading-none">i</span>
               </span>
               <span class="text-sm text-error text-right"><%= StarlightBudget.format(budget.costs.pack_search) %></span>
+            </div>
+            <div id="info-row-grace" phx-click="show_info" phx-value-pane="grace" role="button" title="Click for details"
+                 class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :grace, do: "bg-base-300/60", else: "")}>
+              <span class="text-error text-center">−</span>
+              <span class="flex items-center gap-1.5 font-sans text-sm">
+                Graces
+                <img :for={grace <- budget.graces} src={"/images/graces/grace_#{grace.index}.webp"} title={grace.title} class="w-5 h-5 object-contain" />
+                <span class="ml-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full border border-current align-middle text-[8px] italic leading-none">i</span>
+              </span>
+              <span class="text-sm text-error text-right"><%= if budget.has_gift_plan?, do: budget.costs.grace, else: "—" %></span>
+            </div>
+            <div id="info-row-gift_search" phx-click="show_info" phx-value-pane="gift_search" role="button" title="Click for details"
+                 class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :gift_search, do: "bg-base-300/60", else: "")}>
+              <span class="text-error text-center">−</span>
+              <span class="flex items-center gap-1.5 font-sans text-sm">
+                Gift search (<%= budget.gift_searches %>)
+                <img :for={name <- budget.gift_search_names} :if={@gifts_by_name[name]} src={@gifts_by_name[name].image_path} title={name}
+                     class="w-4 h-4 rounded object-cover bg-slate-500/40 ring-1 ring-slate-400/40" />
+                <span class="ml-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full border border-current align-middle text-[8px] italic leading-none">i</span>
+              </span>
+              <span class="text-sm text-error text-right"><%= if budget.has_gift_plan?, do: budget.costs.gift_search, else: "—" %></span>
             </div>
             <div class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 rounded-b-xl border-t-2 " <> if(budget.net >= 0, do: "!border-success", else: "!border-error")}>
               <span class="text-center text-base-content/60">=</span>
@@ -109,8 +129,50 @@
               </span>
             </div>
           </form>
-          <div :if={@show_encounter_info} class="modal modal-open" phx-window-keydown="toggle_encounter_info" phx-key="Escape">
-            <div class="modal-box max-w-3xl max-h-[85vh] flex flex-col gap-3 text-sm">
+          </div>
+          <aside :if={@info_pane == :grace} id="info-pane-grace" phx-hook="InfoArrow" data-row="info-row-grace" class="relative w-full max-w-3xl xl:w-fit xl:self-start min-w-0 shrink-0 flex flex-col rounded-xl border border-base-300 bg-base-200 p-3">
+            <span data-arrow class="hidden xl:block absolute -left-[7px] top-6 h-3.5 w-3.5 -translate-y-1/2 rotate-45 border-b border-l border-base-300 bg-base-200"></span>
+            <button type="button" phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=gifts") |> JS.dispatch("click", to: "#gift-loadout-btn")} class="btn btn-primary btn-sm gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4"><path d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z"/><path d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z"/></svg>
+              Edit in gift loadout
+            </button>
+          </aside>
+          <aside :if={@info_pane == :gift_search} id="info-pane-gift_search" phx-hook="InfoArrow" data-row="info-row-gift_search" class="relative w-full max-w-3xl xl:w-fit xl:self-start min-w-0 shrink-0 flex flex-col rounded-xl border border-base-300 bg-base-200 p-3">
+            <span data-arrow class="hidden xl:block absolute -left-[7px] top-6 h-3.5 w-3.5 -translate-y-1/2 rotate-45 border-b border-l border-base-300 bg-base-200"></span>
+            <button type="button" phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=gifts") |> JS.dispatch("click", to: "#gift-loadout-btn")} class="btn btn-primary btn-sm gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4"><path d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z"/><path d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z"/></svg>
+              Edit in gift loadout
+            </button>
+          </aside>
+          <aside :if={@info_pane == :rest} id="info-pane-rest" phx-hook="InfoArrow" data-row="info-row-rest" class="relative w-full max-w-3xl xl:max-w-[40rem] xl:flex-1 xl:self-start xl:max-h-full min-w-0 shrink-0 xl:shrink xl:min-h-0 flex flex-col gap-3 text-sm rounded-xl border border-base-300 bg-base-200 p-3">
+            <span data-arrow class="hidden xl:block absolute -left-[7px] top-6 h-3.5 w-3.5 -translate-y-1/2 rotate-45 border-b border-l border-base-300 bg-base-200"></span>
+            <div class="flex flex-col gap-3 min-h-0 flex-1">
+              <h2 class="font-bold text-base">How the rest bonus is calculated</h2>
+              <div class="overflow-y-auto flex flex-col gap-4 pr-1">
+                <p>Each sinner identity stores up to <%= StarlightBudget.rest_per_free_sinner() %> rest charges. A charge refills by 1 for every Mirror Dungeon run the identity is not brought into. Bringing an identity into a run spends its charges, and each charge spent pays 1 bonus starlight.</p>
+                <section class="flex flex-col gap-1">
+                  <h4 class="font-semibold">1. Free sinners</h4>
+                  <p class="text-xs text-base-content/60">A free sinner is a sinner this team does not lock in, so their charges are full. With "Estimate from lineup" on, free sinners are 12 minus the first lineup. Moving the slider turns the estimate off and saves your value for the team.</p>
+                  <div class="rounded-lg bg-base-200 p-2 font-mono text-xs flex flex-col gap-0.5">
+                    <span>rest bonus = free sinners × <%= StarlightBudget.rest_per_free_sinner() %></span>
+                    <span class="text-base-content/50">max <%= StarlightBudget.max_free_sinners() %> × <%= StarlightBudget.rest_per_free_sinner() %> = <%= StarlightBudget.rest_bonus(StarlightBudget.max_free_sinners()) %></span>
+                  </div>
+                </section>
+                <section class="flex flex-col gap-1">
+                  <h4 class="font-semibold">2. Exploration multiplier</h4>
+                  <p class="text-xs text-base-content/60">The rest bonus also scales the starlight from exploration (floor clears plus railway), rounded down after multiplying.</p>
+                  <div class="rounded-lg bg-base-200 p-2 font-mono text-xs flex flex-col gap-0.5">
+                    <span>multiplier = min(2, 1 + 0.017 × rest bonus)</span>
+                    <span class="text-base-content/50">Now: 1 + 0.017 × <%= budget.income.sinner_bonus %> = <%= :erlang.float_to_binary(budget.rest_multiplier, decimals: 3) %></span>
+                  </div>
+                </section>
+                <p class="text-xs text-base-content/60">Sources: the <a class="link" href="https://limbuscompany.wiki.gg/wiki/Mirror_Dungeons" target="_blank" rel="noopener">Limbus Company wiki</a> confirms the 5 charge cap per identity, the 1 charge refill per run an identity sits out, and 1 starlight per charge. The wiki pages found did not state the exploration multiplier, so the 0.017 per point and the 2x cap are taken from this app's own model and have not been checked against an outside source.</p>
+              </div>
+            </div>
+          </aside>
+          <aside :if={@info_pane == :encounter} id="info-pane-encounter" phx-hook="InfoArrow" data-row="info-row-encounter" class="relative w-full max-w-3xl xl:max-w-[40rem] xl:flex-1 xl:self-start xl:max-h-full min-w-0 shrink-0 xl:shrink xl:min-h-0 flex flex-col gap-3 text-sm rounded-xl border border-base-300 bg-base-200 p-3">
+            <span data-arrow class="hidden xl:block absolute -left-[7px] top-6 h-3.5 w-3.5 -translate-y-1/2 rotate-45 border-b border-l border-base-300 bg-base-200"></span>
+            <div class="flex flex-col gap-3 min-h-0 flex-1">
               <h2 class="font-bold text-base">How the encounter reward starlight is calculated</h2>
               <div class="overflow-y-auto flex flex-col gap-4 pr-1">
                 <section class="flex flex-col gap-1">
@@ -156,30 +218,52 @@
                   <p class="text-xs text-base-content/60">Starlight = screens × picked × 11. The starlight position follows the gift plan's encounter reward order for each floor, or the default order when no gift plan is selected. The F5 boss only counts when the pack plan goes extreme. Assumes the route never takes risky nodes. Simplification: on F5 one fewer theme pack is assumed to be shown than the graces give, to account for one of the theme packs typically being from the latest event.</p>
                 </section>
               </div>
-              <div class="modal-action mt-0">
-                <button type="button" phx-click="toggle_encounter_info" class="btn btn-sm">Close</button>
-              </div>
             </div>
-            <div class="modal-backdrop" phx-click="toggle_encounter_info"></div>
-          </div>
-          <div :if={@show_search_info} class="modal modal-open" phx-window-keydown="toggle_search_info" phx-key="Escape">
-            <div class="modal-box max-w-2xl max-h-[85vh] flex flex-col gap-3 text-sm">
-              <h2 class="font-bold text-base">How the pack search cost is calculated</h2>
+          </aside>
+          <aside :if={@info_pane == :search} id="info-pane-search" phx-hook="InfoArrow" data-row="info-row-search" class="relative w-full max-w-3xl xl:max-w-[40rem] xl:flex-1 xl:self-start xl:max-h-full min-w-0 shrink-0 xl:shrink xl:min-h-0 flex flex-col gap-3 text-sm rounded-xl border border-base-300 bg-base-200 p-3">
+            <span data-arrow class="hidden xl:block absolute -left-[7px] top-6 h-3.5 w-3.5 -translate-y-1/2 rotate-45 border-b border-l border-base-300 bg-base-200"></span>
+            <div class="flex flex-col gap-3 min-h-0 flex-1">
               <div class="overflow-y-auto flex flex-col gap-4 pr-1">
-                <p>Pack search is only used on floors where search is turned on in the pack plan, and only when it is needed. The bot refreshes first. It searches only if every look, including the last one after the refreshes run out, shows none of your wanted packs. A floor where a refresh finds your pack costs nothing.</p>
-                <section class="flex flex-col gap-1">
-                  <h4 class="font-semibold">1. Chance each search floor needs a search</h4>
-                  <p class="text-xs text-base-content/60">q<sup>L</sup>, where q is the chance one look misses every wanted pack and L is looks (refreshes + 1). It depends on the packs shown, the refreshes from your graces, and which wanted packs were already taken on earlier floors.</p>
-                  <div :if={budget.search_floors == []} class="text-xs italic text-base-content/50">No search floors in this pack plan, so no search cost.</div>
-                  <div :for={floor <- budget.search_floors} class="flex items-center gap-2 font-mono text-xs">
-                    <span class="w-8">F<%= floor %></span>
-                    <div class="h-2 flex-1 rounded-full bg-base-300 overflow-hidden"><div class="h-full bg-error/70" style={"width: #{budget.search_by_floor[floor] * 100}%"}></div></div>
-                    <span class="w-12 text-right"><%= search_pct(budget.search_by_floor[floor]) %></span>
+                <p>Average starlight you'll spend on pack search with this team. Calculated from the percentage chance of finding your top packs, as seen on the <button type="button" phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=packs")} class="btn btn-primary btn-xs h-5 min-h-0 gap-1 px-1.5 align-middle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-3 w-3"><path d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z"/><path d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z"/></svg>Theme pack planner</button>.</p>
+                <div class="flex flex-col gap-1 rounded-lg border border-base-300 bg-base-100 p-2 w-64">
+                  <div class="flex items-center gap-1 rounded-full border border-success/60 bg-success/10 pl-0.5 pr-1 py-0.5 text-[10px]">
+                    <img src="/images/theme_packs/thm_3.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                    <span class="truncate font-medium flex-1">Flat-broke Gamblers</span>
+                    <span class="shrink-0 font-mono text-[11px] font-bold text-success">42%</span>
+                  </div>
+                  <div class="flex items-center gap-1 rounded-full border border-success/60 bg-success/10 pl-0.5 pr-1 py-0.5 text-[10px]">
+                    <img src="/images/theme_packs/thm_12.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                    <span class="truncate font-medium flex-1">The Unchanging</span>
+                    <span class="shrink-0 font-mono text-[11px] font-bold text-success">31%</span>
+                  </div>
+                  <div class="flex items-center gap-1 rounded-full border border-success/60 bg-success/10 pl-0.5 pr-1 py-0.5 text-[10px]">
+                    <img src="/images/theme_packs/thm_10.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                    <span class="truncate font-medium flex-1">Falling Flowers</span>
+                    <span class="shrink-0 font-mono text-[11px] font-bold text-success">18%</span>
+                  </div>
+                </div>
+                <p>To keep this number low, be sure your graces give you extra refreshes and theme pack selections, i.e. use graces <span class="badge badge-ghost badge-sm gap-1 align-middle"><img src="/images/graces/grace_0.webp" alt="" class="h-3.5 w-3.5 rounded-full object-cover" />1</span> and <span class="badge badge-ghost badge-sm gap-1 align-middle"><img src="/images/graces/grace_2.webp" alt="" class="h-3.5 w-3.5 rounded-full object-cover" />3</span>. You can also simply not <span class="btn btn-xs h-4 min-h-0 px-1 text-[9px] btn-error pointer-events-none">search</span>, but honestly it's easier to comp teams when you know what you'll be fighting, and you'll still be starlight neutral/positive if you do it right. <button type="button" phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=gifts") |> JS.dispatch("click", to: "#gift-loadout-btn")} class="btn btn-primary btn-xs h-5 min-h-0 gap-1 px-1.5 align-middle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-3 w-3"><path d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z"/><path d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z"/></svg>Edit in gift loadout</button></p>
+                <div class="relative mt-2 flex flex-col gap-4 rounded-l-xl border-y-2 border-l-2 border-error/70 pb-3 pl-3 pt-5">
+                  <span class="badge badge-error badge-sm absolute -top-3 -left-0.5 rounded-b-none rounded-tl-xl font-semibold uppercase">Your current plan</span>
+                <section class="flex flex-col gap-2">
+                  <p>Chance of searching on each floor:</p>
+                  <div :for={row <- budget.search_rows} class="flex items-center gap-2 font-mono text-xs">
+                    <span class="w-6">F<%= row.floor %></span>
+                    <span class="badge badge-error badge-xs font-sans font-semibold">MISS</span>
+                    <%= if row.pack do %>
+                      <span class={"flex w-44 shrink-0 items-center gap-1 rounded-full border pl-0.5 pr-1 py-0.5 text-[10px] font-sans " <> if(row.searching?, do: "border-success/60 bg-success/10", else: "border-base-content/20 bg-base-200 opacity-50 grayscale")}>
+                        <img src={row.pack.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                        <span class="truncate font-medium flex-1"><%= row.pack.name_en %></span>
+                      </span>
+                    <% else %>
+                      <span class="flex w-44 shrink-0 items-center rounded-full border border-dashed border-base-content/20 px-1.5 py-0.5 text-[10px] italic text-base-content/30 font-sans">no Hunt pack</span>
+                    <% end %>
+                    <div class="h-2 flex-1 rounded-full bg-base-300 overflow-hidden"><div class="h-full bg-error/70" style={"width: #{row.chance * 100}%"}></div></div>
+                    <span class="w-12 text-right"><%= search_pct(row.chance) %></span>
                   </div>
                 </section>
-                <section class="flex flex-col gap-1">
-                  <h4 class="font-semibold">2. How many searches a whole run needs</h4>
-                  <p class="text-xs text-base-content/60">Every combination of earlier outcomes is followed through the floors and weighted by how likely it is, which gives the chance of exactly 0, 1, 2 or more searches.</p>
+                <section class="flex flex-col gap-2">
+                  <p>How likely you'll hit 0, 1, 2, or more searches on a run:</p>
                   <div :for={{count, prob} <- Enum.sort(budget.search_counts)} class="flex items-center gap-2 font-mono text-xs">
                     <span class="w-24"><%= count %> <%= if count == 1, do: "search", else: "searches" %></span>
                     <div class="h-2 flex-1 rounded-full bg-base-300 overflow-hidden"><div class="h-full bg-primary/70" style={"width: #{prob * 100}%"}></div></div>
@@ -187,23 +271,22 @@
                     <span class="w-16 text-right text-error">cost <%= search_cost(count) %></span>
                   </div>
                 </section>
-                <section class="flex flex-col gap-1">
-                  <h4 class="font-semibold">3. Average cost</h4>
-                  <p class="text-xs text-base-content/60">The first search costs 20 and each one after costs 10 more, so k searches cost 20k + 10·k(k−1)/2. The cost grows faster than the count, so the average cost is each count's cost weighted by its chance, not the cost of the average count.</p>
-                  <div class="rounded-lg bg-base-200 p-2 font-mono text-xs flex flex-col gap-1">
-                    <span><%= Enum.map_join(Enum.sort(budget.search_counts), " + ", fn {count, prob} -> "#{search_pct(prob)} × #{search_cost(count)}" end) %></span>
-                    <span class="font-semibold">= <%= :erlang.float_to_binary(budget.search_average_cost, decimals: 1) %> average cost, shown as <%= StarlightBudget.format(budget.costs.pack_search) %></span>
-                    <span class="text-base-content/50">Average searches per run: <%= :erlang.float_to_binary(budget.pack_searches, decimals: 2) %></span>
-                  </div>
-                </section>
-                <p class="text-xs text-base-content/60">Search floors count only through floor 5. When search finds the pack, the top available wanted pack is credited at 100% on that floor. Simplification: on F5 one fewer theme pack is assumed to be shown than the graces give, to account for one of the theme packs not playing nice on refresh.</p>
-              </div>
-              <div class="modal-action mt-0">
-                <button type="button" phx-click="toggle_search_info" class="btn btn-sm">Close</button>
+                <table class="table table-xs">
+                  <thead>
+                    <tr><th>Average searches per run</th><th>Weighted average cost</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr class="font-mono">
+                      <td><%= :erlang.float_to_binary(budget.pack_searches, decimals: 2) %></td>
+                      <td><%= :erlang.float_to_binary(budget.search_average_cost, decimals: 1) %></td>
+                    </tr>
+                  </tbody>
+                </table>
+                </div>
+                <p class="text-xs text-base-content/60">* F5 is assumed to have 1 less pack than the graces give, since Limbus usually keeps a new event pack pinned as available on that floor (which no one wants for speedrunning).</p>
               </div>
             </div>
-            <div class="modal-backdrop" phx-click="toggle_search_info"></div>
-          </div>
+          </aside>
         </div>
       </div>
       <div :for={pane <- ~w(battle packs gifts)} class={"flex-1 min-h-0 min-w-0 flex-col " <> if(pane == @pane, do: "flex", else: "hidden")}>

@@ -19,8 +19,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:editing_id, nil)
      |> assign(:selected_ids, blank_selected_ids())
      |> assign(:budget_inputs, blank_budget_inputs(nil))
-     |> assign(:show_search_info, false)
-     |> assign(:show_encounter_info, false)
+     |> assign(:info_pane, nil)
      |> assign(:gift_view, %{tab: nil, milestone: nil})
      |> assign(:pane, "battle")}
   end
@@ -55,10 +54,10 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
-  def handle_event("toggle_encounter_info", _, socket), do: {:noreply, update(socket, :show_encounter_info, &(!&1))}
-
-  @impl true
-  def handle_event("toggle_search_info", _, socket), do: {:noreply, update(socket, :show_search_info, &(!&1))}
+  def handle_event("show_info", %{"pane" => pane}, socket) when pane in ~w(encounter search rest grace gift_search) do
+    pane = String.to_existing_atom(pane)
+    {:noreply, update(socket, :info_pane, &if(&1 == pane, do: nil, else: pane))}
+  end
 
   @impl true
   def handle_event("budget_change", params, socket) do
