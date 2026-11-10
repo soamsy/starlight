@@ -260,7 +260,7 @@ defmodule StarlightBot.Automation.RunMemory do
   end
 
   defp max_battle_retries(ctx) do
-    planned = BattlePlans.max_retries(battle_plan(ctx))
+    planned = get(ctx, :battle_max_retries, nil) || BattlePlans.max_retries(nil)
 
     if context(ctx) != :luxcavation and get(ctx, :floor, 1) in @extreme_retry_floors,
       do: min(planned, @extreme_max_retries),

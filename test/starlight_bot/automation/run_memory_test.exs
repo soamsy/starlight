@@ -59,6 +59,12 @@ defmodule StarlightBot.Automation.RunMemoryTest do
     assert RunMemory.claim_battle_retry(ctx) == :give_up
   end
 
+  test "claim_battle_retry uses the retries of the playbook that played the turn", %{ctx: ctx} do
+    RunMemory.put(ctx, :battle_max_retries, 1)
+    assert RunMemory.claim_battle_retry(ctx) == {:retry, 1, 1}
+    assert RunMemory.claim_battle_retry(ctx) == :give_up
+  end
+
   test "raise_floor only moves the floor up, while put_floor can reset it", %{ctx: ctx} do
     assert RunMemory.raise_floor(ctx, 3) == 3
     assert RunMemory.raise_floor(ctx, 1) == 3

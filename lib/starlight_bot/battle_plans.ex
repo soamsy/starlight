@@ -885,7 +885,6 @@ defmodule StarlightBot.BattlePlans do
 
     %{
       "version" => 4,
-      "max_retries" => @default_max_retries,
       "profiles" => %{},
       "playbooks" => [chain, chain_a_res, focused],
       "tracks" =>
@@ -906,6 +905,7 @@ defmodule StarlightBot.BattlePlans do
       "id" => GiftPlans.new_id("pb"),
       "name" => name,
       "kind" => kind,
+      "max_retries" => @default_max_retries,
       "actions" => default_actions(kind)
     }
   end

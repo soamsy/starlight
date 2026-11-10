@@ -41,7 +41,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     {:ok, target} = Teams.create_default_team()
     source_plan = Teams.get_team(source).battle_plan_id
     {:ok, profile} = StarlightBot.SinnerProfiles.save(%{name: "Faust test", sinner: "faust", locator_hook: "some_hook"})
-    data = BattlePlans.blank() |> Map.put("max_retries", 7) |> BattlePlans.put_profile("faust", profile) |> BattlePlans.put_profile("ryoshu", -1)
+    data = BattlePlans.blank() |> BattlePlans.put_profile("faust", profile) |> BattlePlans.put_profile("ryoshu", -1)
     {:ok, _} = Plans.save(:battle_plans, %{id: source_plan, name: Plans.get(:battle_plans, source_plan).name, data: data})
     bare = %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, flash: %{}}}
 
@@ -252,10 +252,13 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     assert Enum.map(actions(socket, playbook_id), & &1["type"]) == ["schedule", "commit"]
   end
 
-  test "retries per battle saves non-negative integers only", %{socket: socket} do
-    socket = event(socket, "set_max_retries", %{"max_retries" => "5"})
+  test "retries per battle is saved on the selected playbook, non-negative integers only", %{socket: socket, playbook_id: playbook_id} do
+    socket = event(socket, "set_max_retries", %{"max_retries" => "3"})
     socket = event(socket, "set_max_retries", %{"max_retries" => "-2"})
-    assert Plans.get(:battle_plans, socket.assigns.editing_id).data["max_retries"] == 5
+    data = Plans.get(:battle_plans, socket.assigns.editing_id).data
+    refute Map.has_key?(data, "max_retries")
+    assert Enum.find(data["playbooks"], &(&1["id"] == playbook_id))["max_retries"] == 3
+    assert Enum.count(data["playbooks"], &(&1["max_retries"] == 3)) == 1
     assert render(socket) =~ "Retries per battle"
   end
 

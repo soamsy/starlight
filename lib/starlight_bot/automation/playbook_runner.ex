@@ -150,6 +150,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
     scan = if Enum.any?(BattlePlans.flatten_actions(actions), &needs_tray?/1), do: scan(ctx), else: :skip
     RunMemory.put(ctx, :target_panned?, false)
+    RunMemory.put(ctx, :battle_max_retries, BattlePlans.max_retries(playbook))
 
     turn_state = %{kind: kind, scan: scan, number: turn}
     {:steps, [run_actions(actions |> merge_keys() |> commit_trailing_damage_rate(), turn_state)]}

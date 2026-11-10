@@ -73,7 +73,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   @impl true
   def handle_event("set_max_retries", %{"max_retries" => value}, socket) do
     case Integer.parse(value) do
-      {n, _} when n >= 0 -> {:noreply, socket |> assign(:data, Map.put(socket.assigns.data, "max_retries", n)) |> persist()}
+      {n, _} when n >= 0 -> {:noreply, update_playbook(socket, &Map.put(&1, "max_retries", n))}
       _ -> {:noreply, socket}
     end
   end
@@ -978,7 +978,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <div class="flex gap-0.5 shrink-0">
             <button :if={@schedulable?} type="button" phx-click="add_schedule" phx-value-action={@action["id"]} title="Change this action across turns"
                     class="btn btn-2xs btn-ghost">Add Schedule</button>
-            <button phx-click="dup_action" phx-value-action={@action["id"]} title="Duplicate this block" class="btn btn-2xs btn-ghost">⧉</button>
+            <button phx-click="dup_action" phx-value-action={@action["id"]} title="Duplicate this block" class="btn btn-2xs btn-ghost">Dup</button>
             <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
           </div>
         </div>
@@ -1103,7 +1103,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <div class="flex gap-0.5">
         <button :if={@schedulable?} type="button" phx-click="add_schedule" phx-value-action={@action["id"]} title="Change this action across turns"
                 class="btn btn-2xs btn-ghost">Add Schedule</button>
-        <button :if={BattlePlans.duplicable?(@action)} phx-click="dup_action" phx-value-action={@action["id"]} title="Duplicate this row" class="btn btn-2xs btn-ghost">⧉</button>
+        <button :if={BattlePlans.duplicable?(@action)} phx-click="dup_action" phx-value-action={@action["id"]} title="Duplicate this row" class="btn btn-2xs btn-ghost">Dup</button>
         <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
       </div>
     </div>

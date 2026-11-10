@@ -8,17 +8,11 @@
       <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
         <%= if @data do %>
           <div class="flex items-center gap-3">
-            <form phx-change="set_max_retries" class="flex items-center gap-1 text-xs"
-                  title="How many times a lost battle is retried before the run gives up.">
-              <span class="text-base-content/60">Retries per battle</span>
-              <input type="number" name="max_retries" min="0" value={StarlightBot.BattlePlans.max_retries(@data)}
-                     phx-debounce="300" class="input input-bordered input-xs w-16" />
-            </form>
-            <label class="flex items-center gap-1 text-xs text-base-content/60 cursor-pointer">
-              <input type="checkbox" checked={@extreme?} phx-click="toggle_extreme" class="checkbox checkbox-xs" />
-              floors 6-15
-            </label>
             <div class="ml-auto flex items-center gap-3">
+            <label class="flex items-center gap-1.5 cursor-pointer" title="Show the floors 6-15 columns">
+              <input type="checkbox" checked={@extreme?} phx-click="toggle_extreme" class="toggle toggle-sm toggle-primary" />
+              <span class={"badge badge-sm font-bold " <> if(@extreme?, do: "badge-primary", else: "badge-ghost text-base-content/50")}>F6-F15</span>
+            </label>
             <.template_picker id="battle-template-picker" templates={@templates} editing={@editing_template} current_count={@tab_counts[:battle_plans]} status={@paste_status} selected={@template_id} plans={@plans} plan_id={@editing_id} editing_plan={@editing_plan} label="battle plan" />
             <button type="button" phx-click="toggle_help" class="btn btn-sm btn-outline gap-0 overflow-hidden px-0" title="How battle plans work">
               <span class="flex h-full items-center border-r border-current/30 bg-base-content/10 px-2 text-xs">guide</span>
@@ -140,10 +134,16 @@
                       <tr>
                         <th></th>
                         <%= for floor <- floors(@extreme?) do %>
-                          <th class="font-normal text-base-content/50 w-8">F<%= floor %></th>
+                          <th class="font-normal text-base-content/50 w-8">
+                            <button :if={@extreme? and floor == StarlightBot.BattlePlans.max_floor()} type="button" phx-click="toggle_extreme" title="Collapse floors 6-15"
+                                    class="btn btn-2xs btn-ghost h-4 min-h-4 w-full px-0 text-[11px] font-normal text-base-content/50">F<%= floor %></button>
+                            <span :if={not (@extreme? and floor == StarlightBot.BattlePlans.max_floor())}>F<%= floor %></span>
+                          </th>
                         <% end %>
                         <%= unless @extreme? do %>
-                          <th class="font-normal text-base-content/50 w-12">F6-15</th>
+                          <th class="font-normal w-12">
+                            <button type="button" phx-click="toggle_extreme" title="Show floors 6-15" class="btn btn-2xs btn-ghost h-4 min-h-4 w-full px-0 text-[11px] font-normal text-base-content/50">F6-F15</button>
+                          </th>
                         <% end %>
                       </tr>
                     </thead>
@@ -210,10 +210,16 @@
                   <tr>
                     <th></th>
                     <%= for floor <- floors(@extreme?) do %>
-                      <th class="font-normal text-base-content/50 w-8">F<%= floor %></th>
+                      <th class="font-normal text-base-content/50 w-8">
+                        <button :if={@extreme? and floor == StarlightBot.BattlePlans.max_floor()} type="button" phx-click="toggle_extreme" title="Collapse floors 6-15"
+                                class="btn btn-2xs btn-ghost h-4 min-h-4 w-full px-0 text-[11px] font-normal text-base-content/50">F<%= floor %></button>
+                        <span :if={not (@extreme? and floor == StarlightBot.BattlePlans.max_floor())}>F<%= floor %></span>
+                      </th>
                     <% end %>
                     <%= unless @extreme? do %>
-                      <th class="font-normal text-base-content/50 w-12">F6-15</th>
+                      <th class="font-normal w-12">
+                        <button type="button" phx-click="toggle_extreme" title="Show floors 6-15" class="btn btn-2xs btn-ghost h-4 min-h-4 w-full px-0 text-[11px] font-normal text-base-content/50">F6-F15</button>
+                      </th>
                     <% end %>
                   </tr>
                 </thead>
@@ -269,15 +275,17 @@
                   </div>
                   <div id={"playbooks-#{kind}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_playbooks" data-sort-scope={kind} class="flex flex-col gap-0.5">
                     <%= for pb <- Enum.filter(@data["playbooks"], &(&1["kind"] == kind)) do %>
-                      <% used = StarlightBot.BattlePlans.tracks_using(@data, pb["id"]) %>
-                      <div data-sort-id={pb["id"]} class="flex items-center">
+                      <div data-sort-id={pb["id"]} class="group flex items-center">
                         <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-0.5">⠿</span>
                         <button phx-click="select_playbook" phx-value-id={pb["id"]}
                                 class={"flex flex-1 min-w-0 items-center gap-1.5 text-left text-xs rounded px-1.5 py-1 hover:bg-base-200 " <> if(@playbook_id == pb["id"], do: "bg-primary/10 border-l-2 border-primary", else: "")}>
                           <span class="inline-block w-5 text-center rounded text-[10px] font-semibold text-white" style={playbook_color(@data, pb["id"], 0.9)}><%= playbook_tag(pb) %></span>
                           <span class="flex-1 truncate"><%= pb["name"] %></span>
-                          <span class="text-[10px] text-base-content/40" title={Enum.map_join(used, ", ", &track_label/1)}><%= length(used) %> tr</span>
                         </button>
+                        <div class="flex shrink-0 items-center opacity-40 group-hover:opacity-100">
+                          <button phx-click="copy_playbook" phx-value-id={pb["id"]} title="Copy this playbook to the clipboard as JSON" class="btn btn-2xs btn-ghost">Copy</button>
+                          <button phx-click="delete_playbook" phx-value-id={pb["id"]} data-confirm={"Delete playbook '#{pb["name"]}'?"} title="Delete this playbook" class="btn btn-2xs btn-ghost text-error">✕</button>
+                        </div>
                       </div>
                     <% end %>
                   </div>
@@ -293,11 +301,12 @@
                   <input type="text" value={playbook["name"]} phx-blur="rename_playbook"
                          class="input input-bordered input-sm w-56 font-semibold" />
                   <span class="badge badge-sm badge-outline"><%= playbook["kind"] %></span>
-                  <button phx-click="copy_playbook" phx-value-id={playbook["id"]} title="Copy this playbook to the clipboard as JSON" class="btn btn-xs btn-ghost ml-auto">Copy</button>
-                  <button phx-click="duplicate_playbook" phx-value-id={playbook["id"]} class="btn btn-xs btn-ghost">Duplicate</button>
-                  <button phx-click="delete_playbook" phx-value-id={playbook["id"]}
-                          data-confirm={"Delete playbook '#{playbook["name"]}'?"}
-                          class="btn btn-xs btn-ghost text-error">Delete</button>
+                  <form phx-change="set_max_retries" class="flex items-center gap-1 text-xs"
+                        title="How many times a lost battle is retried before the run gives up.">
+                    <span class="text-base-content/60">Retries per battle</span>
+                    <input type="number" name="max_retries" min="0" value={StarlightBot.BattlePlans.max_retries(playbook)}
+                           phx-debounce="300" class="input input-bordered input-xs w-16" />
+                  </form>
                 </div>
 
                 <.action_list container="root" playbook={playbook} sinner_options={sinner_options(@data, @profiles_by_id, @locator_thumbs)} open_editor_id={@open_editor_id}
