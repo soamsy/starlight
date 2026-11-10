@@ -78,7 +78,7 @@
             <span class="flex items-start gap-2">
               <span class={"w-2 h-2 rounded-full mt-1 shrink-0 " <> cell_class(result)}></span>
               <span class="flex flex-col items-start">
-                <span class="font-mono text-xs"><%= String.slice(entry["captured_at"], 11, 12) %><%= if entry["labeled?"], do: " ✎" %><%= if entry["in_suite?"], do: " ★" %></span>
+                <span class="font-mono text-xs"><%= String.slice(entry["captured_at"], 11, 12) %><.icon :if={entry["labeled?"]} name="lucide-pencil" class="size-3 inline" /><.icon :if={entry["in_suite?"]} name="lucide-filled-star" class="size-3 inline" /></span>
                 <span class="text-xs"><%= summary(entry) %></span>
               </span>
             </span>

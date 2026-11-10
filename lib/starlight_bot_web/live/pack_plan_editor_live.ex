@@ -277,7 +277,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
         <span class="shrink-0 text-[9px] text-base-content/60"><%= @index + 1 %></span>
         <button type="button" phx-click="path_remove" phx-value-pack_id={@alt.id} phx-value-mode={@mode} phx-value-floor={@floor}
                 class="shrink-0 leading-none text-base-content/50 hover:text-error cursor-pointer" title="Remove from Hunt">
-          ✕
+          <.icon name="lucide-x" class="size-3.5" />
         </button>
       </div>
     </div>

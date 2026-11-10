@@ -24,7 +24,7 @@
             <%= if @screenshot_status == :waiting do %>
               <span class="loading loading-spinner loading-xs"></span> 2s…
             <% else %>
-              ⏱ 2s
+              <.icon name="lucide-timer" class="size-3.5" /> 2s
             <% end %>
           </button>
           <div class="tooltip tooltip-bottom" data-tip="Click and drag on the screenshot to select a region. Hold Shift for precision mode.">
@@ -83,21 +83,21 @@
             <span class="text-xs font-mono text-base-content/70">
               <%= @region.x %>,<%= @region.y %> <%= @region.w %>×<%= @region.h %>
             </span>
-            <button phx-click="clear_region" class="btn btn-xs btn-ghost text-error">✕</button>
+            <button phx-click="clear_region" class="btn btn-xs btn-ghost text-error"><.icon name="lucide-x" class="size-3.5" /></button>
           <% end %>
           <%= if @click_region do %>
             <span class="badge badge-info badge-xs">C</span>
             <span class="text-xs font-mono text-info/80">
               <%= @click_region.x %>,<%= @click_region.y %> <%= @click_region.w %>×<%= @click_region.h %>
             </span>
-            <button phx-click="clear_click_region" class="btn btn-xs btn-ghost text-info">✕</button>
+            <button phx-click="clear_click_region" class="btn btn-xs btn-ghost text-info"><.icon name="lucide-x" class="size-3.5" /></button>
           <% end %>
           <%= if @scan_region do %>
             <span class="badge badge-warning badge-xs">S</span>
             <span class="text-xs font-mono text-warning/80">
               <%= @scan_region.x %>,<%= @scan_region.y %> <%= @scan_region.w %>×<%= @scan_region.h %>
             </span>
-            <button phx-click="clear_scan_region" class="btn btn-xs btn-ghost text-warning">✕</button>
+            <button phx-click="clear_scan_region" class="btn btn-xs btn-ghost text-warning"><.icon name="lucide-x" class="size-3.5" /></button>
           <% end %>
         </div>
       </div>
@@ -298,7 +298,7 @@
                         </span>
                         <span :if={group_dirty} class="text-warning text-xs leading-none" title="unsaved change">●</span>
                       </span>
-                      <button type="button" phx-click={if prefix == "region", do: "clear_region", else: "clear_#{prefix}_region"} class="btn btn-xs btn-ghost px-1 min-h-0 h-4 text-error" title={"Clear #{title}"}>✕</button>
+                      <button type="button" phx-click={if prefix == "region", do: "clear_region", else: "clear_#{prefix}_region"} class="btn btn-xs btn-ghost px-1 min-h-0 h-4 text-error" title={"Clear #{title}"}><.icon name="lucide-x" class="size-3.5" /></button>
                     </div>
                     <div class="grid grid-cols-2 gap-1">
                       <%= for {label, field} <- fields do %>
@@ -647,7 +647,7 @@
                 </td>
                 <td class="text-center">
                   <%= if mask_on?(hook.mask) do %>
-                    <span class="badge badge-warning badge-xs" title="Black pixels ignored">✓</span>
+                    <span class="badge badge-warning badge-xs" title="Black pixels ignored"><.icon name="lucide-check" class="size-3" /></span>
                   <% end %>
                 </td>
                 <td><span class="badge badge-outline badge-xs"><%= hook.match_method %></span></td>

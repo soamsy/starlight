@@ -182,8 +182,8 @@
       <div class="grid grid-cols-2 gap-2 items-start shrink-0">
         <details id="md-inventory" phx-mounted={JS.ignore_attributes(["open"])} class="group bg-base-300 rounded-xl p-3">
           <summary class="flex items-center gap-1.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-            <span class="text-xs text-base-content/50 group-open:hidden">▶</span>
-            <span class="text-xs text-base-content/50 hidden group-open:inline">▼</span>
+            <span class="text-xs text-base-content/50 group-open:hidden"><.icon name="lucide-chevron-right" class="size-3" /></span>
+            <span class="text-xs text-base-content/50 hidden group-open:inline"><.icon name="lucide-chevron-down" class="size-3" /></span>
             <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Inventory</span>
             <span class="badge badge-sm ml-auto"><%= map_size(ego_gifts(@run_memory)) %></span>
           </summary>
@@ -198,8 +198,8 @@
 
         <details :if={@milestones != []} id="md-milestones" phx-mounted={JS.ignore_attributes(["open"])} class="group bg-base-300 rounded-xl p-3">
           <summary class="flex items-center gap-1.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-            <span class="text-xs text-base-content/50 group-open:hidden">▶</span>
-            <span class="text-xs text-base-content/50 hidden group-open:inline">▼</span>
+            <span class="text-xs text-base-content/50 group-open:hidden"><.icon name="lucide-chevron-right" class="size-3" /></span>
+            <span class="text-xs text-base-content/50 hidden group-open:inline"><.icon name="lucide-chevron-down" class="size-3" /></span>
             <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Milestones</span>
             <span class="badge badge-sm ml-auto"><%= Enum.count(@milestones, & &1.reached?) %>/<%= length(@milestones) %></span>
           </summary>
@@ -207,7 +207,7 @@
             <%= for milestone <- @milestones do %>
               <div class="flex flex-col gap-1">
                 <span class={"badge badge-sm " <> if(milestone.reached?, do: "badge-success", else: "badge-outline")}>
-                  <%= if milestone.reached?, do: "✓ " %><%= milestone.name %>
+                  <.icon :if={milestone.reached?} name="lucide-check" class="size-3" /><%= milestone.name %>
                 </span>
                 <div class="flex flex-wrap gap-1.5">
                   <.gift_tile :for={entry <- milestone.gifts} owned={%{name: entry.name, uptie: entry.uptie}} gifts_by_name={@gifts_by_name} show_tier dim={entry.status != :done} />
@@ -395,7 +395,7 @@
           </div>
           <div class="flex items-center gap-2">
             <span class="font-mono text-2xl font-bold text-warning"><%= @countdown %></span>
-            <button phx-click="cancel_pending" class="btn btn-ghost btn-xs text-base-content/40">✕</button>
+            <button phx-click="cancel_pending" class="btn btn-ghost btn-xs text-base-content/40"><.icon name="lucide-x" class="size-3.5" /></button>
           </div>
         </div>
       <% end %>

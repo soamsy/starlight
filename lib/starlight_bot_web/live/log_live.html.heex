@@ -20,7 +20,7 @@
     <%= if @machine_filter do %>
       <span class="badge badge-primary badge-outline gap-1 font-mono max-w-xs">
         <span class="truncate">only {@machine_filter_label}</span>
-        <button class="hover:text-error" phx-click="clear_machine_filter" title="Show every machine">✕</button>
+        <button class="hover:text-error" phx-click="clear_machine_filter" title="Show every machine"><.icon name="lucide-x" class="size-3.5" /></button>
       </span>
     <% end %>
 

@@ -201,7 +201,7 @@
                         <% end %>
                         <div class="flex shrink-0 items-center opacity-40 group-hover:opacity-100">
                           <button phx-click="copy_playbook" phx-value-id={pb["id"]} title="Copy this playbook to the clipboard as JSON" class="btn btn-2xs btn-ghost">Copy</button>
-                          <button phx-click="delete_playbook" phx-value-id={pb["id"]} data-confirm={"Delete playbook '#{pb["name"]}'?"} title="Delete this playbook" class="btn btn-2xs btn-ghost text-error">✕</button>
+                          <button phx-click="delete_playbook" phx-value-id={pb["id"]} data-confirm={"Delete playbook '#{pb["name"]}'?"} title="Delete this playbook" class="btn btn-2xs btn-ghost text-error"><.icon name="lucide-x" class="size-3.5" /></button>
                         </div>
                       </div>
                     <% end %>

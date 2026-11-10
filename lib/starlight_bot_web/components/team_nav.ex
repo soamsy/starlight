@@ -512,7 +512,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
                 <.hook_picker groups={@nav.hook_groups} used={@current.hooks} event="team_nav_replace_hook" index={index} label={Teams.hook_label(hook)} icon={Teams.hook_icon(hook)} class="btn-ghost" />
               </div>
               <button type="button" phx-click="team_nav_remove_hook" phx-value-index={index}
-                      class="btn btn-ghost btn-xs text-error">✕</button>
+                      class="btn btn-ghost btn-xs text-error"><.icon name="lucide-x" class="size-3.5" /></button>
             </div>
           <% end %>
         </div>

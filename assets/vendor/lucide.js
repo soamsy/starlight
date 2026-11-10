@@ -28,4 +28,22 @@ module.exports = plugin(function ({ matchComponents, theme }) {
       }
     }
   }, { values })
+
+  matchComponents({
+    "lucide-filled": ({ name, fullPath }) => {
+      const content = fs.readFileSync(fullPath).toString().replace(/\r?\n|\r/g, "").replace(/fill="none"/, 'fill="black"')
+      const url = `url('data:image/svg+xml;utf8,${content.replace(/#/g, "%23")}')`
+      return {
+        [`--lucide-filled-${name}`]: url,
+        "mask": `var(--lucide-filled-${name})`,
+        "mask-repeat": "no-repeat",
+        "mask-size": "100% 100%",
+        "background-color": "currentColor",
+        "vertical-align": "middle",
+        "display": "inline-block",
+        "width": theme("spacing.4"),
+        "height": theme("spacing.4")
+      }
+    }
+  }, { values })
 })

@@ -660,7 +660,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
             <% end %>
             <div class="flex shrink-0 items-center opacity-40 group-hover:opacity-100">
               <button phx-click="copy_lineup" phx-value-id={lineup["id"]} title="Copy this lineup to the clipboard as JSON" class="btn btn-2xs btn-ghost">Copy</button>
-              <button phx-click="delete_lineup" phx-value-id={lineup["id"]} data-confirm={"Delete lineup '#{lineup["name"]}'?"} title="Delete this lineup" class="btn btn-2xs btn-ghost text-error">✕</button>
+              <button phx-click="delete_lineup" phx-value-id={lineup["id"]} data-confirm={"Delete lineup '#{lineup["name"]}'?"} title="Delete this lineup" class="btn btn-2xs btn-ghost text-error"><.icon name="lucide-x" class="size-3.5" /></button>
             </div>
           </div>
         <% end %>
@@ -945,7 +945,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <button type="button" phx-click="add_intro_tab" phx-value-schedule={@schedule["id"]} phx-value-turn={from}
                   disabled={Enum.max(@froms) >= @max_turn} title="New tab before the loop"
                   class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/20 disabled:opacity-30">+</button>
-          <span class="px-1 text-[11px] text-primary leading-6" title="Everything from here repeats forever">↻</span>
+          <span class="px-1 text-[11px] text-primary leading-6" title="Everything from here repeats forever"><.icon name="lucide-repeat" class="size-3.5" /></span>
         <% end %>
         <div class={"flex items-center gap-0.5 rounded-t-lg border border-b-0 px-2 py-0.5 text-[11px] " <>
                if(from == @active, do: "border-primary bg-primary text-primary-content font-semibold", else: "border-primary/40 bg-primary/25 hover:bg-primary/40")}>
@@ -964,16 +964,16 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           </div>
           <%= cond do %>
             <% BattlePlans.loop_segment?(@schedule, from) and from == BattlePlans.loop_from(@schedule) and Enum.count(@froms, &(&1 >= from)) == 1 -> %>
-              <button type="button" phx-click="set_schedule_loop" phx-value-schedule={@schedule["id"]} phx-value-turn="" class="opacity-60 hover:opacity-100" title="Remove the loop, keeping its tab">✕</button>
+              <button type="button" phx-click="set_schedule_loop" phx-value-schedule={@schedule["id"]} phx-value-turn="" class="opacity-60 hover:opacity-100" title="Remove the loop, keeping its tab"><.icon name="lucide-x" class="size-3.5" /></button>
             <% BattlePlans.loop_segment?(@schedule, from) and from == Enum.max(@froms) -> %>
-              <button type="button" phx-click="remove_schedule_segment" phx-value-schedule={@schedule["id"]} phx-value-from={from} class="opacity-60 hover:opacity-100" title="Close this loop tab">✕</button>
+              <button type="button" phx-click="remove_schedule_segment" phx-value-schedule={@schedule["id"]} phx-value-from={from} class="opacity-60 hover:opacity-100" title="Close this loop tab"><.icon name="lucide-x" class="size-3.5" /></button>
             <% BattlePlans.loop_segment?(@schedule, from) -> %>
             <% from != 1 -> %>
               <button type="button" phx-click="remove_schedule_segment" phx-value-schedule={@schedule["id"]} phx-value-from={from} class="opacity-60 hover:opacity-100"
-                      title={"Close this tab; #{BattlePlans.segment_label(@schedule, from)} use the earlier tab's actions"}>✕</button>
+                      title={"Close this tab; #{BattlePlans.segment_label(@schedule, from)} use the earlier tab's actions"}><.icon name="lucide-x" class="size-3.5" /></button>
             <% length(@froms) == 1 -> %>
               <button type="button" phx-click="remove_schedule" phx-value-schedule={@schedule["id"]} class="opacity-60 hover:opacity-100"
-                      title="Remove the schedule, keeping its actions">✕</button>
+                      title="Remove the schedule, keeping its actions"><.icon name="lucide-x" class="size-3.5" /></button>
             <% true -> %>
           <% end %>
         </div>
@@ -1056,18 +1056,18 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
             <button :if={@schedulable?} type="button" phx-click="add_schedule" phx-value-action={@action["id"]} title="Change this action across turns"
                     class="btn btn-2xs btn-ghost">Add Schedule</button>
             <button phx-click="dup_action" phx-value-action={@action["id"]} title="Duplicate this block" class="btn btn-2xs btn-ghost">Dup</button>
-            <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
+            <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error"><.icon name="lucide-x" class="size-3.5" /></button>
           </div>
         </div>
         <%= for branch <- BattlePlans.branches(@action) do %>
           <div class="flex flex-col gap-1 pl-3 border-l-2 border-base-300">
             <div :if={branch not in ["then", "else"]} class="flex items-start gap-2">
               <.condition_header label="ELSE IF" id={branch} condition={elif_condition(@action, branch)} open_editor_id={@open_editor_id} sinner_options={@sinner_options} />
-              <button type="button" phx-click="remove_elif" phx-value-elif={branch} title="Remove this else if" class="btn btn-2xs btn-ghost text-error shrink-0">✕</button>
+              <button type="button" phx-click="remove_elif" phx-value-elif={branch} title="Remove this else if" class="btn btn-2xs btn-ghost text-error shrink-0"><.icon name="lucide-x" class="size-3.5" /></button>
             </div>
             <div :if={branch == "else"} class="flex items-center gap-1">
               <.keyword_badge>ELSE</.keyword_badge>
-              <button type="button" phx-click="remove_else" phx-value-parent={@action["id"]} title="Remove the else branch" class="btn btn-2xs btn-ghost text-error">✕</button>
+              <button type="button" phx-click="remove_else" phx-value-parent={@action["id"]} title="Remove the else branch" class="btn btn-2xs btn-ghost text-error"><.icon name="lucide-x" class="size-3.5" /></button>
             </div>
             <% actions = BattlePlans.branch_actions(@action, branch) %>
             <div id={"branch-#{@playbook_id}-#{@action["id"]}-#{branch}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_actions" data-sort-move-event="move_action_to"
@@ -1130,7 +1130,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
               <% type when type in ~w(win_rate damage_rate) -> %>
                 <span class="inline-flex items-center gap-1.5 rounded bg-red-800 px-2 py-0.5 font-semibold whitespace-nowrap text-yellow-300 cursor-help" title={action_tooltip(type)}>
                   <%= if type == "win_rate", do: "Win Rate", else: "Damage Rate" %>
-                  <span class="[text-shadow:0_0_6px_#fde047,0_0_12px_#facc15]">▲</span>
+                  <span class="[filter:drop-shadow(0_0_1.5px_#fde047)_drop-shadow(0_0_3px_#facc15)]"><.icon name="lucide-filled-triangle" class="size-3" /></span>
                   <%= if type == "win_rate", do: "(p)", else: "(p p)" %>
                 </span>
               <% "commit" -> %>
@@ -1152,7 +1152,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
               <div class="flex items-start gap-2 pl-4">
                 <.row_summary key={pin_key(@action, pin_index)} lines={BattlePlans.rows_parts(pin, false)} sinner_options={@sinner_options} />
                 <button type="button" phx-click="remove_pin" phx-value-action={@action["id"]} phx-value-index={pin_index}
-                        class="btn btn-xs btn-ghost text-error self-center">✕</button>
+                        class="btn btn-xs btn-ghost text-error self-center"><.icon name="lucide-x" class="size-3.5" /></button>
               </div>
             <% else %>
             <div phx-click-away="close_editor" class="flex items-start gap-2 pl-4">
@@ -1164,7 +1164,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                   <.slot_selector holder={pin} prefix={"pins[#{pin_index}]"} sinner_options={@sinner_options} action_id={@action["id"]} pin?={true} />
                   <.rule_boxes holder={pin} prefix={"pins[#{pin_index}]"} chain?={@kind == "chain"} owner={@action["id"]} />
                   <button type="button" phx-click="remove_pin" phx-value-action={@action["id"]} phx-value-index={pin_index}
-                          class="btn btn-xs btn-ghost text-error self-center">✕</button>
+                          class="btn btn-xs btn-ghost text-error self-center"><.icon name="lucide-x" class="size-3.5" /></button>
                 </div>
                 <.rest_stack holder={pin} prefix={"pins[#{pin_index}]"} enemy?={false} chain?={@kind == "chain"} owner={@action["id"]} sinner_options={@sinner_options} />
                 <.add_rest holder={pin} prefix={"pins[#{pin_index}]"} owner={@action["id"]} />
@@ -1181,7 +1181,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         <button :if={@schedulable?} type="button" phx-click="add_schedule" phx-value-action={@action["id"]} title="Change this action across turns"
                 class="btn btn-2xs btn-ghost">Add Schedule</button>
         <button :if={BattlePlans.duplicable?(@action)} phx-click="dup_action" phx-value-action={@action["id"]} title="Duplicate this row" class="btn btn-2xs btn-ghost">Dup</button>
-        <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
+        <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error"><.icon name="lucide-x" class="size-3.5" /></button>
       </div>
     </div>
     """
@@ -1260,7 +1260,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         <.rule_boxes holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} chain?={@chain?} nothing?={@nothing?} owner={@owner} />
         <.target_box :if={@enemy? and not (@chain? and @holder["rest"]["type"] == "dodge")} holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} owner={@owner} continue?={true} />
         <button type="button" phx-click="remove_rest" phx-value-action={@owner} phx-value-path={@prefix} title="Remove this rest and any below it"
-                class="btn btn-xs btn-ghost text-error self-center">✕</button>
+                class="btn btn-xs btn-ghost text-error self-center"><.icon name="lucide-x" class="size-3.5" /></button>
       </div>
       <.rest_stack holder={@holder["rest"]} prefix={field_name(@prefix, "rest")} enemy?={@enemy?} chain?={@chain?} nothing?={@nothing?} owner={@owner} sinner_options={@sinner_options} index={@index + 1} />
     <% end %>
@@ -1330,13 +1330,13 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
               <input type="hidden" name={field_name(@prefix, "chip") <> "[#{index}][on]"} value="false" />
               <input type="hidden" name={field_name(@prefix, "chip") <> "[#{index}][at]"} value={at} />
               <button type="button" phx-click={@step_event} phx-value-action={@action_id} phx-value-path={@path || @prefix} phx-value-index={index} phx-value-delta={left_delta(@pick)}
-                      disabled={at == 0 and left_delta(@pick) == "-1"} title={left_title(@pick)} class="join-item btn btn-xs px-1.5 text-[9px]">◀</button>
+                      disabled={at == 0 and left_delta(@pick) == "-1"} title={left_title(@pick)} class="join-item btn btn-xs px-1.5 text-[9px]"><.icon name="lucide-chevron-left" class="size-3" /></button>
               <label class="join-item relative cursor-pointer">
                 <input type="checkbox" name={field_name(@prefix, "chip") <> "[#{index}][on]"} value="true" checked={on} class="peer sr-only" />
                 <span class={chip_toggle_class(true)}><%= BattlePlans.chip_name(@pick, at) %></span>
               </label>
               <button type="button" phx-click={@step_event} phx-value-action={@action_id} phx-value-path={@path || @prefix} phx-value-index={index} phx-value-delta={right_delta(@pick)}
-                      disabled={at == 0 and right_delta(@pick) == "-1"} title={right_title(@pick)} class="join-item btn btn-xs px-1.5 text-[9px]">▶</button>
+                      disabled={at == 0 and right_delta(@pick) == "-1"} title={right_title(@pick)} class="join-item btn btn-xs px-1.5 text-[9px]"><.icon name="lucide-chevron-right" class="size-3" /></button>
             </span>
           <% {:gap, key, on, lo, hi} -> %>
             <span class="inline-flex items-center" title={gap_title(@pick, lo, hi)}>
@@ -1458,7 +1458,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
               <input type="number" name={field_name(@prefix, "enemy_ignore") <> "[#{index}][n]"} min="1" max="99" value={ignore["n"]} class="input input-bordered input-xs w-14" phx-debounce="300" />
               <span class="text-base-content/60">slots</span>
               <button type="button" phx-click="remove_ignore" phx-value-action={@owner} phx-value-path={@prefix} phx-value-index={index}
-                      class="btn btn-ghost text-error h-6 min-h-6 px-1">✕</button>
+                      class="btn btn-ghost text-error h-6 min-h-6 px-1"><.icon name="lucide-x" class="size-3.5" /></button>
             </div>
             <select id={"ignore-add-#{@owner}-#{@prefix}-#{length(@enemy["ignore"] || [])}"} name={field_name(@prefix, "enemy_ignore_add")} class="select select-bordered select-xs w-auto self-start">
               <option value="" selected>+ ignore</option>
@@ -1517,7 +1517,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         <span class="text-base-content/60 cursor-help" title="Narrow the selection to slots that also match these conditions">where</span>
         <.chosen_picker holder={@holder} prefix={@prefix} action_id={@action_id} pin?={@pin?} />
         <button type="button" phx-click="remove_where" phx-value-action={@action_id} phx-value-path={@prefix} title="Remove the filter"
-                class="btn btn-ghost text-error h-6 min-h-6 px-1">✕</button>
+                class="btn btn-ghost text-error h-6 min-h-6 px-1"><.icon name="lucide-x" class="size-3.5" /></button>
       </div>
     <% else %>
       <button type="button" phx-click="add_where" phx-value-action={@action_id} phx-value-path={@prefix}
@@ -1554,7 +1554,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                   onclick="const i = this.closest('.dropdown').querySelector('input'); const v = this.dataset.value; const ids = i.value.split(',').filter(Boolean); const at = ids.indexOf(v); if (at >= 0) ids.splice(at, 1); else ids.push(v); i.value = ids.join(','); i.dispatchEvent(new Event('input', {bubbles: true}))"
                   class={"btn btn-xs h-auto min-h-7 w-full flex-nowrap justify-start gap-1.5 py-0.5 " <> if(p.id in @chosen, do: "btn-primary", else: "btn-ghost")}>
             <img src={p[:thumb] || StarlightBot.SinnerProfiles.icon(p.id)} class="h-6 w-auto rounded shrink-0" />
-            <span class="truncate"><%= if p.profiled?, do: p.name, else: "⚠ " <> p.name %></span>
+            <span class="truncate"><.icon :if={not p.profiled?} name="lucide-triangle-exclamation-point" class="size-3 inline" /> <%= p.name %></span>
           </button>
         </div>
       </div>
@@ -1589,7 +1589,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
             <option :for={{value, label} <- @kinds} value={value} selected={condition["kind"] == value}><%= label %></option>
           </select>
           <button :if={length(@conditions) > 1} type="button" phx-click="remove_chosen" phx-value-action={@action_id} phx-value-path={@prefix} phx-value-index={index}
-                  class="btn btn-ghost text-error h-6 min-h-6 px-1">✕</button>
+                  class="btn btn-ghost text-error h-6 min-h-6 px-1"><.icon name="lucide-x" class="size-3.5" /></button>
         </div>
         <.skill_chips :if={condition["kind"] in BattlePlans.chosen_value_kinds()} values={condition["values"] || []}
                       extras={if condition["kind"] == "using", do: BattlePlans.where_extras(), else: []}

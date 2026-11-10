@@ -80,7 +80,7 @@
                                class={"group/pill flex-1 min-w-0 flex items-center gap-1 rounded-full border pl-0.5 pr-1 py-0.5 text-[10px] shadow-sm cursor-pointer text-left transition hover:shadow-md hover:brightness-95 " <> if(@path_floor == floor, do: "ring-2 ring-primary/60 ", else: "") <> if(path_hard?, do: "border-warning bg-warning/15", else: "border-success/60 bg-success/10")}
                                title={"F#{floor}: #{pack.name_en}" <> if(favorite?, do: " (favorite)", else: "") <> if(others > 0, do: ", then #{others} more in Hunt order. Click to list them.", else: ". Click to see next in priority.")}>
                             <img src={pack.image_path} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
-                            <span class="truncate font-medium flex-1"><%= if favorite?, do: "★ " %><%= pack.name_en %></span>
+                            <span class="truncate font-medium flex-1"><.icon :if={favorite?} name="lucide-filled-star" class="size-3 inline" /> <%= pack.name_en %></span>
                             <span :if={odds_percent(pill_odds, pack.id)} class="shrink-0 font-mono text-[9px] text-base-content/70" title={odds_summary(pill_odds)}><%= odds_percent(pill_odds, pack.id) %></span>
                             <%= if others > 0 do %>
                               <span class="shrink-0 rounded-full bg-base-content/10 px-1 text-[9px] text-base-content/60">+<%= others %></span>
@@ -103,7 +103,7 @@
                                data-no-pan phx-click-away="close_path_floor">
                             <span class="absolute -top-[5px] left-5 h-2 w-2 rotate-45 border-l border-t border-base-content/30 bg-base-200"></span>
                             <div class="flex items-center justify-between">
-                              <span class="px-1 text-[9px] uppercase tracking-wide text-warning cursor-help" title={odds_summary(odds)}>★ Favorites (hunted first)</span>
+                              <span class="px-1 text-[9px] uppercase tracking-wide text-warning cursor-help" title={odds_summary(odds)}><.icon name="lucide-filled-star" class="size-3" /> Favorites (hunted first)</span>
                               <button type="button" phx-click="path_clear_floor" phx-value-floor={floor} data-confirm={"Clear every hunted pack from F#{floor} in #{mode} mode?"}
                                       class="btn btn-ghost btn-xs h-4 min-h-0 px-1 text-[9px] text-error"
                                       title={"Remove every hunted pack from F#{floor} in #{mode} mode"}>Clear F<%= floor %></button>
@@ -131,7 +131,7 @@
                               <input type="text" name="query" value={@path_query} phx-debounce="100" autocomplete="off" placeholder="Add pack to Hunt…" phx-mounted={Phoenix.LiveView.JS.focus()} phx-keydown="path_key" phx-key="Escape"
                                      class="input input-bordered input-xs w-full pr-6" />
                               <button :if={@path_query != ""} type="button" phx-click="path_query_clear"
-                                      class="absolute right-1 top-1/2 mt-0.5 -translate-y-1/2 text-base-content/50 hover:text-base-content text-xs leading-none px-1" title="Clear search">✕</button>
+                                      class="absolute right-1 top-1/2 mt-0.5 -translate-y-1/2 text-base-content/50 hover:text-base-content text-xs leading-none px-1" title="Clear search"><.icon name="lucide-x" class="size-3.5" /></button>
                             </form>
                             <div :if={@path_query != "" or @path_browse} class="flex flex-col gap-0.5 max-h-40 overflow-y-auto">
                               <%= for option <- matches do %>
@@ -227,12 +227,12 @@
                       <div class="self-stretch -my-px" style={"grid-row: 1; grid-column: 7 / -1; " <> disabled_stripes_style()}></div>
                     <% end %>
                     <div class="sticky left-0 z-[5] flex gap-1 px-1 bg-base-100 group-hover:bg-base-200 cursor-default" style="grid-row: 1; grid-column: 1" data-no-pan>
-                      <%= for {status, label, active_class, title} <- [{"favorite", "★", "btn-warning", "favorite"}, {"hunt", "hunt", "btn-success", "hunt"}, {"banned", "banned", "btn-error", "banned"}] do %>
+                      <%= for {status, label, active_class, title} <- [{"favorite", :star, "btn-warning", "favorite"}, {"hunt", "hunt", "btn-success", "hunt"}, {"banned", "banned", "btn-error", "banned"}] do %>
                         <% all? = row_status?(@plan_data, pack.id, row.mode, row.floors, status) %>
                         <button type="button" phx-click="set_row_status" phx-value-pack_id={pack.id} phx-value-mode={row.mode} phx-value-floors={Enum.join(row.floors, ",")} phx-value-status={status}
                                 class={"btn btn-xs h-5 min-h-0 px-1.5 text-[10px] " <> if(all?, do: active_class, else: "btn-outline")}
                                 title={if all?, do: "Clear #{title} on every #{row.mode} floor", else: "Make every #{row.mode} floor #{title}"}>
-                          <%= label %>
+                          <%= if label == :star do %><.icon name="lucide-filled-star" class="size-3" /><% else %><%= label %><% end %>
                         </button>
                       <% end %>
                     </div>
@@ -253,7 +253,7 @@
                           <button :if={status in ~w(hunt favorite)} type="button" phx-click="toggle_cell" phx-value-action="favorite" phx-value-pack_id={pack.id} phx-value-mode={row.mode} phx-value-floors={Enum.join(cell_floors, ",")}
                                   class={"px-1 text-xs leading-none cursor-pointer " <> if(status == "favorite", do: "text-warning", else: "text-base-content/50 hover:text-warning")}
                                   title={if status == "favorite", do: "#{label}: favorite. Click to make it a normal Hunt pack.", else: "#{label}: mark as favorite. While any favorite is in play on a floor, only favorites are hunted, refreshed for and searched for."}>
-                            <%= if status == "favorite", do: "★", else: "☆" %>
+                            <.icon name={if status == "favorite", do: "lucide-filled-star", else: "lucide-star"} class="size-3.5" />
                           </button>
                           <button :if={status == "none"} type="button" phx-click="toggle_cell" phx-value-action="banned" phx-value-pack_id={pack.id} phx-value-mode={row.mode} phx-value-floors={Enum.join(cell_floors, ",")}
                                   class="px-1 leading-none cursor-pointer text-base-content/40 hover:text-error"
@@ -381,9 +381,9 @@
             <h4 class="font-semibold mb-2">Priority</h4>
             <div class="grid grid-cols-4 gap-2 text-xs">
               <div class="flex flex-col gap-1 rounded-lg border border-warning/50 bg-warning/15 p-2">
-                <span class="font-semibold text-warning">★ Favorite</span>
+                <span class="font-semibold text-warning"><.icon name="lucide-filled-star" class="size-3" /> Favorite</span>
                 <span>1st pick. Seen: take it. Not seen: refresh.</span>
-                <span class="text-base-content/60">Click ★ on a Hunt floor</span>
+                <span class="text-base-content/60">Click the star on a Hunt floor</span>
                 <span class="mt-auto pt-1 text-[11px] italic text-base-content/70">Two seen? Higher in list wins.</span>
               </div>
               <div class="flex flex-col gap-1 rounded-lg border border-success/50 bg-success/15 p-2">
@@ -421,21 +421,21 @@
                     <img src="/images/theme_packs/thm_3.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
                     <span class="truncate flex-1">Flat-broke Gamblers</span>
                     <span class="shrink-0 text-[9px] text-base-content/60">1</span>
-                    <span class="shrink-0 leading-none text-base-content/50">✕</span>
+                    <span class="shrink-0 leading-none text-base-content/50"><.icon name="lucide-x" class="size-3.5" /></span>
                   </div>
                   <div class="flex items-center gap-1 rounded-full border border-success/60 bg-success/30 pl-1 pr-1 py-0.5 text-[10px]" style="opacity: 0.75">
                     <span class="text-base-content/50">⠿</span>
                     <img src="/images/theme_packs/thm_12.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
                     <span class="truncate flex-1">The Unchanging</span>
                     <span class="shrink-0 text-[9px] text-base-content/60">2</span>
-                    <span class="shrink-0 leading-none text-base-content/50">✕</span>
+                    <span class="shrink-0 leading-none text-base-content/50"><.icon name="lucide-x" class="size-3.5" /></span>
                   </div>
                   <div class="flex items-center gap-1 rounded-full border border-success/60 bg-success/30 pl-1 pr-1 py-0.5 text-[10px]" style="opacity: 0.55">
                     <span class="text-base-content/50">⠿</span>
                     <img src="/images/theme_packs/thm_10.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
                     <span class="truncate flex-1">Falling Flowers</span>
                     <span class="shrink-0 text-[9px] text-base-content/60">3</span>
-                    <span class="shrink-0 leading-none text-base-content/50">✕</span>
+                    <span class="shrink-0 leading-none text-base-content/50"><.icon name="lucide-x" class="size-3.5" /></span>
                   </div>
                 </div>
               </div>

@@ -21,7 +21,7 @@ defmodule StarlightBotWeb.Components.ConditionTree do
           <%= if @node["op"] == "and", do: "all of", else: "any of" %>
         </span>
         <button :if={@removable} type="button" phx-click="cond_remove" phx-value-path={@path} {phx_values(@values)}
-                class="btn btn-xs btn-ghost text-error ml-auto" title="Remove group">✕</button>
+                class="btn btn-xs btn-ghost text-error ml-auto" title="Remove group"><.icon name="lucide-x" class="size-3.5" /></button>
       </div>
       <div class="flex flex-col gap-1 pl-1">
         <%= for {child, index} <- Enum.with_index(@node["children"]) do %>
@@ -45,7 +45,7 @@ defmodule StarlightBotWeb.Components.ConditionTree do
       <input type="hidden" name="path" value={@path} />
       <%= @leaf.(%{node: @node, path: @path, values: @values}) %>
       <button :if={@removable} type="button" phx-click="cond_remove" phx-value-path={@path} {phx_values(@values)}
-              class="btn btn-xs btn-ghost text-error" title="Remove condition">✕</button>
+              class="btn btn-xs btn-ghost text-error" title="Remove condition"><.icon name="lucide-x" class="size-3.5" /></button>
     </form>
     """
   end

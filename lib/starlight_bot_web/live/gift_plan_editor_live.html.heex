@@ -78,7 +78,7 @@
                       <button phx-click="move_milestone" phx-value-id={m["id"]} phx-value-dir="up" class="btn btn-ghost btn-xs px-1">↑</button>
                       <button phx-click="move_milestone" phx-value-id={m["id"]} phx-value-dir="down" class="btn btn-ghost btn-xs px-1">↓</button>
                       <button phx-click="delete_milestone" phx-value-id={m["id"]} data-confirm={"Delete milestone '#{m["name"]}'?"}
-                              class="btn btn-ghost btn-xs text-error">✕</button>
+                              class="btn btn-ghost btn-xs text-error"><.icon name="lucide-x" class="size-3.5" /></button>
                     </div>
                     <div :if={@plan_data["milestones"] == []} class="text-[11px] text-base-content/40 italic">None yet.</div>
                   </div>
@@ -93,7 +93,7 @@
                         <input id="gift-search-input" type="text" placeholder="Search gifts…" value={@gift_filter} phx-keyup="filter_gifts" class="grow min-w-0" />
                       </label>
                       <button :if={@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter} type="button" phx-click="clear_gift_filters" title="Clear all filters"
-                              class="btn btn-ghost btn-xs btn-square">✕</button>
+                              class="btn btn-ghost btn-xs btn-square"><.icon name="lucide-x" class="size-3.5" /></button>
                       <details class="dropdown dropdown-end" phx-mounted={JS.ignore_attributes("open")} phx-click-away={JS.remove_attribute("open")}>
                         <summary title="Filter"
                              class={"btn btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter, do: "btn-primary", else: "btn-ghost")}>
@@ -307,7 +307,7 @@
                           </div>
                         </div>
                         <span class="badge badge-warning badge-xs whitespace-nowrap"><%= GiftPlans.gift_search_slot_cost(slot) %> Starlight</span>
-                        <button phx-click="toggle_search_gift" phx-value-gift={name} class="btn btn-ghost btn-2xs px-1">✕</button>
+                        <button phx-click="toggle_search_gift" phx-value-gift={name} class="btn btn-ghost btn-2xs px-1"><.icon name="lucide-x" class="size-3.5" /></button>
                       <% else %>
                         <div class={"w-10 h-10 shrink-0 rounded border border-dashed flex items-center justify-center text-xl leading-none " <>
                                if(slot == length(picks), do: "border-primary/70 text-primary animate-pulse", else: "border-base-content/30 text-base-content/40")}>+</div>
@@ -339,7 +339,7 @@
                     <select name={"rows[#{index}][mode]"} class="select select-bordered select-xs">
                       <option :for={mode <- GiftPlans.mounting_trials_modes()} value={mode} selected={row["mode"] == mode}><%= GiftPlans.mounting_trials_mode_label(mode) %></option>
                     </select>
-                    <button type="button" phx-click="remove_mounting_row" phx-value-index={index} class="btn btn-ghost btn-xs px-1 text-error ml-auto">✕</button>
+                    <button type="button" phx-click="remove_mounting_row" phx-value-index={index} class="btn btn-ghost btn-xs px-1 text-error ml-auto"><.icon name="lucide-x" class="size-3.5" /></button>
                   </div>
                 </form>
                 <span :if={rows == []} class="text-[11px] text-base-content/50 italic">No floors set; every floor uses best gift.</span>
@@ -365,7 +365,7 @@
                       </select>
                     </form>
                     <span class="text-[11px] text-base-content/50">first visible, top to bottom</span>
-                    <button :if={index > 0} type="button" phx-click="remove_encounter_row" phx-value-index={index} class="btn btn-ghost btn-xs px-1 text-error ml-auto">✕</button>
+                    <button :if={index > 0} type="button" phx-click="remove_encounter_row" phx-value-index={index} class="btn btn-ghost btn-xs px-1 text-error ml-auto"><.icon name="lucide-x" class="size-3.5" /></button>
                   </div>
                   <div class="flex flex-col gap-1 pl-1">
                     <div id={"encounter-order-#{index}"} phx-hook="SortableList" data-sort-event="reorder_encounter" data-sort-scope={index} class="flex flex-col gap-1">
@@ -373,7 +373,7 @@
                         <span data-sort-handle class="cursor-grab text-base-content/40 select-none">⠿</span>
                         <span class="text-[11px] text-base-content/50 w-4"><%= position + 1 %></span>
                         <span class="text-[11px] font-semibold"><%= GiftPlans.encounter_reward_label(key) %></span>
-                        <button type="button" phx-click="encounter_remove" phx-value-index={index} phx-value-key={key} class="btn btn-ghost btn-xs px-1 text-error ml-auto">✕</button>
+                        <button type="button" phx-click="encounter_remove" phx-value-index={index} phx-value-key={key} class="btn btn-ghost btn-xs px-1 text-error ml-auto"><.icon name="lucide-x" class="size-3.5" /></button>
                       </div>
                     </div>
                     <div class="flex items-center gap-1 rounded border border-dashed border-base-300 px-2 py-0.5">
@@ -413,13 +413,13 @@
                           <input type="number" min="1" name="min" value={goal["min"]} phx-debounce="400" class="input input-bordered input-xs w-12" />
                           <span class="text-[11px]">of <%= goal_member_count(milestone, goal["letter"]) %></span>
                           <button type="button" phx-click="ms_remove_goal" phx-value-letter={goal["letter"]} class="btn btn-ghost btn-2xs px-1 text-error"
-                                  title="Remove this goal; its entries become required">✕</button>
+                                  title="Remove this goal; its entries become required"><.icon name="lucide-x" class="size-3.5" /></button>
                         </form>
                         <button phx-click="ms_add_goal" class="rounded-lg border border-dashed border-base-content/30 px-3 text-[11px] text-base-content/60 hover:bg-base-200">+ Goal</button>
                         <div :if={milestone["endless"] == true} class="rounded-lg border border-warning bg-warning/20 px-2 py-1 flex items-center gap-1 text-warning"
                              title="This milestone is never reached. It keeps buying and refreshing until a refresh case leaves the shop, and later milestones are not run.">
                           <span class="text-[11px] font-semibold">∞ Never done</span>
-                          <button type="button" phx-click="ms_set_endless" phx-value-endless="false" class="btn btn-ghost btn-2xs px-1 text-error" title="Make this milestone finishable again">✕</button>
+                          <button type="button" phx-click="ms_set_endless" phx-value-endless="false" class="btn btn-ghost btn-2xs px-1 text-error" title="Make this milestone finishable again"><.icon name="lucide-x" class="size-3.5" /></button>
                         </div>
                         <button :if={milestone["endless"] != true} type="button" phx-click="ms_set_endless" phx-value-endless="true"
                                 title="Never count this milestone as reached, so it keeps going until a refresh case leaves the shop"
@@ -558,7 +558,7 @@
                               <input :if={refresh_case["action"] != "leave"} type="number" name="max" min="0" value={refresh_case["max"]} placeholder="∞"
                                      phx-debounce="300" class="input input-bordered input-xs w-14" />
                             </form>
-                            <button type="button" phx-click="ms_remove_refresh_case" phx-value-case_id={refresh_case["id"]} class="btn btn-ghost btn-xs px-1 text-error">✕</button>
+                            <button type="button" phx-click="ms_remove_refresh_case" phx-value-case_id={refresh_case["id"]} class="btn btn-ghost btn-xs px-1 text-error"><.icon name="lucide-x" class="size-3.5" /></button>
                           </div>
                         </div>
                         <div class="rounded border border-dashed border-base-300 px-1 py-1 flex items-center gap-2">

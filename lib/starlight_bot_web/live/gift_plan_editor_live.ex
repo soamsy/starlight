@@ -1518,9 +1518,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
             </div>
           </div>
           <button :if={from != 1} type="button" phx-click="ms_remove_segment" phx-value-entry={@entry["id"]} phx-value-from={from}
-                  class="opacity-60 hover:opacity-100" title={"Close this tab; #{segment_label(@entry, from)} use the earlier tab's settings"}>✕</button>
+                  class="opacity-60 hover:opacity-100" title={"Close this tab; #{segment_label(@entry, from)} use the earlier tab's settings"}><.icon name="lucide-x" class="size-3.5" /></button>
           <button :if={from == 1 and length(@froms) == 1} type="button" phx-click="ms_remove_schedule" phx-value-entry={@entry["id"]}
-                  class="opacity-60 hover:opacity-100" title="Remove the schedule">✕</button>
+                  class="opacity-60 hover:opacity-100" title="Remove the schedule"><.icon name="lucide-x" class="size-3.5" /></button>
         </div>
         <button type="button" phx-click="ms_split" phx-value-entry={@entry["id"]} phx-value-floor={Enum.max(@froms) + 1}
                 disabled={Enum.max(@froms) >= GiftPlans.max_floor()} title="New tab"
@@ -1627,9 +1627,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           </div>
         </div>
         <button :if={from != 1} type="button" phx-click="ms_refresh_remove_segment" phx-value-from={from} class="opacity-60 hover:opacity-100"
-                title={"Close this tab; #{refresh_tab_label(@milestone, from)} use the earlier tab's cases"}>✕</button>
+                title={"Close this tab; #{refresh_tab_label(@milestone, from)} use the earlier tab's cases"}><.icon name="lucide-x" class="size-3.5" /></button>
         <button :if={from == 1 and length(@froms) == 1} type="button" phx-click="ms_refresh_remove_schedule" class="opacity-60 hover:opacity-100"
-                title="Remove the schedule">✕</button>
+                title="Remove the schedule"><.icon name="lucide-x" class="size-3.5" /></button>
       </div>
       <button type="button" phx-click="ms_refresh_split" phx-value-floor={Enum.max(@froms) + 1}
               disabled={Enum.max(@froms) >= GiftPlans.max_floor()} title="New tab"
@@ -1855,7 +1855,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
               Fuse
             </button>
             <button :if={@entry["fusion"] != nil and @keep? and @segment["fuse"] == true} type="button" phx-click="ms_open_fusion" phx-value-entry={@entry["id"]}
-                    class="btn btn-xs btn-outline join-item" title="Fusion settings">⚙</button>
+                    class="btn btn-xs btn-outline join-item" title="Fusion settings"><.icon name="lucide-settings" class="size-4" /></button>
           </div>
         </div>
         <label :if={@sell? or (@pattern? and @buy?)} class="flex items-center gap-1">
@@ -1877,7 +1877,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       </span>
       <button :if={not @in_group} type="button" phx-click="ms_add_schedule" phx-value-entry={@entry["id"]} class="btn btn-ghost btn-xs ml-auto in-[.ring-primary]:ml-0">Add Schedule</button>
       <button type="button" phx-click="ms_remove_entry" phx-value-entry={@entry["id"]}
-              class={"btn btn-ghost btn-xs px-1 text-error " <> if(@in_group, do: "ml-auto in-[.ring-primary]:ml-0", else: "")} title="Remove from this milestone">✕</button>
+              class={"btn btn-ghost btn-xs px-1 text-error " <> if(@in_group, do: "ml-auto in-[.ring-primary]:ml-0", else: "")} title="Remove from this milestone"><.icon name="lucide-x" class="size-3.5" /></button>
     </form>
     """
   end
@@ -1924,7 +1924,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
             <button type="button" phx-click="rt_duplicate" phx-value-def_id={@def_id} phx-value-route_id={route["id"]}
                     class="btn btn-ghost btn-2xs ml-auto">Dup</button>
             <button type="button" phx-click="rt_delete" phx-value-def_id={@def_id} phx-value-route_id={route["id"]}
-                    class="btn btn-ghost btn-2xs text-error">✕</button>
+                    class="btn btn-ghost btn-2xs text-error"><.icon name="lucide-x" class="size-3.5" /></button>
           </div>
           <form phx-change="rt_update" class="flex items-center gap-2 flex-wrap pl-8">
             <input type="hidden" name="def_id" value={@def_id} />

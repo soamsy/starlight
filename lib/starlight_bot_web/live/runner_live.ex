@@ -807,7 +807,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
               disabled={@locked}
               title={if @locked, do: "Locked while a run is active", else: "Start the cycle with this team"}
               class={"btn btn-ghost btn-xs px-1 " <> if(@index == @start_index, do: "text-primary", else: "text-base-content/30")}>
-        <%= if @index == @start_index, do: "★", else: "☆" %>
+        <.icon name={if @index == @start_index, do: "lucide-filled-star", else: "lucide-star"} class="size-4" />
       </button>
       <span :if={not @reserve? and @cycle_size > 1} class="text-xs text-base-content/50 w-5 text-right"><%= @index + 1 %>.</span>
       <select name={"#{@prefix}_ids[]"} class="select select-sm select-bordered flex-1 min-w-0" disabled={@teams == [] or @locked}>
@@ -829,7 +829,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
       <div class="relative" phx-click-away={Phoenix.LiveView.JS.hide(to: "##{@list}-options-#{@index}")}>
         <button type="button" phx-click={Phoenix.LiveView.JS.toggle(to: "##{@list}-options-#{@index}", display: "flex")} disabled={@locked}
                 title={"Pack plan: " <> mode_override_label(@pick.mode) <> ", " <> search_override_label(@pick.search)}
-                class={"btn btn-ghost btn-sm px-2 text-xl " <> if(@pick.mode == "default" and @pick.search == "default", do: "text-base-content/70", else: "text-primary")}>⚙</button>
+                class={"btn btn-ghost btn-sm px-2 text-xl " <> if(@pick.mode == "default" and @pick.search == "default", do: "text-base-content/70", else: "text-primary")}><.icon name="lucide-settings" class="size-5" /></button>
         <div id={"#{@list}-options-#{@index}"} style="display: none" class="absolute right-0 z-20 mt-1 w-max rounded-box border border-base-300 bg-base-100 p-3 shadow flex flex-row gap-6">
           <div class="flex flex-col gap-1">
             <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Pack mode</span>
@@ -864,7 +864,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
         </div>
       </div>
       <button :if={not @locked and (@reserve? or @cycle_size > 1)} type="button" phx-click={if @reserve?, do: "remove_reserve_team", else: "remove_cycle_team"} phx-value-index={@index}
-              class="btn btn-ghost btn-xs text-error">✕</button>
+              class="btn btn-ghost btn-xs text-error"><.icon name="lucide-x" class="size-3.5" /></button>
     </div>
     """
   end
@@ -1119,7 +1119,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
           <button type="button" phx-click="set_pin" phx-value-kind={@kind} phx-value-index={index}
                   title="Always use this slot's team"
                   class={"w-4 text-center " <> if(@pinned? and index == @current, do: "text-primary", else: "text-base-content/30 hover:text-primary")}>
-            {if @pinned? and index == @current, do: "★", else: "☆"}
+            <.icon name={if @pinned? and index == @current, do: "lucide-filled-star", else: "lucide-star"} class="size-4" />
           </button>
           <button :if={index == @auto_slot} type="button" phx-click="clear_pin" phx-value-kind={@kind}
                   title={if(@pinned?, do: "Follow the daily schedule again", else: "Following the daily schedule")}

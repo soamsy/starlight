@@ -8,8 +8,8 @@
       <span class="text-xs text-base-content/60">
         recorded <%= snapshot_time(@snapshot.timestamp) %> · run <%= @snapshot.run_log_id || "unlinked" %> · chose <%= @snapshot.decision["direction"] %> → <%= @snapshot.decision["kind"] %>
       </span>
-      <button phx-click="step_snapshot" phx-value-dir="older" class="btn btn-xs">◀ older</button>
-      <button phx-click="step_snapshot" phx-value-dir="newer" class="btn btn-xs">newer ▶</button>
+      <button phx-click="step_snapshot" phx-value-dir="older" class="btn btn-xs"><.icon name="lucide-chevron-left" class="size-3.5" /> older</button>
+      <button phx-click="step_snapshot" phx-value-dir="newer" class="btn btn-xs">newer <.icon name="lucide-chevron-right" class="size-3.5" /></button>
     <% end %>
     <%= if @graph do %>
       <span class="text-xs text-base-content/60">
@@ -48,7 +48,7 @@
       <div class="shrink-0 flex flex-col gap-1">
         <div class="flex items-center gap-2">
           <span class="text-xs font-semibold text-base-content/60">History (<%= length(@snapshots) %> most recent graphs)</span>
-          <button phx-click="refresh_history" class="btn btn-xs">↻</button>
+          <button phx-click="refresh_history" class="btn btn-xs"><.icon name="lucide-refresh-cw" class="size-3.5" /></button>
         </div>
         <div class="overflow-y-auto max-h-40 border border-base-300 rounded-lg">
           <table class="table table-xs table-pin-rows">

@@ -3,7 +3,7 @@
     <h1 class="text-lg font-bold">Event Inspector</h1>
 
     <button phx-click="run" class="btn btn-sm btn-primary" disabled={@status in [:counting_down, :running]}>
-      ▶ Run Event
+      <.icon name="lucide-play" class="size-3.5" /> Run Event
     </button>
 
     <span class="text-xs text-base-content/60"><%= status_label(@status) %></span>

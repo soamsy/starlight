@@ -37,7 +37,7 @@
         <%= cond do %>
           <% @nav.phase == :paused -> %>
             <button phx-click="resume_run" class="btn btn-sm btn-warning" disabled={@resume_pending?}>
-              <%= if @resume_pending?, do: "Resuming in 2s, alt-tab in…", else: "▶ Resume" %>
+              <%= if @resume_pending? do %>Resuming in 2s, alt-tab in…<% else %><.icon name="lucide-play" class="size-3.5" /> Resume<% end %>
             </button>
           <% @nav.pause_requested -> %>
             <button class="btn btn-sm" disabled>Pausing…</button>
@@ -102,7 +102,7 @@
                 <tr>
                   <td><%= i %></td>
                   <td>S<%= sinner_id %></td>
-                  <td><%= if i == 0 or sinner_id != Enum.at(@tray.sinner_of_slot, i - 1), do: "★", else: "" %></td>
+                  <td><.icon :if={i == 0 or sinner_id != Enum.at(@tray.sinner_of_slot, i - 1)} name="lucide-filled-star" class="size-3.5" /></td>
                 </tr>
               <% end %>
             </tbody>
