@@ -1553,12 +1553,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
     ~H"""
     <details :if={@columns > 0} id={"refresh-costs-#{@milestone["id"]}-#{@from}"} phx-hook="FloatingDropdown" data-keep-open class="dropdown">
-      <summary class="badge badge-accent badge-outline h-6 gap-0 overflow-hidden px-0 cursor-pointer select-none"><span class="flex items-center gap-1 px-2">Potential Cost <.icon name="lucide-chevron-down" class="size-3" /></span><span class="flex h-full items-center bg-accent px-2 font-semibold text-accent-content"><%= @total %></span></summary>
+      <summary class="badge badge-accent badge-outline h-6 gap-0 overflow-hidden px-0 cursor-pointer select-none"><span class="flex h-full items-center gap-1 bg-accent px-2 text-accent-content">Potential Cost <.icon name="lucide-chevron-down" class="size-3" /></span><span class="flex h-full items-center gap-0.5 px-2 font-semibold"><%= @total %><img src={~p"/images/icons/md_cost.png"} alt="" class="h-3.5 w-3.5 object-contain" /></span></summary>
       <div popover="manual" class="dropdown-content z-30 w-max max-w-[calc(100vw-1rem)] rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
         <div class="flex flex-col gap-1 text-[11px]">
           <div class="flex flex-wrap items-center gap-2">
             <span class="font-semibold text-base-content/70">Visualize refresh costs</span>
-            <button :if={@savings > 0} type="button" phx-click="rf_cheapest" class="btn btn-xs btn-outline" title="Reorder the same refreshes so the free ones land on the priciest slots">Cheapest order saves <%= @savings %></button>
+            <button :if={@savings > 0} type="button" phx-click="rf_cheapest" class="btn btn-xs btn-outline" title="Reorder the same refreshes so the free ones land on the priciest slots"><span class="inline-flex items-center gap-0.5">Cheapest order saves <%= @savings %><img src={~p"/images/icons/md_cost.png"} alt="" class="h-3.5 w-3.5 object-contain" /></span></button>
             <button type="button" phx-click="rf_reset" class="btn btn-ghost btn-xs ml-auto" title="Go back to the order the cases imply">Reset</button>
           </div>
           <div class="overflow-x-auto">
@@ -1582,13 +1582,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
                               cell.position > @picked -> "btn-ghost opacity-40"
                               true -> "btn-outline"
                             end}>
-                      <%= if free?, do: "free", else: cost %>
+                      <%= if free? do %>free<% else %><span class="inline-flex items-center gap-0.5"><%= cost %><img src={~p"/images/icons/md_cost.png"} alt="" class="h-3.5 w-3.5 object-contain" /></span><% end %>
                     </button>
                   </td>
                 </tr>
                 <tr>
                   <th class="font-semibold whitespace-nowrap">Total</th>
-                  <td :for={cell <- @cells} class="text-center font-semibold"><%= cell.total %></td>
+                  <td :for={cell <- @cells} class="text-center font-semibold"><span class="inline-flex items-center gap-0.5"><%= cell.total %><img src={~p"/images/icons/md_cost.png"} alt="" class="h-3.5 w-3.5 object-contain" /></span></td>
                 </tr>
               </tbody>
             </table>
@@ -1837,6 +1837,15 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           <button type="button" phx-click="ms_toggle" phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-field="sell"
                   class={"btn btn-xs join-item " <> if(@sell?, do: "btn-error", else: "btn-outline")}>Sell</button>
         </div>
+        <% shown_cost = cond do
+          @sell? and @gift -> @gift.selling_cost
+          @buy? and @gift && @gift.buying_cost -> @gift.buying_cost + (GiftPlans.uptie_cost(@gift.tier, 0, @segment["uptie"] || 0) || 0)
+          @keep? and @gift && (@segment["uptie"] || 0) > 0 -> GiftPlans.uptie_cost(@gift.tier, 0, @segment["uptie"])
+          true -> nil
+        end %>
+        <span class="w-12 shrink-0 flex items-center gap-0.5 text-[11px] text-base-content/60 whitespace-nowrap">
+          <%= if shown_cost do %><%= shown_cost %><img src={~p"/images/icons/md_cost.png"} alt="" class="h-3.5 w-3.5 object-contain" /><% end %>
+        </span>
         <div class="min-w-20 shrink-0">
           <div :if={not @pattern?} class="join">
             <button type="button" phx-click="ms_toggle" phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-field="fuse"
