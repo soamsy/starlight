@@ -69,6 +69,22 @@ defmodule StarlightBot.PlanClipboard do
     end
   end
 
+  def encode_lineup(lineup), do: Jason.encode!(%{"v" => @format_version, "starlight_lineup" => lineup})
+
+  def decode_lineup(text) do
+    case Jason.decode(text) do
+      {:ok, %{"v" => v}} when is_integer(v) and v > @format_version -> {:error, @newer}
+      {:ok, %{"starlight_lineup" => %{"name" => name, "sinners" => sinners} = lineup}} when is_binary(name) and is_list(sinners) ->
+        if Enum.all?(sinners, &is_binary/1), do: {:ok, lineup}, else: {:error, "That lineup is malformed and can't be pasted."}
+
+      {:ok, %{"starlight_plan" => plan_kind}} when is_binary(plan_kind) ->
+        {:error, "That clipboard holds a whole #{plan_kind} plan, not a lineup."}
+
+      _ ->
+        {:error, "The clipboard doesn't hold a Starlight lineup."}
+    end
+  end
+
   def warnings(:battle_plans, data) do
     by_id = Map.new(SinnerProfiles.list(), &{&1.id, &1})
 

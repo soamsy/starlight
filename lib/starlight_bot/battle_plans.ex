@@ -640,6 +640,19 @@ defmodule StarlightBot.BattlePlans do
     {Map.update!(data, "playbooks", &(&1 ++ [playbook])), playbook}
   end
 
+  def import_lineup(data, source) do
+    taken = MapSet.new(lineups(data), & &1["name"])
+    name = Stream.iterate(source["name"], &(&1 <> " copy")) |> Enum.find(&(not MapSet.member?(taken, &1)))
+    lineup = %{"id" => GiftPlans.new_id("ln"), "name" => name, "sinners" => Enum.filter(source["sinners"], &(&1 in SinnerProfiles.sinners()))}
+    {Map.put(data, "lineups", lineups(data) ++ [lineup]), lineup}
+  end
+
+  def reorder_lineups(lineups, ids) do
+    by_id = Map.new(lineups, &{&1["id"], &1})
+    ordered = for id <- ids, lineup = by_id[id], do: lineup
+    if length(ordered) == length(lineups), do: ordered, else: lineups
+  end
+
   def hook_names(playbook) do
     for action <- flatten_actions(playbook["actions"]), condition <- action_conditions(action), leaf <- Conditions.leaves(condition), is_binary(leaf["hook"]), leaf["hook"] != "", uniq: true, do: leaf["hook"]
   end

@@ -221,6 +221,32 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_event("copy_lineup", %{"id" => id}, socket) do
+    case BattlePlans.find_lineup(socket.assigns.data, id) do
+      nil -> {:noreply, socket}
+      lineup -> {:noreply, socket |> push_event("copy_json", %{text: PlanClipboard.encode_lineup(lineup)}) |> put_flash(:info, "Lineup '#{lineup["name"]}' copied to the clipboard.")}
+    end
+  end
+
+  @impl true
+  def handle_event("paste_lineup", %{"text" => text}, socket) do
+    case PlanClipboard.decode_lineup(text) do
+      {:ok, source} ->
+        {data, lineup} = BattlePlans.import_lineup(socket.assigns.data, source)
+        {:noreply, socket |> assign(:data, data) |> assign(:lineup_id, lineup["id"]) |> assign(:lineup_erase?, false) |> persist() |> put_flash(:info, "Pasted lineup '#{lineup["name"]}'.")}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
+    end
+  end
+
+  @impl true
+  def handle_event("reorder_lineups", %{"ids" => ids}, socket) do
+    socket = assign(socket, :data, Map.put(socket.assigns.data, "lineups", BattlePlans.reorder_lineups(BattlePlans.lineups(socket.assigns.data), ids)))
+    {:noreply, socket |> persist() |> update(:reorder_rev, &(&1 + 1))}
+  end
+
+  @impl true
   def handle_event("toggle_lineup_sinner", %{"sinner" => sinner}, socket) when is_binary(sinner) do
     {:noreply,
      update_lineup(socket, fn lineup ->
@@ -298,7 +324,19 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_event("start_rename_playbook", %{"id" => id}, socket) do
+    {:noreply, socket |> assign(:playbook_id, id) |> assign(:paint, id) |> assign(:renaming_playbook_id, id)}
+  end
+
+  @impl true
+  def handle_event("cancel_rename_playbook", _, socket) do
+    {:noreply, assign(socket, :renaming_playbook_id, nil)}
+  end
+
+  @impl true
   def handle_event("rename_playbook", %{"value" => name}, socket) do
+    socket = socket |> assign(:playbook_id, socket.assigns.renaming_playbook_id || socket.assigns.playbook_id) |> assign(:renaming_playbook_id, nil)
+
     case String.trim(name) do
       "" -> {:noreply, socket}
       name -> {:noreply, update_playbook(socket, &Map.put(&1, "name", name))}
@@ -586,6 +624,51 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   def track_label("lux_chain"), do: "Lux Chain"
   def track_label("lux_focused"), do: "Lux Focused"
 
+  attr :data, :map, required: true
+  attr :lineup_id, :string, default: nil
+  attr :renaming_lineup_id, :string, default: nil
+  attr :reorder_rev, :integer, required: true
+
+  def lineup_list(assigns) do
+    ~H"""
+    <div id="lineup-clipboard" phx-hook="ItemClipboard" class="flex w-0 min-w-full flex-col gap-0.5">
+      <div class="flex min-h-8 items-center text-sm font-semibold text-base-content/70">
+        Lineups
+        <button type="button" data-paste-event="paste_lineup" title="Paste a lineup from the clipboard" class="btn btn-xs btn-ghost ml-auto">Paste</button>
+        <button phx-click="new_lineup" class="btn btn-xs btn-ghost">+ lineup</button>
+      </div>
+      <div id={"lineups-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_lineups" class="flex flex-col gap-0.5">
+        <%= for lineup <- StarlightBot.BattlePlans.lineups(@data) do %>
+          <% used = StarlightBot.BattlePlans.venues_using(@data, lineup["id"]) %>
+          <div id={"lineup-row-#{lineup["id"]}"} data-sort-id={lineup["id"]} phx-hook="DblClickEvent" data-event="start_rename_lineup" data-id={lineup["id"]}
+               title={"Double-click to rename. Used on: " <> if(used == [], do: "nothing", else: Enum.map_join(used, ", ", &StarlightBot.BattlePlans.venue_label/1))}
+               class="group flex items-center">
+            <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-0.5">⠿</span>
+            <%= if @renaming_lineup_id == lineup["id"] do %>
+              <form phx-submit="rename_lineup" class="flex flex-1 min-w-0">
+                <input type="text" id={"rename-lineup-#{lineup["id"]}"} name="value" value={lineup["name"]} phx-blur="rename_lineup"
+                       phx-keydown="cancel_rename_lineup" phx-key="Escape" phx-hook="FocusSelect"
+                       class="input input-bordered input-xs w-full font-semibold" />
+              </form>
+            <% else %>
+              <button phx-click="select_lineup" phx-value-id={lineup["id"]}
+                      class={"flex flex-1 min-w-0 items-center gap-1.5 text-left text-xs rounded px-1.5 py-1 hover:bg-base-200 " <> if(@lineup_id == lineup["id"], do: "bg-primary/10 border-l-2 border-primary", else: "")}>
+                <span class="inline-block w-5 text-center rounded-full text-[10px] font-semibold text-white" style={lineup_color(@data, lineup["id"], 0.9)}><%= playbook_tag(lineup) %></span>
+                <span class="flex-1 truncate"><%= lineup["name"] %></span>
+                <span class={"text-[10px] " <> if(lineup["sinners"] == [], do: "text-warning", else: "text-base-content/40")}><%= length(lineup["sinners"]) %>/12</span>
+              </button>
+            <% end %>
+            <div class="flex shrink-0 items-center opacity-40 group-hover:opacity-100">
+              <button phx-click="copy_lineup" phx-value-id={lineup["id"]} title="Copy this lineup to the clipboard as JSON" class="btn btn-2xs btn-ghost">Copy</button>
+              <button phx-click="delete_lineup" phx-value-id={lineup["id"]} data-confirm={"Delete lineup '#{lineup["name"]}'?"} title="Delete this lineup" class="btn btn-2xs btn-ghost text-error">✕</button>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
   def sinner_rows, do: @sinner_rows
 
   defp first_profiled_sinner(socket) do
@@ -630,6 +713,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     index = Enum.find_index(BattlePlans.lineups(data), &(&1["id"] == id)) || 0
     "background-color: hsl(#{rem(index * 67 + 20, 360)} 45% 42% / #{alpha});"
   end
+
 
   def lineup_tooltip(data, entries, floor) do
     id = Resolver.lineup_id_at(entries, floor)
@@ -837,7 +921,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         </div>
         <span class="text-[11px] text-base-content/50 italic">
           <%= if ends_with_chain?(@items) do %>
-            then: the chain drag starts the turn; fallback only if it didn't
+            then: fallback (p + enter if turn didn't start)
           <% else %>
             then: fallback (enter, then p + enter if the turn didn't start)
           <% end %>
@@ -1679,6 +1763,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     |> assign(:lineup_id, nil)
     |> assign(:lineup_erase?, false)
     |> assign(:renaming_lineup_id, nil)
+    |> assign(:renaming_playbook_id, nil)
     |> assign(:open_editor_id, nil)
     |> assign(:schedule_tabs, %{})
     |> assign(:reorder_rev, 0)

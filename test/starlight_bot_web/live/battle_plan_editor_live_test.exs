@@ -423,6 +423,35 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     assert render(socket) =~ ~s(data-sort-event="reorder_playbooks")
   end
 
+  test "lineups copy, paste, reorder and rename from their list", %{socket: socket} do
+    socket = event(socket, "toggle_lineup_sinner", %{"sinner" => "faust"})
+    source = BattlePlans.find_lineup(socket.assigns.data, socket.assigns.lineup_id)
+    text = StarlightBot.PlanClipboard.encode_lineup(source)
+
+    socket = event(socket, "paste_lineup", %{"text" => text})
+    pasted = List.last(BattlePlans.lineups(socket.assigns.data))
+    assert pasted["name"] == source["name"] <> " copy"
+    assert pasted["sinners"] == ["faust"]
+    assert pasted["id"] != source["id"]
+    assert socket.assigns.lineup_id == pasted["id"]
+
+    socket = event(socket, "reorder_lineups", %{"ids" => [pasted["id"], source["id"]]})
+    assert Enum.map(BattlePlans.lineups(socket.assigns.data), & &1["id"]) == [pasted["id"], source["id"]]
+    assert render(socket) =~ ~s(data-sort-event="reorder_lineups")
+
+    socket = event(socket, "paste_lineup", %{"text" => "hello"})
+    assert socket.assigns.flash["error"] =~ "doesn't hold a Starlight lineup"
+  end
+
+  test "double-clicking a playbook row renames that playbook", %{socket: socket, playbook_id: playbook_id} do
+    other = socket.assigns.data["playbooks"] |> Enum.find(&(&1["id"] != playbook_id)) |> Map.fetch!("id")
+    socket = event(socket, "start_rename_playbook", %{"id" => other})
+    assert socket.assigns.renaming_playbook_id == other
+    socket = event(socket, "rename_playbook", %{"value" => "Renamed"})
+    assert socket.assigns.renaming_playbook_id == nil
+    assert Enum.find(socket.assigns.data["playbooks"], &(&1["id"] == other))["name"] == "Renamed"
+  end
+
   test "sinner pickers only offer sinners with a profile and + adds the first free one" do
     {:ok, faust_profile} = StarlightBot.SinnerProfiles.save(%{name: "Faust test", sinner: "faust"})
     {:ok, ryoshu_profile} = StarlightBot.SinnerProfiles.save(%{name: "Ryoshu test", sinner: "ryoshu"})
