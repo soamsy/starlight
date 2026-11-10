@@ -54,7 +54,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
-  def handle_event("show_info", %{"pane" => pane}, socket) when pane in ~w(encounter search rest grace gift_search) do
+  def handle_event("show_info", %{"pane" => pane}, socket) when pane in ~w(encounter search rest exploration grace gift_search) do
     pane = String.to_existing_atom(pane)
     {:noreply, update(socket, :info_pane, &if(&1 == pane, do: nil, else: pane))}
   end

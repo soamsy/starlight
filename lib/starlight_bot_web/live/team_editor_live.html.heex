@@ -12,12 +12,42 @@
           <div class="w-full max-w-3xl min-w-0 shrink-0 xl:shrink xl:min-h-0 xl:overflow-y-auto flex flex-col gap-3">
           <h3 class="font-medium text-sm">Expected Starlight</h3>
           <form phx-change="budget_change" class="flex flex-col max-w-3xl rounded-xl border border-base-300 bg-base-200 shadow-md divide-y divide-base-300 font-mono">
-            <div class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2" title="Every run starts with this">
+            <div class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2">
               <span class="text-success text-center">+</span>
               <span class="font-sans text-sm">Base</span>
               <span class="text-sm text-success text-right"><%= budget.income.base %></span>
             </div>
-            <div id="info-row-rest" phx-click="show_info" phx-value-pane="rest" role="button" class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :rest, do: "bg-base-300/60", else: "")} title="Sinners this team doesn't lock in, so they rest a full 5 charges. Rest bonus is 1 per charge. Also sets the multiplier.">
+            <div id="info-row-exploration" phx-click="show_info" phx-value-pane="exploration" role="button" class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :exploration, do: "bg-base-300/60", else: "")}>
+              <span class="text-success text-center">+</span>
+              <div class="flex flex-col gap-1">
+                <span class="font-sans text-sm">Exploration</span>
+                <div class="flex flex-wrap items-stretch gap-1.5">
+                  <span class="self-center text-base-content/40">⌊(</span>
+                  <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title={floor_breakdown(budget.floors)}>
+                    <span class="text-[10px] font-sans text-base-content/50">
+                      Floor clears<%= if not budget.has_pack_plan?, do: " (no plan, all normal)" %>
+                    </span>
+                    <span class="text-sm"><%= budget.floor_total %></span>
+                  </div>
+                  <span class="self-center text-base-content/40">+</span>
+                  <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center"
+                       title={"#{StarlightBudget.railway_bonus()} per cleared Line theme pack. Expected Line packs per floor from the pack plan odds: #{railway_breakdown(budget.railway_by_floor)}"}>
+                    <span class="text-[10px] font-sans text-base-content/50">
+                      Railway (avg <%= :erlang.float_to_binary(budget.railway_packs, decimals: 2) %> packs)
+                    </span>
+                    <span class="text-sm"><%= :erlang.float_to_binary(budget.railway_packs * StarlightBudget.railway_bonus(), decimals: 1) %></span>
+                  </div>
+                  <span class="self-center text-base-content/40">) ×</span>
+                  <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="min(2, 1 + 0.017 × rest bonus), rounded down after multiplying">
+                    <span class="text-[10px] font-sans text-base-content/50">Rest mult</span>
+                    <span class="text-sm"><%= :erlang.float_to_binary(budget.rest_multiplier, decimals: 3) %></span>
+                  </div>
+                  <span class="self-center text-base-content/40">⌋</span>
+                </div>
+              </div>
+              <span class="text-sm text-success text-right"><%= budget.income.exploration %></span>
+            </div>
+            <div id="info-row-rest" phx-click="show_info" phx-value-pane="rest" role="button" class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :rest, do: "bg-base-300/60", else: "")}>
               <span class="text-success text-center">+</span>
               <div class="flex flex-col gap-2">
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -48,37 +78,7 @@
               </div>
               <span class="text-sm text-success text-right"><%= budget.income.sinner_bonus %></span>
             </div>
-            <div class="grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2">
-              <span class="text-success text-center">+</span>
-              <div class="flex flex-col gap-1">
-                <span class="font-sans text-sm">Exploration</span>
-                <div class="flex flex-wrap items-stretch gap-1.5">
-                  <span class="self-center text-base-content/40">⌊(</span>
-                  <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title={floor_breakdown(budget.floors)}>
-                    <span class="text-[10px] font-sans text-base-content/50">
-                      Floor clears<%= if not budget.has_pack_plan?, do: " (no plan, all normal)" %>
-                    </span>
-                    <span class="text-sm"><%= budget.floor_total %></span>
-                  </div>
-                  <span class="self-center text-base-content/40">+</span>
-                  <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center"
-                       title={"#{StarlightBudget.railway_bonus()} per cleared Line theme pack. Expected Line packs per floor from the pack plan odds: #{railway_breakdown(budget.railway_by_floor)}"}>
-                    <span class="text-[10px] font-sans text-base-content/50">
-                      Railway (avg <%= :erlang.float_to_binary(budget.railway_packs, decimals: 2) %> packs)
-                    </span>
-                    <span class="text-sm"><%= :erlang.float_to_binary(budget.railway_packs * StarlightBudget.railway_bonus(), decimals: 1) %></span>
-                  </div>
-                  <span class="self-center text-base-content/40">) ×</span>
-                  <div class="rounded-lg border border-base-300 px-2 py-1 flex flex-col justify-center" title="min(2, 1 + 0.017 × rest bonus), rounded down after multiplying">
-                    <span class="text-[10px] font-sans text-base-content/50">Rest mult</span>
-                    <span class="text-sm"><%= :erlang.float_to_binary(budget.rest_multiplier, decimals: 3) %></span>
-                  </div>
-                  <span class="self-center text-base-content/40">⌋</span>
-                </div>
-              </div>
-              <span class="text-sm text-success text-right"><%= budget.income.exploration %></span>
-            </div>
-            <div id="info-row-encounter" phx-click="show_info" phx-value-pane="encounter" role="button" title="Click for how this is calculated"
+            <div id="info-row-encounter" phx-click="show_info" phx-value-pane="encounter" role="button"
                  class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :encounter, do: "bg-base-300/60", else: "")}>
               <span class="text-success text-center">+</span>
               <span class="font-sans text-sm">
@@ -89,8 +89,7 @@
               <span class="text-sm text-success text-right"><%= StarlightBudget.format(budget.income.encounters) %></span>
             </div>
             <div id="info-row-search" phx-click="show_info" phx-value-pane="search" role="button"
-                 class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :search, do: "bg-base-300/60", else: "")}
-                 title={"Click for how this is calculated. 20 for the first search in the run, 10 more for each after. A floor only searches when every refresh misses. Searches in a run: #{search_breakdown(budget)}"}>
+                 class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :search, do: "bg-base-300/60", else: "")}>
               <span class="text-error text-center">−</span>
               <span class="font-sans text-sm">
                 Pack search
@@ -99,7 +98,7 @@
               </span>
               <span class="text-sm text-error text-right"><%= StarlightBudget.format(budget.costs.pack_search) %></span>
             </div>
-            <div id="info-row-grace" phx-click="show_info" phx-value-pane="grace" role="button" title="Click for details"
+            <div id="info-row-grace" phx-click="show_info" phx-value-pane="grace" role="button"
                  class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :grace, do: "bg-base-300/60", else: "")}>
               <span class="text-error text-center">−</span>
               <span class="flex items-center gap-1.5 font-sans text-sm">
@@ -109,7 +108,7 @@
               </span>
               <span class="text-sm text-error text-right"><%= if budget.has_gift_plan?, do: budget.costs.grace, else: "—" %></span>
             </div>
-            <div id="info-row-gift_search" phx-click="show_info" phx-value-pane="gift_search" role="button" title="Click for details"
+            <div id="info-row-gift_search" phx-click="show_info" phx-value-pane="gift_search" role="button"
                  class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :gift_search, do: "bg-base-300/60", else: "")}>
               <span class="text-error text-center">−</span>
               <span class="flex items-center gap-1.5 font-sans text-sm">
@@ -147,76 +146,40 @@
           <aside :if={@info_pane == :rest} id="info-pane-rest" phx-hook="InfoArrow" data-row="info-row-rest" class="relative w-full max-w-3xl xl:max-w-[40rem] xl:flex-1 xl:self-start xl:max-h-full min-w-0 shrink-0 xl:shrink xl:min-h-0 flex flex-col gap-3 text-sm rounded-xl border border-base-300 bg-base-200 p-3">
             <span data-arrow class="hidden xl:block absolute -left-[7px] top-6 h-3.5 w-3.5 -translate-y-1/2 rotate-45 border-b border-l border-base-300 bg-base-200"></span>
             <div class="flex flex-col gap-3 min-h-0 flex-1">
-              <h2 class="font-bold text-base">How the rest bonus is calculated</h2>
               <div class="overflow-y-auto flex flex-col gap-4 pr-1">
-                <p>Each sinner identity stores up to <%= StarlightBudget.rest_per_free_sinner() %> rest charges. A charge refills by 1 for every Mirror Dungeon run the identity is not brought into. Bringing an identity into a run spends its charges, and each charge spent pays 1 bonus starlight.</p>
-                <section class="flex flex-col gap-1">
-                  <h4 class="font-semibold">1. Free sinners</h4>
-                  <p class="text-xs text-base-content/60">A free sinner is a sinner this team does not lock in, so their charges are full. With "Estimate from lineup" on, free sinners are 12 minus the first lineup. Moving the slider turns the estimate off and saves your value for the team.</p>
-                  <div class="rounded-lg bg-base-200 p-2 font-mono text-xs flex flex-col gap-0.5">
-                    <span>rest bonus = free sinners × <%= StarlightBudget.rest_per_free_sinner() %></span>
-                    <span class="text-base-content/50">max <%= StarlightBudget.max_free_sinners() %> × <%= StarlightBudget.rest_per_free_sinner() %> = <%= StarlightBudget.rest_bonus(StarlightBudget.max_free_sinners()) %></span>
-                  </div>
-                </section>
-                <section class="flex flex-col gap-1">
-                  <h4 class="font-semibold">2. Exploration multiplier</h4>
-                  <p class="text-xs text-base-content/60">The rest bonus also scales the starlight from exploration (floor clears plus railway), rounded down after multiplying.</p>
-                  <div class="rounded-lg bg-base-200 p-2 font-mono text-xs flex flex-col gap-0.5">
-                    <span>multiplier = min(2, 1 + 0.017 × rest bonus)</span>
-                    <span class="text-base-content/50">Now: 1 + 0.017 × <%= budget.income.sinner_bonus %> = <%= :erlang.float_to_binary(budget.rest_multiplier, decimals: 3) %></span>
-                  </div>
-                </section>
-                <p class="text-xs text-base-content/60">Sources: the <a class="link" href="https://limbuscompany.wiki.gg/wiki/Mirror_Dungeons" target="_blank" rel="noopener">Limbus Company wiki</a> confirms the 5 charge cap per identity, the 1 charge refill per run an identity sits out, and 1 starlight per charge. The wiki pages found did not state the exploration multiplier, so the 0.017 per point and the 2x cap are taken from this app's own model and have not been checked against an outside source.</p>
+                <p>How much starlight you get by switching your team up regularly.</p>
+                <p>For every run an identity is not used, it gets <span class="font-semibold text-yellow-400">+1</span> rest bonus, up to <span class="font-semibold text-yellow-400">+5</span>. Then when you use the identity, this bonus not only flat out gives you extra starlight for the number (<span class="font-semibold text-yellow-400">+60</span> if everyone's fully rested) but also pumps up the multiplier for exploration starlight, so the value of being fully rested isn't just <span class="font-semibold text-yellow-400">+5</span>, it's often something like <span class="font-semibold text-yellow-400">+8</span> or <span class="font-semibold text-yellow-400">+9</span> per sinner for a normal run.</p>
+                <p>The idea is it encourages players to use more than one team, and if you really want the full +60, you gotta cycle. The bot accounts for this when you set up multiple teams on the md run page.</p>
+                <p>But, if you just wanna spam the same team repeatedly, you can still take advantage of rest bonus. Take your team, copy-paste it in limbus under different names, and change the backup units to be unique across every instance. The backups aren't load-bearing, so they should be chipping in rest bonus. This is also how starlight positive/neutral/negative is usually communicated as a definition: if a team demands 6 identities, the other 6 free ones are assumed to be cycled.</p>
+              </div>
+            </div>
+          </aside>
+          <aside :if={@info_pane == :exploration} id="info-pane-exploration" phx-hook="InfoArrow" data-row="info-row-exploration" class="relative w-full max-w-3xl xl:max-w-[40rem] xl:flex-1 xl:self-start xl:max-h-full min-w-0 shrink-0 xl:shrink xl:min-h-0 flex flex-col gap-3 text-sm rounded-xl border border-base-300 bg-base-200 p-3">
+            <span data-arrow class="hidden xl:block absolute -left-[7px] top-6 h-3.5 w-3.5 -translate-y-1/2 rotate-45 border-b border-l border-base-300 bg-base-200"></span>
+            <div class="flex flex-col gap-3 min-h-0 flex-1">
+              <div class="overflow-y-auto flex flex-col gap-4 pr-1">
+                <p>How much starlight your floor choices get you.</p>
+                <p>Floors give starlight equal to the floor number, and you multiply by 4 if you're on a hard floor:</p>
+                <table class="table table-xs font-mono">
+                  <thead>
+                    <tr><th></th><th class="text-right">F1</th><th class="text-right">F2</th><th class="text-right">F3</th><th class="text-right">F4</th><th class="text-right">F5</th><th class="text-right">Total</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td class="font-sans">Normal</td><td class="text-right">1</td><td class="text-right">2</td><td class="text-right">3</td><td class="text-right">4</td><td class="text-right">5</td><td class="text-right font-semibold">15</td></tr>
+                    <tr><td class="font-sans">Hard</td><td class="text-right">4</td><td class="text-right">8</td><td class="text-right">12</td><td class="text-right">16</td><td class="text-right">20</td><td class="text-right font-semibold">60</td></tr>
+                  </tbody>
+                </table>
+                <p>Refraction railway packs (the Line ones) give +5 starlight each. So a run that routes Line 2 and Line 1 at the end nets +10.</p>
+                <p>All of this is added up, and multiplied by the rest multiplier (1x-2x, where 2x is if everyone's rested)</p>
               </div>
             </div>
           </aside>
           <aside :if={@info_pane == :encounter} id="info-pane-encounter" phx-hook="InfoArrow" data-row="info-row-encounter" class="relative w-full max-w-3xl xl:max-w-[40rem] xl:flex-1 xl:self-start xl:max-h-full min-w-0 shrink-0 xl:shrink xl:min-h-0 flex flex-col gap-3 text-sm rounded-xl border border-base-300 bg-base-200 p-3">
             <span data-arrow class="hidden xl:block absolute -left-[7px] top-6 h-3.5 w-3.5 -translate-y-1/2 rotate-45 border-b border-l border-base-300 bg-base-200"></span>
             <div class="flex flex-col gap-3 min-h-0 flex-1">
-              <h2 class="font-bold text-base">How the encounter reward starlight is calculated</h2>
               <div class="overflow-y-auto flex flex-col gap-4 pr-1">
-                <section class="flex flex-col gap-1">
-                  <h4 class="font-semibold">1. How many encounter reward screens a floor gives</h4>
-                  <p class="text-xs text-base-content/60">Every floor traverses 2 events, 1 shop and 1 boss. The boss always gives an encounter reward, except the F5 boss when the run stops there. A theme pack with more than 4 nodes adds floating nodes: on F1 they are all regular encounters, on F2 and later two thirds are regular and one third focused. Each kind rolls its own chance of giving a reward. The number of floating nodes is the expected value over the theme pack odds from the pack plan.</p>
-                  <div class="rounded-lg bg-base-200 p-2 font-mono text-xs flex flex-col gap-0.5">
-                    <span>screens = boss + regular nodes × regular chance + focused nodes × focused chance</span>
-                    <span class="text-base-content/50">regular chance: F1 7.5%, F2 10%, F3 10%, F4 12.5%, F5 12.5%</span>
-                    <span class="text-base-content/50">focused chance: F2 20%, F3 20%, F4 25%, F5 25%</span>
-                  </div>
-                </section>
-                <section class="flex flex-col gap-1">
-                  <h4 class="font-semibold">2. How often a screen ends in starlight</h4>
-                  <p class="text-xs text-base-content/60">A screen shows 3 of the 5 rewards, so there are 10 possible layouts. The bot takes the highest priority reward on the screen. With starlight at position p in the gift plan's encounter reward order, it is picked in the layouts that contain it and none of the options above it: C(5 − p, 2) of the 10. Position 1 wins 6 of 10 layouts, position 2 wins 3, position 3 wins 1, and position 4 or 5 never win. Starlight pays 8 to 14, 11 on average.</p>
-                </section>
-                <section class="flex flex-col gap-1">
-                  <h4 class="font-semibold">3. Per floor</h4>
-                  <table class="table table-xs font-mono">
-                    <thead>
-                      <tr><th>Floor</th><th class="text-right">Floating</th><th class="text-right">Boss</th><th class="text-right">Regular</th><th class="text-right">Focused</th><th class="text-right">Screens</th><th class="text-right">Starlight pos</th><th class="text-right">Picked</th><th class="text-right">Starlight</th></tr>
-                    </thead>
-                    <tbody>
-                      <tr :for={row <- budget.encounter_floors}>
-                        <td>F<%= row.floor %></td>
-                        <td class="text-right"><%= encounter_decimal(row.floating) %></td>
-                        <td class="text-right"><%= encounter_decimal(row.screens.boss) %></td>
-                        <td class="text-right"><%= encounter_decimal(row.screens.regular) %></td>
-                        <td class="text-right"><%= encounter_decimal(row.screens.focused) %></td>
-                        <td class="text-right"><%= encounter_decimal(row.screens.total) %></td>
-                        <td class="text-right"><%= row.position || "none" %></td>
-                        <td class="text-right"><%= encounter_pct(row.chance) %></td>
-                        <td class="text-right text-success"><%= encounter_decimal(row.starlight, 1) %></td>
-                      </tr>
-                      <tr class="font-semibold">
-                        <td colspan="5">Total</td>
-                        <td class="text-right"><%= encounter_decimal(budget.encounter_screens) %></td>
-                        <td colspan="2"></td>
-                        <td class="text-right text-success"><%= encounter_decimal(budget.encounter_starlight, 1) %></td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <p class="text-xs">Average starlight grabs per run: <span class="font-mono font-semibold"><%= encounter_decimal(budget.encounter_pulls) %></span> from <%= encounter_decimal(budget.encounter_screens) %> encounter reward screens.</p>
-                  <p class="text-xs text-base-content/60">Starlight = screens × picked × 11. The starlight position follows the gift plan's encounter reward order for each floor, or the default order when no gift plan is selected. The F5 boss only counts when the pack plan goes extreme. Assumes the route never takes risky nodes. Simplification: on F5 one fewer theme pack is assumed to be shown than the graces give, to account for one of the theme packs typically being from the latest event.</p>
-                </section>
+                <p>Over-simplified calculation of how much starlight you'll get from encounter rewards. Heavily dependent on putting starlight as a priority in your gift plan. <button type="button" phx-click={JS.patch(~p"/teams?team=#{@editing_id}&pane=gifts") |> JS.dispatch("click", to: "#gift-loadout-btn")} class="btn btn-primary btn-xs h-5 min-h-0 gap-1 px-1.5 align-middle"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-3 w-3"><path d="M4.25 5.5a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 1 1.5 0v4A2.25 2.25 0 0 1 12.75 17h-8.5A2.25 2.25 0 0 1 2 14.75v-8.5A2.25 2.25 0 0 1 4.25 4h5a.75.75 0 0 1 0 1.5h-5Z"/><path d="M6.194 12.753a.75.75 0 0 0 1.06.053L16.5 4.44v2.81a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75h-4.5a.75.75 0 0 0 0 1.5h2.553l-9.056 8.194a.75.75 0 0 0-.053 1.06Z"/></svg>Edit in gift loadout</button></p>
+                <p>Basically, assume you'll see 4-6 encounter rewards per run (4 guaranteed from F1-F4 boss nodes), and 60% of the time that encounter reward will have a starlight option. If you prioritize it, you might be seeing an extra 10-30 starlight per run, but it can botch the run if you skimp out on getting cost from rewards that would've gone to your tier 4 fusions. Most plans default to leaving it lower priority than cost for this reason. Prioritize it if you have a good reason to.</p>
               </div>
             </div>
           </aside>
