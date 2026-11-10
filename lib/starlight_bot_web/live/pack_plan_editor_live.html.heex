@@ -280,35 +280,32 @@
   <%= if @show_help do %>
     <div class="modal modal-open" phx-window-keydown="toggle_help" phx-key="Escape">
       <div class="modal-box max-w-3xl max-h-[85vh] flex flex-col gap-3 text-sm">
-        <h2 class="font-bold text-base">How the bot chooses a theme pack</h2>
         <div class="overflow-y-auto flex flex-col gap-3 pr-1">
           <section>
-            <h4 class="font-semibold mb-2">Priority</h4>
+            <h4 class="font-semibold mb-2">Theme pack priority</h4>
             <div class="grid grid-cols-4 gap-2 text-xs">
               <div class="flex flex-col gap-1 rounded-lg border border-warning/50 bg-warning/15 p-2">
                 <span class="font-semibold text-warning"><.icon name="lucide-filled-star" class="size-3" /> Favorite</span>
-                <span>1st pick. Seen: take it. Not seen: refresh.</span>
-                <span class="text-base-content/60">Click the star on a Hunt floor</span>
-                <span class="mt-auto pt-1 text-[11px] italic text-base-content/70">Two seen? Higher in list wins.</span>
+                <span>1st pick. Take if seen. Refresh otherwise.</span>
+                <span class="mt-auto text-base-content/60">Click the star on a floor</span>
               </div>
               <div class="flex flex-col gap-1 rounded-lg border border-success/50 bg-success/15 p-2">
                 <span class="font-semibold text-success">Hunt</span>
-                <span>2nd pick. Backup once refreshes and search run out. No favorites: acts as Favorite.</span>
-                <span class="text-base-content/60">Click a floor</span>
-                <span class="mt-auto pt-1 text-[11px] italic text-base-content/70">Two seen? Higher in list wins.</span>
+                <span>2nd pick. Backup once refreshes and search run out. Treated as Favorites if there are no Favorites.</span>
+                <span class="mt-auto text-base-content/60">Click a floor</span>
               </div>
               <div class="flex flex-col gap-1 rounded-lg border border-base-300 bg-base-200 p-2">
                 <span class="font-semibold">Acceptable</span>
-                <span>Fallback after Hunt. Everything you left alone.</span>
-                <span class="text-base-content/60">Default</span>
+                <span>Fallback after Hunt.</span>
+                <span class="mt-auto text-base-content/60">Default</span>
               </div>
               <div class="flex flex-col gap-1 rounded-lg border border-error/50 bg-error/15 p-2">
                 <span class="font-semibold text-error">Banned</span>
-                <span>Avoid. Taken only when every pack shown is banned.</span>
-                <span class="text-base-content/60">Right click a floor</span>
+                <span>Avoid. Take only when every pack shown is banned.</span>
+                <span class="mt-auto text-base-content/60">Right click a floor</span>
               </div>
             </div>
-            <p class="mt-2">To reorder a floor's list, click its pack on the likely path row, then drag the rows in the dropdown.</p>
+            <p class="mt-2">To reorder a floor's list, click its pack, then drag the rows in the dropdown.</p>
             <div class="mt-2 flex items-start gap-2">
               <span class="shrink-0 pt-0.5 text-base-content/60">&rarr;</span>
               <div class="relative w-56 shrink-0">
@@ -344,11 +341,13 @@
                   </div>
                 </div>
               </div>
-              <span class="pt-6 text-base-content/70">Top of the list is picked first.</span>
+              <span class="pt-6 text-base-content/70">Top of the list is picked first. If we're looking for favorites, and we only see one favorite that's technically low in the list, we'll take that.</span>
             </div>
           </section>
           <section>
-            <h4 class="font-semibold">Normal, hard, extreme</h4>
+            <p>When <span class="btn btn-xs h-4 min-h-0 px-1 text-[9px] btn-error pointer-events-none">search</span> is on, never resort to backups. Find the top pack once refreshes are exhausted. Costs <span class="inline-flex items-center gap-1 rounded-full bg-base-300 px-1.5 py-0.5 text-[10px] font-medium align-middle"><img src="/images/icons/starlight.webp" alt="Starlight" class="h-3 w-3" />starlight</span> if used.</p>
+          </section>
+          <section>
             <div class="mt-2 grid grid-cols-6 gap-1 text-xs">
                 <div class="flex flex-col items-center gap-1 rounded-t px-1 py-1">
                   <span class="text-[11px] font-semibold text-base-content/70">F1</span>
@@ -379,10 +378,6 @@
               <p><span class="font-medium">Hard</span>: <span class="btn btn-xs h-4 min-h-0 px-1 text-[9px] btn-warning pointer-events-none">go hard</span> on a floor makes it and everything after hard. Normal and hard have different theme packs, so priorities on one don't affect the other.</p>
               <p><span class="font-medium">Extreme</span>: <span class="btn btn-xs h-4 min-h-0 px-1 text-[9px] btn-ghost border-base-300 pointer-events-none">go extreme</span> on F6 continues into F6-15 after the F5 boss. Makes F1 <span class="btn btn-xs h-4 min-h-0 px-1 text-[9px] btn-warning pointer-events-none">go hard</span>.</p>
             </div>
-          </section>
-          <section>
-            <h4 class="font-semibold">Search</h4>
-            <p>When <span class="btn btn-xs h-4 min-h-0 px-1 text-[9px] btn-error pointer-events-none">search</span> is on, never resort to backups. Find the top priority pack in pack search after exhausting refreshes. Costs <span class="inline-flex items-center gap-1 rounded-full bg-base-300 px-1.5 py-0.5 text-[10px] font-medium align-middle"><img src="/images/icons/starlight.webp" alt="Starlight" class="h-3 w-3" />starlight</span> for the run if used.</p>
           </section>
         </div>
         <div class="modal-action mt-0">
