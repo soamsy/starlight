@@ -355,11 +355,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     socket =
       socket
       |> event("cond_add", %{"case_id" => first["id"], "path" => "", "node" => "leaf"})
-      |> event("cond_update", %{"case_id" => first["id"], "path" => "", "op" => "refreshes_lt", "value" => "3"})
+      |> event("cond_update", %{"case_id" => first["id"], "path" => "", "op" => "refreshes", "cmp" => "lte", "value" => "3", "not" => "true"})
       |> event("ms_update_refresh_case", %{"case_id" => first["id"], "action" => "affinity_refresh", "affinity" => "burn"})
       |> event("ms_update_refresh_case", %{"case_id" => second["id"], "action" => "leave"})
 
-    assert [%{"condition" => %{"op" => "refreshes_lt", "value" => 3}, "action" => "affinity_refresh", "affinity" => "burn"}, %{"action" => "leave", "condition" => nil}] =
+    assert [%{"condition" => %{"op" => "refreshes", "cmp" => "lte", "value" => 3, "not" => true}, "action" => "affinity_refresh", "affinity" => "burn"}, %{"action" => "leave", "condition" => nil}] =
              milestone(socket)["refresh"]
 
     html = render(socket)

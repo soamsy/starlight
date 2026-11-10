@@ -297,8 +297,8 @@ defmodule StarlightBot.GiftPlansTest do
       tree = %{
         "op" => "and",
         "children" => [
-          %{"op" => "cost_gte", "value" => 200},
-          %{"op" => "or", "children" => [%{"op" => "missing_gift", "gift" => "Fiery Down"}, %{"op" => "has_gift", "gift" => "Fiery Down"}]}
+          %{"op" => "cost", "cmp" => "gte", "value" => 200},
+          %{"op" => "or", "children" => [%{"op" => "owns", "gift" => "Fiery Down", "not" => true}, %{"op" => "owns", "gift" => "Fiery Down"}]}
         ]
       }
 
@@ -307,14 +307,18 @@ defmodule StarlightBot.GiftPlansTest do
     end
 
     test "cost checks fail when cost is unknown" do
-      refute GiftPlans.eval_condition(%{"op" => "cost_gte", "value" => 0}, %{wallet: nil, owned: MapSet.new()})
-      refute GiftPlans.eval_condition(%{"op" => "cost_lt", "value" => 100}, %{wallet: nil, owned: MapSet.new()})
+      refute GiftPlans.eval_condition(%{"op" => "cost", "cmp" => "gte", "value" => 0}, %{wallet: nil, owned: MapSet.new()})
+      refute GiftPlans.eval_condition(%{"op" => "cost", "cmp" => "lte", "value" => 99}, %{wallet: nil, owned: MapSet.new()})
     end
 
-    test "cost under passes only below the value", %{env: env} do
-      assert GiftPlans.eval_condition(%{"op" => "cost_lt", "value" => 251}, env)
-      refute GiftPlans.eval_condition(%{"op" => "cost_lt", "value" => 250}, env)
-      assert GiftPlans.condition_label(%{"op" => "cost_lt", "value" => 250}) == "cost < 250"
+    test "cost compares with eq, gte and lte, and not flips the result", %{env: env} do
+      at_most = fn value -> %{"op" => "cost", "cmp" => "lte", "value" => value} end
+      assert GiftPlans.eval_condition(at_most.(250), env)
+      refute GiftPlans.eval_condition(at_most.(249), env)
+      assert GiftPlans.eval_condition(Map.put(at_most.(249), "not", true), env)
+      assert GiftPlans.eval_condition(%{"op" => "cost", "cmp" => "eq", "value" => 250}, env)
+      assert GiftPlans.condition_label(at_most.(250)) == "cost <= 250"
+      assert GiftPlans.condition_label(%{"op" => "cost", "cmp" => "eq", "value" => 250, "not" => true}) == "not cost = 250"
     end
 
     test "milestone leaves check the milestone on the env's floor" do
@@ -323,35 +327,36 @@ defmodule StarlightBot.GiftPlansTest do
 
       refute GiftPlans.eval_condition(leaf, env(data, %{}))
       assert GiftPlans.eval_condition(leaf, env(data, %{"Glimpse" => 0}))
-      assert GiftPlans.eval_condition(%{"op" => "milestone_not", "milestone" => id}, env(data, %{}))
-      assert GiftPlans.condition_label(leaf, data) == "milestone Shop Done reached"
-      assert GiftPlans.condition_label(%{"op" => "milestone", "milestone" => "ms_gone"}, data) == "milestone (deleted) reached"
+      assert GiftPlans.eval_condition(%{"op" => "milestone", "milestone" => id, "not" => true}, env(data, %{}))
+      assert GiftPlans.condition_label(leaf, data) == "milestone Shop Done done"
+      assert GiftPlans.condition_label(%{"op" => "milestone", "milestone" => "ms_gone"}, data) == "milestone (deleted) done"
     end
 
     test "goal leaves check one goal of the milestone" do
       {data, id} = with_gifts(["Glimpse", "Fiery Down"])
       data = data |> GiftPlans.add_goal(id) |> set_segment(id, "Glimpse", %{"goal" => "A"})
-      leaf = %{"op" => "goal", "milestone" => id, "goal" => "A"}
-      not_leaf = %{"op" => "goal_not", "milestone" => id, "goal" => "A"}
+      leaf = %{"op" => "goal", "goal" => "A"}
+      goal_env = fn owned -> Map.put(env(data, owned), :current_milestone, id) end
+      not_leaf = %{"op" => "goal", "goal" => "A", "not" => true}
 
-      refute GiftPlans.eval_condition(leaf, env(data, %{}))
-      assert GiftPlans.eval_condition(not_leaf, env(data, %{}))
-      assert GiftPlans.eval_condition(leaf, env(data, %{"Glimpse" => 0}))
-      refute GiftPlans.eval_condition(not_leaf, env(data, %{"Glimpse" => 0}))
-      assert GiftPlans.eval_condition(%{leaf | "goal" => nil}, env(data, %{"Glimpse" => 0}))
-      assert GiftPlans.condition_label(leaf, data) == "goal A of Shop Done reached"
+      refute GiftPlans.eval_condition(leaf, goal_env.(%{}))
+      assert GiftPlans.eval_condition(not_leaf, goal_env.(%{}))
+      assert GiftPlans.eval_condition(leaf, goal_env.(%{"Glimpse" => 0}))
+      refute GiftPlans.eval_condition(not_leaf, goal_env.(%{"Glimpse" => 0}))
+      assert GiftPlans.eval_condition(%{leaf | "goal" => nil}, goal_env.(%{"Glimpse" => 0}))
+      assert GiftPlans.condition_label(leaf, data) == "goal A done"
     end
   end
 
   test "refresh count conditions read the shop's refreshes, counting none when unknown" do
-    under = %{"op" => "refreshes_lt", "value" => 2}
-    at_least = %{"op" => "refreshes_gte", "value" => 2}
+    under = %{"op" => "refreshes", "cmp" => "lte", "value" => 1}
+    at_least = %{"op" => "refreshes", "cmp" => "gte", "value" => 2}
 
     assert GiftPlans.eval_condition(under, %{refreshes: 1})
     refute GiftPlans.eval_condition(under, %{refreshes: 2})
     assert GiftPlans.eval_condition(at_least, %{refreshes: 2})
     assert GiftPlans.eval_condition(under, %{})
-    assert GiftPlans.condition_label(under) == "refreshes < 2"
+    assert GiftPlans.condition_label(under) == "refreshes <= 1"
     assert GiftPlans.condition_label(at_least) == "refreshes >= 2"
   end
 
@@ -360,16 +365,16 @@ defmodule StarlightBot.GiftPlansTest do
 
     assert GiftPlans.prune_condition(%{
              "op" => "and",
-             "children" => [%{"op" => "or", "children" => []}, %{"op" => "cost_gte", "value" => 1}]
-           }) == %{"op" => "and", "children" => [%{"op" => "cost_gte", "value" => 1}]}
+             "children" => [%{"op" => "or", "children" => []}, %{"op" => "cost", "cmp" => "gte", "value" => 1}]
+           }) == %{"op" => "and", "children" => [%{"op" => "cost", "cmp" => "gte", "value" => 1}]}
   end
 
   test "condition_label/1 renders nested groups" do
     tree = %{
       "op" => "and",
       "children" => [
-        %{"op" => "cost_gte", "value" => 200},
-        %{"op" => "or", "children" => [%{"op" => "missing_gift", "gift" => "A"}, %{"op" => "has_gift", "gift" => "B"}]}
+        %{"op" => "cost", "cmp" => "gte", "value" => 200},
+        %{"op" => "or", "children" => [%{"op" => "owns", "gift" => "A", "not" => true}, %{"op" => "owns", "gift" => "B"}]}
       ]
     }
 

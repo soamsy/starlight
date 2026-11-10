@@ -511,7 +511,7 @@
                                     <button type="button" phx-click="close_case_condition" title="Close the condition editor" class="btn btn-ghost btn-xs h-6 min-h-6 px-1">▾</button>
                                     <div class="flex-1 min-w-0">
                                       <.condition_node node={refresh_case["condition"]} path="" values={%{"case_id" => refresh_case["id"]}} removable={false}
-                                                       leaf={&gift_leaf(Map.merge(&1, %{plan_data: @plan_data, milestone_host: milestone["id"]}))} />
+                                                       leaf={&gift_leaf(Map.merge(&1, %{plan_data: @plan_data, milestone: milestone}))} />
                                     </div>
                                   </div>
                                 <% else %>

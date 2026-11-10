@@ -101,7 +101,7 @@ defmodule StarlightBot.Automation.Shop.Actions.MilestoneTest do
   test "a reached milestone never consults its refresh cases", %{ctx: ctx, state: state, milestone: milestone} do
     for {id, name} <- [{"g_fixed", "Fixed"}, {"g_3", "Three"}, {"g_4", "Four"}], do: RunMemory.add_ego_gift(ctx, id, name)
     state = Map.put(state, :refreshes, 0)
-    late = %{"id" => "rc_late", "condition" => %{"op" => "refreshes_gte", "value" => 5}, "action" => "refresh"}
+    late = %{"id" => "rc_late", "condition" => %{"op" => "refreshes", "cmp" => "gte", "value" => 5}, "action" => "refresh"}
     leave = %{"id" => "rc_leave", "condition" => nil, "action" => "leave"}
 
     assert {:skipped, "Main already reached", state_after} = Milestone.run(%{}, Map.put(milestone, "refresh", [late]), state, ctx)

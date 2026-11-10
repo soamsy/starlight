@@ -12,7 +12,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @gift_sorts ~w(default name tier affinity)
   @uptie_views ~w(base uptie2 uptie3)
   @stat_codes %{"cp" => "Clash Power", "fc" => "Final Power", "bc" => "Base Power", "cg" => "Coin Count"}
-  @default_leaf %{"op" => "cost_gte", "value" => 0}
 
   @graces [
     %{index: 0, name: "Star of the Beginning", base_cost: 10,
@@ -392,7 +391,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("cond_add", %{"path" => path, "node" => node} = params, socket) do
-    child = if node == "group", do: Conditions.group(@default_leaf), else: @default_leaf
+    child = if node == "group", do: Conditions.group(GiftPlans.default_leaf()), else: GiftPlans.default_leaf()
     {:noreply, update_condition(socket, params, &Conditions.add(&1, path, child))}
   end
 
@@ -408,19 +407,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("cond_update", %{"path" => path} = params, socket) do
-    leaf =
-      case params["op"] do
-        op when op in ["cost_gte", "cost_lt"] -> %{"op" => op, "value" => parse_int(params["value"], 0)}
-        op when op in ["refreshes_lt", "refreshes_gte"] -> %{"op" => op, "value" => max(parse_int(params["value"], 0), 0)}
-        op when op in ["milestone", "milestone_not"] -> %{"op" => op, "milestone" => blank_to_nil(params["milestone"])}
-        op when op in ["goal", "goal_not"] ->
-          milestone = blank_to_nil(params["milestone"]) || blank_to_nil(params["host"])
-          %{"op" => op, "milestone" => milestone, "goal" => blank_to_nil(params["goal"]) || "required"}
-
-        op -> %{"op" => op, "gift" => String.trim(params["gift"] || "")}
-      end
-
-    {:noreply, update_condition(socket, params, &Conditions.put_leaf(&1, path, leaf))}
+    {:noreply, update_condition(socket, params, &Conditions.put_leaf(&1, path, GiftPlans.condition_leaf(params)))}
   end
 
   @impl true
@@ -431,7 +418,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("add_milestone", _, socket) do
     milestone = GiftPlans.new_milestone("Milestone #{length(socket.assigns.plan_data["milestones"]) + 1}")
-    refresh_case = %{"id" => GiftPlans.new_id("rc"), "condition" => Conditions.add(nil, "", %{"op" => "cost_gte", "value" => 300}), "action" => "refresh", "affinity" => nil, "max" => 4}
+    refresh_case = %{"id" => GiftPlans.new_id("rc"), "condition" => Conditions.add(nil, "", %{"op" => "cost", "cmp" => "gte", "value" => 300}), "action" => "refresh", "affinity" => nil, "max" => 4}
     milestone = %{milestone | "refresh" => [refresh_case]}
 
     {:noreply,
@@ -1411,43 +1398,30 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp matches_text_filter?(_gift, ""), do: true
   defp matches_text_filter?(gift, filter), do: String.contains?(String.downcase(gift.name || ""), String.downcase(filter))
 
-  defp goal_options(plan_data, milestone_id) do
-    case Enum.find(plan_data["milestones"], &(&1["id"] == milestone_id)) do
-      nil -> []
-      milestone -> ["required" | GiftPlans.goal_letters(milestone)]
-    end
-  end
+  defp goal_options(milestone), do: ["required" | GiftPlans.goal_letters(milestone)]
 
   def gift_leaf(assigns) do
     ~H"""
-    <input :if={@milestone_host} type="hidden" name="host" value={@milestone_host} />
-    <select name="op" class="select select-bordered select-xs">
-      <option value="cost_gte" selected={@node["op"] == "cost_gte"}>cost at least</option>
-      <option value="cost_lt" selected={@node["op"] == "cost_lt"}>cost under</option>
-      <option value="refreshes_lt" selected={@node["op"] == "refreshes_lt"}>refreshes this shop under</option>
-      <option value="refreshes_gte" selected={@node["op"] == "refreshes_gte"}>refreshes this shop at least</option>
-      <option value="has_gift" selected={@node["op"] == "has_gift"}>owns gift</option>
-      <option value="missing_gift" selected={@node["op"] == "missing_gift"}>doesn't own gift</option>
-      <option value="milestone" selected={@node["op"] == "milestone"}>milestone reached</option>
-      <option value="milestone_not" selected={@node["op"] == "milestone_not"}>milestone not reached</option>
-      <option value="goal" selected={@node["op"] == "goal"}>goal reached</option>
-      <option value="goal_not" selected={@node["op"] == "goal_not"}>goal not reached</option>
-    </select>
+    <input type="hidden" name="not" value="false" />
+    <label title="Negate this condition" class="relative cursor-pointer">
+      <input type="checkbox" name="not" value="true" checked={@node["not"] == true} class="peer sr-only" />
+      <span class="inline-flex items-center justify-center h-6 w-6 rounded border border-dashed border-base-content/20 text-sm text-base-content/25 select-none peer-checked:hidden">≠</span>
+      <span class="hidden items-center h-6 px-1.5 rounded bg-error text-[11px] font-semibold text-error-content select-none peer-checked:inline-flex">NOT</span>
+    </label>
+    <StarlightBotWeb.Live.BattlePlanEditorLive.radio_group name="op" value={@node["op"]}
+      options={[{"cost", "cost"}, {"refreshes", "refreshes"}, {"owns", "owns"}, {"milestone", "milestone done"}, {"goal", "goal done"}]} />
     <%= cond do %>
-      <% @node["op"] in ["cost_gte", "cost_lt", "refreshes_lt", "refreshes_gte"] -> %>
-        <input type="number" name="value" value={@node["value"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
-      <% @node["op"] in ["milestone", "milestone_not"] -> %>
+      <% @node["op"] in ["cost", "refreshes"] -> %>
+        <StarlightBotWeb.Live.BattlePlanEditorLive.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
+        <input type="number" name="value" min="0" value={@node["value"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
+      <% @node["op"] == "milestone" -> %>
         <select name="milestone" class="select select-bordered select-xs flex-1 min-w-0">
           <option value="">pick one</option>
           <option :for={milestone <- @plan_data["milestones"]} value={milestone["id"]} selected={@node["milestone"] == milestone["id"]}><%= milestone["name"] %></option>
         </select>
-      <% @node["op"] in ["goal", "goal_not"] -> %>
-        <select name="milestone" class="select select-bordered select-xs flex-1 min-w-0">
-          <option value="">pick milestone</option>
-          <option :for={milestone <- @plan_data["milestones"]} value={milestone["id"]} selected={@node["milestone"] == milestone["id"]}><%= milestone["name"] %></option>
-        </select>
+      <% @node["op"] == "goal" -> %>
         <select name="goal" class="select select-bordered select-xs">
-          <option :for={goal <- goal_options(@plan_data, @node["milestone"])} value={goal} selected={(@node["goal"] || "required") == goal}><%= goal_label(goal) %></option>
+          <option :for={goal <- goal_options(@milestone)} value={goal} selected={(@node["goal"] || "required") == goal}><%= goal_label(goal) %></option>
         </select>
       <% true -> %>
         <input type="text" name="gift" value={@node["gift"]} list="gift-name-options" phx-debounce="blur"

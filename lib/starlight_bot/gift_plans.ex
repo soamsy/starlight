@@ -654,6 +654,7 @@ defmodule StarlightBot.GiftPlans do
 
   def matching_refresh_case(milestone, env) do
     runs = Map.get(env, :case_runs, %{})
+    env = Map.put(env, :current_milestone, milestone["id"])
     Enum.find(refresh_cases_at(milestone, Map.get(env, :floor) || 1), &(under_cap?(&1, runs) and eval_condition(&1["condition"], env)))
   end
 
@@ -1083,39 +1084,64 @@ defmodule StarlightBot.GiftPlans do
 
   def eval_condition(tree, env), do: Conditions.eval(tree, &eval_leaf(&1, env))
 
-  defp eval_leaf(%{"op" => "cost_gte", "value" => value}, %{wallet: wallet}), do: is_integer(wallet) and wallet >= value
-  defp eval_leaf(%{"op" => "cost_lt", "value" => value}, %{wallet: wallet}), do: is_integer(wallet) and wallet < value
-  defp eval_leaf(%{"op" => "refreshes_lt", "value" => value}, env), do: Map.get(env, :refreshes, 0) < value
-  defp eval_leaf(%{"op" => "refreshes_gte", "value" => value}, env), do: Map.get(env, :refreshes, 0) >= value
-  defp eval_leaf(%{"op" => "has_gift", "gift" => gift}, %{owned: owned}), do: MapSet.member?(owned, gift)
-  defp eval_leaf(%{"op" => "missing_gift", "gift" => gift}, %{owned: owned}), do: not MapSet.member?(owned, gift)
-  defp eval_leaf(%{"op" => "milestone"} = leaf, %{plan: plan} = env), do: milestone_reached?(plan, leaf["milestone"], env)
-  defp eval_leaf(%{"op" => "milestone_not"} = leaf, %{plan: plan} = env), do: not milestone_reached?(plan, leaf["milestone"], env)
+  @cmps ~w(eq gte lte)
 
-  defp eval_leaf(%{"op" => "goal"} = leaf, %{plan: plan} = env), do: goal_reached?(plan, leaf["milestone"], leaf["goal"], env)
-  defp eval_leaf(%{"op" => "goal_not"} = leaf, %{plan: plan} = env), do: not goal_reached?(plan, leaf["milestone"], leaf["goal"], env)
+  defp eval_leaf(leaf, env), do: eval_base(leaf, env) != (leaf["not"] == true)
+
+  defp eval_base(%{"op" => "cost"} = leaf, %{wallet: wallet}), do: is_integer(wallet) and compare(wallet, leaf["cmp"], leaf["value"])
+  defp eval_base(%{"op" => "refreshes"} = leaf, env), do: compare(Map.get(env, :refreshes, 0), leaf["cmp"], leaf["value"])
+  defp eval_base(%{"op" => "owns", "gift" => gift}, %{owned: owned}), do: MapSet.member?(owned, gift)
+  defp eval_base(%{"op" => "milestone"} = leaf, %{plan: plan} = env), do: milestone_reached?(plan, leaf["milestone"], env)
+  defp eval_base(%{"op" => "goal"} = leaf, %{plan: plan} = env), do: goal_reached?(plan, env[:current_milestone], leaf["goal"], env)
+
+  defp compare(left, "eq", right), do: left == right
+  defp compare(left, "lte", right), do: left <= right
+  defp compare(left, _cmp, right), do: left >= right
+
+  def default_leaf, do: %{"op" => "cost", "cmp" => "gte", "value" => 0}
+
+  def condition_leaf(params), do: params |> build_leaf() |> put_not(params)
+
+  defp build_leaf(%{"op" => op} = params) when op in ["cost", "refreshes"] do
+    %{"op" => op, "cmp" => if(params["cmp"] in @cmps, do: params["cmp"], else: "gte"), "value" => max(parse_count(params["value"]), 0)}
+  end
+
+  defp build_leaf(%{"op" => "milestone"} = params), do: %{"op" => "milestone", "milestone" => blank_to_nil(params["milestone"])}
+
+  defp build_leaf(%{"op" => "goal"} = params), do: %{"op" => "goal", "goal" => blank_to_nil(params["goal"]) || "required"}
+
+  defp build_leaf(params), do: %{"op" => "owns", "gift" => String.trim(params["gift"] || "")}
+
+  defp put_not(leaf, %{"not" => "true"}), do: Map.put(leaf, "not", true)
+  defp put_not(leaf, _params), do: leaf
+
+  defp parse_count(value) do
+    case Integer.parse(value || "") do
+      {int, _} -> int
+      :error -> 0
+    end
+  end
+
+  defp blank_to_nil(value) when value in [nil, ""], do: nil
+  defp blank_to_nil(value), do: value
 
   def prune_condition(node), do: Conditions.prune(node)
 
   def condition_label(node, data \\ nil), do: Conditions.label(node, &leaf_label(&1, data))
 
-  defp leaf_label(%{"op" => "cost_gte", "value" => value}, _data), do: "cost >= #{value}"
-  defp leaf_label(%{"op" => "cost_lt", "value" => value}, _data), do: "cost < #{value}"
-  defp leaf_label(%{"op" => "refreshes_lt", "value" => value}, _data), do: "refreshes < #{value}"
-  defp leaf_label(%{"op" => "refreshes_gte", "value" => value}, _data), do: "refreshes >= #{value}"
-  defp leaf_label(%{"op" => "has_gift", "gift" => gift}, _data), do: "owns #{gift}"
-  defp leaf_label(%{"op" => "missing_gift", "gift" => gift}, _data), do: "missing #{gift}"
-  defp leaf_label(%{"op" => "milestone"} = leaf, data), do: "milestone #{milestone_name(data, leaf["milestone"])} reached"
-  defp leaf_label(%{"op" => "milestone_not"} = leaf, data), do: "milestone #{milestone_name(data, leaf["milestone"])} not reached"
+  @cmp_symbols %{"eq" => "=", "gte" => ">=", "lte" => "<="}
 
-  defp leaf_label(%{"op" => "goal"} = leaf, data), do: "goal #{goal_name(data, leaf)} reached"
-  defp leaf_label(%{"op" => "goal_not"} = leaf, data), do: "goal #{goal_name(data, leaf)} not reached"
+  defp leaf_label(%{"op" => op} = leaf, _data) when op in ["cost", "refreshes"] do
+    "#{if leaf["not"], do: "not "}#{op} #{Map.get(@cmp_symbols, leaf["cmp"], ">=")} #{leaf["value"]}"
+  end
+
+  defp leaf_label(%{"op" => "owns"} = leaf, _data), do: "#{if leaf["not"], do: "missing", else: "owns"} #{leaf["gift"]}"
+  defp leaf_label(%{"op" => "milestone"} = leaf, data), do: "milestone #{milestone_name(data, leaf["milestone"])} #{if leaf["not"], do: "not "}done"
+  defp leaf_label(%{"op" => "goal"} = leaf, _data), do: "goal #{goal_display(leaf["goal"])} #{if leaf["not"], do: "not "}done"
 
   defp goal_display("required"), do: "Required"
   defp goal_display(nil), do: "Required"
   defp goal_display(letter), do: letter
-
-  defp goal_name(data, leaf), do: "#{goal_display(leaf["goal"])} of #{milestone_name(data, leaf["milestone"])}"
 
   defp milestone_name(_data, nil), do: "(none picked)"
   defp milestone_name(nil, id), do: id
