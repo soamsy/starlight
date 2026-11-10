@@ -95,12 +95,12 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
       |> event("add_action", %{"container" => "root", "type" => "target", "parent" => id, "branch" => "then"})
       |> event("add_action", %{"container" => "root", "type" => "target", "parent" => id, "branch" => "then"})
       |> event("add_action", %{"container" => "root", "type" => "retry", "parent" => id, "branch" => "else"})
-      |> event("cond_update", %{"action" => id, "path" => "0", "op" => "hook_off", "hook" => "battle_combat_ready"})
+      |> event("cond_update", %{"action" => id, "path" => "0", "op" => "hook", "not" => "true", "hook" => "battle_combat_ready"})
       |> event("cond_add", %{"action" => id, "path" => "", "node" => "leaf"})
-      |> event("cond_update", %{"action" => id, "path" => "1", "op" => "hook_on", "hook" => "battle_chain"})
+      |> event("cond_update", %{"action" => id, "path" => "1", "op" => "hook", "not" => "false", "hook" => "battle_chain"})
       |> event("cond_add", %{"action" => id, "path" => "", "node" => "leaf"})
-      |> event("cond_update", %{"action" => id, "path" => "2", "op" => "sinners_eq", "hook" => ""})
-      |> event("cond_update", %{"action" => id, "path" => "2", "op" => "sinners_eq", "value" => "1"})
+      |> event("cond_update", %{"action" => id, "path" => "2", "op" => "sinner_count", "hook" => ""})
+      |> event("cond_update", %{"action" => id, "path" => "2", "op" => "sinner_count", "cmp" => "eq", "value" => "1"})
 
     [_, _, block] = actions(socket, playbook_id)
     [ego, _target] = block["then"]
@@ -555,7 +555,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
       |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => inner["id"], "branch" => "else"})
       |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => inner["id"], "branch" => "else"})
       |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => outer["id"], "branch" => "then"})
-      |> event("cond_update", %{"action" => inner["id"], "path" => "0", "op" => "tray_count", "match" => "pride", "cmp" => "eq", "value" => "1", "sinner" => ""})
+      |> event("cond_update", %{"action" => inner["id"], "path" => "0", "op" => "tray_count", "matches" => ["pride"], "cmp" => "eq", "value" => "1", "sinners_csv" => ""})
 
     [outer] = actions(socket, chain["id"])
     [inner] = outer["else"]
@@ -591,7 +591,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
       |> event("add_action", %{"container" => "root", "type" => "retry", "parent" => block["id"], "branch" => second["id"]})
       |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => block["id"], "branch" => first["id"]})
       |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => block["id"], "branch" => "else"})
-      |> event("cond_update", %{"action" => first["id"], "path" => "0", "op" => "tray_count", "match" => "pride", "cmp" => "eq", "value" => "1", "sinner" => ""})
+      |> event("cond_update", %{"action" => first["id"], "path" => "0", "op" => "tray_count", "matches" => ["pride"], "cmp" => "eq", "value" => "1", "sinners_csv" => ""})
 
     [block] = actions(socket, chain["id"])
     assert Enum.map(BattlePlans.branch_actions(block, second["id"]), & &1["type"]) == ["retry"]
@@ -607,5 +607,48 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     socket = event(socket, "remove_else", %{"parent" => block["id"]})
     [block] = actions(socket, chain["id"])
     assert BattlePlans.branches(block) == ["then", first["id"]]
+  end
+
+  test "duplicating a row copies it right below with fresh ids, including nested blocks", %{socket: socket, playbook_id: playbook_id} do
+    socket = event(socket, "add_action", %{"container" => "root", "type" => "win_rate"})
+    [win_rate | _] = Enum.filter(actions(socket, playbook_id), &(&1["type"] == "win_rate"))
+    socket = event(socket, "dup_action", %{"action" => win_rate["id"]})
+    rows = actions(socket, playbook_id)
+    index = Enum.find_index(rows, &(&1["id"] == win_rate["id"]))
+    copy = Enum.at(rows, index + 1)
+    assert copy["type"] == "win_rate"
+    refute copy["id"] == win_rate["id"]
+
+    socket = event(socket, "add_action", %{"container" => "root", "type" => "if"})
+    block = socket |> actions(playbook_id) |> Enum.find(&(&1["type"] == "if"))
+
+    socket =
+      socket
+      |> event("add_action", %{"container" => "root", "type" => "retry", "parent" => block["id"], "branch" => "then"})
+      |> event("dup_action", %{"action" => block["id"]})
+
+    [first, second] = socket |> actions(playbook_id) |> Enum.filter(&(&1["type"] == "if"))
+    refute first["id"] == second["id"]
+    assert Enum.map(second["then"], & &1["type"]) == ["retry"]
+    refute hd(first["then"])["id"] == hd(second["then"])["id"]
+  end
+
+  test "a sinner position condition edits its slot range with the shared chips", %{socket: socket} do
+    chain = Enum.find(socket.assigns.data["playbooks"], &(&1["kind"] == "chain"))
+    socket = socket |> event("select_playbook", %{"id" => chain["id"]}) |> event("remove_action", %{"action" => hd(chain["actions"])["id"]})
+    socket = event(socket, "add_action", %{"container" => "root", "type" => "if"})
+    [block] = actions(socket, chain["id"])
+
+    socket =
+      socket
+      |> event("cond_update", %{"action" => block["id"], "path" => "0", "op" => "sinner_position", "sinners_csv" => "faust,ryoshu", "pick" => "first"})
+      |> event("cond_add_chip", %{"action" => block["id"], "path" => "0"})
+      |> event("cond_step_chip", %{"action" => block["id"], "path" => "0", "index" => "1", "delta" => "1"})
+
+    [block] = actions(socket, chain["id"])
+    [leaf] = block["condition"]["children"]
+    assert leaf["sinners"] == ["faust", "ryoshu"]
+    assert Enum.map(leaf["position"]["chips"], & &1["at"]) == [0, 2]
+    assert socket |> event("open_editor", %{"action" => block["id"]}) |> render() =~ "Add another slot position"
   end
 end

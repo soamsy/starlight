@@ -47,6 +47,8 @@ defmodule StarlightBot.Conditions do
     update_node(tree, parse_path(path), fn group -> Map.put(group, "op", if(group["op"] == "and", do: "or", else: "and")) end)
   end
 
+  def update_leaf(tree, path, fun), do: update_node(tree, parse_path(path), fun)
+
   def put_leaf(tree, path, leaf), do: update_node(tree, parse_path(path), fn _ -> leaf end)
 
   def child_path("", index), do: "#{index}"

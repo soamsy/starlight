@@ -40,10 +40,10 @@ defmodule StarlightBotWeb.Components.ConditionTree do
 
   def condition_node(assigns) do
     ~H"""
-    <form phx-change="cond_update" class="flex items-center gap-1">
+    <form phx-change="cond_update" class="flex flex-wrap items-center gap-1">
       <input :for={{name, value} <- @values} type="hidden" name={name} value={value} />
       <input type="hidden" name="path" value={@path} />
-      <%= @leaf.(%{node: @node}) %>
+      <%= @leaf.(%{node: @node, path: @path, values: @values}) %>
       <button :if={@removable} type="button" phx-click="cond_remove" phx-value-path={@path} {phx_values(@values)}
               class="btn btn-xs btn-ghost text-error" title="Remove condition">✕</button>
     </form>

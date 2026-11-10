@@ -564,28 +564,35 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp classify_scan(_scan, _ctx), do: nil
 
   defp condition_leaf(leaf, frame, tray_info, ctx) do
+    case eval_leaf(leaf, frame, tray_info, ctx) do
+      :unknown -> false
+      result -> result != (leaf["not"] == true)
+    end
+  end
+
+  defp eval_leaf(leaf, frame, tray_info, ctx) do
     cond do
       BattlePlans.tray_leaf?(leaf) -> tray_count_leaf(leaf, tray_info, ctx)
       BattlePlans.position_leaf?(leaf) -> position_leaf(leaf, tray_info, ctx)
       BattlePlans.fight_leaf?(leaf) -> fight_leaf(leaf, ctx)
       not BattlePlans.sinner_leaf?(leaf) -> hook_leaf(leaf, frame, ctx)
-      is_nil(tray_info.sinners) -> false
+      is_nil(tray_info.sinners) -> :unknown
       true -> BattlePlans.sinner_count_matches?(leaf, tray_info.sinners)
     end
   end
 
-  defp tray_count_leaf(_leaf, %{classified: nil}, _ctx), do: false
+  defp tray_count_leaf(_leaf, %{classified: nil}, _ctx), do: :unknown
 
   defp tray_count_leaf(leaf, %{classified: classified, scan: {:ok, frame, tray}}, ctx) do
     columns =
-      case leaf["sinner"] do
-        nil ->
-          :all
-
-        sinner ->
-          %{"who" => "only", "sinners" => [sinner], "skill" => %{"pick" => "all"}}
+      case leaf["sinners"] do
+        [_ | _] = sinners ->
+          %{"who" => "only", "sinners" => sinners, "skill" => %{"pick" => "all"}}
           |> holder_slots(frame, tray, profiles(ctx), ctx)
           |> Enum.flat_map(fn {_holder, taken} -> taken end)
+
+        _anyone ->
+          :all
       end
 
     count = BattlePlans.tray_count(leaf, classified, columns)
@@ -593,37 +600,44 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     BattlePlans.tray_count_matches?(leaf, count)
   end
 
-  defp position_leaf(leaf, %{scan: {:ok, frame, %SkillTray{sinner_of_slot: [_ | _] = sinner_of_slot} = tray}}, ctx) do
-    with {:ok, profile} <- fetch_profile(profiles(ctx), leaf["sinner"], ctx),
-         {:ok, hooks} <- locator_hooks(profile, ctx),
-         {:ok, column} <- locate(frame, tray, hooks, profile, ctx) do
-      index = Enum.at(sinner_of_slot, column)
-      count = List.last(sinner_of_slot) + 1
-      Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, sinner_names())} (#{profile.name} is sinner #{index + 1} of #{count})")
-      BattlePlans.position_matches?(leaf, index, count)
+  defp position_leaf(%{"sinners" => [_ | _] = sinners} = leaf, %{scan: {:ok, frame, %SkillTray{sinner_of_slot: [_ | _] = sinner_of_slot} = tray}}, ctx) do
+    count = List.last(sinner_of_slot) + 1
+
+    located =
+      Enum.map(sinners, fn sinner ->
+        with {:ok, profile} <- fetch_profile(profiles(ctx), sinner, ctx),
+             {:ok, hooks} <- locator_hooks(profile, ctx),
+             {:ok, column} <- locate(frame, tray, hooks, profile, ctx) do
+          {profile.name, Enum.at(sinner_of_slot, column)}
+        end
+      end)
+
+    if Enum.member?(located, :skip) do
+      Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, sinner_names())} can't be checked, treating it as false")
+      :unknown
     else
-      :skip ->
-        Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, sinner_names())} can't be checked, treating it as false")
-        false
+      found = Enum.map_join(located, ", ", fn {name, index} -> "#{name} is sinner #{index + 1}" end)
+      Ctx.log(ctx, :info, "playbook: #{BattlePlans.condition_label(leaf, sinner_names())} (#{found} of #{count})")
+      BattlePlans.position_matches?(leaf, Enum.map(located, &elem(&1, 1)), count)
     end
   end
 
-  defp position_leaf(_leaf, _tray_info, _ctx), do: false
+  defp position_leaf(_leaf, _tray_info, _ctx), do: :unknown
 
-  defp fight_leaf(%{"op" => op}, ctx) do
+  defp fight_leaf(_leaf, ctx) do
     boss? = RunMemory.venue(ctx) == "md_boss"
     Ctx.log(ctx, :info, "playbook: #{if boss?, do: "boss fight", else: "not a boss fight"} (venue #{RunMemory.venue(ctx)})")
-    boss? == (op == "boss_fight")
+    boss?
   end
 
-  defp hook_leaf(%{"op" => op, "hook" => name}, frame, ctx) do
+  defp hook_leaf(%{"hook" => name}, frame, ctx) do
     case Enum.find(HookRegistry.all_names(), &(Atom.to_string(&1) == name)) do
       nil ->
         Ctx.log(ctx, :error, "playbook: condition hook #{inspect(name)} isn't loaded, treating it as false")
-        false
+        :unknown
 
       hook ->
-        Runner.hook_matches?(frame, hook) == (op == "hook_on")
+        Runner.hook_matches?(frame, hook)
     end
   end
 

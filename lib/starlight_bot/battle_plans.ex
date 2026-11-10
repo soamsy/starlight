@@ -19,13 +19,11 @@ defmodule StarlightBot.BattlePlans do
     "chain" => ~w(chain win_rate damage_rate ego dodge if commit retry),
     "focused" => ~w(win_rate damage_rate target if commit retry)
   }
-  @hook_leaf %{"op" => "hook_on", "hook" => ""}
-  @sinner_ops ~w(sinners_eq sinners_gte sinners_lte)
+  @default_leaf %{"op" => "tray_count", "sinners" => [], "matches" => [], "cmp" => "gte", "value" => 1}
+  @sinner_count_op "sinner_count"
   @tray_count_op "tray_count"
   @position_op "sinner_position"
-  @fight_ops ~w(boss_fight not_boss_fight)
-  @positions ~w(first last exact)
-  @position_cmps ~w(is is_not gt lt)
+  @fight_op "boss_fight"
   @count_cmps ~w(eq gte lte)
   @grades ~w(zayin teth he waw)
   @rows ~w(top bottom priority)
@@ -537,7 +535,7 @@ defmodule StarlightBot.BattlePlans do
   def action_conditions(%{"type" => "if"} = block), do: branch_conditions(block)
   def action_conditions(action), do: [action["condition"]]
 
-  def new_elif, do: %{"id" => GiftPlans.new_id("ei"), "condition" => Conditions.add(nil, "", @hook_leaf), "actions" => []}
+  def new_elif, do: %{"id" => GiftPlans.new_id("ei"), "condition" => Conditions.add(nil, "", @default_leaf), "actions" => []}
 
   def add_elif(items, block_id, after_branch) do
     update_list_containing(items, block_id, fn list ->
@@ -589,7 +587,7 @@ defmodule StarlightBot.BattlePlans do
         item
     end)
   end
-  def hook_leaf, do: @hook_leaf
+  def default_leaf, do: @default_leaf
 
   def chain_action?(type), do: type in @chain_actions
 
@@ -610,6 +608,17 @@ defmodule StarlightBot.BattlePlans do
       action -> [action]
     end)
   end
+
+  def duplicate_action(items, id) do
+    update_list_containing(items, id, fn list ->
+      Enum.flat_map(list, fn
+        %{"id" => ^id} = action -> [action, refresh_ids(action)]
+        action -> [action]
+      end)
+    end)
+  end
+
+  def duplicable?(%{"type" => type}), do: not chain_action?(type)
 
   def refresh_ids(%{"type" => "if"} = block) do
     elifs = Enum.map(elifs(block), &Map.put(&1, "id", GiftPlans.new_id("ei")))
@@ -639,7 +648,7 @@ defmodule StarlightBot.BattlePlans do
   def condition_label(nil, _profile_names), do: "always"
   def condition_label(tree, profile_names), do: Conditions.label(tree, &leaf_label(&1, profile_names))
 
-  def sinner_leaf?(%{"op" => op}), do: op in @sinner_ops
+  def sinner_leaf?(%{"op" => @sinner_count_op}), do: true
   def sinner_leaf?(_node), do: false
 
   def tray_leaf?(%{"op" => @tray_count_op}), do: true
@@ -648,36 +657,22 @@ defmodule StarlightBot.BattlePlans do
   def position_leaf?(%{"op" => @position_op}), do: true
   def position_leaf?(_node), do: false
 
-  def fight_leaf?(%{"op" => op}), do: op in @fight_ops
+  def fight_leaf?(%{"op" => @fight_op}), do: true
   def fight_leaf?(_node), do: false
 
-  def positions, do: @positions
-  def position_cmps, do: @position_cmps
-
-  def position_matches?(%{"pos" => pos, "value" => n, "cmp" => cmp}, index, count) do
-    target =
-      case pos do
-        "first" -> 0
-        "last" -> count - 1
-        "exact" -> n - 1
-      end
-
-    case cmp do
-      "is" -> index == target
-      "is_not" -> index != target
-      "gt" -> index > target
-      "lt" -> index < target
-    end
+  def position_matches?(%{"position" => position}, indexes, count) do
+    allowed = pick_columns(Enum.to_list(0..(count - 1)), position)
+    Enum.all?(indexes, &(&1 in allowed))
   end
 
   def sins, do: @sins
 
-  def tray_count(%{"match" => match}, {top, bottom}, columns) do
+  def tray_count(%{"matches" => matches}, {top, bottom}, columns) do
     top
     |> Enum.zip(bottom)
     |> Enum.with_index()
     |> Enum.count(fn {{top_cell, bottom_cell}, column} ->
-      (columns == :all or column in columns) and slot_matches?(match, top_cell, bottom_cell)
+      (columns == :all or column in columns) and slot_matches?(matches, top_cell, bottom_cell)
     end)
   end
 
@@ -788,8 +783,12 @@ defmodule StarlightBot.BattlePlans do
   defp cell_matches?(match, %{sin: _sin, tier: _tier} = cell), do: priority_match?(match, cell)
   defp cell_matches?(_match, _cell), do: false
 
-  defp slot_matches?("any", top_cell, bottom_cell), do: skill_cell?(top_cell) or skill_cell?(bottom_cell)
-  defp slot_matches?(match, top_cell, bottom_cell), do: priority_match?(match, top_cell) or priority_match?(match, bottom_cell)
+  defp slot_matches?([], top_cell, bottom_cell), do: skill_cell?(top_cell) or skill_cell?(bottom_cell)
+  defp slot_matches?(matches, top_cell, bottom_cell), do: Enum.any?(matches, &chip_matches?(&1, top_cell, bottom_cell))
+
+  defp chip_matches?("top", top_cell, _bottom_cell), do: skill_cell?(top_cell)
+  defp chip_matches?("bottom", _top_cell, bottom_cell), do: skill_cell?(bottom_cell)
+  defp chip_matches?(chip, top_cell, bottom_cell), do: priority_match?(chip, top_cell) or priority_match?(chip, bottom_cell)
 
   defp skill_cell?(%{sin: _sin, tier: _tier}), do: true
   defp skill_cell?(_cell), do: false
@@ -798,103 +797,84 @@ defmodule StarlightBot.BattlePlans do
   def tray_count_matches?(%{"cmp" => "gte", "value" => n}, count), do: count >= n
   def tray_count_matches?(%{"cmp" => "lte", "value" => n}, count), do: count <= n
 
-  def condition_leaf(%{"op" => op} = params) when op in @sinner_ops do
-    value =
-      case Integer.parse(params["value"] || "") do
-        {n, _} when n >= 1 -> n
-        _ -> 1
-      end
+  def condition_leaf(params), do: params |> build_leaf() |> put_not(params)
 
-    %{"op" => op, "value" => value}
+  defp build_leaf(%{"op" => @sinner_count_op} = params) do
+    %{
+      "op" => @sinner_count_op,
+      "cmp" => if(params["cmp"] in @count_cmps, do: params["cmp"], else: "gte"),
+      "value" => max(parse_count(params["value"]) || 1, 1)
+    }
   end
 
-  def condition_leaf(%{"op" => op}) when op in @fight_ops, do: %{"op" => op}
+  defp build_leaf(%{"op" => @fight_op}), do: %{"op" => @fight_op}
 
-  def condition_leaf(%{"op" => @tray_count_op} = params) do
+  defp build_leaf(%{"op" => @tray_count_op} = params) do
     %{
       "op" => @tray_count_op,
-      "match" => if(params["match"] in ["any" | @tiers ++ @sins], do: params["match"], else: "any"),
+      "sinners" => parse_sinners(params["sinners_csv"]),
+      "matches" => params["matches"] |> List.wrap() |> Enum.filter(&(chip_term?(&1) or &1 in where_extras())) |> Enum.uniq(),
       "cmp" => if(params["cmp"] in @count_cmps, do: params["cmp"], else: "gte"),
-      "value" => parse_count(params["value"]) || 1,
-      "sinner" => parse_sinner(params["sinner"])
+      "value" => parse_count(params["value"]) || 1
     }
   end
 
-  def condition_leaf(%{"op" => @position_op} = params) do
-    value =
-      case Integer.parse(params["value"] || "") do
-        {n, _} when n >= 1 -> n
-        _ -> 1
-      end
-
-    %{
-      "op" => @position_op,
-      "sinner" => parse_sinner(params["sinner"]),
-      "cmp" => if(params["cmp"] in @position_cmps, do: params["cmp"], else: "is"),
-      "pos" => if(params["pos"] in @positions, do: params["pos"], else: "first"),
-      "value" => value
-    }
+  defp build_leaf(%{"op" => @position_op} = params) do
+    %{"op" => @position_op, "sinners" => parse_sinners(params["sinners_csv"]), "position" => parse_skill(params)}
   end
 
-  def condition_leaf(params) do
-    %{"op" => if(params["op"] == "hook_off", do: "hook_off", else: "hook_on"), "hook" => String.trim(params["hook"] || "")}
+  defp build_leaf(params) do
+    %{"op" => "hook", "hook" => String.trim(params["hook"] || "")}
   end
 
-  defp parse_sinner(sinner), do: if(sinner in SinnerProfiles.sinners(), do: sinner)
+  defp put_not(leaf, %{"not" => negated}) when negated in ["true", true], do: Map.put(leaf, "not", true)
+  defp put_not(leaf, _params), do: leaf
 
-  def sinner_count_matches?(%{"op" => "sinners_eq", "value" => n}, count), do: count == n
-  def sinner_count_matches?(%{"op" => "sinners_gte", "value" => n}, count), do: count >= n
-  def sinner_count_matches?(%{"op" => "sinners_lte", "value" => n}, count), do: count <= n
+  defp parse_sinners(csv) when is_binary(csv), do: csv |> String.split(",", trim: true) |> Enum.filter(&(&1 in SinnerProfiles.sinners())) |> Enum.uniq()
+  defp parse_sinners(_csv), do: []
+
+  def sinner_count_matches?(leaf, count), do: tray_count_matches?(leaf, count)
 
   defp cmp_symbol("eq"), do: "="
   defp cmp_symbol("gte"), do: ">="
   defp cmp_symbol("lte"), do: "<="
 
-  defp leaf_label(%{"op" => "sinners_eq", "value" => n}, _names), do: "sinners = #{n}"
-  defp leaf_label(%{"op" => "sinners_gte", "value" => n}, _names), do: "sinners >= #{n}"
-  defp leaf_label(%{"op" => "sinners_lte", "value" => n}, _names), do: "sinners <= #{n}"
+  defp leaf_label(%{"not" => true, "op" => op} = leaf, names) when op not in ["hook", "boss_fight"], do: "not " <> leaf_label(Map.delete(leaf, "not"), names)
 
-  defp leaf_label(%{"op" => "boss_fight"}, _names), do: "boss fight"
-  defp leaf_label(%{"op" => "not_boss_fight"}, _names), do: "not a boss fight"
+  defp leaf_label(%{"op" => @sinner_count_op} = leaf, _names), do: "sinners #{cmp_symbol(leaf["cmp"])} #{leaf["value"]}"
+
+  defp leaf_label(%{"op" => "boss_fight"} = leaf, _names), do: if(leaf["not"], do: "not a boss fight", else: "boss fight")
 
   defp leaf_label(%{"op" => @tray_count_op} = leaf, names) do
     owner =
-      case leaf["sinner"] do
-        nil -> ""
-        sinner -> "#{Map.get(names, sinner, SinnerProfiles.label(sinner))} "
+      case leaf["sinners"] do
+        [_ | _] = sinners -> Enum.map_join(sinners, "/", &Map.get(names, &1, SinnerProfiles.label(&1))) <> " "
+        _ -> ""
       end
 
-    "#{owner}#{leaf["match"]} slots #{cmp_symbol(leaf["cmp"])} #{leaf["value"]}"
+    what = if leaf["matches"] in [nil, []], do: "any", else: Enum.join(leaf["matches"], "/")
+    "#{owner}#{what} slots #{cmp_symbol(leaf["cmp"])} #{leaf["value"]}"
   end
 
   defp leaf_label(%{"op" => @position_op} = leaf, names) do
     who =
-      case leaf["sinner"] do
-        nil -> "(no sinner)"
-        sinner -> Map.get(names, sinner, SinnerProfiles.label(sinner))
+      case leaf["sinners"] do
+        [_ | _] = sinners -> Enum.map_join(sinners, "/", &Map.get(names, &1, SinnerProfiles.label(&1)))
+        _ -> "(pick a sinner)"
       end
 
     where =
-      case {leaf["cmp"], leaf["pos"]} do
-        {cmp, "exact"} when cmp in ["gt", "lt"] -> "position #{leaf["value"]}"
-        {_cmp, "exact"} -> "at position #{leaf["value"]}"
-        {_cmp, pos} -> pos
+      case skill_tokens(leaf["position"]) do
+        [] -> "none"
+        tokens -> Enum.join(tokens, ", ")
       end
 
-    relation =
-      case leaf["cmp"] do
-        "is_not" -> "is not"
-        "gt" -> "is after"
-        "lt" -> "is before"
-        _ -> "is"
-      end
-
-    "#{who} #{relation} #{where}"
+    "#{who} at position #{where}"
   end
 
-  defp leaf_label(%{"op" => op, "hook" => hook}, _names) do
+  defp leaf_label(%{"op" => "hook", "hook" => hook} = leaf, _names) do
     name = if hook in [nil, ""], do: "(no hook)", else: hook
-    if op == "hook_off", do: "#{name} off", else: "#{name} on"
+    if leaf["not"], do: "#{name} off", else: "#{name} on"
   end
 
   def blank do
@@ -967,7 +947,7 @@ defmodule StarlightBot.BattlePlans do
   end
 
   def new_action("if") do
-    %{"id" => GiftPlans.new_id("ac"), "type" => "if", "condition" => Conditions.add(nil, "", @hook_leaf), "then" => [], "elifs" => [], "else" => nil}
+    %{"id" => GiftPlans.new_id("ac"), "type" => "if", "condition" => Conditions.add(nil, "", @default_leaf), "then" => [], "elifs" => [], "else" => nil}
   end
 
   def new_action("chain"), do: %{"id" => GiftPlans.new_id("ac"), "type" => "chain", "mode" => "fast", "pins" => []}

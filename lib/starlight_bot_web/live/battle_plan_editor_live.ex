@@ -436,6 +436,11 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_event("dup_action", %{"action" => action_id}, socket) do
+    {:noreply, update_items(socket, &BattlePlans.duplicate_action(&1, action_id))}
+  end
+
+  @impl true
   def handle_event("remove_action", %{"action" => action_id}, socket) do
     {:noreply,
      update_items(socket, fn items ->
@@ -445,7 +450,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   @impl true
   def handle_event("cond_add", %{"action" => action_id, "path" => path, "node" => node}, socket) do
-    leaf = BattlePlans.hook_leaf()
+    leaf = BattlePlans.default_leaf()
     child = if node == "group", do: Conditions.group(leaf), else: leaf
     {:noreply, socket |> assign(:open_editor_id, action_id) |> update_condition(action_id, &Conditions.add(&1, path, child))}
   end
@@ -508,6 +513,17 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   def handle_event("step_slot_chip", %{"action" => action_id, "index" => index, "delta" => delta} = params, socket) do
     step = fn holder -> Map.update(holder, "skill", BattlePlans.first_slot(), &BattlePlans.step_skill_chip(&1, String.to_integer(index), String.to_integer(delta))) end
     {:noreply, update_action(socket, action_id, at_path(params, step))}
+  end
+
+  @impl true
+  def handle_event("cond_add_chip", %{"action" => action_id, "path" => path}, socket) do
+    {:noreply, update_condition(socket, action_id, &Conditions.update_leaf(&1, path, fn leaf -> Map.update!(leaf, "position", fn skill -> BattlePlans.add_skill_chip(skill) end) end))}
+  end
+
+  @impl true
+  def handle_event("cond_step_chip", %{"action" => action_id, "path" => path, "index" => index, "delta" => delta}, socket) do
+    step = fn skill -> BattlePlans.step_skill_chip(skill, String.to_integer(index), String.to_integer(delta)) end
+    {:noreply, update_condition(socket, action_id, &Conditions.update_leaf(&1, path, fn leaf -> Map.update!(leaf, "position", step) end))}
   end
 
   @impl true
@@ -919,7 +935,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     ~H"""
     <%= if @condition do %>
       <%= if @open_editor_id == @id do %>
-        <div phx-click-away="close_editor" class="flex items-start gap-1">
+        <div phx-click-away="close_editor" class="flex items-start gap-1 rounded bg-base-100 p-1">
           <button type="button" phx-click="close_editor" title="Close the condition editor" class="btn btn-ghost btn-xs h-6 min-h-6 px-1">▾</button>
           <div class="flex-1 min-w-0">
             <.condition_node node={@condition} path="" values={%{"action" => @id}} removable={not is_map_key(@condition, "children")}
@@ -962,6 +978,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <div class="flex gap-0.5 shrink-0">
             <button :if={@schedulable?} type="button" phx-click="add_schedule" phx-value-action={@action["id"]} title="Change this action across turns"
                     class="btn btn-2xs btn-ghost">Add Schedule</button>
+            <button phx-click="dup_action" phx-value-action={@action["id"]} title="Duplicate this block" class="btn btn-2xs btn-ghost">⧉</button>
             <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
           </div>
         </div>
@@ -978,7 +995,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
             <% actions = BattlePlans.branch_actions(@action, branch) %>
             <div id={"branch-#{@playbook_id}-#{@action["id"]}-#{branch}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_actions" data-sort-move-event="move_action_to"
                  data-sort-shared={@playbook_id} data-sort-scope={@action["id"] <> "~" <> branch} data-sort-highlight
-                 class={"flex flex-col gap-1 rounded " <> if(actions == [], do: "min-h-10 border border-dashed border-base-300", else: "min-h-6")}>
+                 class={"flex flex-col gap-1 rounded " <> if(actions == [], do: "min-h-12 items-center justify-center border-2 border-dashed border-primary/60 bg-primary/10 text-xs font-semibold text-primary before:content-['Empty,_add_an_action_below']", else: "min-h-6")}>
               <div :for={{child, child_index} <- Enum.with_index(actions, 1)} data-sort-id={child["id"]} data-sort-handle>
                 <.action_row action={child} index={child_index} sinner_options={@sinner_options} kind={@kind} container={@container} open_editor_id={@open_editor_id}
                              handle?={true} playbook_id={@playbook_id} reorder_rev={@reorder_rev} depth={@depth + 1} />
@@ -1086,6 +1103,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <div class="flex gap-0.5">
         <button :if={@schedulable?} type="button" phx-click="add_schedule" phx-value-action={@action["id"]} title="Change this action across turns"
                 class="btn btn-2xs btn-ghost">Add Schedule</button>
+        <button :if={BattlePlans.duplicable?(@action)} phx-click="dup_action" phx-value-action={@action["id"]} title="Duplicate this row" class="btn btn-2xs btn-ghost">⧉</button>
         <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
       </div>
     </div>
@@ -1216,6 +1234,9 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   attr :skill, :map, required: true
   attr :prefix, :string, required: true
   attr :action_id, :string, required: true
+  attr :path, :string, default: nil
+  attr :step_event, :string, default: "step_slot_chip"
+  attr :add_event, :string, default: "add_slot_chip"
 
   def slot_chips(assigns) do
     skill = BattlePlans.normalize_skill(assigns.skill)
@@ -1224,20 +1245,20 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
     ~H"""
     <div class="flex flex-wrap items-center gap-1">
-      <.slot_add :if={@pick == "last"} action_id={@action_id} prefix={@prefix} />
+      <.slot_add :if={@pick == "last"} action_id={@action_id} path={@path || @prefix} event={@add_event} />
       <%= for item <- @view do %>
         <%= case item do %>
           <% {:chip, index, at, on} -> %>
             <span class="join">
               <input type="hidden" name={field_name(@prefix, "chip") <> "[#{index}][on]"} value="false" />
               <input type="hidden" name={field_name(@prefix, "chip") <> "[#{index}][at]"} value={at} />
-              <button type="button" phx-click="step_slot_chip" phx-value-action={@action_id} phx-value-path={@prefix} phx-value-index={index} phx-value-delta={left_delta(@pick)}
+              <button type="button" phx-click={@step_event} phx-value-action={@action_id} phx-value-path={@path || @prefix} phx-value-index={index} phx-value-delta={left_delta(@pick)}
                       disabled={at == 0 and left_delta(@pick) == "-1"} title={left_title(@pick)} class="join-item btn btn-xs px-1.5 text-[9px]">◀</button>
               <label class="join-item relative cursor-pointer">
                 <input type="checkbox" name={field_name(@prefix, "chip") <> "[#{index}][on]"} value="true" checked={on} class="peer sr-only" />
                 <span class={chip_toggle_class(true)}><%= BattlePlans.chip_name(@pick, at) %></span>
               </label>
-              <button type="button" phx-click="step_slot_chip" phx-value-action={@action_id} phx-value-path={@prefix} phx-value-index={index} phx-value-delta={right_delta(@pick)}
+              <button type="button" phx-click={@step_event} phx-value-action={@action_id} phx-value-path={@path || @prefix} phx-value-index={index} phx-value-delta={right_delta(@pick)}
                       disabled={at == 0 and right_delta(@pick) == "-1"} title={right_title(@pick)} class="join-item btn btn-xs px-1.5 text-[9px]">▶</button>
             </span>
           <% {:gap, key, on, lo, hi} -> %>
@@ -1250,17 +1271,18 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
             </span>
         <% end %>
       <% end %>
-      <.slot_add :if={@pick == "first"} action_id={@action_id} prefix={@prefix} />
+      <.slot_add :if={@pick == "first"} action_id={@action_id} path={@path || @prefix} event={@add_event} />
     </div>
     """
   end
 
   attr :action_id, :string, required: true
-  attr :prefix, :string, required: true
+  attr :path, :string, required: true
+  attr :event, :string, required: true
 
   def slot_add(assigns) do
     ~H"""
-    <button type="button" phx-click="add_slot_chip" phx-value-action={@action_id} phx-value-path={@prefix} title="Add another slot position"
+    <button type="button" phx-click={@event} phx-value-action={@action_id} phx-value-path={@path} title="Add another slot position"
             class="btn btn-outline h-6 min-h-6 px-2">+</button>
     """
   end
@@ -1402,8 +1424,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   def sinner_picker(assigns) do
     chosen = assigns.holder["sinners"] || []
-    choices = Enum.filter(assigns.sinner_options, &(&1.profiled? or &1.id in chosen))
-    assigns = assign(assigns, chosen: chosen, choices: choices, options_by_id: Map.new(assigns.sinner_options, &{&1.id, &1}))
+    assigns = assign(assigns, chosen: chosen)
 
     ~H"""
     <div class="flex flex-col items-start gap-1">
@@ -1412,29 +1433,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                     options={[{"only", "all of"}, {"except", "all but"}, {"before", "all before"}, {"after", "all after"}]} />
     </div>
     <%= if @holder["who"] != "everyone" do %>
-      <div class="dropdown min-w-28">
-        <input type="hidden" name={field_name(@prefix, "sinners_csv")} value={Enum.join(@chosen, ",")} />
-        <div tabindex="0" role="button" title="Pick sinners"
-             class="btn btn-outline btn-xs w-full min-w-0 flex-nowrap justify-start gap-0.5 px-1 font-normal overflow-hidden">
-          <span :if={@chosen == []} class="truncate text-base-content/40">(none selected)</span>
-          <%= for id <- @chosen do %>
-              <% option = Map.get(@options_by_id, id, %{id: id, name: id, profiled?: false}) %>
-              <img src={option[:thumb] || StarlightBot.SinnerProfiles.icon(id)} title={if(option.profiled?, do: option.name, else: "#{option.name} has no profile in this plan's lineups, so this never matches them")}
-                   class={"h-5 w-auto rounded shrink-0 " <> if(option.profiled?, do: "", else: "ring-1 ring-warning")} />
-          <% end %>
-          <span class="ml-auto min-w-0 truncate pl-1 text-base-content/40">+ add</span>
-        </div>
-        <div tabindex="0" class="dropdown-content z-30 mt-1 w-48 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
-          <div class="flex flex-col gap-0.5">
-            <button :for={p <- @choices} type="button" data-value={p.id}
-                    onclick="const i = this.closest('.dropdown').querySelector('input'); const v = this.dataset.value; const ids = i.value.split(',').filter(Boolean); const at = ids.indexOf(v); if (at >= 0) ids.splice(at, 1); else ids.push(v); i.value = ids.join(','); i.dispatchEvent(new Event('input', {bubbles: true}))"
-                    class={"btn btn-xs h-auto min-h-7 w-full flex-nowrap justify-start gap-1.5 py-0.5 " <> if(p.id in @chosen, do: "btn-primary", else: "btn-ghost")}>
-              <img src={p[:thumb] || StarlightBot.SinnerProfiles.icon(p.id)} class="h-6 w-auto rounded shrink-0" />
-              <span class="truncate"><%= if p.profiled?, do: p.name, else: "⚠ " <> p.name %></span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <.sinner_multi name={field_name(@prefix, "sinners_csv")} chosen={@chosen} sinner_options={@sinner_options} empty_label="(none selected)" />
     <% end %>
     <%= if is_map(@holder["where"]) do %>
       <div class="flex items-start gap-1">
@@ -1447,6 +1446,42 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <button type="button" phx-click="add_where" phx-value-action={@action_id} phx-value-path={@prefix}
               title="Narrow the selection to slots matching conditions, like using top" class="btn btn-outline h-6 min-h-6 px-2 self-start">+ where</button>
     <% end %>
+    """
+  end
+
+  attr :name, :string, required: true
+  attr :chosen, :list, required: true
+  attr :sinner_options, :list, required: true
+  attr :empty_label, :string, required: true
+
+  def sinner_multi(assigns) do
+    choices = Enum.filter(assigns.sinner_options, &(&1.profiled? or &1.id in assigns.chosen))
+    assigns = assign(assigns, choices: choices, options_by_id: Map.new(assigns.sinner_options, &{&1.id, &1}))
+
+    ~H"""
+    <div class="dropdown min-w-28">
+      <input type="hidden" name={@name} value={Enum.join(@chosen, ",")} />
+      <div tabindex="0" role="button" title="Pick sinners"
+           class="btn btn-outline btn-xs w-full min-w-0 flex-nowrap justify-start gap-0.5 px-1 font-normal overflow-hidden">
+        <span :if={@chosen == []} class="truncate text-base-content/40"><%= @empty_label %></span>
+        <%= for id <- @chosen do %>
+            <% option = Map.get(@options_by_id, id, %{id: id, name: id, profiled?: false}) %>
+            <img src={option[:thumb] || StarlightBot.SinnerProfiles.icon(id)} title={if(option.profiled?, do: option.name, else: "#{option.name} has no profile in this plan's lineups, so this never matches them")}
+                 class={"h-5 w-auto rounded shrink-0 " <> if(option.profiled?, do: "", else: "ring-1 ring-warning")} />
+        <% end %>
+        <span class="ml-auto min-w-0 truncate pl-1 text-base-content/40">+ add</span>
+      </div>
+      <div tabindex="0" class="dropdown-content z-30 mt-1 w-48 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+        <div class="flex flex-col gap-0.5">
+          <button :for={p <- @choices} type="button" data-value={p.id}
+                  onclick="const i = this.closest('.dropdown').querySelector('input'); const v = this.dataset.value; const ids = i.value.split(',').filter(Boolean); const at = ids.indexOf(v); if (at >= 0) ids.splice(at, 1); else ids.push(v); i.value = ids.join(','); i.dispatchEvent(new Event('input', {bubbles: true}))"
+                  class={"btn btn-xs h-auto min-h-7 w-full flex-nowrap justify-start gap-1.5 py-0.5 " <> if(p.id in @chosen, do: "btn-primary", else: "btn-ghost")}>
+            <img src={p[:thumb] || StarlightBot.SinnerProfiles.icon(p.id)} class="h-6 w-auto rounded shrink-0" />
+            <span class="truncate"><%= if p.profiled?, do: p.name, else: "⚠ " <> p.name %></span>
+          </button>
+        </div>
+      </div>
+    </div>
     """
   end
 
@@ -1602,62 +1637,29 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   def hook_leaf(assigns) do
     ~H"""
-    <select name="op" class="select select-bordered select-xs">
-      <option value="hook_on" selected={@node["op"] == "hook_on"}>hook on</option>
-      <option value="hook_off" selected={@node["op"] == "hook_off"}>hook off</option>
-      <option value="sinners_eq" selected={@node["op"] == "sinners_eq"}>sinners =</option>
-      <option value="sinners_gte" selected={@node["op"] == "sinners_gte"}>sinners at least</option>
-      <option value="sinners_lte" selected={@node["op"] == "sinners_lte"}>sinners at most</option>
-      <option value="tray_count" selected={@node["op"] == "tray_count"}>tray slots</option>
-      <option value="sinner_position" selected={@node["op"] == "sinner_position"}>sinner position</option>
-      <option value="boss_fight" selected={@node["op"] == "boss_fight"}>boss fight</option>
-      <option value="not_boss_fight" selected={@node["op"] == "not_boss_fight"}>not boss fight</option>
-    </select>
+    <input type="hidden" name="not" value="false" />
+    <label title="Negate this condition" class="relative cursor-pointer">
+      <input type="checkbox" name="not" value="true" checked={@node["not"] == true} class="peer sr-only" />
+      <span class="inline-flex items-center justify-center h-6 w-6 rounded border border-dashed border-base-content/20 text-sm text-base-content/25 select-none peer-checked:hidden">≠</span>
+      <span class="hidden items-center h-6 px-1.5 rounded bg-error text-[11px] font-semibold text-error-content select-none peer-checked:inline-flex">NOT</span>
+    </label>
+    <.radio_group name="op" value={@node["op"]} options={[{"tray_count", "tray slots"}, {"sinner_count", "sinner count"}, {"sinner_position", "sinner position"}, {"boss_fight", "boss"}, {"hook", "hook"}]} />
     <%= cond do %>
     <% BattlePlans.sinner_leaf?(@node) -> %>
+      <.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
       <input type="number" name="value" min="1" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
     <% BattlePlans.tray_leaf?(@node) -> %>
-      <select name="sinner" class="select select-bordered select-xs" title="Only count this sinner's slots">
-        <option value="" selected={is_nil(@node["sinner"])}>(anyone)</option>
-        <%= for p <- @sinner_options, p.profiled? or @node["sinner"] == p.id do %>
-          <option value={p.id} selected={@node["sinner"] == p.id}><%= if p.profiled?, do: p.name, else: "⚠ " <> p.name %></option>
-        <% end %>
-      </select>
-      <select name="match" class="select select-bordered select-xs">
-        <option value="any" selected={@node["match"] in [nil, "any"]}>any</option>
-        <%= for {group, values} <- [{"skill", BattlePlans.tiers()}, {"sin", BattlePlans.sins()}] do %>
-          <optgroup label={group}>
-            <option :for={value <- values} value={value} selected={@node["match"] == value}><%= value %></option>
-          </optgroup>
-        <% end %>
-      </select>
-      <select name="cmp" class="select select-bordered select-xs">
-        <option value="gte" selected={@node["cmp"] == "gte"}>at least</option>
-        <option value="eq" selected={@node["cmp"] == "eq"}>exactly</option>
-        <option value="lte" selected={@node["cmp"] == "lte"}>at most</option>
-      </select>
+      <.sinner_multi name="sinners_csv" chosen={@node["sinners"] || []} sinner_options={@sinner_options} empty_label="(anyone)" />
+      <.skill_chips values={@node["matches"] || []} extras={BattlePlans.where_extras()} name="matches[]" anchor="matches_edit" id={"chips-cond-#{@values["action"]}-#{String.replace(@path, ~r/[^a-z0-9]+/i, "-")}"} />
+      <.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
       <input type="number" name="value" min="0" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
     <% BattlePlans.fight_leaf?(@node) -> %>
     <% BattlePlans.position_leaf?(@node) -> %>
-      <select name="sinner" class="select select-bordered select-xs">
-        <option value="" selected={is_nil(@node["sinner"])}>(pick sinner)</option>
-        <%= for p <- @sinner_options, p.profiled? or @node["sinner"] == p.id do %>
-          <option value={p.id} selected={@node["sinner"] == p.id}><%= if p.profiled?, do: p.name, else: "⚠ " <> p.name %></option>
-        <% end %>
+      <.sinner_multi name="sinners_csv" chosen={@node["sinners"] || []} sinner_options={@sinner_options} empty_label="(pick a sinner)" />
+      <select name="pick" class="select select-bordered select-xs w-auto" title="Count positions from the first sinner or from the last">
+        <option :for={pick <- ~w(first last)} value={pick} selected={@node["position"]["pick"] == pick}><%= pick_label(pick) %></option>
       </select>
-      <select name="cmp" class="select select-bordered select-xs">
-        <option value="is" selected={@node["cmp"] == "is"}>is</option>
-        <option value="is_not" selected={@node["cmp"] == "is_not"}>is not</option>
-        <option value="gt" selected={@node["cmp"] == "gt"} title="Further right in the skill tray">greater than</option>
-        <option value="lt" selected={@node["cmp"] == "lt"} title="Further left in the skill tray">less than</option>
-      </select>
-      <select name="pos" class="select select-bordered select-xs">
-        <option value="first" selected={@node["pos"] == "first"}>first</option>
-        <option value="last" selected={@node["pos"] == "last"}>last</option>
-        <option value="exact" selected={@node["pos"] == "exact"}>at position</option>
-      </select>
-      <input :if={@node["pos"] == "exact"} type="number" name="value" min="1" value={@node["value"]} phx-debounce="300"
-             class="input input-bordered input-xs w-16" title="1 is the leftmost sinner in the skill tray" />
+      <.slot_chips skill={@node["position"]} prefix="" action_id={@values["action"]} path={@path} step_event="cond_step_chip" add_event="cond_add_chip" />
     <% true -> %>
       <input type="text" name="hook" value={@node["hook"]} list="hook-names" phx-debounce="blur"
              placeholder="hook name" class="input input-bordered input-xs flex-1 min-w-0 font-mono" />

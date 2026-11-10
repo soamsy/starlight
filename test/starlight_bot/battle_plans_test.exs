@@ -240,13 +240,24 @@ defmodule StarlightBot.BattlePlansTest do
 
   describe "if blocks" do
     test "sinner count leaves parse, label and match" do
-      leaf = BattlePlans.condition_leaf(%{"op" => "sinners_lte", "value" => "2", "hook" => "ignored"})
-      assert leaf == %{"op" => "sinners_lte", "value" => 2}
-      assert BattlePlans.condition_leaf(%{"op" => "sinners_eq", "value" => "0"})["value"] == 1
+      leaf = BattlePlans.condition_leaf(%{"op" => "sinner_count", "cmp" => "lte", "value" => "2", "hook" => "ignored"})
+      assert leaf == %{"op" => "sinner_count", "cmp" => "lte", "value" => 2}
+      assert BattlePlans.condition_leaf(%{"op" => "sinner_count", "cmp" => "eq", "value" => "0"})["value"] == 1
+      assert BattlePlans.condition_leaf(%{"op" => "sinner_count"}) == %{"op" => "sinner_count", "cmp" => "gte", "value" => 1}
       assert BattlePlans.condition_label(Conditions.add(nil, "", leaf)) == "sinners <= 2"
       assert BattlePlans.sinner_count_matches?(leaf, 1)
       refute BattlePlans.sinner_count_matches?(leaf, 3)
-      assert BattlePlans.condition_leaf(%{"op" => "hook_off", "hook" => " battle_turn "}) == %{"op" => "hook_off", "hook" => "battle_turn"}
+      assert BattlePlans.condition_leaf(%{"op" => "hook", "not" => "true", "hook" => " battle_turn "}) == %{"op" => "hook", "hook" => "battle_turn", "not" => true}
+      assert BattlePlans.condition_leaf(%{"op" => "hook", "not" => "false", "hook" => "battle_turn"}) == %{"op" => "hook", "hook" => "battle_turn"}
+      assert BattlePlans.condition_label(%{"op" => "hook", "hook" => "battle_turn", "not" => true}) == "battle_turn off"
+      assert BattlePlans.condition_label(%{"op" => "hook", "hook" => "battle_turn"}) == "battle_turn on"
+
+      negated = BattlePlans.condition_leaf(%{"op" => "tray_count", "matches" => ["wrath"], "not" => "true", "value" => "2"})
+      assert negated["not"] == true
+      assert BattlePlans.condition_label(negated) == "not wrath slots >= 2"
+      refute Map.has_key?(BattlePlans.condition_leaf(%{"op" => "sinner_count", "not" => "false"}), "not")
+      assert BattlePlans.condition_leaf(%{"op" => "sinner_count", "not" => "true", "cmp" => "eq", "value" => "2"}) == %{"op" => "sinner_count", "cmp" => "eq", "value" => 2, "not" => true}
+      assert BattlePlans.condition_label(%{"op" => "sinner_count", "cmp" => "eq", "value" => 2, "not" => true}) == "not sinners = 2"
     end
 
     test "only a plain chain action is terminal, so an if block keeps its place" do
@@ -275,9 +286,10 @@ defmodule StarlightBot.BattlePlansTest do
     test "builds and labels both leaves" do
       assert BattlePlans.condition_leaf(%{"op" => "boss_fight", "hook" => "stale"}) == %{"op" => "boss_fight"}
       assert BattlePlans.condition_label(%{"op" => "boss_fight"}) == "boss fight"
-      assert BattlePlans.condition_label(%{"op" => "not_boss_fight"}) == "not a boss fight"
-      assert BattlePlans.fight_leaf?(%{"op" => "not_boss_fight"})
-      refute BattlePlans.fight_leaf?(%{"op" => "hook_on"})
+      assert BattlePlans.condition_leaf(%{"op" => "boss_fight", "not" => "true"}) == %{"op" => "boss_fight", "not" => true}
+      assert BattlePlans.condition_label(%{"op" => "boss_fight", "not" => true}) == "not a boss fight"
+      assert BattlePlans.fight_leaf?(%{"op" => "boss_fight", "not" => true})
+      refute BattlePlans.fight_leaf?(%{"op" => "hook"})
     end
   end
 
@@ -482,26 +494,33 @@ defmodule StarlightBot.BattlePlansTest do
   describe "tray_count leaves" do
     test "condition_leaf fills defaults and labels the count" do
       leaf = BattlePlans.condition_leaf(%{"op" => "tray_count", "hook" => "battle_chain"})
-      assert leaf == %{"op" => "tray_count", "match" => "any", "cmp" => "gte", "value" => 1, "sinner" => nil}
+      assert leaf == %{"op" => "tray_count", "sinners" => [], "matches" => [], "cmp" => "gte", "value" => 1}
+      assert leaf == BattlePlans.default_leaf()
       assert BattlePlans.tray_leaf?(leaf)
       refute BattlePlans.sinner_leaf?(leaf)
       assert BattlePlans.condition_label(%{"op" => "and", "children" => [leaf]}) == "any slots >= 1"
 
-      leaf = BattlePlans.condition_leaf(%{"op" => "tray_count", "match" => "s3", "cmp" => "eq", "value" => "0", "sinner" => "ryoshu"})
-      assert leaf == %{"op" => "tray_count", "match" => "s3", "cmp" => "eq", "value" => 0, "sinner" => "ryoshu"}
-      assert BattlePlans.condition_label(leaf) == "Ryoshu s3 slots = 0"
-      assert BattlePlans.condition_label(%{leaf | "sinner" => "hong_lu"}) == "Hong Lu s3 slots = 0"
-      assert BattlePlans.condition_leaf(%{"op" => "tray_count", "sinner" => "nobody"})["sinner"] == nil
+      leaf = BattlePlans.condition_leaf(%{"op" => "tray_count", "matches" => ["s3", "wrath", "s3+wrath", "bogus", "s3"], "cmp" => "eq", "value" => "0", "sinners_csv" => "ryoshu,nobody,ryoshu"})
+      assert leaf == %{"op" => "tray_count", "sinners" => ["ryoshu"], "matches" => ["s3", "wrath", "s3+wrath"], "cmp" => "eq", "value" => 0}
+      assert BattlePlans.condition_label(leaf) == "Ryoshu s3/wrath/s3+wrath slots = 0"
+      assert BattlePlans.condition_label(%{leaf | "sinners" => ["hong_lu", "ryoshu"]}) == "Hong Lu/Ryoshu s3/wrath/s3+wrath slots = 0"
+      assert BattlePlans.condition_leaf(%{"op" => "tray_count", "sinners_csv" => "nobody"})["sinners"] == []
     end
 
     test "counts slots where either row matches, scoped to columns" do
       classified = {[cell(:wrath, :skill1), cell(:envy, :skill3), cell(:wrath, :skill2)], [cell(:wrath, :skill2), cell(:wrath, :skill1), cell(:pride, :skill1)]}
-      leaf = %{"match" => "wrath"}
+      leaf = %{"matches" => ["wrath"]}
       assert BattlePlans.tray_count(leaf, classified, :all) == 3
       assert BattlePlans.tray_count(leaf, classified, [1, 2]) == 2
-      assert BattlePlans.tray_count(%{"match" => "s3"}, classified, [0, 2]) == 0
-      assert BattlePlans.tray_count(%{"match" => "any"}, classified, :all) == 3
-      assert BattlePlans.tray_count(%{"match" => "any"}, {[cell(:wrath, :skill1), nil], [nil, nil]}, :all) == 1
+      assert BattlePlans.tray_count(%{"matches" => ["s3"]}, classified, [0, 2]) == 0
+      assert BattlePlans.tray_count(%{"matches" => ["pride", "envy"]}, classified, :all) == 2
+      assert BattlePlans.tray_count(%{"matches" => ["s3+envy", "pride"]}, classified, :all) == 2
+      assert BattlePlans.tray_count(%{"matches" => []}, classified, :all) == 3
+      assert BattlePlans.tray_count(%{"matches" => ["top"]}, {[cell(:wrath, :skill1), nil], [nil, cell(:envy, :skill2)]}, :all) == 1
+      assert BattlePlans.tray_count(%{"matches" => ["bottom"]}, {[cell(:wrath, :skill1), nil], [nil, cell(:envy, :skill2)]}, :all) == 1
+      assert BattlePlans.tray_count(%{"matches" => ["top", "bottom"]}, {[cell(:wrath, :skill1), nil], [nil, cell(:envy, :skill2)]}, :all) == 2
+      assert BattlePlans.condition_leaf(%{"op" => "tray_count", "matches" => ["top", "bottom", "dodge"]})["matches"] == ["top", "bottom"]
+      assert BattlePlans.tray_count(%{"matches" => []}, {[cell(:wrath, :skill1), nil], [nil, nil]}, :all) == 1
     end
 
     test "chosen_columns combines row and used-skill conditions with and/or" do
@@ -543,44 +562,38 @@ defmodule StarlightBot.BattlePlansTest do
   describe "sinner_position leaves" do
     test "condition_leaf fills defaults and labels the position" do
       leaf = BattlePlans.condition_leaf(%{"op" => "sinner_position"})
-      assert leaf == %{"op" => "sinner_position", "sinner" => nil, "cmp" => "is", "pos" => "first", "value" => 1}
+      assert leaf == %{"op" => "sinner_position", "sinners" => [], "position" => BattlePlans.first_slot()}
       assert BattlePlans.position_leaf?(leaf)
       refute BattlePlans.tray_leaf?(leaf)
       refute BattlePlans.sinner_leaf?(leaf)
-      assert BattlePlans.condition_label(leaf) == "(no sinner) is first"
+      assert BattlePlans.condition_label(leaf) == "(pick a sinner) at position first, rest"
 
-      leaf = BattlePlans.condition_leaf(%{"op" => "sinner_position", "sinner" => "faust", "cmp" => "is_not", "pos" => "exact", "value" => "3"})
-      assert leaf == %{"op" => "sinner_position", "sinner" => "faust", "cmp" => "is_not", "pos" => "exact", "value" => 3}
-      assert BattlePlans.condition_label(leaf) == "Faust is not at position 3"
-      assert BattlePlans.condition_label(leaf, %{"faust" => "Saikai"}) == "Saikai is not at position 3"
-      assert BattlePlans.condition_label(%{leaf | "pos" => "last"}, %{"faust" => "Saikai"}) == "Saikai is not last"
-      assert BattlePlans.condition_label(%{leaf | "cmp" => "gt"}, %{"faust" => "Saikai"}) == "Saikai is after position 3"
-      assert BattlePlans.condition_label(%{leaf | "cmp" => "lt", "pos" => "last"}, %{"faust" => "Saikai"}) == "Saikai is before last"
+      leaf = BattlePlans.condition_leaf(%{"op" => "sinner_position", "sinners_csv" => "faust,nobody,ryoshu", "pick" => "last", "chip" => %{"0" => %{"at" => "0", "on" => "true"}, "1" => %{"at" => "2", "on" => "true"}}, "gap_lead" => "false", "gap_mid" => %{"0" => "false"}, "gap_trail" => "false", "not" => "true"})
+
+      assert leaf == %{
+               "op" => "sinner_position",
+               "sinners" => ["faust", "ryoshu"],
+               "position" => %{"pick" => "last", "chips" => [%{"at" => 0, "on" => true}, %{"at" => 2, "on" => true}], "gaps" => %{"lead" => false, "mid" => [false], "trail" => false}},
+               "not" => true
+             }
+
+      assert BattlePlans.condition_label(leaf, %{"faust" => "Saikai"}) == "not Saikai/Ryoshu at position last, last-2"
     end
 
-    test "matches first, last and exact positions, negated with is not" do
-      first = %{"pos" => "first", "value" => 1, "cmp" => "is"}
-      last = %{"pos" => "last", "value" => 1, "cmp" => "is"}
-      third = %{"pos" => "exact", "value" => 3, "cmp" => "is"}
+    test "every selected sinner has to land in the defined positions" do
+      first = %{"position" => BattlePlans.first_slot() |> Map.put("gaps", %{"lead" => false, "mid" => [], "trail" => false})}
+      last = %{"position" => %{"pick" => "last", "chips" => [%{"at" => 0, "on" => true}], "gaps" => %{"lead" => false, "mid" => [], "trail" => false}}}
+      first_two = %{"position" => %{"pick" => "first", "chips" => [%{"at" => 0, "on" => true}, %{"at" => 1, "on" => true}], "gaps" => %{"lead" => false, "mid" => [], "trail" => false}}}
+      after_first = %{"position" => %{"pick" => "first", "chips" => [%{"at" => 0, "on" => false}], "gaps" => %{"lead" => false, "mid" => [], "trail" => true}}}
 
-      assert BattlePlans.position_matches?(first, 0, 5)
-      refute BattlePlans.position_matches?(first, 1, 5)
-      assert BattlePlans.position_matches?(last, 4, 5)
-      refute BattlePlans.position_matches?(last, 3, 5)
-      assert BattlePlans.position_matches?(third, 2, 5)
-      refute BattlePlans.position_matches?(%{third | "cmp" => "is_not"}, 2, 5)
-      assert BattlePlans.position_matches?(%{last | "cmp" => "is_not"}, 0, 5)
-    end
-
-    test "greater than and less than compare left to right tray order" do
-      third = %{"pos" => "exact", "value" => 3}
-
-      assert BattlePlans.position_matches?(Map.put(third, "cmp", "gt"), 3, 5)
-      refute BattlePlans.position_matches?(Map.put(third, "cmp", "gt"), 2, 5)
-      assert BattlePlans.position_matches?(Map.put(third, "cmp", "lt"), 1, 5)
-      refute BattlePlans.position_matches?(Map.put(third, "cmp", "lt"), 2, 5)
-      assert BattlePlans.position_matches?(%{"pos" => "last", "value" => 1, "cmp" => "lt"}, 3, 5)
-      refute BattlePlans.position_matches?(%{"pos" => "first", "value" => 1, "cmp" => "lt"}, 0, 5)
+      assert BattlePlans.position_matches?(first, [0], 5)
+      refute BattlePlans.position_matches?(first, [1], 5)
+      assert BattlePlans.position_matches?(last, [4], 5)
+      refute BattlePlans.position_matches?(last, [3], 5)
+      assert BattlePlans.position_matches?(first_two, [0, 1], 5)
+      refute BattlePlans.position_matches?(first_two, [1, 2], 5)
+      assert BattlePlans.position_matches?(after_first, [1, 4], 5)
+      refute BattlePlans.position_matches?(after_first, [0, 4], 5)
     end
   end
 
