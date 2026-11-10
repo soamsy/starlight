@@ -1,7 +1,7 @@
 import Config
 
-config :starlight_bot, StarlightBot.Repo, pool_size: 5, busy_timeout: 5000, journal_mode: :delete, synchronous: :full
-config :starlight_bot, StarlightBot.BaseRepo, pool_size: 5, busy_timeout: 5000, journal_mode: :delete, synchronous: :full
+config :starlight_bot, StarlightBot.Repo, pool_size: 5, busy_timeout: 5000, journal_mode: nil, synchronous: :full
+config :starlight_bot, StarlightBot.BaseRepo, pool_size: 5, busy_timeout: 5000, journal_mode: nil, synchronous: :full
 config :starlight_bot, StarlightBot.RunsRepo, pool_size: 5, busy_timeout: 5000
 
 config :starlight_bot,
