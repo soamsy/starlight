@@ -89,10 +89,7 @@
                   <%= if @active_tab == :loadout or milestone do %>
                     <div class="flex items-center gap-1 shrink-0">
                       <label class="input input-bordered input-xs flex flex-1 min-w-0 items-center gap-1.5">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5 shrink-0 text-base-content/50">
-                          <circle cx="11" cy="11" r="8" />
-                          <path d="m21 21-4.3-4.3" />
-                        </svg>
+                        <.icon name="lucide-search" class="size-3.5 shrink-0 text-base-content/50" />
                         <input id="gift-search-input" type="text" placeholder="Search gifts…" value={@gift_filter} phx-keyup="filter_gifts" class="grow min-w-0" />
                       </label>
                       <button :if={@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter} type="button" phx-click="clear_gift_filters" title="Clear all filters"
@@ -100,7 +97,7 @@
                       <details class="dropdown dropdown-end" phx-mounted={JS.ignore_attributes("open")} phx-click-away={JS.remove_attribute("open")}>
                         <summary title="Filter"
                              class={"btn btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter, do: "btn-primary", else: "btn-ghost")}>
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" /></svg>
+                          <.icon name="lucide-funnel" class="size-3.5" />
                         </summary>
                         <div class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-200 p-2 shadow-lg ring-2 ring-base-content/20 space-y-2">
                           <div class="flex flex-col gap-1">
@@ -139,7 +136,7 @@
                       <div class="dropdown dropdown-end">
                         <div tabindex="0" role="button" title={"Sort: #{gift_sort_label(@gift_sort)}"}
                              class={"btn btn-xs btn-square " <> if(@gift_sort != "default", do: "btn-primary", else: "btn-ghost")}>
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="m21 16-4 4-4-4" /><path d="M17 20V4" /><path d="m3 8 4-4 4 4" /><path d="M7 4v16" /></svg>
+                          <.icon name="lucide-arrow-down-up" class="size-3.5" />
                         </div>
                         <div tabindex="0" class="dropdown-content z-30 mt-1 w-36 rounded-lg border border-base-300 bg-base-200 p-1 shadow-lg ring-2 ring-base-content/20">
                           <button :for={sort_by <- gift_sorts()} type="button" phx-click="set_gift_sort" value={sort_by}
@@ -192,11 +189,7 @@
                   <button type="button" phx-click="toggle_help" class="btn btn-sm btn-outline gap-0 overflow-hidden px-0" title="How gift plans work">
                     <span class="flex h-full items-center border-r border-current/30 bg-base-content/10 px-2 text-xs">guide</span>
                     <span class="flex h-full items-center px-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M12 16v-4" />
-                        <path d="M12 8h.01" />
-                      </svg>
+                      <.icon name="lucide-info" class="size-4" />
                     </span>
                   </button>
                 </div>
@@ -215,7 +208,7 @@
                         <img :if={@plan_data["affinity"] not in [nil, ""]} src={gift_affinity_icon(@plan_data["affinity"])} class="w-4 h-4 object-contain" />
                         <%= if @plan_data["affinity"] in [nil, ""], do: "Select affinity", else: @plan_data["affinity"] %>
                       </span>
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="m6 9 6 6 6-6" /></svg>
+                      <.icon name="lucide-chevron-down" class="size-3.5" />
                     </summary>
                     <ul class="dropdown-content menu bg-base-100 rounded-box border border-base-300 shadow z-20 w-40 p-1">
                       <li :for={affinity <- affinities()}>

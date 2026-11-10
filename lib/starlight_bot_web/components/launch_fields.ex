@@ -1,5 +1,6 @@
 defmodule StarlightBotWeb.Components.LaunchFields do
   use Phoenix.Component
+  import StarlightBotWeb.Components.Icon, only: [icon: 1]
   alias StarlightBot.Scheduler
 
   attr :launch_mode, :string, required: true
@@ -44,12 +45,7 @@ defmodule StarlightBotWeb.Components.LaunchFields do
           <div class="flex items-center gap-1">
             <input type="text" name="steam_app_id" phx-debounce="500" value={@steam_app_id} class="input input-sm input-bordered font-mono w-24" />
             <button type="button" phx-click={@reset_event} disabled={@steam_app_id == Scheduler.default_steam_app_id()} class="tooltip tooltip-left btn btn-ghost btn-square btn-sm text-base-content/60" data-tip="Reset to default">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
-                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                <path d="M21 3v5h-5" />
-                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                <path d="M8 16H3v5" />
-              </svg>
+              <.icon name="lucide-refresh-cw" class="size-4" />
             </button>
           </div>
         </label>

@@ -1489,7 +1489,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           <button type="button" phx-click="ms_select_tab" phx-value-entry={@entry["id"]} phx-value-from={from}><%= segment_label(@entry, from) %></button>
           <div class="dropdown">
             <div tabindex="0" role="button" class="cursor-pointer opacity-60 hover:opacity-100" title={if from == 1, do: "Start later", else: "Change or abandon from a floor"}>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><path d="m6 9 6 6 6-6" /></svg>
+              <.icon name="lucide-chevron-down" class="size-3" />
             </div>
             <div tabindex="0" class={"dropdown-content z-30 mt-1 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg space-y-1 " <> if(from == 1, do: "w-max", else: "w-56")}>
               <button :if={from == 1} type="button" phx-click="ms_set_segment_mode" phx-value-entry={@entry["id"]} phx-value-from={from}
@@ -1533,7 +1533,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         <button type="button" phx-click="ms_refresh_select_tab" phx-value-from={from}><%= refresh_tab_label(@milestone, from) %></button>
         <div :if={from != 1} class="dropdown">
           <div tabindex="0" role="button" class="cursor-pointer opacity-60 hover:opacity-100" title="Change the floor this starts on">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><path d="m6 9 6 6 6-6" /></svg>
+            <.icon name="lucide-chevron-down" class="size-3" />
           </div>
           <div tabindex="0" class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg">
             <div class="grid grid-cols-5 gap-0.5">
@@ -1726,10 +1726,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
             <button :if={key == "s2"} type="button" phx-click="ms_toggle_skill_lock" phx-value-entry={@entry["id"]} phx-value-from={@from}
                     title={"Don't let S2 drop or go past #{target["s2"]}"}
                     class={"btn btn-xs h-5 min-h-0 px-1 " <> if(@segment["lock_s2"] != false, do: "btn-info text-black", else: "btn-ghost")}>
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-3.5">
-                <path :if={@segment["lock_s2"] != false} stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                <path :if={@segment["lock_s2"] == false} stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-              </svg>
+              <.icon name={if @segment["lock_s2"] != false, do: "lucide-lock", else: "lucide-lock-open"} class="size-3.5" />
             </button>
           </span>
         </div>
@@ -1779,14 +1776,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       </span>
       <span class="hidden in-[.ring-primary]:flex items-center shrink-0 ml-auto">
         <button type="button" data-copy-entry title="Copy this entry (or every selected entry)" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="size-3.5 pointer-events-none">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
-          </svg>
+          <.icon name="lucide-clipboard-copy" class="size-3.5 pointer-events-none" />
         </button>
         <button type="button" data-paste-entries={@entry["id"]} title="Paste copied entries below this one" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" class="size-3.5 pointer-events-none">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
-          </svg>
+          <.icon name="lucide-clipboard-paste" class="size-3.5 pointer-events-none" />
         </button>
       </span>
       <button :if={not @in_group} type="button" phx-click="ms_add_schedule" phx-value-entry={@entry["id"]} class="btn btn-ghost btn-xs ml-auto in-[.ring-primary]:ml-0">Add Schedule</button>

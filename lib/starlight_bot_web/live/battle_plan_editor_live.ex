@@ -729,20 +729,13 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   def add_icon(%{type: type} = assigns) when type == "chain" do
     ~H"""
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3.5 shrink-0" aria-hidden="true">
-      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-    </svg>
+    <.icon name="lucide-link" class="size-3.5 shrink-0" />
     """
   end
 
   def add_icon(%{type: "target"} = assigns) do
     ~H"""
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3.5 shrink-0" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" />
-      <circle cx="12" cy="12" r="6" />
-      <circle cx="12" cy="12" r="2" />
-    </svg>
+    <.icon name="lucide-target" class="size-3.5 shrink-0" />
     """
   end
 
@@ -960,7 +953,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                   title={if BattlePlans.loop_segment?(@schedule, from), do: BattlePlans.loop_turns_label(@schedule, from)}><%= BattlePlans.segment_label(@schedule, from) %></button>
           <div :if={from != 1 and not BattlePlans.loop_segment?(@schedule, from)} class="dropdown">
             <div tabindex="0" role="button" class="cursor-pointer opacity-60 hover:opacity-100" title="Change the turn this starts on">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3"><path d="m6 9 6 6 6-6" /></svg>
+              <.icon name="lucide-chevron-down" class="size-3" />
             </div>
             <div tabindex="0" class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg">
               <div class="grid grid-cols-5 gap-0.5">

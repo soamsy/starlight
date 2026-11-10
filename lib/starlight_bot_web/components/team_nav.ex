@@ -1,5 +1,6 @@
 defmodule StarlightBotWeb.Components.TeamNav do
   use Phoenix.Component
+  import StarlightBotWeb.Components.Icon, only: [icon: 1]
   use Phoenix.VerifiedRoutes, endpoint: StarlightBotWeb.Endpoint, router: StarlightBotWeb.Router
 
   import Phoenix.LiveView, only: [push_navigate: 2, push_patch: 2, put_flash: 3]
@@ -412,11 +413,11 @@ defmodule StarlightBotWeb.Components.TeamNav do
             <span class="text-xs text-base-content/60 lg:text-sm">Select a team</span>
           <% end %>
           <kbd class="kbd kbd-xs ml-auto hidden lg:inline-flex"><span class="[html[data-shell=tauri]_&]:hidden">T</span><span class="hidden [html[data-shell=tauri]_&]:inline">Ctrl+T</span></kbd>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4 text-primary"><path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" /></svg>
+          <.icon name="lucide-chevron-down" class="size-4 text-primary" />
         </button>
         <button :if={@current} id="edit-hooks-button" type="button" phx-click={if(@on_page, do: JS.push("team_nav_toggle_edit_hooks") |> JS.hide(to: "#team-menu"), else: JS.push("team_nav_open"))} title="Edit team selectors"
                 class={"flex items-center rounded-r-md border-l-2 px-2 cursor-pointer " <> if(@nav.editing_hooks?, do: "border-primary bg-primary text-primary-content", else: "border-primary/60 hover:bg-primary/10")}>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4"><path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" /><path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25H10A.75.75 0 0 0 10 3H4.75A2.75 2.75 0 0 0 2 5.75v9.5A2.75 2.75 0 0 0 4.75 18h9.5A2.75 2.75 0 0 0 17 15.25V10a.75.75 0 0 0-1.5 0v5.25c0 .69-.56 1.25-1.25 1.25h-9.5c-.69 0-1.25-.56-1.25-1.25v-9.5Z" /></svg>
+          <.icon name="lucide-square-pen" class="size-4" />
         </button>
       </div>
 

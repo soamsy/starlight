@@ -1,5 +1,6 @@
 defmodule StarlightBotWeb.Components.PlanTemplates do
   use Phoenix.Component
+  import StarlightBotWeb.Components.Icon, only: [icon: 1]
   alias Phoenix.LiveView.JS
   alias StarlightBot.{PlanCounts, PlanTemplates, Plans, Teams}
   import StarlightBotWeb.Components.PlanPicker, only: [notify_parent: 1]
@@ -72,30 +73,17 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
     ~H"""
     <div id={@id} phx-hook="PlanClipboard" class="flex items-center gap-1">
       <button type="button" phx-click="copy_plan" class="btn btn-sm btn-square btn-outline" title={"Copy this #{@label} to the clipboard as JSON"}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
-          <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-          <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-        </svg>
+        <.icon name="lucide-copy" class="size-4" />
       </button>
       <button type="button" data-paste-plan data-confirm-text={"Replace this #{@label} with the one on the clipboard?"}
               disabled={@status == :invalid or not is_nil(@selected)} class="btn btn-sm btn-square btn-outline relative" title={paste_title(@status, @label, @selected)}>
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class={"h-4 w-4 " <> if(@status == :different, do: "text-success", else: "")}>
-          <path d="M15 2H9a1 1 0 0 0-1 1v2c0 .6.4 1 1 1h6c.6 0 1-.4 1-1V3c0-.6-.4-1-1-1Z" />
-          <path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
-          <path d="M16 4h2a2 2 0 0 1 2 2v2" />
-          <path d="M21 14H11" />
-          <path d="m15 10-4 4 4 4" />
-        </svg>
+        <.icon name="lucide-clipboard-paste" class={"size-4 " <> if(@status == :different, do: "text-success", else: "")} />
         <span :if={@status == :different} class="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-success"></span>
       </button>
       <div class="relative" phx-click-away={JS.hide(to: "##{@id}-menu")}>
         <button type="button" phx-click={JS.toggle(to: "##{@id}-menu")} class="btn btn-sm btn-outline max-lg:px-2 max-lg:gap-1"
                 title={"Choose which #{@label} this team uses"}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 lg:hidden">
-            <rect width="18" height="7" x="3" y="3" rx="1" />
-            <rect width="9" height="7" x="3" y="14" rx="1" />
-            <rect width="5" height="7" x="16" y="14" rx="1" />
-          </svg>
+          <.icon name="lucide-layout-template" class="size-4 lg:hidden" />
           <span class="max-lg:hidden">Plans</span>
           <span class="lg:before:content-['('] lg:after:content-[')']"><%= length(@templates) %></span>
           <span class="max-lg:hidden">▾</span>

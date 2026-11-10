@@ -646,8 +646,8 @@ const EditableNotes = {
 }
 
 const TOAST_STYLES = {
-  info: { classes: "bg-success/90 text-success-content", icon: "M5 13l4 4L19 7" },
-  error: { classes: "bg-error/90 text-error-content", icon: "M6 18L18 6M6 6l12 12" }
+  info: { classes: "bg-success/90 text-success-content", icon: "lucide-check" },
+  error: { classes: "bg-error/90 text-error-content", icon: "lucide-x" }
 }
 
 const Toasts = {
@@ -698,7 +698,9 @@ const Toasts = {
     toast.setAttribute("role", "alert")
     toast.className = `fixed top-4 right-[15%] z-50 flex items-center gap-2 px-3 py-2 rounded-lg shadow-md text-xs select-none cursor-pointer ${style.classes}`
     toast.addEventListener("click", () => this.dismissAll())
-    toast.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="${style.icon}" /></svg>`
+    const glyph = document.createElement("span")
+    glyph.className = `${style.icon} size-4 shrink-0`
+    toast.appendChild(glyph)
     const text = document.createElement("span")
     text.textContent = msg
     toast.appendChild(text)

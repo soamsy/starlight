@@ -58,10 +58,7 @@
         <div class="w-full aspect-video flex-none lg:aspect-auto lg:flex-1 lg:min-h-0 overflow-hidden" style="container-type: size;">
           <%= if @screenshot_status == :idle do %>
             <div class="h-full flex flex-col items-center justify-center text-base-content/40">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
+              <.icon name="lucide-camera" class="size-16 mb-2" />
               <p class="text-sm">Take a screenshot to begin</p>
             </div>
           <% end %>
@@ -479,21 +476,21 @@
                   <div id="template-transfer" phx-hook="TemplateTransfer" data-name={@editing_name} class="ml-auto flex items-center gap-1">
                     <button type="button" phx-click="download_template" phx-value-name={@editing_name}
                             class="btn btn-ghost btn-xs btn-square" title="Download template">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" /></svg>
+                      <.icon name="lucide-download" class="size-4" />
                     </button>
                     <button type="button" phx-click="copy_template" phx-value-name={@editing_name}
                             class="btn btn-ghost btn-xs btn-square" title="Copy template to clipboard">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2" /><path stroke-linecap="round" stroke-linejoin="round" d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>
+                      <.icon name="lucide-copy" class="size-4" />
                     </button>
                     <button type="button" data-upload disabled={!deletable?(hook_for(@hooks, @editing_name))}
                             class="btn btn-ghost btn-xs btn-square"
                             title={if deletable?(hook_for(@hooks, @editing_name)), do: "Upload template image", else: "Shipped hook is read-only; override it first"}>
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M17 8l-5-5-5 5M12 3v12" /></svg>
+                      <.icon name="lucide-upload" class="size-4" />
                     </button>
                     <button type="button" data-blacken disabled={!deletable?(hook_for(@hooks, @editing_name))}
                             class="btn btn-ghost btn-xs btn-square"
                             title={if deletable?(hook_for(@hooks, @editing_name)), do: "Replace template with a black and white checker", else: "Shipped hook is read-only; override it first"}>
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
+                      <.icon name="lucide-square" class="size-4" />
                     </button>
                     <input type="file" accept="image/*" class="hidden" data-file />
                   </div>

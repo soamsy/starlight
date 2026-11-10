@@ -45,6 +45,7 @@ defmodule StarlightBot.MixProject do
       {:esbuild, "~> 0.8", runtime: Mix.env() == :dev},
       {:phoenix_live_reload, "~> 1.5", only: :dev},
       {:elixirkit, github: "livebook-dev/elixirkit"},
+      {:lucide, github: "lucide-icons/lucide", tag: "1.70.0", sparse: "icons", app: false, compile: false, depth: 1},
     ]
   end
 

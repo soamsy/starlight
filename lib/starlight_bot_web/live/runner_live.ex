@@ -710,15 +710,14 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   def search_badge(assigns) do
     ~H"""
     <span title={search_override_label(@search)} class={["badge badge-sm badge-secondary px-1", @class]}>
-      <svg viewBox="0 0 16 16" class="size-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-        <circle cx="6.5" cy="6.5" r="4.5" />
-        <path d="M10 10 14.5 14.5" />
-        <path :if={@search == "all"} d="M4.5 6.5h4M6.5 4.5v4" />
-        <path :if={@search == "none"} d="M2 2 11 11" stroke-width="2" />
-      </svg>
+      <.icon name={search_badge_icon(@search)} class="size-4" />
     </span>
     """
   end
+
+  defp search_badge_icon("all"), do: "lucide-zoom-in"
+  defp search_badge_icon("none"), do: "lucide-zoom-out"
+  defp search_badge_icon(_), do: "lucide-search"
 
   def mode_override_label("default"), do: "Default"
   def mode_override_label("extreme"), do: "Extreme"

@@ -46,6 +46,7 @@ defmodule StarlightBotWeb do
     quote do
       import Phoenix.HTML
       import Phoenix.Component
+      import StarlightBotWeb.Components.Icon, only: [icon: 1]
       alias Phoenix.LiveView.JS
       unquote(verified_routes())
     end

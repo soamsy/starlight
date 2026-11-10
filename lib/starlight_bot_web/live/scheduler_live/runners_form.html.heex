@@ -20,11 +20,7 @@
     <span class="flex items-center gap-1 text-xs font-semibold text-base-content/50 uppercase tracking-wide">
       Daily window
       <span class="tooltip tooltip-right normal-case font-normal before:w-64 before:whitespace-normal before:text-left" data-tip="While the game isn't mid-run, runs start inside this window until the day's targets are done. A game day resets at 9 PM UTC.">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5 cursor-help">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 16v-4" />
-          <path d="M12 8h.01" />
-        </svg>
+        <.icon name="lucide-info" class="size-3.5 cursor-help" />
       </span>
     </span>
     <div class="flex items-center gap-2">
@@ -32,11 +28,7 @@
         <input type="time" name="window_start" phx-debounce="500" value={@form["window_start"]} class="grow min-w-0" />
         <span :if={latest_start_label(@form)} class="whitespace-nowrap text-base-content/40">~ {latest_start_label(@form)}</span>
         <span :if={latest_start_label(@form)} class="tooltip tooltip-top normal-case before:w-64 before:whitespace-normal before:text-left" data-tip="The window start shifts later by up to 15 minutes each day, so runs don't begin at exactly the same time.">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5 cursor-help text-base-content/40">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 16v-4" />
-            <path d="M12 8h.01" />
-          </svg>
+          <.icon name="lucide-info" class="size-3.5 cursor-help text-base-content/40" />
         </span>
       </label>
       <span class="text-base-content/40">to</span>

@@ -101,7 +101,7 @@
                     </thead>
                     <tbody>
                       <tr :for={row <- forecast.rows}>
-                        <td class="font-sans"><.link navigate={~p"/teams?team=#{row.team_id}&pane=stats"} class="link link-primary inline-flex items-center gap-1" title="Open this team's starlight formula"><%= row.name %><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg></.link> <span class="text-base-content/50"><%= row.hook %></span></td>
+                        <td class="font-sans"><.link navigate={~p"/teams?team=#{row.team_id}&pane=stats"} class="link link-primary inline-flex items-center gap-1" title="Open this team's starlight formula"><%= row.name %><.icon name="lucide-external-link" class="size-3.5" /></.link> <span class="text-base-content/50"><%= row.hook %></span></td>
                         <td class="text-right text-success"><%= row.lines.base %></td>
                         <td class="text-right text-success"><%= row.lines.rest %></td>
                         <td class="text-right text-success"><%= row.lines.exploration %></td>
@@ -159,11 +159,7 @@
               </div>
               <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-6 shrink-0" />
               <button type="button" phx-click="settings_open" phx-value-tab="enkephalin" class="tooltip tooltip-bottom tooltip-end btn btn-ghost btn-square btn-sm text-base-content/60" data-tip="Change in settings">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
-                  <path d="M15 3h6v6" />
-                  <path d="M10 14 21 3" />
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                </svg>
+                <.icon name="lucide-external-link" class="size-4" />
               </button>
             </div>
           <% end %>
@@ -266,9 +262,7 @@
             <div class="dropdown dropdown-end">
               <div tabindex="0" role="button"
                    class={"btn btn-sm join-item w-12 px-0 border-l-2 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary border-l-[hsla(320,20%,80%,50%)]", else: "btn-primary border-l-[hsla(0,0%,20%,50%)]")}>
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="size-3.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-                </svg>
+                <.icon name="lucide-chevron-down" class="size-3.5" />
               </div>
               <div tabindex="0" class="dropdown-content z-10 mt-1 w-64 rounded-box bg-base-100 p-3 shadow">
                 <div class="flex flex-col gap-1">
@@ -355,11 +349,7 @@
               </div>
               <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-6 shrink-0" />
               <button type="button" phx-click="settings_open" phx-value-tab="enkephalin" class="tooltip tooltip-bottom tooltip-end btn btn-ghost btn-square btn-sm text-base-content/60" data-tip="Change in settings">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
-                  <path d="M15 3h6v6" />
-                  <path d="M10 14 21 3" />
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                </svg>
+                <.icon name="lucide-external-link" class="size-4" />
               </button>
             </div>
           <% end %>
