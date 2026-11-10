@@ -10,7 +10,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   @modes ~w(normal hard)
   @cell_actions ~w(hunt favorite banned)
   @hunted ~w(hunt favorite)
-  @read_only_events ~w(set_floor_filter set_view filter_packs toggle_help toggle_odds copy_plan clipboard_status plan_clipboard_failed)
+  @read_only_events ~w(set_floor_filter set_view filter_packs toggle_help copy_plan clipboard_status plan_clipboard_failed)
 
   def read_only_events, do: @read_only_events
 
@@ -34,7 +34,6 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       |> assign(:packs_by_id, Map.new(theme_packs, &{&1.id, &1}))
       |> assign(:view, "plan")
       |> assign(:show_help, false)
-      |> assign(:show_odds, false)
       |> reset_editor()
 
     {:ok, if(team && team.pack_plan_id, do: load_plan(socket, team.pack_plan_id, team.pack_template_id), else: socket)}
@@ -256,9 +255,6 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
 
   @impl true
   def handle_event("toggle_help", _, socket), do: {:noreply, update(socket, :show_help, &(!&1))}
-
-  @impl true
-  def handle_event("toggle_odds", _, socket), do: {:noreply, update(socket, :show_odds, &(!&1))}
 
   # --- Display helpers (used from the template) ---
 
