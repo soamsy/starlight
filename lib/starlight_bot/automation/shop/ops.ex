@@ -3,6 +3,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   alias StarlightBot.Automation.{Engine, RewardHelpers, RunMemory}
   alias StarlightBot.Ctx
   alias StarlightBot.EgoGifts
+  alias StarlightBot.FailureShot
   alias StarlightBot.GiftPlans
   alias StarlightBot.Input.Leeway
   alias StarlightBot.Teams
@@ -836,6 +837,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     else
       {:error, reason} = err ->
         Ctx.log(ctx, :error, "shop fuse: #{target.gift_name} — #{inspect(reason)}")
+        FailureShot.record("shop_fuse_#{target.gift_name}", ctx)
         recover_to_shop(ctx)
         err
     end
@@ -1188,6 +1190,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     else
       {:error, reason} = err ->
         Ctx.log(ctx, :error, "shop uptie: #{gift_id} — #{inspect(reason)}")
+        FailureShot.record("shop_uptie_#{gift_id}", ctx)
         err
     end
   end
