@@ -71,6 +71,21 @@ defmodule StarlightBot.PackPlans.OddsTest do
       assert b2.final > b2.fresh
     end
 
+    test "search floor gives the second favorite its refresh odds and the top favorite the rest" do
+      packs = Enum.map(1..12, &pack("p#{&1}", [1]))
+
+      statuses = %{
+        "p1" => %{"normal" => %{"1" => "favorite"}},
+        "p2" => %{"normal" => %{"1" => "favorite"}}
+      }
+
+      plan = Map.put(plan(statuses), "search_floors", [1])
+      [top, second] = Odds.for_run(plan, packs, [{1, "normal"}], [])[1].rows
+      assert second.final > 0.0
+      assert top.final < 1.0
+      assert_in_delta top.final + second.final, 1.0, 1.0e-9
+    end
+
     test "search floor gives the top available pack everything" do
       packs = [pack("a", [1]), pack("b", [1])]
       statuses = %{"a" => %{"normal" => %{"1" => "favorite"}}}

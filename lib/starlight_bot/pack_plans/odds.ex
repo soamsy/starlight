@@ -62,18 +62,9 @@ defmodule StarlightBot.PackPlans.Odds do
 
   defp outcome(setup, taken) do
     {wanted, backup, pool} = remaining(setup, taken)
-
-    cond do
-      setup.searching? ->
-        case wanted do
-          [top | _] -> [{top.id, 1.0}]
-          [] -> []
-        end
-
-      true ->
-        odds = ranked(pool, setup.shown, length(wanted), length(backup), setup.looks)
-        Enum.zip(Enum.map(wanted, & &1.id), odds.wanted) ++ Enum.zip(Enum.map(backup, & &1.id), odds.backup)
-    end
+    backup = if setup.searching?, do: [], else: backup
+    odds = ranked(pool, setup.shown, length(wanted), length(backup), setup.looks)
+    Enum.zip(Enum.map(wanted, & &1.id), odds.wanted) ++ Enum.zip(Enum.map(backup, & &1.id), odds.backup)
   end
 
   defp remaining(setup, taken) do
@@ -98,15 +89,19 @@ defmodule StarlightBot.PackPlans.Odds do
     Enum.reduce(states, {%{}, %{}, 0.0, %{}}, fn {{taken, count}, weight}, {marginal, available, searched, next} ->
       available = Enum.reduce(listed, available, fn id, acc -> if MapSet.member?(taken, id), do: acc, else: Map.update(acc, id, weight, &(&1 + weight)) end)
       picks = outcome(setup, taken)
-      none = max(1.0 - Enum.sum(Enum.map(picks, &elem(&1, 1))), 0.0)
       search = search_chance(setup, taken)
+      none = max(1.0 - Enum.sum(Enum.map(picks, &elem(&1, 1))) - search, 0.0)
       searched = searched + weight * search
 
+      {remaining_wanted, _backup, _pool} = remaining(setup, taken)
+      searched_pick = if search > 0.0, do: [{hd(remaining_wanted).id, search, 1}], else: []
+      branches = [{nil, none, 0}] ++ Enum.map(picks, fn {id, prob} -> {id, prob, 0} end) ++ searched_pick
+
       {marginal, next} =
-        for {id, prob} <- [{nil, none} | picks], {added, split} <- [{1, search}, {0, 1.0 - search}], reduce: {marginal, next} do
+        for {id, prob, added} <- branches, reduce: {marginal, next} do
           {marg, nxt} ->
-            mass = weight * prob * split
-            marg = if id && added == 0, do: Map.update(marg, id, weight * prob, &(&1 + weight * prob)), else: marg
+            mass = weight * prob
+            marg = if id, do: Map.update(marg, id, mass, &(&1 + mass)), else: marg
             key = {taken |> then(&if(id, do: MapSet.put(&1, id), else: &1)) |> MapSet.intersection(later), count + added}
             nxt = if mass < @prune, do: nxt, else: Map.update(nxt, key, mass, &(&1 + mass))
             {marg, nxt}
