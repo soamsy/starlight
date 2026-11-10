@@ -223,7 +223,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp needs_tray?(%{"type" => "if", "condition" => tree}), do: Enum.any?(Conditions.leaves(tree), &(BattlePlans.sinner_leaf?(&1) or BattlePlans.tray_leaf?(&1) or BattlePlans.position_leaf?(&1)))
-  defp needs_tray?(%{"type" => type}), do: type in ~w(dodge ego target nothing chain_fast chain_a_res)
+  defp needs_tray?(%{"type" => type}), do: type in ~w(dodge ego target nothing chain)
 
   defp order_actions(actions) do
     {terminal, rest} = Enum.split_with(actions, &BattlePlans.terminal?/1)
@@ -323,12 +323,13 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp run_action(%{"type" => chain_type} = action, turn, ctx) when chain_type in ~w(chain_fast chain_a_res) do
+  defp run_action(%{"type" => "chain"} = action, turn, ctx) do
+    mode = action["mode"] || "fast"
     with {:ok, frame, tray} <- turn.scan,
          {:ok, gear_rect} <- find_gear(frame, ctx),
          forced = forced_rows(action["pins"] || [], frame, tray, ctx),
          forced = apply_forced(forced, tray, ctx),
-         :ok <- BattleChain.drag(frame, tray, gear_rect, chain_type, forced, ctx) do
+         :ok <- BattleChain.drag(frame, tray, gear_rect, mode, forced, ctx) do
       if await(@turn_started, @turn_start_timeout_ms), do: :started, else: log_pending(ctx, "chain drag didn't start the turn")
     else
       {:error, reason} -> log_pending(ctx, "chain drag failed: #{inspect(reason)}")

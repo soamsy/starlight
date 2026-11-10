@@ -5,7 +5,7 @@ defmodule StarlightBot.BattlePlans.ResolverTest do
 
   @data %{
     "playbooks" => [
-      %{"id" => "fast", "kind" => "chain", "actions" => [%{"type" => "chain_fast"}]},
+      %{"id" => "fast", "kind" => "chain", "actions" => [%{"type" => "chain"}]},
       %{
         "id" => "boss",
         "kind" => "chain",
@@ -14,7 +14,7 @@ defmodule StarlightBot.BattlePlans.ResolverTest do
           %{
             "type" => "schedule",
             "segments" => [
-              %{"from_turn" => 1, "actions" => [%{"type" => "chain_a_res"}]},
+              %{"from_turn" => 1, "actions" => [%{"type" => "chain", "mode" => "a_res"}]},
               %{"from_turn" => 5, "actions" => [%{"type" => "win_rate"}, %{"type" => "commit"}]}
             ]
           }
@@ -68,8 +68,8 @@ defmodule StarlightBot.BattlePlans.ResolverTest do
       boss = Resolver.playbook_for(@data, "hard_chain", 5)
       types = fn turn -> boss |> Resolver.actions_for(turn) |> Enum.map(& &1["type"]) end
 
-      assert types.(1) == ["dodge", "chain_a_res"]
-      assert types.(4) == ["dodge", "chain_a_res"]
+      assert types.(1) == ["dodge", "chain"]
+      assert types.(4) == ["dodge", "chain"]
       assert types.(5) == ["dodge", "win_rate", "commit"]
       assert types.(9) == ["dodge", "win_rate", "commit"]
     end

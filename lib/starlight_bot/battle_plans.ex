@@ -14,9 +14,9 @@ defmodule StarlightBot.BattlePlans do
   @ignore_sides ~w(left right top bottom)
   @enemy_picks ~w(none first last)
   @enemy_steps ~w(left right)
-  @chain_actions ~w(chain_fast chain_a_res)
+  @chain_actions ~w(chain)
   @action_types %{
-    "chain" => ~w(chain_fast chain_a_res win_rate damage_rate ego dodge if commit retry),
+    "chain" => ~w(chain win_rate damage_rate ego dodge if commit retry),
     "focused" => ~w(win_rate damage_rate target if commit retry)
   }
   @branches ~w(then else)
@@ -306,18 +306,22 @@ defmodule StarlightBot.BattlePlans do
   def skill_label(%{"pick" => "all"}), do: "all"
 
   def skill_label(skill) do
+    case skill_tokens(skill) do
+      [] -> "slots none"
+      tokens -> "slots " <> Enum.join(tokens, ", ")
+    end
+  end
+
+  def skill_tokens(skill) do
     %{"pick" => pick, "chips" => chips, "gaps" => gaps} = normalize_skill(skill)
 
-    tokens =
-      skill_view(%{"pick" => pick, "chips" => chips, "gaps" => gaps})
-      |> Enum.flat_map(fn
-        {:chip, _index, at, true} -> [chip_name(pick, at)]
-        {:gap, :trail, true, _lo, _hi} -> ["rest"]
-        {:gap, _key, true, _lo, _hi} -> ["..."]
-        _ -> []
-      end)
-
-    "slots " <> if(tokens == [], do: "none", else: Enum.join(tokens, ", "))
+    skill_view(%{"pick" => pick, "chips" => chips, "gaps" => gaps})
+    |> Enum.flat_map(fn
+      {:chip, _index, at, true} -> [chip_name(pick, at)]
+      {:gap, :trail, true, _lo, _hi} -> ["rest"]
+      {:gap, _key, true, _lo, _hi} -> ["..."]
+      _ -> []
+    end)
   end
 
   def chip_name(pick, 0), do: pick
@@ -365,6 +369,98 @@ defmodule StarlightBot.BattlePlans do
   defp part_match?(part, %{sin: sin}), do: Atom.to_string(sin) == part
 
   defp tier_name(tier), do: tier |> Atom.to_string() |> String.replace_prefix("skill", "s")
+
+  def holder_label(holder, names \\ %{}, enemy? \\ true), do: holder |> holder_parts(enemy?) |> parts_text(names)
+
+  def rows_label(holder, names \\ %{}, enemy? \\ true), do: holder |> rows_parts(enemy?) |> Enum.map(&parts_text(&1, names))
+
+  def rows_parts(holder, enemy? \\ true) do
+    for {row, index} <- Enum.with_index(holders(holder)) do
+      parts = holder_parts(row, enemy?)
+      if index == 0, do: parts, else: ["remaining skills: " | parts]
+    end
+  end
+
+  def parts_text(parts, names), do: Enum.map_join(parts, "", fn
+    {:sinner, id} -> Map.get(names, id, id)
+    {:term, value} -> value
+    {:slot, name} -> name
+    :not -> "not"
+    text -> text
+  end)
+
+  def holder_parts(holder, enemy? \\ true) do
+    selection = Enum.reject([who_parts(holder), skill_parts(holder["skill"]), where_parts(holder["where"])], &is_nil/1)
+    effect = Enum.reject([action_parts(holder), enemy? && enemy_parts(holder)], &(is_nil(&1) or &1 == false))
+    join_parts(selection, ", ") ++ [": "] ++ join_parts(effect, ", ")
+  end
+
+  defp join_parts(lists, separator), do: lists |> Enum.intersperse([separator]) |> Enum.concat()
+
+  defp terms(values, separator), do: values |> Enum.map(&[{:term, &1}]) |> join_parts(separator)
+
+  defp who_parts(%{"who" => "everyone"}), do: ["everyone"]
+  defp who_parts(%{"sinners" => []}), do: ["no sinners"]
+
+  defp who_parts(holder) do
+    prefix =
+      case holder["who"] do
+        "except" -> ["all but "]
+        "before" -> ["all before "]
+        "after" -> ["all after "]
+        _ -> []
+      end
+
+    prefix ++ join_parts(Enum.map(holder["sinners"] || [], &[{:sinner, &1}]), " ")
+  end
+
+  defp skill_parts(nil), do: ["all slots"]
+  defp skill_parts(%{"pick" => "all"}), do: ["all slots"]
+  defp skill_parts(skill) do
+    case skill_tokens(skill) do
+      [] -> ["slots none"]
+      [only] when only in ~w(first last) -> [{:slot, only}, " slot"]
+      tokens -> ["slots " | tokens |> Enum.map(&[{:slot, &1}]) |> join_parts(" ")]
+    end
+  end
+
+  defp where_parts(%{"conditions" => _} = filter) do
+    %{"join" => join, "conditions" => conditions} = normalize_chosen_filter(filter)
+
+    parts =
+      Enum.map(conditions, fn %{"kind" => kind, "values" => values} = condition ->
+        {_kind, label} = List.keyfind(@chosen_kinds, kind, 0)
+        negation = if condition["not"], do: [:not, " "], else: []
+        negation ++ [label <> " " | terms(values, " ")]
+      end)
+
+    ["where " | join_parts(parts, " #{join} ")]
+  end
+
+  defp where_parts(_where), do: nil
+
+  defp action_parts(%{"type" => "dodge"}), do: ["dodge"]
+  defp action_parts(%{"type" => "nothing"}), do: ["leave as is"]
+
+  defp action_parts(%{"type" => "ego"} = holder),
+    do: ["EGO #{String.upcase(holder["grade"] || "zayin")}" <> if(holder["corrode"], do: " corrode", else: "")]
+
+  defp action_parts(%{"row" => "priority", "priority" => %{"order" => order}}) when order != [], do: ["pick " | terms(order, " > ")]
+  defp action_parts(%{"row" => "priority"}), do: ["pick priority (empty)"]
+  defp action_parts(%{"row" => row}), do: ["pick #{row}"]
+  defp action_parts(_holder), do: nil
+
+  defp enemy_parts(%{"enemy" => %{"pick" => "none"}}), do: nil
+  defp enemy_parts(%{"enemy" => %{"pick" => "continue"}}), do: ["keep targeting"]
+
+  defp enemy_parts(%{"enemy" => %{"pick" => pick} = enemy}) when pick in ~w(first last) do
+    start = "target #{pick}" <> if((enemy["n"] || 1) > 1, do: "+#{enemy["n"] - 1}", else: "")
+    step = if enemy["step"] in ~w(left right), do: ", then #{enemy["step"]}", else: ""
+    ignored = Enum.map_join(enemy["ignore"] || [], "", &", ignoring #{&1["side"]} #{&1["n"]}")
+    [start <> step <> ignored]
+  end
+
+  defp enemy_parts(_holder), do: nil
 
   def row_label(%{"row" => "priority", "priority" => %{"order" => []}}), do: "priority (empty)"
   def row_label(%{"row" => "priority", "priority" => %{"order" => order}}), do: "priority #{Enum.join(order, " > ")}"
@@ -746,7 +842,7 @@ defmodule StarlightBot.BattlePlans do
 
   def blank do
     chain = new_playbook("chain", "Chain fast")
-    chain_a_res = %{new_playbook("chain", "Chain A-res") | "actions" => [new_action("chain_a_res")]}
+    chain_a_res = %{new_playbook("chain", "Chain A-res") | "actions" => [Map.put(new_action("chain"), "mode", "a_res")]}
     focused = new_playbook("focused", "Win rate")
     lineup = new_lineup("Lineup")
 
@@ -777,7 +873,7 @@ defmodule StarlightBot.BattlePlans do
     }
   end
 
-  defp default_actions("chain"), do: [new_action("chain_fast")]
+  defp default_actions("chain"), do: [new_action("chain")]
   defp default_actions("focused"), do: [new_action("win_rate"), new_action("commit")]
 
   def new_action(type) when type in ~w(win_rate damage_rate commit retry), do: %{"id" => GiftPlans.new_id("ac"), "type" => type}
@@ -817,7 +913,7 @@ defmodule StarlightBot.BattlePlans do
     %{"id" => GiftPlans.new_id("ac"), "type" => "if", "condition" => Conditions.add(nil, "", @hook_leaf), "then" => [], "else" => []}
   end
 
-  def new_action(type) when type in @chain_actions, do: %{"id" => GiftPlans.new_id("ac"), "type" => type, "pins" => []}
+  def new_action("chain"), do: %{"id" => GiftPlans.new_id("ac"), "type" => "chain", "mode" => "fast", "pins" => []}
 
   def normalize_dodge(%{"type" => "dodge"} = holder) do
     holder

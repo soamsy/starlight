@@ -60,6 +60,31 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     refute socket.assigns.flash["error"] =~ "Faust"
   end
 
+  test "target rows and chain pins collapse to a summary until opened", %{socket: socket, playbook_id: playbook_id} do
+    socket = event(socket, "add_action", %{"container" => "root", "type" => "target"})
+    target = List.last(actions(socket, playbook_id))
+    assert socket.assigns.open_editor_id == target["id"]
+    assert render(socket) =~ "close_editor"
+
+    socket = event(socket, "close_editor", %{})
+    html = render(socket)
+    assert html =~ "everyone, all slots: pick"
+    assert html =~ ~s(title="s3")
+    refute html =~ "data-chip-strip"
+    assert html =~ ~s(phx-value-action="#{target["id"]}")
+
+    chain = Enum.find(socket.assigns.data["playbooks"], &(&1["kind"] == "chain"))
+    [chain_action] = chain["actions"]
+    socket = socket |> event("select_playbook", %{"id" => chain["id"]}) |> event("add_pin", %{"action" => chain_action["id"]})
+    assert socket.assigns.open_editor_id == "#{chain_action["id"]}|pins[0]"
+
+    socket = event(socket, "close_editor", %{})
+    assert render(socket) =~ "everyone, all slots: pick"
+
+    socket = event(socket, "open_editor", %{"action" => "#{chain_action["id"]}|pins[0]"})
+    assert render(socket) =~ "Collapse this pin"
+  end
+
   test "if blocks hold then and else actions and a hook condition tree", %{socket: socket, playbook_id: playbook_id} do
     socket = event(socket, "add_action", %{"container" => "root", "type" => "if"})
     [_win_rate, _commit, block] = actions(socket, playbook_id)
@@ -134,7 +159,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     [_, _, block] = actions(socket, playbook_id)
     assert Enum.at(block["then"], 0)["sinners"] == ["ryoshu"]
     assert block["else"] == []
-    socket = event(socket, "close_action_condition", %{})
+    socket = event(socket, "close_editor", %{})
     assert render(socket) =~ "battle_combat_ready off AND battle_chain on AND sinners = 1"
   end
 
@@ -242,16 +267,16 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
 
     socket =
       socket
-      |> event("add_action", %{"container" => "root", "type" => "chain_a_res", "parent" => block["id"], "branch" => "then"})
-      |> event("add_action", %{"container" => "root", "type" => "chain_fast", "parent" => block["id"], "branch" => "else"})
-      |> event("add_action", %{"container" => "root", "type" => "chain_fast", "parent" => block["id"], "branch" => "else"})
-      |> event("add_action", %{"container" => "root", "type" => "chain_fast"})
+      |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => block["id"], "branch" => "then"})
+      |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => block["id"], "branch" => "else"})
+      |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => block["id"], "branch" => "else"})
+      |> event("add_action", %{"container" => "root", "type" => "chain"})
       |> event("add_action", %{"container" => "root", "type" => "ego"})
 
     assert [%{"type" => "ego"}, %{"type" => "if"} = block] = actions(socket, chain["id"])
-    assert Enum.map(block["then"], & &1["type"]) == ["chain_a_res"]
-    assert Enum.map(block["else"], & &1["type"]) == ["chain_fast"]
-    assert BattlePlans.action_types("chain") == ~w(chain_fast chain_a_res win_rate damage_rate ego dodge if commit retry)
+    assert Enum.map(block["then"], & &1["type"]) == ["chain"]
+    assert Enum.map(block["else"], & &1["type"]) == ["chain"]
+    assert BattlePlans.action_types("chain") == ~w(chain win_rate damage_rate ego dodge if commit retry)
     assert BattlePlans.action_types("focused") == ~w(win_rate damage_rate target if commit retry)
   end
 
@@ -524,17 +549,17 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
 
     socket =
       socket
-      |> event("add_action", %{"container" => "root", "type" => "chain_fast", "parent" => inner["id"], "branch" => "then"})
-      |> event("add_action", %{"container" => "root", "type" => "chain_a_res", "parent" => inner["id"], "branch" => "else"})
-      |> event("add_action", %{"container" => "root", "type" => "chain_fast", "parent" => inner["id"], "branch" => "else"})
-      |> event("add_action", %{"container" => "root", "type" => "chain_fast", "parent" => outer["id"], "branch" => "then"})
+      |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => inner["id"], "branch" => "then"})
+      |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => inner["id"], "branch" => "else"})
+      |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => inner["id"], "branch" => "else"})
+      |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => outer["id"], "branch" => "then"})
       |> event("cond_update", %{"action" => inner["id"], "path" => "0", "op" => "tray_count", "match" => "pride", "cmp" => "eq", "value" => "1", "sinner" => ""})
 
     [outer] = actions(socket, chain["id"])
     [inner] = outer["else"]
-    assert Enum.map(outer["then"], & &1["type"]) == ["win_rate", "chain_fast"]
-    assert Enum.map(inner["then"], & &1["type"]) == ["chain_fast"]
-    assert Enum.map(inner["else"], & &1["type"]) == ["chain_a_res"]
+    assert Enum.map(outer["then"], & &1["type"]) == ["win_rate", "chain"]
+    assert Enum.map(inner["then"], & &1["type"]) == ["chain"]
+    assert Enum.map(inner["else"], & &1["type"]) == ["chain"]
     assert BattlePlans.condition_label(inner["condition"]) == "pride slots = 1"
     assert render(socket) =~ "pride slots = 1"
   end

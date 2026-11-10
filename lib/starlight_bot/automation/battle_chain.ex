@@ -23,7 +23,7 @@ defmodule StarlightBot.Automation.BattleChain do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, {gx, gy, gw, gh} = gear_rect} <- Matcher.find(frame, @gear_hook),
          {:ok, tray} <- SkillTray.scan(frame),
-         {picks, _top_results, _bottom_results} = compute_picks(frame, tray, "chain_fast", %{}),
+         {picks, _top_results, _bottom_results} = compute_picks(frame, tray, "fast", %{}),
          path = build_path({gx + gw / 2, gy + gh / 2}, picks, release_point(tray)),
          :ok <- click_and_release(gear_rect) do
       case Capture.grab_frame() do
@@ -49,13 +49,13 @@ defmodule StarlightBot.Automation.BattleChain do
 
   @spec drag(term, SkillTray.t(), {number, number, number, number}, String.t(), %{non_neg_integer => :top | :bottom}, Ctx.t()) ::
           :ok | {:error, term}
-  def drag(frame, tray, {gx, gy, gw, gh}, chain_type, forced, ctx) do
-    {picks, top_results, bottom_results} = compute_picks(frame, tray, chain_type, forced)
+  def drag(frame, tray, {gx, gy, gw, gh}, mode, forced, ctx) do
+    {picks, top_results, bottom_results} = compute_picks(frame, tray, mode, forced)
     log_skill_tray(ctx, top_results, bottom_results)
     path = build_path({gx + gw / 2, gy + gh / 2}, picks, release_point(tray))
 
     with {:ok, path_screens} <- to_screen_points(path) do
-      Ctx.log(ctx, :info, "battle_chain: dragging #{chain_type} across #{tray.skill_num} slot(s)")
+      Ctx.log(ctx, :info, "battle_chain: dragging chain #{mode} across #{tray.skill_num} slot(s)")
       run_drag(path_screens)
       :ok
     end
@@ -103,12 +103,12 @@ defmodule StarlightBot.Automation.BattleChain do
     {tray.tray_end_x + @release_margin_px, tray.chain_top_y + 50}
   end
 
-  defp compute_picks(frame, tray, chain_type, forced) do
+  defp compute_picks(frame, tray, mode, forced) do
     {top_results, bottom_results} = SinColor.classify_tray(frame.mat, tray)
 
     picks =
-      case chain_type do
-        "chain_a_res" ->
+      case mode do
+        "a_res" ->
           waypoints_by_streak(tray, Enum.map(top_results, & &1.sin), Enum.map(bottom_results, & &1.sin), forced)
 
         _ ->

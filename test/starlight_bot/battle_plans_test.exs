@@ -229,7 +229,7 @@ defmodule StarlightBot.BattlePlansTest do
 
     test "schedules never move into a tab and a second chain action is refused" do
       playbook = scheduled("chain")
-      [schedule, chain] = playbook["actions"] ++ [BattlePlans.new_action("chain_a_res")]
+      [schedule, chain] = playbook["actions"] ++ [BattlePlans.new_action("chain")]
       container = schedule["id"] <> "|1"
       items = playbook["actions"] ++ [chain]
 
@@ -252,7 +252,7 @@ defmodule StarlightBot.BattlePlansTest do
     test "a block is terminal only when a branch holds a chain action" do
       block = BattlePlans.new_action("if")
       refute BattlePlans.terminal?(block)
-      assert BattlePlans.terminal?(Map.put(block, "else", [BattlePlans.new_action("chain_fast")]))
+      assert BattlePlans.terminal?(Map.put(block, "else", [BattlePlans.new_action("chain")]))
     end
   end
 
@@ -421,6 +421,34 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.skill_label(%{"pick" => "first"}) == "slots first"
       assert BattlePlans.skill_label(%{"pick" => "last", "start" => 2, "end" => 3}) == "slots last-1, last-2"
       assert BattlePlans.skill_label(BattlePlans.first_slot()) == "slots first, rest"
+    end
+
+    test "holder_parts marks sinners and affinities so the editor can draw icons" do
+      holder = %{"type" => "target", "who" => "only", "sinners" => ["yi_sang"], "skill" => %{"pick" => "all"}, "row" => "priority", "priority" => %{"order" => ["s3+wrath", "s2"]}, "enemy" => %{"pick" => "none"}}
+      parts = BattlePlans.holder_parts(holder)
+      assert {:sinner, "yi_sang"} in parts
+      assert {:term, "s3+wrath"} in parts
+      assert BattlePlans.parts_text(parts, %{"yi_sang" => "Yi Sang"}) == "Yi Sang, all slots: pick s3+wrath > s2"
+    end
+
+    test "a lone first or last slot reads as a singular slot" do
+      only_first = %{"type" => "target", "who" => "everyone", "sinners" => [], "skill" => %{"pick" => "first", "chips" => [%{"at" => 0, "on" => true}], "gaps" => %{"lead" => false, "mid" => [], "trail" => false}}, "row" => "top", "enemy" => %{"pick" => "none"}}
+      assert BattlePlans.holder_label(only_first) == "everyone, first slot: pick top"
+      assert {:slot, "last"} in BattlePlans.holder_parts(put_in(only_first, ["skill", "pick"], "last"))
+    end
+
+    test "holder_label reads a row as plain english" do
+      target = BattlePlans.new_action("target")
+      assert BattlePlans.holder_label(target) == "everyone, all slots: pick s3 > s2 > s1, target first, then right"
+
+      ego = %{"type" => "ego", "who" => "except", "sinners" => ["yi_sang"], "skill" => BattlePlans.first_slot(), "grade" => "he", "corrode" => true, "enemy" => %{"pick" => "none"}}
+      assert BattlePlans.holder_label(ego, %{"yi_sang" => "Yi Sang"}) == "all but Yi Sang, slots first rest: EGO HE corrode"
+
+      assert BattlePlans.rows_label(Map.put(BattlePlans.new_pin(), "rest", BattlePlans.new_rest()), %{}, false) ==
+               ["everyone, all slots: pick s3 > s2 > s1", "remaining skills: everyone, all slots: pick s3 > s2 > s1"]
+
+      with_rest = Map.put(target, "rest", BattlePlans.new_rest())
+      assert BattlePlans.rows_label(with_rest) == [BattlePlans.holder_label(target), "remaining skills: everyone, all slots: pick s3 > s2 > s1, keep targeting"]
     end
   end
 
