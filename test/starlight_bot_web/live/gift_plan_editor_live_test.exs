@@ -347,6 +347,30 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert %{"s2" => 2} = hd(hd(milestone(socket)["entries"])["floors"])["target"]
   end
 
+  test "refresh cost grid follows the cases and lets the path branch", %{socket: socket} do
+    socket = socket |> shop() |> event("ms_add_refresh_case", %{}) |> event("ms_add_refresh_case", %{})
+    [first, second] = milestone(socket)["refresh"]
+    path_total = fn socket ->
+      ~r/<td class="text-center font-semibold">\s*(\d*)\s*<\/td>/ |> Regex.scan(render(socket), capture: :all_but_first) |> List.flatten() |> Enum.reject(&(&1 == "")) |> List.last() |> String.to_integer()
+    end
+
+    socket =
+      socket
+      |> event("ms_update_refresh_case", %{"case_id" => first["id"], "action" => "refresh", "max" => "2"})
+      |> event("ms_update_refresh_case", %{"case_id" => second["id"], "action" => "affinity_refresh", "affinity" => "", "max" => "1"})
+
+    assert path_total.(socket) == 150
+
+    socket = event(socket, "rf_pick", %{"step" => "0", "kind" => "normal"})
+    assert path_total.(socket) == 0
+
+    socket = event(socket, "rf_pick", %{"step" => "1", "kind" => "keyword"})
+    assert path_total.(socket) == 105
+
+    socket = event(socket, "rf_reset", %{})
+    assert path_total.(socket) == 150
+  end
+
   test "refresh cases read like a case statement: each gets a condition and an action, and they reorder and delete", %{socket: socket} do
     socket = socket |> shop() |> event("ms_add_refresh_case", %{}) |> event("ms_add_refresh_case", %{})
     [first, second] = milestone(socket)["refresh"]

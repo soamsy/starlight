@@ -5,7 +5,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   import StarlightBotWeb.Components.PlanTemplates
 
   alias StarlightBot.{PlanClipboard, PlanCounts, Conditions, EgoGifts, GiftPlans, Plans, Teams, ThemePacks}
-  alias StarlightBot.GiftPlans.{Routes, FusionRouteTemplates, Combos}
+  alias StarlightBot.GiftPlans.{Routes, FusionRouteTemplates, Combos, RefreshCosts}
 
     @gift_tiers 1..6
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)
@@ -76,7 +76,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
-  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition select_milestone copy_milestone ms_copy_entries ms_select_tab ms_refresh_select_tab ms_open_fusion ms_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed)
+  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition select_milestone copy_milestone ms_copy_entries ms_select_tab ms_refresh_select_tab rf_pick rf_reset rf_cheapest ms_open_fusion ms_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed)
 
   def read_only_events, do: @read_only_events
 
@@ -601,6 +601,26 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("ms_refresh_split", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("rf_pick", %{"step" => step, "kind" => kind}, socket) do
+    path = refresh_path(socket.assigns, selected_milestone(socket.assigns), refresh_from(socket))
+    step = String.to_integer(step)
+    {:noreply, put_refresh_path(socket, Enum.take(path, step) ++ [RefreshCosts.kind(kind)])}
+  end
+
+  @impl true
+  def handle_event("rf_reset", _params, socket) do
+    {:noreply, assign(socket, :refresh_paths, Map.delete(socket.assigns.refresh_paths, refresh_path_key(socket)))}
+  end
+
+  @impl true
+  def handle_event("rf_cheapest", _params, socket) do
+    assigns = socket.assigns
+    path = refresh_path(assigns, selected_milestone(assigns), refresh_from(socket))
+    {_cost, cheapest} = RefreshCosts.cheapest(path, RefreshCosts.free(assigns.plan_data["grace_picks"]))
+    {:noreply, put_refresh_path(socket, cheapest)}
+  end
 
   @impl true
   def handle_event("ms_refresh_select_tab", %{"from" => from}, socket) do
@@ -1200,6 +1220,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> assign(:editing_milestone_id, nil)
     |> assign(:entry_tabs, %{})
     |> assign(:refresh_tabs, %{})
+    |> assign(:refresh_paths, %{})
     |> assign(:fusion_entry_id, nil)
     |> assign(:editing_condition_case_id, nil)
     |> reset_browser()
@@ -1232,6 +1253,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         |> assign(:editing_milestone_id, nil)
         |> assign(:entry_tabs, %{})
         |> assign(:refresh_tabs, %{})
+        |> assign(:refresh_paths, %{})
+    |> assign(:refresh_paths, %{})
         |> assign(:fusion_entry_id, nil)
             |> reset_browser()
     end
@@ -1274,6 +1297,19 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp set_scheduled(socket, entry_id) do
     update_plan(socket, &GiftPlans.update_entry(&1, socket.assigns.selected_milestone_id, entry_id, fn entry -> Map.put(entry, "scheduled", true) end))
+  end
+
+  defp refresh_path_key(socket), do: {socket.assigns.selected_milestone_id, refresh_from(socket)}
+
+  defp put_refresh_path(socket, path), do: assign(socket, :refresh_paths, Map.put(socket.assigns.refresh_paths, refresh_path_key(socket), path))
+
+  def refresh_path(assigns, milestone, from) do
+    cases = GiftPlans.refresh_cases(milestone, from)
+
+    case Map.fetch(assigns.refresh_paths, {milestone["id"], from}) do
+      {:ok, path} -> Enum.take(path, RefreshCosts.columns(cases))
+      :error -> RefreshCosts.default_path(cases)
+    end
   end
 
   defp refresh_from(socket), do: active_refresh_from(socket.assigns.refresh_tabs, selected_milestone(socket.assigns))
@@ -1490,6 +1526,80 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
                 disabled={Enum.max(@froms) >= GiftPlans.max_floor()} title="New tab"
                 class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/20 disabled:opacity-30">+</button>
       </div>
+    """
+  end
+
+  attr :milestone, :map, required: true
+  attr :from, :integer, required: true
+  attr :path, :list, required: true
+  attr :plan_data, :map, required: true
+
+  def refresh_costs(assigns) do
+    cases = GiftPlans.refresh_cases(assigns.milestone, assigns.from)
+    free = RefreshCosts.free(assigns.plan_data["grace_picks"])
+    columns = RefreshCosts.columns(cases)
+    {cheapest, _sequence} = RefreshCosts.cheapest(assigns.path, free)
+    total = RefreshCosts.total(assigns.path, free)
+
+    assigns =
+      assign(assigns,
+        columns: columns,
+        free: free,
+        cells: RefreshCosts.grid(assigns.path, free, columns),
+        total: total,
+        savings: total - cheapest,
+        picked: length(assigns.path)
+      )
+
+    ~H"""
+    <details :if={@columns > 0} id={"refresh-costs-#{@milestone["id"]}-#{@from}"} phx-hook="FloatingDropdown" data-keep-open class="dropdown">
+      <summary class="badge badge-accent badge-outline h-6 gap-0 overflow-hidden px-0 cursor-pointer select-none"><span class="flex items-center gap-1 px-2">Potential Cost <.icon name="lucide-chevron-down" class="size-3" /></span><span class="flex h-full items-center bg-accent px-2 font-semibold text-accent-content"><%= @total %></span></summary>
+      <div popover="manual" class="dropdown-content z-30 w-max max-w-[calc(100vw-1rem)] rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+        <div class="flex flex-col gap-1 text-[11px]">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-semibold text-base-content/70">Visualize refresh costs</span>
+            <button :if={@savings > 0} type="button" phx-click="rf_cheapest" class="btn btn-xs btn-outline" title="Reorder the same refreshes so the free ones land on the priciest slots">Cheapest order saves <%= @savings %></button>
+            <button type="button" phx-click="rf_reset" class="btn btn-ghost btn-xs ml-auto" title="Go back to the order the cases imply">Reset</button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="table table-xs w-auto">
+              <thead>
+                <tr>
+                  <th class="whitespace-nowrap">Refresh count</th>
+                  <th :for={cell <- @cells} class="text-center whitespace-nowrap">
+                    <%= cell.position + 1 %>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={{kind, label} <- [{:normal, "Normal"}, {:keyword, "Keyword"}]}>
+                  <th class="font-semibold whitespace-nowrap"><%= label %></th>
+                  <td :for={cell <- @cells} class="p-0.5 text-center">
+                    <% {cost, free?} = Map.fetch!(cell, kind) %>
+                    <button type="button" phx-click="rf_pick" phx-value-step={cell.position} phx-value-kind={kind} disabled={cell.position > @picked}
+                            class={"btn btn-xs w-full min-w-12 " <> cond do
+                              cell.chosen == kind -> "btn-primary"
+                              cell.position > @picked -> "btn-ghost opacity-40"
+                              true -> "btn-outline"
+                            end}>
+                      <%= if free?, do: "free", else: cost %>
+                    </button>
+                  </td>
+                </tr>
+                <tr>
+                  <th class="font-semibold whitespace-nowrap">Total</th>
+                  <td :for={cell <- @cells} class="text-center font-semibold"><%= cell.total %></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="flex flex-wrap items-center gap-1">
+            <span class="badge badge-sm badge-soft" title="Free normal refreshes from graces"><%= elem(@free, 0) %> normal <%= if elem(@free, 0) == 1, do: "refresh", else: "refreshes" %></span>
+            <span class="badge badge-sm badge-soft" title="Free keyword refreshes from graces"><%= elem(@free, 1) %> keyword <%= if elem(@free, 1) == 1, do: "refresh", else: "refreshes" %></span>
+          </div>
+        </div>
+      </div>
+    </details>
     """
   end
 

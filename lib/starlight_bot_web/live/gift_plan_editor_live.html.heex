@@ -494,6 +494,7 @@
                       <div class="flex items-center gap-2 pb-1">
                         <span class="text-xs font-semibold text-base-content/70">Refresh</span>
                         <button phx-click="ms_add_refresh_case" class="btn btn-xs btn-outline">+ Case</button>
+                        <.refresh_costs milestone={milestone} from={refresh_from} path={refresh_path(assigns, milestone, refresh_from)} plan_data={@plan_data} />
                         <button :if={not refresh_scheduled} type="button" phx-click="ms_refresh_add_schedule" class="btn btn-ghost btn-xs ml-auto">Add Schedule</button>
                       </div>
                       <.refresh_tabs :if={refresh_scheduled} milestone={milestone} from={refresh_from} />

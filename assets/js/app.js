@@ -2039,7 +2039,11 @@ const FloatingDropdown = {
     window.addEventListener("scroll", this.place, true)
     document.addEventListener("click", this.close)
   },
+  beforeUpdate() {
+    this.wasOpen = this.el.open
+  },
   updated() {
+    if (this.wasOpen && "keepOpen" in this.el.dataset) this.el.open = true
     this.place()
   },
   destroyed() {
