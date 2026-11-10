@@ -62,7 +62,7 @@
                         <% end %>
                         <td :if={lux?} colspan={length(floors(@extreme?)) + if(@extreme?, do: 0, else: 1) - 1} class="text-right align-middle">
                           <button phx-click="toggle_lineup_erase" title="Remove a change point"
-                                  class={"btn btn-2xs " <> if(@lineup_erase?, do: "btn-error", else: "btn-ghost text-error")}>eraser</button>
+                                  class={"btn btn-2xs gap-1 " <> if(@lineup_erase?, do: "btn-error", else: "btn-ghost text-error")}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3 shrink-0" aria-hidden="true"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" /><path d="M22 21H7" /><path d="m5 11 9 9" /></svg>eraser</button>
                         </td>
                         <%= if not @extreme? and not lux? do %>
                           <% id = StarlightBot.BattlePlans.Resolver.lineup_id_at(entries, 6) %>
@@ -267,7 +267,7 @@
                       <% end %>
                       <td :if={track == "lux_chain"} rowspan="2" colspan={length(floors(@extreme?)) + if(@extreme?, do: 0, else: 1) - 1} class="text-right align-middle">
                         <button phx-click="set_paint" phx-value-id="erase" title="Remove a change point"
-                                class={"btn btn-2xs " <> if(@paint == "erase", do: "btn-error", else: "btn-ghost text-error")}>eraser</button>
+                                class={"btn btn-2xs gap-1 " <> if(@paint == "erase", do: "btn-error", else: "btn-ghost text-error")}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3 shrink-0" aria-hidden="true"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" /><path d="M22 21H7" /><path d="m5 11 9 9" /></svg>eraser</button>
                       </td>
                     </tr>
                   <% end %>
