@@ -151,20 +151,6 @@ defmodule StarlightBot.Navigation.CatalogTest do
     end
   end
 
-  describe "reachable_from/1" do
-    test "reports hop counts, preferring the shortest path to each screen" do
-      reach = Catalog.reachable_from(:home) |> Map.new()
-
-      # direct transition + the zero-step unknown-bridge both land at hop 1
-      assert reach[:charge_enkephalin] == 1
-      assert reach[:home_unknown] == 1
-
-      # only reachable via the home_unknown bridge, so hop 2
-      assert reach[:home_drive] == 2
-      assert reach[:home_window] == 2
-    end
-  end
-
   describe "whole-catalog structural invariants" do
     test "every screen name is declared exactly once" do
       names = Catalog.all_screens() |> Enum.map(& &1.name)

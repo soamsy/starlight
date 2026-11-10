@@ -13,7 +13,6 @@ defmodule StarlightBotWeb.Live.PageHook do
 
   @self_subscribed_views [
     StarlightBotWeb.Live.RunnerLive,
-    StarlightBotWeb.Live.TransitionsLive,
     StarlightBotWeb.Live.BattleInspectorLive,
     StarlightBotWeb.Live.ShopRunnerLive,
     StarlightBotWeb.Live.RewardsLive
@@ -24,14 +23,12 @@ defmodule StarlightBotWeb.Live.PageHook do
 
   @pages %{
     StarlightBotWeb.Live.HookEditorLive => :hooks,
-    StarlightBotWeb.Live.ScreenshotViewerLive => :screenshots,
     StarlightBotWeb.Live.BattleInspectorLive => :battle,
     StarlightBotWeb.Live.BattleHistoryLive => :battle,
     StarlightBotWeb.Live.DungeonInspectorLive => :dungeon,
     StarlightBotWeb.Live.GiftInspectorLive => :gift_inspector,
     StarlightBotWeb.Live.ThemePackInspectorLive => :theme_packs,
     StarlightBotWeb.Live.EventInspectorLive => :events,
-    StarlightBotWeb.Live.TransitionsLive => :transitions,
     StarlightBotWeb.Live.TeamEditorLive => :teams,
     StarlightBotWeb.Live.RewardsLive => :rewards,
     StarlightBotWeb.Live.RunnerLive => :runner,

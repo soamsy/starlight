@@ -16,14 +16,12 @@ defmodule StarlightBotWeb.Router do
     live_session :default, on_mount: StarlightBotWeb.Live.PageHook do
       live "/", Live.RunnerLive
       live "/hooks", Live.HookEditorLive
-      live "/screenshots", Live.ScreenshotViewerLive
       live "/battle", Live.BattleInspectorLive
       live "/battle/history", Live.BattleHistoryLive
       live "/events", Live.EventInspectorLive
       live "/dungeon", Live.DungeonInspectorLive
       live "/gift-inspector", Live.GiftInspectorLive
       live "/theme-packs", Live.ThemePackInspectorLive
-      live "/transitions", Live.TransitionsLive
       live "/teams", Live.TeamEditorLive
       live "/luxcavation", Live.RunnerLive, :luxcavation
       live "/mirror-dungeon", Live.RunnerLive, :mirror_dungeon
@@ -38,7 +36,6 @@ defmodule StarlightBotWeb.Router do
   scope "/", StarlightBotWeb do
     get "/hooks/:name/thumb.png", HookThumbController, :show
     get "/stream/frame.jpg", GameFrameController, :show
-    get "/screenshots/frame/:session_id/:frame_id", ScreenshotFrameController, :show
   end
 
   if Mix.env() == :dev do

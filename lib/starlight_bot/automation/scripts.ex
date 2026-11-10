@@ -15,9 +15,6 @@ defmodule StarlightBot.Automation.Scripts do
     %{name: :mirror_dungeon, label: "Mirror Dungeon", module: MirrorDungeonRunner}
   ]
 
-  @doc "All registered scripts, in declaration order."
-  def all, do: @scripts
-
   @doc "Look up a registered script by name. Returns nil if not found."
   def find(name) when is_atom(name), do: Enum.find(@scripts, &(&1.name == name))
 end

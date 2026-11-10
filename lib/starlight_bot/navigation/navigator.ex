@@ -38,12 +38,6 @@ defmodule StarlightBot.Navigation.Navigator do
 
   def localize, do: GenServer.cast(__MODULE__, :localize)
 
-  def run_to(screen_name), do: manual({:run_to, screen_name})
-
-  def run_action(action_name), do: manual({:run_action, action_name})
-
-  def run_transition(transition_name), do: manual({:run_transition, transition_name})
-
   def run_script(script_name), do: manual({:run_script, script_name})
 
   def run_luxcavation(
@@ -120,98 +114,6 @@ defmodule StarlightBot.Navigation.Navigator do
     state = %{state | phase: :localizing, goal: nil, task_pid: pid}
     broadcast(state)
     {:noreply, state}
-  end
-
-  @impl true
-  def handle_cast({:run_to, goal}, state) do
-    from = state.current_screen
-
-    cond do
-      from == goal ->
-        state = add_log(state, :ok, "Already at #{goal}")
-        broadcast(state)
-        {:noreply, state}
-
-      is_nil(from) or from == :unknown ->
-        state = add_log(state, :error, "Cannot navigate: current screen unknown. Localize first.")
-        broadcast(state)
-        {:noreply, state}
-
-      true ->
-        case Catalog.plan_path(from, goal) do
-          {:error, :no_path} ->
-            state = add_log(state, :error, "No path from #{from} to #{goal}")
-            broadcast(state)
-            {:noreply, state}
-
-          {:ok, transitions} ->
-            state = cancel_running(state)
-            state = add_log(state, :info, "Planning: #{from} → #{goal} (#{length(transitions)} step(s))")
-            pid = start_machine(Runner.plan_program(transitions), :run_to)
-
-            state = %{state | phase: :running, goal: goal, task_pid: pid}
-            broadcast(state)
-            {:noreply, state}
-        end
-    end
-  end
-
-  @impl true
-  def handle_cast({:run_action, action_name}, state) do
-    from = state.current_screen
-
-    cond do
-      is_nil(from) or from == :unknown ->
-        state = add_log(state, :error, "Cannot run action: current screen unknown. Localize first.")
-        broadcast(state)
-        {:noreply, state}
-
-      true ->
-        case Catalog.find_action(from, action_name) do
-          nil ->
-            state = add_log(state, :error, "No action #{action_name} on #{from}")
-            broadcast(state)
-            {:noreply, state}
-
-          action ->
-            state = cancel_running(state)
-            state = add_log(state, :info, "Running action: #{action_name}")
-            pid = start_machine(Runner.action_program(from, action), :run_action)
-
-            state = %{state | phase: :running, goal: nil, task_pid: pid}
-            broadcast(state)
-            {:noreply, state}
-        end
-    end
-  end
-
-  @impl true
-  def handle_cast({:run_transition, transition_name}, state) do
-    from = state.current_screen
-
-    cond do
-      is_nil(from) or from == :unknown ->
-        state = add_log(state, :error, "Cannot navigate: current screen unknown. Localize first.")
-        broadcast(state)
-        {:noreply, state}
-
-      true ->
-        case Catalog.find_transition(from, transition_name) do
-          nil ->
-            state = add_log(state, :error, "No transition #{transition_name} from #{from}")
-            broadcast(state)
-            {:noreply, state}
-
-          transition ->
-            state = cancel_running(state)
-            state = add_log(state, :info, "Running transition: #{transition_name}")
-            pid = start_machine(Runner.plan_program([transition]), :run_to)
-
-            state = %{state | phase: :running, goal: transition.to, task_pid: pid}
-            broadcast(state)
-            {:noreply, state}
-        end
-    end
   end
 
   @impl true
@@ -446,52 +348,6 @@ defmodule StarlightBot.Navigation.Navigator do
           |> Map.put(:phase, :idle)
           |> Map.put(:task_pid, nil)
           |> add_log(:error, "Screen not recognized")
-      end
-
-    broadcast(state)
-    {:noreply, state}
-  end
-
-  @impl true
-  def handle_info({:nav_result, :run_to, result}, state) do
-    state =
-      case result do
-        {:ok, arrived} ->
-          state
-          |> Map.put(:current_screen, arrived)
-          |> Map.put(:phase, :idle)
-          |> Map.put(:goal, nil)
-          |> Map.put(:task_pid, nil)
-          |> add_log(:ok, "Arrived at #{arrived}")
-
-        {:error, reason} ->
-          state
-          |> Map.put(:phase, :idle)
-          |> Map.put(:goal, nil)
-          |> Map.put(:task_pid, nil)
-          |> add_log(:error, "Failed: #{inspect(reason)}")
-      end
-
-    broadcast(state)
-    {:noreply, state}
-  end
-
-  @impl true
-  def handle_info({:nav_result, :run_action, result}, state) do
-    state =
-      case result do
-        {:ok, screen} ->
-          state
-          |> Map.put(:current_screen, screen)
-          |> Map.put(:phase, :idle)
-          |> Map.put(:task_pid, nil)
-          |> add_log(:ok, "Action finished, still at #{screen}")
-
-        {:error, reason} ->
-          state
-          |> Map.put(:phase, :idle)
-          |> Map.put(:task_pid, nil)
-          |> add_log(:error, "Action failed: #{inspect(reason)}")
       end
 
     broadcast(state)

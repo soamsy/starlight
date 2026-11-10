@@ -36,8 +36,6 @@ Packaged builds always run in user mode (`allow_authoring` is off outside dev an
 | Route | Description |
 |-------|-------------|
 | `/` or `/hooks` | Hook editor — create, edit, test hooks; region/click-region selection |
-| `/screenshots` | Screenshot stream — live xcap feed, 40-frame timeline, hook overlay |
-| `/transitions` | Navigation — screen localizing, BFS path execution, stream controls |
 
 ## Root-level convenience aliases
 

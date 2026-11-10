@@ -685,21 +685,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     category = if params["cat"] in Hooks.categories(), do: params["cat"], else: "general"
     socket = socket |> assign(:category, category) |> refresh_hooks()
 
-    if params["from_cache"] == "1" do
-      case load_handoff_screenshot() do
-        {:ok, mat, b64} ->
-          {:noreply,
-           socket
-           |> assign(:screenshot_mat, mat)
-           |> assign(:screenshot_status, :done)
-           |> push_event("load_screenshot", %{data: b64})}
-
-        _ ->
-          {:noreply, put_flash(socket, :error, "Failed to load frame from screenshot stream.")}
-      end
-    else
-      {:noreply, socket}
-    end
+    {:noreply, socket}
   end
 
   @impl true
@@ -950,18 +936,6 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     File.read(tmp)
   rescue
     e -> {:error, Exception.message(e)}
-  end
-
-  @handoff_path "/tmp/_starlight_hook_handoff.jpg"
-
-  defp load_handoff_screenshot do
-    mat = Evision.imread(@handoff_path)
-    case encode_jpeg(mat) do
-      {:ok, jpeg} -> {:ok, mat, Base.encode64(jpeg)}
-      {:error, _} = err -> err
-    end
-  rescue
-    _ -> {:error, :load_failed}
   end
 
   defp flash_error(socket, msg) do

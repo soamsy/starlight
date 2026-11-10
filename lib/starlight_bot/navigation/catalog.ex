@@ -170,10 +170,6 @@ defmodule StarlightBot.Navigation.Catalog do
     [t | path_to_transitions(rest, graph)]
   end
 
-  def reachable_from(from, screen_modules \\ @screen_modules) do
-    bfs_reachable([{from, 0}], MapSet.new([from]), graph(screen_modules), [])
-  end
-
   defp graph(screen_modules) do
     Map.new(all_screens(screen_modules), fn screen ->
       {screen.name,
@@ -193,22 +189,5 @@ defmodule StarlightBot.Navigation.Catalog do
 
   defp parent_bridge_edge(%Screen{name: name, refines: parent}) do
     [%Transition{from: name, to: parent, name: parent, steps: []}]
-  end
-
-  defp bfs_reachable([], _visited, _graph, acc), do: Enum.reverse(acc)
-
-  defp bfs_reachable([{current, hops} | rest], visited, graph, acc) do
-    neighbors = Map.get(graph, current, [])
-
-    {new_queue, new_visited, new_acc} =
-      Enum.reduce(neighbors, {rest, visited, acc}, fn t, {q, v, a} ->
-        if MapSet.member?(v, t.to) do
-          {q, v, a}
-        else
-          {q ++ [{t.to, hops + 1}], MapSet.put(v, t.to), [{t.to, hops + 1} | a]}
-        end
-      end)
-
-    bfs_reachable(new_queue, new_visited, graph, new_acc)
   end
 end

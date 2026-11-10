@@ -175,7 +175,7 @@
 
       <div class="dropdown dropdown-end">
         <% profiles_on = on_teams and assigns[:team_nav] != nil and @team_nav.pane == "profiles" %>
-        <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :screenshots, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :transitions, :shop_runner, :rewards, :linux_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
+        <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :rewards, :linux_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
           <.icon name="lucide-layout-grid" class="size-4 lg:size-5" />
         </div>
         <div tabindex="0" class="dropdown-content z-50 mt-2 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
@@ -216,11 +216,6 @@
       <span class="text-[10px] font-normal leading-tight text-center">Hook Editor</span>
     </.link>
     <%= if StarlightBot.Data.authoring?() do %>
-    <.link navigate={~p"/screenshots"}
-           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :screenshots, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
-      <.icon name="lucide-camera" class="size-4 lg:size-5" />
-      <span class="text-[10px] font-normal leading-tight text-center">Screenshots</span>
-    </.link>
     <.link navigate={~p"/battle"}
            class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :battle, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
       <.icon name="lucide-sword" class="size-4 lg:size-5" />
@@ -245,11 +240,6 @@
            class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :events, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
       <.icon name="lucide-message-square" class="size-4 lg:size-5" />
       <span class="text-[10px] font-normal leading-tight text-center">Event Inspector</span>
-    </.link>
-    <.link navigate={~p"/transitions"}
-           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :transitions, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
-      <.icon name="lucide-workflow" class="size-4 lg:size-5" />
-      <span class="text-[10px] font-normal leading-tight text-center">Transitions</span>
     </.link>
     <.link navigate={~p"/shop-runner"}
            class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :shop_runner, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
