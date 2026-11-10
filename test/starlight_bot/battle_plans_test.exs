@@ -249,10 +249,25 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.condition_leaf(%{"op" => "hook_off", "hook" => " battle_turn "}) == %{"op" => "hook_off", "hook" => "battle_turn"}
     end
 
-    test "a block is terminal only when a branch holds a chain action" do
+    test "only a plain chain action is terminal, so an if block keeps its place" do
       block = BattlePlans.new_action("if")
-      refute BattlePlans.terminal?(block)
-      assert BattlePlans.terminal?(Map.put(block, "else", [BattlePlans.new_action("chain")]))
+      refute BattlePlans.terminal?(Map.put(block, "else", [BattlePlans.new_action("chain")]))
+      assert BattlePlans.terminal?(BattlePlans.new_action("chain"))
+
+      target = BattlePlans.new_action("ego")
+      chain = BattlePlans.new_action("chain")
+      assert Enum.map(BattlePlans.normalize_items([chain, Map.put(block, "else", [chain]), target]), & &1["type"]) == ["if", "ego", "chain"]
+    end
+
+    test "a chain in an else if branch survives id refresh and flattening" do
+      block = BattlePlans.new_action("if")
+      elif = %{BattlePlans.new_elif() | "actions" => [BattlePlans.new_action("chain")]}
+      block = Map.put(block, "elifs", [elif])
+      refreshed = BattlePlans.refresh_ids(block)
+      [new_elif] = refreshed["elifs"]
+      refute new_elif["id"] == elif["id"]
+      refute hd(new_elif["actions"])["id"] == hd(elif["actions"])["id"]
+      assert Enum.any?(BattlePlans.flatten_actions([block]), &(&1["type"] == "chain"))
     end
   end
 

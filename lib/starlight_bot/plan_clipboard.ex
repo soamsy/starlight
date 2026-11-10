@@ -108,10 +108,15 @@ defmodule StarlightBot.PlanClipboard do
   defp valid_actions?(actions) when is_list(actions), do: Enum.all?(actions, &valid_action?/1)
   defp valid_actions?(_actions), do: false
 
-  defp valid_action?(%{"type" => "if", "then" => then_actions, "else" => else_actions}), do: valid_actions?(then_actions) and valid_actions?(else_actions)
+  defp valid_action?(%{"type" => "if", "then" => then_actions} = block),
+    do: valid_actions?(then_actions) and (is_nil(block["else"]) or valid_actions?(block["else"])) and valid_elifs?(block["elifs"])
   defp valid_action?(%{"type" => "schedule", "segments" => segments}) when is_list(segments), do: Enum.all?(segments, &(is_map(&1) and valid_actions?(&1["actions"])))
   defp valid_action?(%{"type" => type}) when type not in ["if", "schedule"], do: is_binary(type)
   defp valid_action?(_action), do: false
+
+  defp valid_elifs?(nil), do: true
+  defp valid_elifs?(elifs) when is_list(elifs), do: Enum.all?(elifs, &(is_map(&1) and is_binary(&1["id"]) and valid_actions?(&1["actions"])))
+  defp valid_elifs?(_elifs), do: false
 
   defp usable?(nil), do: false
   defp usable?(profile), do: SinnerProfiles.locator_hooks(profile) != []

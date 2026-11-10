@@ -222,7 +222,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp needs_tray?(%{"type" => "if", "condition" => tree}), do: Enum.any?(Conditions.leaves(tree), &(BattlePlans.sinner_leaf?(&1) or BattlePlans.tray_leaf?(&1) or BattlePlans.position_leaf?(&1)))
+  defp needs_tray?(%{"type" => "if"} = block), do: Enum.any?(BattlePlans.branch_conditions(block), fn tree -> Enum.any?(Conditions.leaves(tree), &(BattlePlans.sinner_leaf?(&1) or BattlePlans.tray_leaf?(&1) or BattlePlans.position_leaf?(&1))) end)
   defp needs_tray?(%{"type" => type}), do: type in ~w(dodge ego target nothing chain)
 
   defp order_actions(actions) do
@@ -247,14 +247,10 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp run_action(%{"type" => "if"} = block, turn, ctx) do
-    branch = if condition_met?(block["condition"], turn.scan, ctx), do: "then", else: "else"
-    actions = block[branch] |> order_actions() |> merge_keys()
+    {label, branch_actions} = chosen_branch(block, turn, ctx)
+    actions = branch_actions |> order_actions() |> merge_keys()
 
-    Ctx.log(
-      ctx,
-      :info,
-      "playbook: if #{BattlePlans.condition_label(block["condition"], sinner_names())} -> #{branch} [#{Enum.map_join(actions, ", ", & &1["type"])}]"
-    )
+    Ctx.log(ctx, :info, "playbook: #{label} [#{Enum.map_join(actions, ", ", & &1["type"])}]")
 
     {:then, actions}
   end
@@ -520,6 +516,19 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp close_ego_menu(ctx, reason) do
     Ctx.log(ctx, :error, "playbook: #{reason}, closing the EGO menu")
     Runner.run_steps([DSL.click(@ego_menu), DSL.sleep(@ego_menu_settle_ms)], ctx)
+  end
+
+  defp chosen_branch(block, turn, ctx) do
+    names = sinner_names()
+
+    candidates =
+      [{"if", block["condition"], block["then"]}] ++
+        Enum.map(BattlePlans.elifs(block), &{"else if", &1["condition"], &1["actions"]})
+
+    case Enum.find(candidates, fn {_word, condition, _actions} -> condition_met?(condition, turn.scan, ctx) end) do
+      {word, condition, actions} -> {"#{word} #{BattlePlans.condition_label(condition, names)} -> then", actions}
+      nil -> {"if #{BattlePlans.condition_label(block["condition"], names)} -> else", block["else"] || []}
+    end
   end
 
   defp condition_met?(nil, _scan, _ctx), do: true

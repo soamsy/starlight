@@ -373,21 +373,19 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
-  def handle_event("add_action", %{"type" => type, "container" => container, "parent" => parent, "branch" => branch}, socket)
-      when type != "" and branch in ["then", "else"] do
+  def handle_event("add_action", %{"type" => type, "parent" => parent, "branch" => branch}, socket)
+      when type != "" and is_binary(branch) do
     kind = find_playbook(socket.assigns.data, socket.assigns.playbook_id)["kind"]
 
     new = type |> BattlePlans.new_action() |> BattlePlans.seed_sinner(first_profiled_sinner(socket))
 
     socket =
       update_items(socket, fn items ->
-        scope = BattlePlans.scope_actions(items, container)
-
         BattlePlans.update_list_containing(items, parent, fn list ->
           Enum.map(list, fn
             %{"id" => ^parent} = block ->
-              if type in branch_available_actions(kind, scope, block, branch),
-                do: Map.update!(block, branch, &(&1 ++ [new])),
+              if type in branch_available_actions(kind, block, branch),
+                do: BattlePlans.update_branch_actions(block, branch, &(&1 ++ [new])),
                 else: block
 
             action ->
@@ -416,6 +414,26 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   @impl true
   def handle_event("add_action", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("add_else", %{"parent" => parent}, socket) do
+    {:noreply, update_items(socket, &BattlePlans.add_else(&1, parent))}
+  end
+
+  @impl true
+  def handle_event("remove_else", %{"parent" => parent}, socket) do
+    {:noreply, update_items(socket, &BattlePlans.remove_else(&1, parent))}
+  end
+
+  @impl true
+  def handle_event("add_elif", %{"parent" => parent, "after" => after_branch}, socket) do
+    {:noreply, update_items(socket, &BattlePlans.add_elif(&1, parent, after_branch))}
+  end
+
+  @impl true
+  def handle_event("remove_elif", %{"elif" => elif_id}, socket) do
+    {:noreply, update_items(socket, &BattlePlans.remove_elif(&1, elif_id))}
+  end
 
   @impl true
   def handle_event("remove_action", %{"action" => action_id}, socket) do
@@ -726,15 +744,47 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     Enum.reject(BattlePlans.action_types(playbook["kind"]), &(has_terminal? and BattlePlans.chain_action?(&1)))
   end
 
-  def branch_available_actions(kind, scope_actions, block, branch) do
-    blocked? = not BattlePlans.chain_allowed_in?(scope_actions, block["id"], branch)
+  def branch_available_actions(kind, block, branch) do
+    blocked? = Enum.any?(BattlePlans.branch_actions(block, branch), &BattlePlans.terminal?/1)
     Enum.reject(BattlePlans.action_types(kind), &(blocked? and BattlePlans.chain_action?(&1)))
   end
 
   def ends_with_chain?(actions), do: actions != [] and BattlePlans.terminal?(List.last(actions))
 
-  def branch_label("then"), do: "then"
-  def branch_label("else"), do: "else"
+  attr :label, :string, required: true
+  attr :title, :string, default: nil
+  attr :id, :string, required: true
+  attr :condition, :map, default: nil
+  attr :open_editor_id, :string, default: nil
+  attr :sinner_options, :list, required: true
+
+  def condition_header(assigns) do
+    ~H"""
+    <div class="flex flex-1 min-w-0 items-start gap-2 rounded bg-teal-700 p-1">
+      <span class="flex h-6 shrink-0 items-center pl-1 text-[11px] font-bold tracking-wide text-white cursor-help" title={@title}><%= @label %></span>
+      <div class="flex-1 min-w-0">
+        <.if_condition id={@id} condition={@condition} open_editor_id={@open_editor_id} sinner_options={@sinner_options} />
+      </div>
+    </div>
+    """
+  end
+
+  attr :title, :string, default: nil
+  slot :inner_block, required: true
+
+  def keyword_badge(assigns) do
+    ~H"""
+    <span class="inline-flex shrink-0 items-center rounded bg-teal-700 px-2 py-0.5 text-[11px] font-bold tracking-wide text-white cursor-help" title={@title}><%= render_slot(@inner_block) %></span>
+    """
+  end
+
+  def depth_bg(0), do: "bg-base-200"
+  def depth_bg(1), do: "bg-[color-mix(in_oklab,var(--color-base-200),var(--color-base-content)_6%)]"
+  def depth_bg(2), do: "bg-[color-mix(in_oklab,var(--color-base-200),var(--color-base-content)_12%)]"
+  def depth_bg(3), do: "bg-[color-mix(in_oklab,var(--color-base-200),var(--color-base-content)_18%)]"
+  def depth_bg(_depth), do: "bg-[color-mix(in_oklab,var(--color-base-200),var(--color-base-content)_24%)]"
+
+  def elif_condition(block, elif_id), do: Enum.find_value(BattlePlans.elifs(block), &if(&1["id"] == elif_id, do: &1["condition"]))
 
   attr :container, :string, required: true
   attr :playbook, :map, required: true
@@ -757,7 +807,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
             <.schedule_block schedule={item} playbook={@playbook} sinner_options={@sinner_options} open_editor_id={@open_editor_id}
                              schedule_tabs={@schedule_tabs} reorder_rev={@reorder_rev} />
           <% else %>
-            <.action_row action={item} index={index} sinner_options={@sinner_options} kind={@playbook["kind"]} scope_actions={@scope} container={@container}
+            <.action_row action={item} index={index} sinner_options={@sinner_options} kind={@playbook["kind"]} container={@container}
                          open_editor_id={@open_editor_id} handle?={true} schedulable?={@container == "root"}
                          playbook_id={@playbook["id"]} reorder_rev={@reorder_rev} />
           <% end %>
@@ -860,69 +910,91 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     """
   end
 
+  attr :id, :string, required: true
+  attr :condition, :map, default: nil
+  attr :open_editor_id, :string, default: nil
+  attr :sinner_options, :list, required: true
+
+  def if_condition(assigns) do
+    ~H"""
+    <%= if @condition do %>
+      <%= if @open_editor_id == @id do %>
+        <div phx-click-away="close_editor" class="flex items-start gap-1">
+          <button type="button" phx-click="close_editor" title="Close the condition editor" class="btn btn-ghost btn-xs h-6 min-h-6 px-1">▾</button>
+          <div class="flex-1 min-w-0">
+            <.condition_node node={@condition} path="" values={%{"action" => @id}} removable={not is_map_key(@condition, "children")}
+                             leaf={&hook_leaf(Map.put(&1, :sinner_options, @sinner_options))} />
+          </div>
+        </div>
+      <% else %>
+        <button type="button" phx-click="open_editor" phx-value-action={@id}
+                class="btn btn-outline btn-xs bg-base-100 h-6 min-h-6 w-full justify-start font-normal normal-case">
+          <span class="text-base-content/50">▸</span><span class="truncate"><%= BattlePlans.condition_label(@condition, Map.new(@sinner_options, &{&1.id, &1.name})) %></span>
+        </button>
+      <% end %>
+    <% else %>
+      <button type="button" phx-click="cond_add" phx-value-action={@id} phx-value-path="" phx-value-node="leaf"
+              class="btn btn-2xs btn-ghost self-start">+ Add condition</button>
+    <% end %>
+    """
+  end
+
   attr :action, :map, required: true
   attr :index, :integer, required: true
   attr :sinner_options, :list, required: true
   attr :kind, :string, required: true
-  attr :scope_actions, :list, required: true
   attr :container, :string, default: "root"
   attr :handle?, :boolean, default: false
   attr :schedulable?, :boolean, default: false
   attr :open_editor_id, :string, default: nil
   attr :playbook_id, :string, default: nil
   attr :reorder_rev, :integer, default: 0
+  attr :depth, :integer, default: 0
 
   def action_row(%{action: %{"type" => "if"}} = assigns) do
     ~H"""
-    <div class="flex items-start gap-2 bg-base-200 rounded p-1.5 text-xs">
+    <div class={"flex items-start gap-2 rounded-lg border border-base-300 p-2 text-xs " <> depth_bg(@depth)}>
       <span :if={@handle?} data-sort-handle class="cursor-grab text-base-content/40 select-none pt-1">⠿</span>
       <span class="text-base-content/50 w-4 pt-1"><%= @index %>.</span>
       <div class="flex flex-col gap-1 flex-1 min-w-0">
         <div class="flex items-start gap-2">
-          <span class="font-semibold cursor-help shrink-0 pt-0.5" title={action_tooltip("if")}><%= action_label("if") %></span>
-          <div class="flex-1 min-w-0">
-        <%= if @action["condition"] do %>
-          <%= if @open_editor_id == @action["id"] do %>
-            <div phx-click-away="close_editor" class="flex items-start gap-1">
-              <button type="button" phx-click="close_editor" title="Close the condition editor" class="btn btn-ghost btn-xs h-6 min-h-6 px-1">▾</button>
-              <div class="flex-1 min-w-0">
-                <.condition_node node={@action["condition"]} path="" values={%{"action" => @action["id"]}} removable={not is_map_key(@action["condition"], "children")}
-                                 leaf={&hook_leaf(Map.put(&1, :sinner_options, @sinner_options))} />
-              </div>
-            </div>
-          <% else %>
-            <button type="button" phx-click="open_editor" phx-value-action={@action["id"]}
-                    class="btn btn-outline btn-xs bg-base-100 h-6 min-h-6 w-full justify-start font-normal normal-case">
-              <span class="text-base-content/50">▸</span><span class="truncate"><%= BattlePlans.condition_label(@action["condition"], Map.new(@sinner_options, &{&1.id, &1.name})) %></span>
-            </button>
-          <% end %>
-        <% else %>
-          <button type="button" phx-click="cond_add" phx-value-action={@action["id"]} phx-value-path="" phx-value-node="leaf"
-                  class="btn btn-2xs btn-ghost self-start">+ Add condition</button>
-        <% end %>
-          </div>
+          <.condition_header label="IF" title={action_tooltip("if")} id={@action["id"]} condition={@action["condition"]} open_editor_id={@open_editor_id} sinner_options={@sinner_options} />
           <div class="flex gap-0.5 shrink-0">
             <button :if={@schedulable?} type="button" phx-click="add_schedule" phx-value-action={@action["id"]} title="Change this action across turns"
                     class="btn btn-2xs btn-ghost">Add Schedule</button>
             <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error">✕</button>
           </div>
         </div>
-        <%= for branch <- BattlePlans.branches() do %>
+        <%= for branch <- BattlePlans.branches(@action) do %>
           <div class="flex flex-col gap-1 pl-3 border-l-2 border-base-300">
-            <span class="text-[11px] font-medium text-base-content/70"><%= branch_label(branch) %></span>
+            <div :if={branch not in ["then", "else"]} class="flex items-start gap-2">
+              <.condition_header label="ELSE IF" id={branch} condition={elif_condition(@action, branch)} open_editor_id={@open_editor_id} sinner_options={@sinner_options} />
+              <button type="button" phx-click="remove_elif" phx-value-elif={branch} title="Remove this else if" class="btn btn-2xs btn-ghost text-error shrink-0">✕</button>
+            </div>
+            <div :if={branch == "else"} class="flex items-center gap-1">
+              <.keyword_badge>ELSE</.keyword_badge>
+              <button type="button" phx-click="remove_else" phx-value-parent={@action["id"]} title="Remove the else branch" class="btn btn-2xs btn-ghost text-error">✕</button>
+            </div>
+            <% actions = BattlePlans.branch_actions(@action, branch) %>
             <div id={"branch-#{@playbook_id}-#{@action["id"]}-#{branch}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_actions" data-sort-move-event="move_action_to"
                  data-sort-shared={@playbook_id} data-sort-scope={@action["id"] <> "~" <> branch} data-sort-highlight
-                 class={"flex flex-col gap-1 rounded " <> if(@action[branch] == [], do: "min-h-10 border border-dashed border-base-300", else: "min-h-6")}>
-              <div :for={{child, child_index} <- Enum.with_index(@action[branch], 1)} data-sort-id={child["id"]} data-sort-handle>
-                <.action_row action={child} index={child_index} sinner_options={@sinner_options} kind={@kind} scope_actions={@scope_actions} container={@container} open_editor_id={@open_editor_id}
-                             handle?={true} playbook_id={@playbook_id} reorder_rev={@reorder_rev} />
+                 class={"flex flex-col gap-1 rounded " <> if(actions == [], do: "min-h-10 border border-dashed border-base-300", else: "min-h-6")}>
+              <div :for={{child, child_index} <- Enum.with_index(actions, 1)} data-sort-id={child["id"]} data-sort-handle>
+                <.action_row action={child} index={child_index} sinner_options={@sinner_options} kind={@kind} container={@container} open_editor_id={@open_editor_id}
+                             handle?={true} playbook_id={@playbook_id} reorder_rev={@reorder_rev} depth={@depth + 1} />
               </div>
             </div>
-            <div class="join self-start">
-              <span class="join-item btn btn-xs pointer-events-none cursor-default bg-primary/15 font-bold text-primary/70" aria-hidden="true" tabindex="-1">+</span>
-              <button :for={type <- branch_available_actions(@kind, @scope_actions, @action, branch)} type="button" phx-click="add_action"
-                      phx-value-type={type} phx-value-container={@container} phx-value-parent={@action["id"]} phx-value-branch={branch}
-                      title={action_tooltip(type)} class="join-item btn btn-xs"><.add_icon type={type} /><%= add_label(type) %></button>
+            <div class="flex flex-wrap items-center gap-2">
+              <button :if={branch != "else"} type="button" phx-click="add_elif"
+                      phx-value-parent={@action["id"]} phx-value-after={branch} title="Add an else if after this branch" class="btn btn-xs btn-ghost">+ else if</button>
+              <button :if={branch != "else" and not BattlePlans.has_else?(@action) and branch == List.last(BattlePlans.branches(@action))} type="button" phx-click="add_else"
+                      phx-value-parent={@action["id"]} title="Add an else branch" class="btn btn-xs btn-ghost">+ else</button>
+              <div class="join self-start">
+                <span class="join-item btn btn-xs pointer-events-none cursor-default bg-primary/15 font-bold text-primary/70" aria-hidden="true" tabindex="-1">+</span>
+                <button :for={type <- branch_available_actions(@kind, @action, branch)} type="button" phx-click="add_action"
+                        phx-value-type={type} phx-value-container={@container} phx-value-parent={@action["id"]} phx-value-branch={branch}
+                        title={action_tooltip(type)} class="join-item btn btn-xs"><.add_icon type={type} /><%= add_label(type) %></button>
+              </div>
             </div>
           </div>
         <% end %>
@@ -933,7 +1005,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   def action_row(assigns) do
     ~H"""
-    <div class="flex items-start gap-2 bg-base-200 rounded p-1.5 text-xs">
+    <div class={"flex items-start gap-2 rounded-lg border border-base-300 p-2 text-xs " <> depth_bg(@depth)}>
       <span :if={@handle?} data-sort-handle class="cursor-grab text-base-content/40 select-none pt-1">⠿</span>
       <span class="text-base-content/50 w-4 pt-1"><%= @index %>.</span>
       <form phx-change="update_action" class="flex flex-col gap-1 flex-1 min-w-0">
@@ -959,8 +1031,19 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           </div>
         <% end %>
         <%= if @action["type"] not in ~w(dodge ego target nothing) do %>
-          <div class="flex items-center gap-2">
-            <span class="font-semibold whitespace-nowrap cursor-help" title={action_tooltip(@action["type"])}><%= action_label(@action["type"]) %></span>
+          <div class="flex items-center gap-2 min-h-6">
+            <%= case @action["type"] do %>
+              <% type when type in ~w(win_rate damage_rate) -> %>
+                <span class="inline-flex items-center gap-1.5 rounded bg-red-800 px-2 py-0.5 font-semibold whitespace-nowrap text-yellow-300 cursor-help" title={action_tooltip(type)}>
+                  <%= if type == "win_rate", do: "Win Rate", else: "Damage Rate" %>
+                  <span class="[text-shadow:0_0_6px_#fde047,0_0_12px_#facc15]">▲</span>
+                  <%= if type == "win_rate", do: "(p)", else: "(p p)" %>
+                </span>
+              <% "commit" -> %>
+                <span class="inline-flex items-center rounded bg-base-content/20 px-2 py-0.5 font-semibold whitespace-nowrap cursor-help" title={action_tooltip("commit")}>Commit (enter)</span>
+              <% type -> %>
+                <span class="font-semibold whitespace-nowrap cursor-help" title={action_tooltip(type)}><%= action_label(type) %></span>
+            <% end %>
             <div :if={@action["type"] == "chain"} class="join">
               <button :for={{mode, label} <- [{"fast", "fast"}, {"a_res", "a-res"}]} type="button" phx-click="set_chain_mode" phx-value-action={@action["id"]} phx-value-mode={mode}
                       title={chain_mode_tooltip(mode)} class={["join-item btn btn-xs", (@action["mode"] || "fast") == mode && "btn-primary"]}><%= label %></button>
@@ -1699,8 +1782,12 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   defp put_schedule_tab(socket, schedule_id, from), do: update(socket, :schedule_tabs, &Map.put(&1, schedule_id, from))
 
   defp update_condition(socket, action_id, fun) do
-    update_action(socket, action_id, fn action ->
-      Map.put(action, "condition", action["condition"] |> fun.() |> Conditions.prune())
+    prune = &(&1 |> fun.() |> Conditions.prune())
+
+    update_items(socket, fn items ->
+      items
+      |> BattlePlans.update_list_containing(action_id, fn list -> Enum.map(list, &if(&1["id"] == action_id, do: Map.update!(&1, "condition", prune), else: &1)) end)
+      |> BattlePlans.update_elif_condition(action_id, prune)
     end)
   end
 

@@ -259,7 +259,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     assert render(socket) =~ "Retries per battle"
   end
 
-  test "an if block with a chain in a branch sorts last and blocks a second chain", %{socket: socket} do
+  test "an if block with a chain in a branch keeps its place, and each list allows one chain", %{socket: socket} do
     chain = Enum.find(socket.assigns.data["playbooks"], &(&1["kind"] == "chain"))
     socket = socket |> event("select_playbook", %{"id" => chain["id"]}) |> event("remove_action", %{"action" => hd(chain["actions"])["id"]})
     socket = event(socket, "add_action", %{"container" => "root", "type" => "if"})
@@ -268,12 +268,14 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     socket =
       socket
       |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => block["id"], "branch" => "then"})
+      |> event("add_else", %{"parent" => block["id"]})
       |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => block["id"], "branch" => "else"})
       |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => block["id"], "branch" => "else"})
       |> event("add_action", %{"container" => "root", "type" => "chain"})
+      |> event("add_action", %{"container" => "root", "type" => "chain"})
       |> event("add_action", %{"container" => "root", "type" => "ego"})
 
-    assert [%{"type" => "ego"}, %{"type" => "if"} = block] = actions(socket, chain["id"])
+    assert [%{"type" => "if"} = block, %{"type" => "ego"}, %{"type" => "chain"}] = actions(socket, chain["id"])
     assert Enum.map(block["then"], & &1["type"]) == ["chain"]
     assert Enum.map(block["else"], & &1["type"]) == ["chain"]
     assert BattlePlans.action_types("chain") == ~w(chain win_rate damage_rate ego dodge if commit retry)
@@ -562,5 +564,48 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     assert Enum.map(inner["else"], & &1["type"]) == ["chain"]
     assert BattlePlans.condition_label(inner["condition"]) == "pride slots = 1"
     assert render(socket) =~ "pride slots = 1"
+  end
+
+  test "else if branches insert anywhere in the chain and hold their own actions and conditions", %{socket: socket} do
+    chain = Enum.find(socket.assigns.data["playbooks"], &(&1["kind"] == "chain"))
+    socket = socket |> event("select_playbook", %{"id" => chain["id"]}) |> event("remove_action", %{"action" => hd(chain["actions"])["id"]})
+    socket = event(socket, "add_action", %{"container" => "root", "type" => "if"})
+    [block] = actions(socket, chain["id"])
+    assert BattlePlans.branches(block) == ["then"]
+
+    socket = event(socket, "add_else", %{"parent" => block["id"]})
+    [block] = actions(socket, chain["id"])
+    assert BattlePlans.branches(block) == ["then", "else"]
+
+    socket = event(socket, "add_elif", %{"parent" => block["id"], "after" => "then"})
+    [block] = actions(socket, chain["id"])
+    [first] = block["elifs"]
+
+    socket = event(socket, "add_elif", %{"parent" => block["id"], "after" => "then"})
+    [block] = actions(socket, chain["id"])
+    [second, ^first] = block["elifs"]
+    assert BattlePlans.branches(block) == ["then", second["id"], first["id"], "else"]
+
+    socket =
+      socket
+      |> event("add_action", %{"container" => "root", "type" => "retry", "parent" => block["id"], "branch" => second["id"]})
+      |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => block["id"], "branch" => first["id"]})
+      |> event("add_action", %{"container" => "root", "type" => "chain", "parent" => block["id"], "branch" => "else"})
+      |> event("cond_update", %{"action" => first["id"], "path" => "0", "op" => "tray_count", "match" => "pride", "cmp" => "eq", "value" => "1", "sinner" => ""})
+
+    [block] = actions(socket, chain["id"])
+    assert Enum.map(BattlePlans.branch_actions(block, second["id"]), & &1["type"]) == ["retry"]
+    assert Enum.map(BattlePlans.branch_actions(block, first["id"]), & &1["type"]) == ["chain"]
+    assert Enum.map(block["else"], & &1["type"]) == ["chain"]
+    assert BattlePlans.condition_label(Enum.find(block["elifs"], &(&1["id"] == first["id"]))["condition"]) == "pride slots = 1"
+    assert render(socket) =~ "else if"
+
+    socket = event(socket, "remove_elif", %{"elif" => second["id"]})
+    [block] = actions(socket, chain["id"])
+    assert Enum.map(block["elifs"], & &1["id"]) == [first["id"]]
+
+    socket = event(socket, "remove_else", %{"parent" => block["id"]})
+    [block] = actions(socket, chain["id"])
+    assert BattlePlans.branches(block) == ["then", first["id"]]
   end
 end

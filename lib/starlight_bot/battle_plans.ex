@@ -19,7 +19,6 @@ defmodule StarlightBot.BattlePlans do
     "chain" => ~w(chain win_rate damage_rate ego dodge if commit retry),
     "focused" => ~w(win_rate damage_rate target if commit retry)
   }
-  @branches ~w(then else)
   @hook_leaf %{"op" => "hook_on", "hook" => ""}
   @sinner_ops ~w(sinners_eq sinners_gte sinners_lte)
   @tray_count_op "tray_count"
@@ -512,52 +511,110 @@ defmodule StarlightBot.BattlePlans do
 
   def action_types(kind), do: Map.fetch!(@action_types, kind)
 
-  def branches, do: @branches
+  def branches(block), do: ["then" | Enum.map(elifs(block), & &1["id"])] ++ if(has_else?(block), do: ["else"], else: [])
+
+  def has_else?(block), do: is_list(block["else"])
+
+  def add_else(items, block_id), do: update_list_containing(items, block_id, fn list -> Enum.map(list, &if(&1["id"] == block_id and is_nil(&1["else"]), do: Map.put(&1, "else", []), else: &1)) end)
+
+  def remove_else(items, block_id), do: update_list_containing(items, block_id, fn list -> Enum.map(list, &if(&1["id"] == block_id, do: Map.put(&1, "else", nil), else: &1)) end)
+
+  def elifs(block), do: block["elifs"] || []
+
+  def branch_actions(block, "then"), do: block["then"]
+  def branch_actions(block, "else"), do: block["else"] || []
+  def branch_actions(block, id), do: Enum.find_value(elifs(block), [], &if(&1["id"] == id, do: &1["actions"]))
+
+  def update_branch_actions(block, "then", fun), do: Map.update!(block, "then", fun)
+  def update_branch_actions(block, "else", fun), do: Map.put(block, "else", fun.(block["else"] || []))
+
+  def update_branch_actions(block, id, fun) do
+    Map.put(block, "elifs", Enum.map(elifs(block), &if(&1["id"] == id, do: Map.update!(&1, "actions", fun), else: &1)))
+  end
+
+  def branch_conditions(block), do: [block["condition"] | Enum.map(elifs(block), & &1["condition"])]
+
+  def action_conditions(%{"type" => "if"} = block), do: branch_conditions(block)
+  def action_conditions(action), do: [action["condition"]]
+
+  def new_elif, do: %{"id" => GiftPlans.new_id("ei"), "condition" => Conditions.add(nil, "", @hook_leaf), "actions" => []}
+
+  def add_elif(items, block_id, after_branch) do
+    update_list_containing(items, block_id, fn list ->
+      Enum.map(list, fn
+        %{"id" => ^block_id} = block ->
+          {before, rest} = Enum.split(elifs(block), elif_insert_index(block, after_branch))
+          Map.put(block, "elifs", before ++ [new_elif() | rest])
+
+        item ->
+          item
+      end)
+    end)
+  end
+
+  defp elif_insert_index(_block, "then"), do: 0
+  defp elif_insert_index(block, id), do: 1 + Enum.find_index(elifs(block), &(&1["id"] == id))
+
+  def remove_elif(items, elif_id) do
+    Enum.map(items, fn
+      %{"type" => "if"} = block ->
+        block
+        |> Map.put("elifs", elifs(block) |> Enum.reject(&(&1["id"] == elif_id)) |> Enum.map(&Map.update!(&1, "actions", fn actions -> remove_elif(actions, elif_id) end)))
+        |> Map.update!("then", &remove_elif(&1, elif_id))
+        |> Map.update("else", nil, &(&1 && remove_elif(&1, elif_id)))
+
+      %{"type" => "schedule"} = schedule ->
+        Map.update!(schedule, "segments", fn segments -> Enum.map(segments, &Map.update!(&1, "actions", fn actions -> remove_elif(actions, elif_id) end)) end)
+
+      item ->
+        item
+    end)
+  end
+
+  def update_elif_condition(items, elif_id, fun) do
+    Enum.map(items, fn
+      %{"type" => "if"} = block ->
+        block
+        |> Map.put("elifs", Enum.map(elifs(block), fn elif ->
+          elif = Map.update!(elif, "actions", fn actions -> update_elif_condition(actions, elif_id, fun) end)
+          if elif["id"] == elif_id, do: Map.update!(elif, "condition", fun), else: elif
+        end))
+        |> Map.update!("then", &update_elif_condition(&1, elif_id, fun))
+        |> Map.update("else", nil, &(&1 && update_elif_condition(&1, elif_id, fun)))
+
+      %{"type" => "schedule"} = schedule ->
+        Map.update!(schedule, "segments", fn segments -> Enum.map(segments, &Map.update!(&1, "actions", fn actions -> update_elif_condition(actions, elif_id, fun) end)) end)
+
+      item ->
+        item
+    end)
+  end
   def hook_leaf, do: @hook_leaf
 
   def chain_action?(type), do: type in @chain_actions
 
-  def terminal?(%{"type" => "if"} = block), do: Enum.any?(@branches, fn branch -> Enum.any?(block[branch], &terminal?/1) end)
   def terminal?(%{"type" => type}), do: chain_action?(type)
-
-  def chain_allowed_in?(actions, block_id, branch) do
-    Enum.find_value(actions, fn
-      %{"id" => ^block_id} = block ->
-        no_other_terminal?(actions, block_id) and not Enum.any?(block[branch], &terminal?/1)
-
-      %{"type" => "if"} = block ->
-        Enum.find_value(@branches, fn inner ->
-          case chain_allowed_in?(block[inner], block_id, branch) do
-            nil -> nil
-            allowed? -> allowed? and no_other_terminal?(actions, block["id"])
-          end
-        end)
-
-      _action ->
-        nil
-    end) || false
-  end
-
-  defp no_other_terminal?(actions, id), do: not Enum.any?(actions, &(&1["id"] != id and terminal?(&1)))
 
   def chain_last(actions) do
     {terminal, other} = actions |> Enum.map(&sort_branches/1) |> Enum.split_with(&terminal?/1)
     other ++ terminal
   end
 
-  defp sort_branches(%{"type" => "if"} = block), do: Enum.reduce(@branches, block, &Map.update!(&2, &1, fn actions -> chain_last(actions) end))
+  defp sort_branches(%{"type" => "if"} = block), do: Enum.reduce(branches(block), block, &update_branch_actions(&2, &1, fn actions -> chain_last(actions) end))
   defp sort_branches(action), do: action
 
   def flatten_actions(actions) do
     Enum.flat_map(actions, fn
-      %{"type" => "if"} = block -> [block | Enum.flat_map(@branches, &flatten_actions(block[&1]))]
+      %{"type" => "if"} = block -> [block | Enum.flat_map(branches(block), &flatten_actions(branch_actions(block, &1)))]
       %{"type" => "schedule"} = schedule -> Enum.flat_map(schedule["segments"], &flatten_actions(&1["actions"]))
       action -> [action]
     end)
   end
 
   def refresh_ids(%{"type" => "if"} = block) do
-    Enum.reduce(@branches, Map.put(block, "id", GiftPlans.new_id("ac")), &Map.update!(&2, &1, fn actions -> Enum.map(actions, fn a -> refresh_ids(a) end) end))
+    elifs = Enum.map(elifs(block), &Map.put(&1, "id", GiftPlans.new_id("ei")))
+    block = block |> Map.put("id", GiftPlans.new_id("ac")) |> Map.put("elifs", elifs)
+    Enum.reduce(branches(block), block, &update_branch_actions(&2, &1, fn actions -> Enum.map(actions, fn a -> refresh_ids(a) end) end))
   end
 
   def refresh_ids(%{"type" => "schedule"} = schedule) do
@@ -575,7 +632,7 @@ defmodule StarlightBot.BattlePlans do
   end
 
   def hook_names(playbook) do
-    for action <- flatten_actions(playbook["actions"]), leaf <- Conditions.leaves(action["condition"]), is_binary(leaf["hook"]), leaf["hook"] != "", uniq: true, do: leaf["hook"]
+    for action <- flatten_actions(playbook["actions"]), condition <- action_conditions(action), leaf <- Conditions.leaves(condition), is_binary(leaf["hook"]), leaf["hook"] != "", uniq: true, do: leaf["hook"]
   end
 
   def condition_label(tree, profile_names \\ %{})
@@ -910,7 +967,7 @@ defmodule StarlightBot.BattlePlans do
   end
 
   def new_action("if") do
-    %{"id" => GiftPlans.new_id("ac"), "type" => "if", "condition" => Conditions.add(nil, "", @hook_leaf), "then" => [], "else" => []}
+    %{"id" => GiftPlans.new_id("ac"), "type" => "if", "condition" => Conditions.add(nil, "", @hook_leaf), "then" => [], "elifs" => [], "else" => nil}
   end
 
   def new_action("chain"), do: %{"id" => GiftPlans.new_id("ac"), "type" => "chain", "mode" => "fast", "pins" => []}
@@ -1038,7 +1095,7 @@ defmodule StarlightBot.BattlePlans do
   def find_item(items, id) do
     Enum.find_value(items, fn
       %{"id" => ^id} = item -> item
-      %{"type" => "if"} = block -> Enum.find_value(@branches, &find_item(block[&1], id))
+      %{"type" => "if"} = block -> Enum.find_value(branches(block), &find_item(branch_actions(block, &1), id))
       %{"type" => "schedule"} = schedule -> Enum.find_value(schedule["segments"], &find_item(&1["actions"], id))
       _item -> nil
     end)
@@ -1050,7 +1107,7 @@ defmodule StarlightBot.BattlePlans do
     else
       Enum.map(items, fn
         %{"type" => "if"} = block ->
-          Enum.reduce(@branches, block, fn branch, acc -> Map.update!(acc, branch, &update_list_containing(&1, id, fun)) end)
+          Enum.reduce(branches(block), block, fn branch, acc -> update_branch_actions(acc, branch, &update_list_containing(&1, id, fun)) end)
 
         %{"type" => "schedule"} = schedule ->
           Map.update!(schedule, "segments", fn segments ->
@@ -1076,7 +1133,7 @@ defmodule StarlightBot.BattlePlans do
 
     update_list_containing(items, block_id, fn list ->
       Enum.map(list, fn
-        %{"id" => ^block_id} = block -> Map.update!(block, branch, fun)
+        %{"id" => ^block_id} = block -> update_branch_actions(block, branch, fun)
         item -> item
       end)
     end)
@@ -1104,7 +1161,7 @@ defmodule StarlightBot.BattlePlans do
   def container_actions(items, container) do
     if branch_container?(container) do
       [block_id, branch] = String.split(container, "~")
-      (find_item(items, block_id) || %{})[branch] || []
+      branch_actions(find_item(items, block_id) || %{"then" => []}, branch)
     else
       segment_actions(items, container)
     end
@@ -1301,7 +1358,10 @@ defmodule StarlightBot.BattlePlans do
     branch_container?(to) and not is_nil(find_item([moved], hd(String.split(to, "~"))))
   end
 
-  def terminal_conflict?(items, container), do: Enum.count(scope_actions(items, container), &terminal?/1) > 1
+  def terminal_conflict?(items, container) do
+    actions = if branch_container?(container), do: container_actions(items, container), else: scope_actions(items, container)
+    Enum.count(actions, &terminal?/1) > 1
+  end
 
   def tracks_using(data, playbook_id) do
     Enum.filter(@tracks, fn track ->
