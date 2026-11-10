@@ -91,7 +91,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
   defp apply_team(team, sinners, checks, ctx) do
     can_choose_team = checks.team_selector or checks.team_selector_tall
-    can_choose_order = checks.clear_selection or checks.sinner_count_0
+    can_choose_order = checks.clear_selection or checks.sinner_count_0 or checks.team_selector_gone
 
     with :ok <- maybe_select_team(can_choose_team, team, ctx),
          :ok <- maybe_select_order(can_choose_order, sinners, ctx) do

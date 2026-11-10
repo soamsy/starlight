@@ -100,6 +100,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
           premove(:event_prechoice_region),
           branch(leading_clauses ++ [
             gift_popup_clause(),
+            {any_of([:team_selector, :team_selector_tall, :team_selector_gone]), []},
             {:default, [key(direction), key(:enter)]}
           ])
         ],
@@ -190,7 +191,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
       {:error, :pan_zoom_not_reset} ->
         Ctx.log(ctx, :info, "dungeon path planner: pan/zoom never settled — resetting view")
         Engine.run_action(:dungeon_graph, :reset_view, ctx)
-        grab_and_build()
+        await_ready_graph(System.monotonic_time(:millisecond) + @ready_timeout_ms, ctx)
 
       {:ok, %DungeonGraph{current_level: level}, _frame} = ok when level != nil ->
         waited = System.monotonic_time(:millisecond) - started_at
@@ -222,12 +223,6 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
             end
         end
       end
-    end
-  end
-
-  defp grab_and_build do
-    with {:ok, frame} <- Capture.grab_frame() do
-      frame |> DungeonGraph.build() |> with_frame(frame)
     end
   end
 
