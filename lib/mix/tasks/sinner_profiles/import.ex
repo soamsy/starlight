@@ -3,7 +3,8 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
   @moduledoc """
   Add-only: inserts a `sinner_profiles` row, with placeholder uptie and base locator hooks, for each
   gll-fun identity whose `game_id` isn't already present. Existing profiles and hooks
-  are never modified, and no identity images are downloaded.
+  are never modified, apart from filling in a missing `defense_affinity` (the sin of defense
+  skill 1, the first entry of gll-fun's `guardSin`). No identity images are downloaded.
 
       mix sinner_profiles.import
   """
@@ -15,6 +16,7 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
   alias StarlightBot.BaseRepo, as: Repo
 
   @gll_sinners %{"mersault" => "meursault"}
+  @gll_sins %{"glut" => "gluttony"}
 
   @region {60, 972, 45, 40}
   @scan_region {60, 972, 1800, 40}
@@ -33,7 +35,7 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
       end
 
     {:ok, raw} =
-      GllFun.rest("ids", api_key, %{"select" => "gameId,nameEN,sinner,releaseDate", "order" => "gameId.asc"})
+      GllFun.rest("ids", api_key, %{"select" => "gameId,nameEN,sinner,releaseDate,guardSin", "order" => "gameId.asc"})
 
     identities = raw |> Enum.map(&parse_identity/1) |> Enum.reject(&is_nil/1)
 
@@ -59,7 +61,8 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
         game_id: game_id,
         name_en: String.trim(name_en),
         sinner: sinner,
-        released_on: parse_release_date(game_id, raw["releaseDate"])
+        released_on: parse_release_date(game_id, raw["releaseDate"]),
+        defense_affinity: parse_defense_affinity(game_id, raw["guardSin"])
       }
     else
       Mix.shell().error("#{game_id} #{name_en}: unknown sinner #{inspect(gll_sinner)}, skipping")
@@ -70,6 +73,18 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
   defp parse_identity(raw) do
     Mix.shell().error("Skipping malformed identity: #{inspect(Map.take(raw, ["gameId", "nameEN", "sinner"]))}")
     nil
+  end
+
+  defp parse_defense_affinity(game_id, raw) do
+    affinity = if is_binary(raw), do: raw |> String.split(",") |> List.first() |> String.trim() |> String.downcase()
+    affinity = Map.get(@gll_sins, affinity, affinity)
+
+    if affinity in SinnerProfiles.sins() do
+      affinity
+    else
+      Mix.shell().error("#{game_id}: no usable defense affinity in guardSin #{inspect(raw)}")
+      nil
+    end
   end
 
   defp parse_release_date(game_id, raw) do
@@ -97,6 +112,7 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
     exists? = Repo.exists?(from p in "sinner_profiles", where: p.game_id == ^identity.game_id)
 
     if exists? do
+      backfill_defense_affinity(identity)
       %{acc | skipped: acc.skipped + 1}
     else
       now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -111,6 +127,7 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
           game_id: identity.game_id,
           name_en: identity.name_en,
           released_on: identity.released_on,
+          defense_affinity: identity.defense_affinity,
           locator_hook: hook,
           base_locator_hook: base_hook,
           inserted_at: now,
@@ -120,6 +137,15 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
 
       %{acc | inserted: acc.inserted + 1, hooks: acc.hooks + Enum.count([created?, base_created?], & &1)}
     end
+  end
+
+  defp backfill_defense_affinity(%{defense_affinity: nil}), do: :ok
+
+  defp backfill_defense_affinity(identity) do
+    Repo.update_all(
+      from(p in "sinner_profiles", where: p.game_id == ^identity.game_id and is_nil(p.defense_affinity)),
+      set: [defense_affinity: identity.defense_affinity]
+    )
   end
 
   defp display_name(identity) do

@@ -5,6 +5,8 @@ defmodule StarlightBot.SinnerProfiles do
 
   @user_id_floor 1_000_000
 
+  @sins ~w(wrath lust sloth gluttony gloom pride envy)
+
   @sinners ~w(yi_sang faust don_quixote ryoshu meursault hong_lu heathcliff ishmael rodion sinclair outis gregor)
 
   @placeholder_png Base.decode64!(
@@ -12,6 +14,8 @@ defmodule StarlightBot.SinnerProfiles do
                    )
 
   def sinners, do: @sinners
+
+  def sins, do: @sins
 
   def icon(sinner) when sinner in @sinners, do: "/images/sinners/#{sinner}.webp"
 
@@ -44,6 +48,7 @@ defmodule StarlightBot.SinnerProfiles do
         sinner: p.sinner,
         locator_hook: p.locator_hook,
         base_locator_hook: p.base_locator_hook,
+        defense_affinity: p.defense_affinity,
         name_en: p.name_en,
         released_on: p.released_on
       }
@@ -70,7 +75,13 @@ defmodule StarlightBot.SinnerProfiles do
 
   def save(%{name: name} = attrs) when is_binary(name) and name != "" do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
-    fields = [name: name, sinner: attrs[:sinner], locator_hook: attrs[:locator_hook], base_locator_hook: attrs[:base_locator_hook]]
+    fields = [
+      name: name,
+      sinner: attrs[:sinner],
+      locator_hook: attrs[:locator_hook],
+      base_locator_hook: attrs[:base_locator_hook],
+      defense_affinity: attrs[:defense_affinity]
+    ]
 
     case attrs[:id] do
       id when is_integer(id) ->

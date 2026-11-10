@@ -43,21 +43,10 @@
                            disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
                            phx-mounted={if profile.id == @focus_id, do: JS.focus()}
                            class="input input-bordered input-xs min-w-0 flex-1" />
-                    <details class="dropdown dropdown-end">
-                      <summary title={"Sinner: " <> if(profile.sinner, do: sinner_label(profile.sinner), else: "none")}
-                               class="btn btn-xs btn-ghost px-1">
-                        <img :if={profile.sinner} src={StarlightBot.SinnerProfiles.icon(profile.sinner)} class="sinner-icon h-5 w-5 object-contain" />
-                        <span :if={is_nil(profile.sinner)} class="text-base-content/40">?</span>
-                      </summary>
-                      <div class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg"><div class="grid grid-cols-4 gap-1">
-                        <label :for={option <- StarlightBot.SinnerProfiles.sinners()} title={sinner_label(option)}
-                               class="btn btn-sm btn-ghost px-1 has-[:checked]:btn-primary has-[:disabled]:opacity-50">
-                          <input type="radio" name="sinner" value={option} checked={profile.sinner == option}
-                                 disabled={!StarlightBot.SinnerProfiles.writable?(profile)} class="hidden" />
-                          <img src={StarlightBot.SinnerProfiles.icon(option)} class="sinner-icon h-6 w-6 object-contain" />
-                        </label>
-                      </div></div>
-                    </details>
+                    <button type="button" phx-click="delete_profile" phx-value-id={profile.id}
+                            disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
+                            data-confirm={delete_message(profile, @profile_usage)}
+                            class="btn btn-xs btn-ghost text-error px-1">Del</button>
                   </div>
                   <div class="flex items-center gap-1">
                     <details id={"locator-dropdown-#{profile.id}"} phx-hook="FloatingDropdown" class="dropdown">
@@ -80,10 +69,37 @@
                       </div>
                     </details>
                     <button type="button" phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost px-1">Test</button>
-                    <button type="button" phx-click="delete_profile" phx-value-id={profile.id}
-                            disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
-                            data-confirm={delete_message(profile, @profile_usage)}
-                            class="btn btn-xs btn-ghost text-error px-1 ml-auto">Del</button>
+                    <details id={"affinity-dropdown-#{profile.id}"} phx-hook="FloatingDropdown" class="dropdown ml-auto">
+                      <summary title={"Defense skill 1 affinity: " <> (profile.defense_affinity || "none")}
+                               class="btn btn-xs btn-ghost gap-1 px-1">
+                        <span class="text-xs text-base-content/60">DEF</span>
+                        <img :if={profile.defense_affinity} src={"/images/sin/#{profile.defense_affinity}.webp"} class="h-5 w-5 object-contain" />
+                        <span :if={is_nil(profile.defense_affinity)} class="text-base-content/40">?</span>
+                      </summary>
+                      <div popover="manual" class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg"><div class="grid grid-cols-4 gap-1">
+                        <label :for={option <- StarlightBot.SinnerProfiles.sins()} title={option}
+                               class="btn btn-sm btn-ghost px-1 has-[:checked]:btn-primary has-[:disabled]:opacity-50">
+                          <input type="radio" name="defense_affinity" value={option} checked={profile.defense_affinity == option}
+                                 disabled={!StarlightBot.SinnerProfiles.writable?(profile)} class="hidden" />
+                          <img src={"/images/sin/#{option}.webp"} class="h-6 w-6 object-contain" />
+                        </label>
+                      </div></div>
+                    </details>
+                    <details id={"sinner-dropdown-#{profile.id}"} phx-hook="FloatingDropdown" class="dropdown">
+                      <summary title={"Sinner: " <> if(profile.sinner, do: sinner_label(profile.sinner), else: "none")}
+                               class="btn btn-xs btn-ghost px-1">
+                        <img :if={profile.sinner} src={StarlightBot.SinnerProfiles.icon(profile.sinner)} class="sinner-icon h-5 w-5 object-contain" />
+                        <span :if={is_nil(profile.sinner)} class="text-base-content/40">?</span>
+                      </summary>
+                      <div popover="manual" class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg"><div class="grid grid-cols-4 gap-1">
+                        <label :for={option <- StarlightBot.SinnerProfiles.sinners()} title={sinner_label(option)}
+                               class="btn btn-sm btn-ghost px-1 has-[:checked]:btn-primary has-[:disabled]:opacity-50">
+                          <input type="radio" name="sinner" value={option} checked={profile.sinner == option}
+                                 disabled={!StarlightBot.SinnerProfiles.writable?(profile)} class="hidden" />
+                          <img src={StarlightBot.SinnerProfiles.icon(option)} class="sinner-icon h-6 w-6 object-contain" />
+                        </label>
+                      </div></div>
+                    </details>
                   </div>
                   <p :if={@profile_tests[profile.id]} class="text-xs text-base-content/60"><%= @profile_tests[profile.id] %></p>
                   </div>

@@ -109,6 +109,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
       id: String.to_integer(id),
       name: String.trim(params["name"] || ""),
       sinner: blank_to_nil(params["sinner"]),
+      defense_affinity: blank_to_nil(params["defense_affinity"]),
       locator_hook: blank_to_nil(String.trim(params["locator_hook"] || "")),
       base_locator_hook: blank_to_nil(String.trim(params["base_locator_hook"] || ""))
     }
