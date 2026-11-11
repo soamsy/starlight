@@ -1523,9 +1523,10 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           don't retarget if possible
         </label>
         <%= if enemy_pick_value(@enemy) not in ~w(none continue) do %>
-          <div class="flex flex-col gap-1" title="Applied in order before picking. Each step cuts that many enemies from one side, but always leaves at least one.">
+          <div class="flex flex-col gap-1" title="Applied in order before picking. Ignore cuts that many enemies from one side. Keep only cuts everything except that many from one side. Either way at least one enemy is always left.">
             <div :for={{ignore, index} <- Enum.with_index(@enemy["ignore"] || [])} class="flex items-center gap-1">
-              <span class="text-base-content/60">ignore</span>
+              <span class="text-base-content/60"><%= if ignore["only"] == true, do: "keep only", else: "ignore" %></span>
+              <input :if={ignore["only"] == true} type="hidden" name={field_name(@prefix, "enemy_ignore") <> "[#{index}][only]"} value="true" />
               <select name={field_name(@prefix, "enemy_ignore") <> "[#{index}][side]"} class="select select-bordered select-xs w-auto">
                 <option :for={side <- BattlePlans.ignore_sides()} value={side} selected={ignore["side"] == side}><%= side %></option>
               </select>
@@ -1534,10 +1535,16 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
               <button type="button" phx-click="remove_ignore" phx-value-action={@owner} phx-value-path={@prefix} phx-value-index={index}
                       class="btn btn-ghost text-error h-6 min-h-6 px-1"><.icon name="lucide-x" class="size-3.5" /></button>
             </div>
-            <select id={"ignore-add-#{@owner}-#{@prefix}-#{length(@enemy["ignore"] || [])}"} name={field_name(@prefix, "enemy_ignore_add")} class="select select-bordered select-xs w-auto self-start">
-              <option value="" selected>+ ignore</option>
-              <option :for={side <- BattlePlans.ignore_sides()} value={side}><%= side %></option>
-            </select>
+            <div class="flex items-center gap-1 self-start">
+              <select id={"ignore-add-#{@owner}-#{@prefix}-#{length(@enemy["ignore"] || [])}"} name={field_name(@prefix, "enemy_ignore_add")} class="select select-bordered select-xs w-auto">
+                <option value="" selected>+ ignore</option>
+                <option :for={side <- BattlePlans.ignore_sides()} value={side}><%= side %></option>
+              </select>
+              <select id={"only-add-#{@owner}-#{@prefix}-#{length(@enemy["ignore"] || [])}"} name={field_name(@prefix, "enemy_only_add")} class="select select-bordered select-xs w-auto">
+                <option value="" selected>+ keep only</option>
+                <option :for={side <- BattlePlans.ignore_sides()} value={side}><%= side %></option>
+              </select>
+            </div>
           </div>
         <% end %>
       <% else %>
@@ -1800,7 +1807,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <span class="inline-flex items-center justify-center h-6 w-6 rounded border border-dashed border-base-content/20 text-sm text-base-content/25 select-none peer-checked:hidden">≠</span>
       <span class="hidden items-center h-6 px-1.5 rounded bg-error text-[11px] font-semibold text-error-content select-none peer-checked:inline-flex">NOT</span>
     </label>
-    <.radio_group name="op" value={@node["op"]} options={[{"tray_count", "tray slots"}, {"sinner_count", "sinner count"}, {"enemy_count", "enemy count"}, {"sinner_position", "sinner position"}, {"boss_fight", "boss"}, {"hook", "hook"}]} />
+    <.radio_group name="op" value={@node["op"]} options={[{"tray_count", "tray slots"}, {"sinner_count", "sinner count"}, {"enemy_count", "target count"}, {"sinner_position", "sinner position"}, {"boss_fight", "boss"}, {"hook", "hook"}]} />
     <%= cond do %>
     <% BattlePlans.sinner_leaf?(@node) -> %>
       <.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
@@ -2055,7 +2062,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     pick = params["enemy_pick"] || default
     step = if get_in(holder, ["enemy", "pick"]) == pick, do: params["enemy_step"]
 
-    Map.put(holder, "enemy", pick |> BattlePlans.parse_enemy(params["enemy_offset"], step) |> BattlePlans.put_ignores(params["enemy_ignore"], params["enemy_ignore_add"]))
+    Map.put(holder, "enemy", pick |> BattlePlans.parse_enemy(params["enemy_offset"], step) |> BattlePlans.put_ignores(params["enemy_ignore"], params["enemy_ignore_add"], params["enemy_only_add"]))
   end
 
   defp apply_rest(%{"rest" => rest} = holder, %{"rest" => rest_params}, enemy?), do: Map.put(holder, "rest", apply_holder(rest, rest_params, enemy?))

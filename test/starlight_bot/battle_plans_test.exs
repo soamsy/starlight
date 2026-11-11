@@ -278,7 +278,7 @@ defmodule StarlightBot.BattlePlansTest do
       assert leaf == %{"op" => "enemy_count", "cmp" => "lte", "value" => 2}
       assert BattlePlans.condition_leaf(%{"op" => "enemy_count", "cmp" => "eq", "value" => "0"})["value"] == 0
       assert BattlePlans.condition_leaf(%{"op" => "enemy_count"}) == %{"op" => "enemy_count", "cmp" => "gte", "value" => 1}
-      assert BattlePlans.condition_label(Conditions.add(nil, "", leaf)) == "enemies <= 2"
+      assert BattlePlans.condition_label(Conditions.add(nil, "", leaf)) == "targets <= 2"
       assert BattlePlans.enemy_leaf?(leaf)
       refute BattlePlans.enemy_leaf?(%{"op" => "sinner_count"})
       assert BattlePlans.enemy_count_matches?(leaf, 2)
@@ -718,6 +718,7 @@ defmodule StarlightBot.BattlePlansTest do
   describe "apply_ignores/2" do
     defp at(x, y), do: %{icon: {x, y}, point: {x, y + 100}}
     defp ignore(side, n), do: %{"side" => side, "n" => n}
+    defp only(side, n), do: %{"side" => side, "n" => n, "only" => true}
 
     setup do
       %{targets: [at(100, 300), at(200, 150), at(300, 400), at(400, 200)]}
@@ -743,22 +744,40 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.apply_ignores(targets, [ignore("left", 99), ignore("right", 5), ignore("top", 1)]) == [at(400, 200)]
     end
 
+    test "keep only takes that many from one side and runs in order with ignores", %{targets: targets} do
+      assert BattlePlans.apply_ignores(targets, [only("top", 2)]) == [at(200, 150), at(400, 200)]
+      assert BattlePlans.apply_ignores(targets, [only("right", 3)]) == [at(200, 150), at(300, 400), at(400, 200)]
+      assert BattlePlans.apply_ignores(targets, [only("right", 3), ignore("left", 1)]) == [at(300, 400), at(400, 200)]
+      assert BattlePlans.apply_ignores(targets, [ignore("left", 1), only("top", 1)]) == [at(200, 150)]
+    end
+
+    test "keep only never cuts everything and over-asking keeps all", %{targets: targets} do
+      assert BattlePlans.apply_ignores(targets, [only("left", 99)]) == targets
+      assert BattlePlans.apply_ignores(targets, [only("left", 1), ignore("left", 99)]) == [at(100, 300)]
+    end
+
     test "passes through without ignores and handles no targets", %{targets: targets} do
       assert BattlePlans.apply_ignores(targets, nil) == targets
       assert BattlePlans.apply_ignores(targets, []) == targets
       assert BattlePlans.apply_ignores([], [ignore("left", 1)]) == []
-      assert BattlePlans.ignore_label([ignore("left", 3), ignore("top", 2)]) == ", ignoring left 3, top 2"
+      assert BattlePlans.ignore_label([ignore("left", 3), ignore("top", 2)]) == ", ignoring left 3, ignoring top 2"
     end
   end
 
-  describe "put_ignores/3" do
+  describe "put_ignores/4" do
     test "reads indexed entries in order, clamps n, drops junk, and appends an added side" do
       entries = %{"1" => %{"side" => "top", "n" => "500"}, "0" => %{"side" => "left", "n" => "3"}, "2" => %{"side" => "diagonal", "n" => "1"}}
-      assert BattlePlans.put_ignores(%{"pick" => "first"}, entries, "right")["ignore"] == [ignore("left", 3), ignore("top", 99), ignore("right", 1)]
+      assert BattlePlans.put_ignores(%{"pick" => "first"}, entries, "right", nil)["ignore"] == [ignore("left", 3), ignore("top", 99), ignore("right", 1)]
+    end
+
+    test "keep only entries round trip and can be added" do
+      entries = %{"0" => %{"side" => "top", "n" => "4", "only" => "true"}, "1" => %{"side" => "left", "n" => "2"}}
+      assert BattlePlans.put_ignores(%{"pick" => "first"}, entries, "", "right")["ignore"] == [only("top", 4), ignore("left", 2), only("right", 1)]
+      assert BattlePlans.ignore_label([only("top", 4), ignore("left", 2)]) == ", only top 4, ignoring left 2"
     end
 
     test "no entries removes the key, and remove_ignore drops by index" do
-      assert BattlePlans.put_ignores(%{"pick" => "first", "ignore" => [ignore("left", 1)]}, nil, "") == %{"pick" => "first"}
+      assert BattlePlans.put_ignores(%{"pick" => "first", "ignore" => [ignore("left", 1)]}, nil, "", nil) == %{"pick" => "first"}
       enemy = %{"pick" => "first", "ignore" => [ignore("left", 1), ignore("top", 2)]}
       assert BattlePlans.remove_ignore(enemy, 0)["ignore"] == [ignore("top", 2)]
       assert BattlePlans.remove_ignore(BattlePlans.remove_ignore(enemy, 0), 0) == %{"pick" => "first"}

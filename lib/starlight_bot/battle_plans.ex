@@ -92,13 +92,17 @@ defmodule StarlightBot.BattlePlans do
   def apply_ignores(targets, ignores) when is_list(ignores), do: Enum.reduce(ignores, targets, &ignore_targets(&2, &1))
   def apply_ignores(targets, _ignores), do: targets
 
-  defp ignore_targets(targets, %{"side" => side, "n" => n}) when side in @ignore_sides and targets != [] do
+  defp ignore_targets(targets, %{"side" => side, "n" => n} = entry) when side in @ignore_sides and targets != [] do
+    sorted = targets |> Enum.with_index() |> Enum.sort_by(fn {%{icon: {x, y}}, _index} -> ignore_key(side, x, y) end)
+
     cut =
-      targets
-      |> Enum.with_index()
-      |> Enum.sort_by(fn {%{icon: {x, y}}, _index} -> ignore_key(side, x, y) end)
-      |> Enum.take(min(n, length(targets) - 1))
-      |> MapSet.new(&elem(&1, 1))
+      if entry["only"] == true do
+        sorted |> Enum.drop(max(n, 1))
+      else
+        sorted |> Enum.take(min(n, length(targets) - 1))
+      end
+
+    cut = MapSet.new(cut, &elem(&1, 1))
 
     targets |> Enum.with_index() |> Enum.reject(fn {_target, index} -> index in cut end) |> Enum.map(&elem(&1, 0))
   end
@@ -111,22 +115,37 @@ defmodule StarlightBot.BattlePlans do
   defp ignore_key("bottom", _x, y), do: -y
 
   def ignore_label(ignores) when is_list(ignores) and ignores != [],
-    do: ", ignoring " <> Enum.map_join(ignores, ", ", fn %{"side" => side, "n" => n} -> "#{side} #{n}" end)
+    do: ", " <> Enum.map_join(ignores, ", ", &ignore_entry_label/1)
 
   def ignore_label(_ignores), do: ""
 
-  def put_ignores(enemy, entries, add) do
+  defp ignore_entry_label(%{"only" => true, "side" => side, "n" => n}), do: "only #{side} #{n}"
+  defp ignore_entry_label(%{"side" => side, "n" => n}), do: "ignoring #{side} #{n}"
+
+  def put_ignores(enemy, entries, add, add_only) do
     kept =
       (entries || %{})
       |> Enum.sort_by(fn {index, _entry} -> parse_count(index) || 0 end)
       |> Enum.flat_map(fn
-        {_index, %{"side" => side} = entry} when side in @ignore_sides -> [%{"side" => side, "n" => (parse_count(entry["n"]) || 1) |> max(1) |> min(99)}]
+        {_index, %{"side" => side} = entry} when side in @ignore_sides -> [ignore_entry(side, (parse_count(entry["n"]) || 1) |> max(1) |> min(99), entry["only"] == "true")]
         _ -> []
       end)
 
-    ignores = if add in @ignore_sides, do: kept ++ [%{"side" => add, "n" => 1}], else: kept
-    if ignores == [], do: Map.delete(enemy, "ignore"), else: Map.put(enemy, "ignore", ignores)
+    added =
+      cond do
+        add in @ignore_sides -> [ignore_entry(add, 1, false)]
+        add_only in @ignore_sides -> [ignore_entry(add_only, 1, true)]
+        true -> []
+      end
+
+    case kept ++ added do
+      [] -> Map.delete(enemy, "ignore")
+      ignores -> Map.put(enemy, "ignore", ignores)
+    end
   end
+
+  defp ignore_entry(side, n, true), do: %{"side" => side, "n" => n, "only" => true}
+  defp ignore_entry(side, n, false), do: %{"side" => side, "n" => n}
 
   def remove_ignore(enemy, index) do
     case List.delete_at(enemy["ignore"] || [], index) do
@@ -504,8 +523,7 @@ defmodule StarlightBot.BattlePlans do
   defp enemy_parts(%{"enemy" => %{"pick" => pick} = enemy}) when pick in ~w(first last) do
     start = "target #{pick}#{offset_label(pick, enemy["offset"])}"
     step = if enemy["step"] in ~w(left right), do: ", then #{enemy["step"]}", else: ""
-    ignored = Enum.map_join(enemy["ignore"] || [], "", &", ignoring #{&1["side"]} #{&1["n"]}")
-    [start <> step <> ignored]
+    [start <> step <> ignore_label(enemy["ignore"])]
   end
 
   defp enemy_parts(_holder), do: nil
@@ -920,7 +938,7 @@ defmodule StarlightBot.BattlePlans do
 
   defp leaf_label(%{"op" => @sinner_count_op} = leaf, _names), do: "sinners #{cmp_symbol(leaf["cmp"])} #{leaf["value"]}"
 
-  defp leaf_label(%{"op" => @enemy_count_op} = leaf, _names), do: "enemies #{cmp_symbol(leaf["cmp"])} #{leaf["value"]}"
+  defp leaf_label(%{"op" => @enemy_count_op} = leaf, _names), do: "targets #{cmp_symbol(leaf["cmp"])} #{leaf["value"]}"
 
   defp leaf_label(%{"op" => "boss_fight"} = leaf, _names), do: if(leaf["not"], do: "not a boss fight", else: "boss fight")
 
