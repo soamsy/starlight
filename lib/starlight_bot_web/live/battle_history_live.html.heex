@@ -61,13 +61,11 @@
   <% else %>
     <div class="flex flex-1 min-h-0 gap-3">
       <div class="w-72 shrink-0 overflow-y-auto flex flex-col gap-1">
-        <form phx-change="filter" class="shrink-0">
-        <select name="kind" class="select select-sm select-bordered w-full">
-          <option value="all" selected={@kind_filter == "all"}>All</option>
-          <option value="chain_tray" selected={@kind_filter == "chain_tray"}>Chain tray</option>
-          <option value="focused_enemies" selected={@kind_filter == "focused_enemies"}>Focused enemies</option>
-        </select>
-        </form>
+        <div id="history-kind-filter" phx-hook="ViewMemory" data-key="starlight-history-kind" data-view={Jason.encode!(%{kind: @kind_filter})} class="join w-full shrink-0">
+          <button phx-click="filter" phx-value-kind="all" class={"btn btn-sm join-item flex-1 " <> if(@kind_filter == "all", do: "btn-primary", else: "")}>All</button>
+          <button phx-click="filter" phx-value-kind="chain_tray" class={"btn btn-sm join-item flex-1 " <> if(@kind_filter == "chain_tray", do: "btn-primary", else: "")}>Chain tray</button>
+          <button phx-click="filter" phx-value-kind="focused_enemies" class={"btn btn-sm join-item flex-1 " <> if(@kind_filter == "focused_enemies", do: "btn-primary", else: "")}>Focused enemies</button>
+        </div>
         <button phx-click="delete_non_suite" disabled={@entries -- suite_entries(@entries) == []}
                 data-confirm={"Move #{length(@entries) - length(suite_entries(@entries))} capture(s) that are not in the test suite to the trash?"}
                 class="btn btn-sm btn-error btn-outline shrink-0">Delete non-suite captures</button>

@@ -1,12 +1,12 @@
 defmodule StarlightBot.Vision.EnemyTargets do
   alias StarlightBot.Vision.Frame
 
-  @region {506, 72, 1220, 700}
+  @region {546, 112, 1180, 660}
   @window 64
   @stride 8
-  @scales [0.85, 0.76, 0.69, 0.63]
+  @scales [1.15, 1.0, 0.85, 0.76, 0.69, 0.63, 0.55]
   @suppress_px 45
-  @threshold 0.3
+  @threshold 0.4
   @descriptor_size 1764
   @model_file "priv/vision/enemy_targets_hog.f32"
   @color_bgr2gray 6

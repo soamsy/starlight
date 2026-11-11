@@ -14,7 +14,7 @@ The previous version never looked for the septagon. It looked for small things n
 
 I ran the 8 labeled enemy captures that were in the suite at the time. Six failed. The causes:
 
-- **Impostors from fixed places.** The skill banner at the top centre (roughly x 700 to 940, y 140 to 250) caused false targets in four captures. An ally's status clutter at the left edge of the search region (x 506 to 530) caused two more.
+- **Impostors from fixed places.** The skill banner at the top centre (roughly x 700 to 940, y 140 to 250) caused false targets in four captures. An ally's status clutter at the left edge of the search region (x 506 to 530) caused two more. The crop now starts at x 546 for the same reason; the labeled septagon centres span x 589 to 1360.
 - **Lost anchors.** In three captures an arrow or the banner covered the badge. The septagon itself was fully visible, but the detector found the badge first and only then guessed where the septagon was.
 - **No badge at all.** The 14-28 captures have no badges, so only the colour fallbacks fired, and they covered half the septagons.
 
@@ -34,9 +34,9 @@ These are worth knowing so nobody retries them.
 
 A sliding-window classifier over HOG features.
 
-1. Crop the region `{506, 72, 1220, 700}` and convert to grayscale.
-2. Resize to four scales (0.85, 0.76, 0.69, 0.63) so septagons of width 68 to 92 px land near the 64 px window.
-3. Run OpenCV's `HOGDescriptor` (window 64, block 16, block stride 8, cell 8, 9 bins, 1764 values per window) with a linear detector set on it, at stride 8 and a hit threshold of 0.3.
+1. Crop the region `{546, 112, 1180, 660}` and convert to grayscale.
+2. Resize to seven scales (1.15, 1.0, 0.85, 0.76, 0.69, 0.63, 0.55) so septagons of width 50 to 105 px land near the 64 px window.
+3. Run OpenCV's `HOGDescriptor` (window 64, block 16, block stride 8, cell 8, 9 bins, 1764 values per window) with a linear detector set on it, at stride 8 and a hit threshold of 0.4.
 4. Map window centres back to frame coordinates and drop any candidate within 45 px of a stronger one.
 
 The model is a single weight vector plus a bias, 1765 float32 values (7060 bytes) in `priv/vision/enemy_targets_hog.f32`. It is read once and cached in `:persistent_term`. A frame takes about 50 ms.
@@ -54,20 +54,21 @@ The training data is the labeled `focused_enemies` captures marked as in-suite i
 
 ## Accuracy
 
-Five-fold cross-validation grouped by capture, so the model never sees the capture it is scored on. 15 captures, 79 targets, lambda 0.3.
+Five-fold cross-validation grouped by capture, so the model never sees the capture it is scored on. 32 captures, 156 targets, lambda 0.3.
 
 | Threshold | Captures perfect | Missed | Extra |
 |---|---|---|---|
-| 0.1 | 10 of 15 | 0 | 7 |
-| 0.2 | 14 of 15 | 1 | 0 |
-| 0.3 | 14 of 15 | 2 | 0 |
-| 0.4 | 14 of 15 | 3 | 0 |
-| 0.5 | 13 of 15 | 6 | 0 |
-| 0.8 | 12 of 15 | 10 | 0 |
+| 0.1 | 21 of 32 | 0 | 14 |
+| 0.2 | 27 of 32 | 2 | 4 |
+| 0.3 | 28 of 32 | 2 | 3 |
+| 0.4 | 31 of 32 | 2 | 0 |
+| 0.5 | 29 of 32 | 6 | 0 |
+| 0.6 | 28 of 32 | 8 | 0 |
+| 0.8 | 16 of 32 | 27 | 0 |
 
-The default threshold is 0.3, the middle of the 0.2 to 0.4 plateau. The model that ships is trained on all 15 captures and passes 15 of 15 in the bulk suite, but that number is optimistic because it has seen those frames. Judge changes by the cross-validated numbers.
+The default threshold is 0.4, the best row. It is a narrow peak, not a plateau. The one capture that still fails is a 6-enemy frame where drag arrows cross several septagons. Lambda from 0.1 to 3.0 changes nothing material. The model that ships is trained on all 32 captures, so its bulk-suite score is optimistic. Judge changes by the cross-validated numbers.
 
-Fifteen captures is a small sample, and I chose the threshold after seeing these results.
+Thirty-two captures is still a small sample, and I chose the threshold after seeing these results.
 
 ## Retraining
 

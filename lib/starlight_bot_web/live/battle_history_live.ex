@@ -44,6 +44,11 @@ defmodule StarlightBotWeb.Live.BattleHistoryLive do
   def handle_event("filter", %{"kind" => kind}, socket) when kind in ~w(all chain_tray focused_enemies),
     do: {:noreply, assign(socket, :kind_filter, kind)}
 
+  def handle_event("restore_view", %{"kind" => kind}, socket) when kind in ~w(all chain_tray focused_enemies),
+    do: {:noreply, assign(socket, :kind_filter, kind)}
+
+  def handle_event("restore_view", _params, socket), do: {:noreply, socket}
+
   def handle_event("bulk_filter", %{"filter" => filter}, socket) when filter in ~w(failures all),
     do: {:noreply, assign(socket, :bulk_filter, filter)}
 

@@ -157,12 +157,22 @@ defmodule StarlightBot.BattlePlans do
   def put_run_mode(%{"row" => "priority"} = holder, %{"mode" => mode} = params) when mode in ~w(none a_res a_res_def) do
     case mode do
       "none" -> Map.drop(holder, ~w(mode max_defenses))
-      "a_res" -> holder |> Map.put("mode", mode) |> Map.delete("max_defenses")
-      "a_res_def" -> holder |> Map.put("mode", mode) |> put_max_defenses(params)
+      "a_res" -> holder |> lead_with_in_use() |> Map.put("mode", mode) |> Map.delete("max_defenses")
+      "a_res_def" -> holder |> lead_with_in_use() |> Map.put("mode", mode) |> put_max_defenses(params)
     end
   end
 
   def put_run_mode(holder, _params), do: holder
+
+  defp lead_with_in_use(%{"mode" => mode} = holder) when mode in ~w(a_res a_res_def), do: holder
+
+  defp lead_with_in_use(%{"priority" => %{"order" => order}} = holder) do
+    if "in_use" in order,
+      do: holder,
+      else: Map.put(holder, "priority", %{"order" => ["in_use" | order]})
+  end
+
+  defp lead_with_in_use(holder), do: holder
 
   defp put_max_defenses(holder, %{"max_defenses" => value}) do
     case Integer.parse(to_string(value)) do
