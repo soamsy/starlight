@@ -1,7 +1,7 @@
 defmodule StarlightBot.Input.Mouse do
   use GenServer
   require Logger
-  alias StarlightBot.{AppSettings, LogStore, Native, Input.MouseProfile, Input.Trajectory, Input.Wander, Vision.Capture}
+  alias StarlightBot.{AppSettings, LogStore, Native, Input.Dwell, Input.MouseProfile, Input.Trajectory, Input.Wander, Vision.Capture}
 
   @btn_left 0x110
   @btn_right 0x111
@@ -11,6 +11,7 @@ defmodule StarlightBot.Input.Mouse do
   @mouse_down_settle_ms 30
   @release_settle_ms 50
   @click_settle_ms 2
+  @dwell_jitter_px 5
   @min_hover_ms 70
   @land_check_delay_ms 5
   @land_tolerance_px 3
@@ -142,7 +143,7 @@ defmodule StarlightBot.Input.Mouse do
     new_state = state |> execute_move(x, y, opts) |> elem(0)
     new_state = land(new_state, x, y, within, opts, @land_attempts)
 
-    :timer.sleep(max(MouseProfile.hesitation_ms(), @min_hover_ms))
+    dwell(max(MouseProfile.hesitation_ms(), @min_hover_ms), new_state.current_pos)
     do_click(button)
     {:reply, :ok, new_state}
   end
@@ -165,11 +166,11 @@ defmodule StarlightBot.Input.Mouse do
   @impl true
   def handle_call({:drag, {fx, fy}, {tx, ty}, opts}, _from, state) do
     {new_state, _} = execute_move(state, fx, fy, [])
-    :timer.sleep(Keyword.get(opts, :settle_ms, @drag_settle_ms))
+    dwell(Keyword.get(opts, :settle_ms, @drag_settle_ms), {fx, fy})
     Native.button_event(@btn_left, true)
-    :timer.sleep(Keyword.get(opts, :mouse_down_settle_ms, @mouse_down_settle_ms))
+    dwell(Keyword.get(opts, :mouse_down_settle_ms, @mouse_down_settle_ms), {fx, fy})
     {final_state, _} = execute_move(new_state, tx, ty, [duration_override: Keyword.get(opts, :duration_ms)])
-    :timer.sleep(Keyword.get(opts, :release_settle_ms, @release_settle_ms))
+    dwell(Keyword.get(opts, :release_settle_ms, @release_settle_ms), {tx, ty})
     Native.button_event(@btn_left, false)
     {:reply, :ok, final_state}
   end
@@ -369,11 +370,13 @@ defmodule StarlightBot.Input.Mouse do
     %{state | current_pos: pos, last_velocity: terminal_velocity(Enum.reject(played, &is_nil/1)), premove: nil}
   end
 
+  defp dwell(ms, {x, y}), do: Dwell.run(ms, {x, y}, @dwell_jitter_px, &step/2)
+
   defp land(state, _x, _y, _within, _opts, 0), do: state
 
   defp land(state, x, y, within, opts, attempts) do
     if on_target?(start_pos(state), x, y, within) do
-      :timer.sleep(Keyword.get(opts, :settle_ms, @click_settle_ms))
+      dwell(Keyword.get(opts, :settle_ms, @click_settle_ms), {x, y})
       state
     else
       :timer.sleep(@land_check_delay_ms)
