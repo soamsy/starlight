@@ -90,7 +90,7 @@
                     <div class="flex items-center gap-1 shrink-0">
                       <label class="input input-bordered input-xs flex flex-1 min-w-0 items-center gap-1.5">
                         <.icon name="lucide-search" class="size-3.5 shrink-0 text-base-content/50" />
-                        <input id="gift-search-input" type="text" placeholder="Search gifts…" value={@gift_filter} phx-keyup="filter_gifts" class="grow min-w-0" />
+                        <input id="gift-search-input" phx-hook="GiftSearchNav" type="text" placeholder="Search gifts (press /)…" value={@gift_filter} phx-keyup="filter_gifts" class="grow min-w-0" />
                       </label>
                       <button :if={@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter} type="button" phx-click="clear_gift_filters" title="Clear all filters"
                               class="btn btn-ghost btn-xs btn-square"><.icon name="lucide-x" class="size-3.5" /></button>
@@ -151,7 +151,7 @@
                     <% shown = filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_fixed_filter, @gift_sort) %>
                     <div id="gift-drag-source" phx-hook="GiftDragSource" class="flex flex-col flex-1 min-h-0 max-lg:min-h-28 overflow-y-auto">
                       <% added? = fn gift -> if(@active_tab == :loadout, do: gift.name in picks, else: GiftPlans.has_gift?(milestone, gift.name)) end %>
-                      <div :for={gift <- shown} data-drag-gift={if not added?.(gift), do: gift.name} class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-base-200">
+                      <div :for={gift <- shown} data-gift-row={gift.name} data-drag-gift={if not added?.(gift), do: gift.name} class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-base-200">
                         <div data-gift-popup={gift.name} class="relative w-7 h-7 shrink-0 rounded overflow-hidden bg-base-200 ring-1 ring-base-300 cursor-pointer">
                           <img src={gift.image_path} class="w-full h-full object-cover" draggable="false" />
                           <img :if={gift.affinity not in [nil, "none"]} src={gift_affinity_icon(gift.affinity)} title={gift.affinity} draggable="false"
@@ -163,14 +163,14 @@
                           <%= if gift.name in picks do %>
                             <button phx-click="toggle_search_gift" phx-value-gift={gift.name} class="btn btn-xs btn-primary" title="Remove from gift search">Added</button>
                           <% else %>
-                            <button phx-click="toggle_search_gift" phx-value-gift={gift.name} disabled={length(picks) >= GiftPlans.gift_search_max()}
+                            <button data-gift-add phx-click="toggle_search_gift" phx-value-gift={gift.name} disabled={length(picks) >= GiftPlans.gift_search_max()}
                                     class="btn btn-xs btn-outline" title="Add to gift search">Add</button>
                           <% end %>
                         <% else %>
                         <%= if GiftPlans.has_gift?(milestone, gift.name) do %>
                           <button class="btn btn-xs btn-primary" disabled>Added</button>
                         <% else %>
-                          <button phx-click="ms_add_gift" phx-value-gift={gift.name} class="btn btn-xs btn-outline"
+                          <button data-gift-add phx-click="ms_add_gift" phx-value-gift={gift.name} class="btn btn-xs btn-outline"
                                   title={if GiftPlans.fixed_recipe?(gift), do: "Also adds its ingredients"}>Add</button>
                         <% end %>
                         <% end %>

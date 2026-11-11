@@ -2041,6 +2041,77 @@ const FocusSelect = {
   }
 }
 
+const GiftSearchNav = {
+  mounted() {
+    this.activeName = null
+    this.resetFirst = false
+    const activeClasses = ["bg-base-300", "ring-1", "ring-primary"]
+    const rows = () => Array.from(document.querySelectorAll("#gift-drag-source [data-gift-row]"))
+    const apply = () => {
+      const list = rows()
+      const focused = document.activeElement === this.el
+      let index = focused ? list.findIndex((r) => r.dataset.giftRow === this.activeName) : -1
+      if (focused && (index < 0 || this.resetFirst) && list.length) index = 0
+      if (index >= 0) this.activeName = list[index].dataset.giftRow
+      this.resetFirst = false
+      list.forEach((row, i) => {
+        const on = i === index
+        activeClasses.forEach((c) => row.classList.toggle(c, on))
+      })
+      return index >= 0 ? list[index] : null
+    }
+    const move = (delta) => {
+      const list = rows()
+      if (!list.length) return
+      const current = list.findIndex((r) => r.dataset.giftRow === this.activeName)
+      const next = Math.max(0, Math.min(list.length - 1, (current < 0 ? 0 : current) + delta))
+      this.activeName = list[next].dataset.giftRow
+      apply()?.scrollIntoView({ block: "nearest" })
+    }
+    this.el.addEventListener("focus", () => {
+      this.resetFirst = true
+      apply()
+    })
+    this.el.addEventListener("blur", () => {
+      rows().forEach((row) => activeClasses.forEach((c) => row.classList.remove(c)))
+    })
+    this.el.addEventListener("input", () => {
+      this.resetFirst = true
+    })
+    this.el.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault()
+        move(e.key === "ArrowDown" ? 1 : -1)
+      } else if (e.key === "Enter") {
+        e.preventDefault()
+        const button = apply()?.querySelector("[data-gift-add]")
+        if (button && !button.disabled) button.click()
+      } else if (e.key === "Escape") {
+        this.el.blur()
+      }
+    })
+    this.onSlash = (e) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return
+      const t = e.target
+      if (t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return
+      e.preventDefault()
+      this.el.focus()
+      this.el.select()
+    }
+    document.addEventListener("keydown", this.onSlash)
+    const list = document.getElementById("gift-drag-source")
+    this.observer = new MutationObserver(() => {
+      if (document.activeElement === this.el) apply()
+    })
+    if (list) this.observer.observe(list, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] })
+  },
+
+  destroyed() {
+    document.removeEventListener("keydown", this.onSlash)
+    this.observer?.disconnect()
+  }
+}
+
 const TeamSearch = {
   mounted() {
     this.el.addEventListener("keydown", (e) => {
@@ -2365,7 +2436,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, CabinetBracket, FocusSelect, TeamSearch, WindowDrag, GameStream, InfoArrow }
+  hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, CabinetBracket, FocusSelect, GiftSearchNav, TeamSearch, WindowDrag, GameStream, InfoArrow }
 })
 
 liveSocket.connect()
