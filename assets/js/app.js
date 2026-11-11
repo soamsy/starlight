@@ -273,6 +273,13 @@ function overlayCanvasHook(eventName) {
             ctx.moveTo(o.x1, o.y1)
             ctx.lineTo(o.x2, o.y2)
             ctx.stroke()
+          } else if (o.type === "circle") {
+            ctx.beginPath()
+            ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.setLineDash([])
+            ctx.strokeStyle = "#000"
+            ctx.stroke()
           }
 
           if (o.text) {

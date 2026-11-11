@@ -644,7 +644,15 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
     bottom = row_overlays(tray.bottom_row, bottom_sins, "bottom row", "#fb7185", tray.bottom_row.hue_scan_y + tray.bottom_row.h + 12)
     bounds = [tray_start_line(tray), tray_end_line(tray)]
     bins = bin_overlays(tray)
-    Enum.reject([hp_strip | top ++ bottom ++ bounds ++ bins], &is_nil/1)
+    Enum.reject([hp_strip | top ++ bottom ++ bounds ++ bins] ++ grab_overlays(tray), &is_nil/1)
+  end
+
+  defp grab_overlays(tray) do
+    for {row, color} <- [top: "#38bdf8", bottom: "#fb7185"],
+        column <- 0..(length(SkillTray.row_columns(Map.fetch!(tray, :"#{row}_row"))) - 1) do
+      {x, y} = PlaybookRunner.grab_point(tray, column, row)
+      %{type: "circle", x: round(x), y: round(y), r: 4, color: color}
+    end
   end
 
   defp row_overlays(row, sins, label, color, cell_label_y) do

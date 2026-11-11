@@ -26,9 +26,9 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @target_tries 2
   @bad_target_radius_px 50
   @drop_ready_timeout_ms 1_000
-  @skill_hover_ms 400
+  @skill_hover_ms 100
   @screen_mid_x 960
-  @skill_grab_inward_pct 0.1
+  @skill_grab_inward_pct 0.03
   @skill_grab_depth_pct 0.6
   @bottom_skill_grab_drop_px 30
   @target_pan_settle_ms 600
@@ -846,13 +846,17 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp pick_text(enemy), do: BattlePlans.enemy_label(enemy)
 
 
-  defp skill_point(tray, column, row, ctx) do
+  def grab_point(tray, column, row) do
     %{y: y, h: h} = skill_row = if row == :top, do: tray.top_row, else: tray.bottom_row
     {x0, x1} = skill_row |> SkillTray.row_columns() |> Enum.at(column)
     center_x = (x0 + x1) / 2
     toward_middle = if center_x < @screen_mid_x, do: 1, else: -1
     drop = if row == :top, do: 0, else: @bottom_skill_grab_drop_px
-    point = {center_x + toward_middle * (x1 - x0) * @skill_grab_inward_pct, y + h * @skill_grab_depth_pct + drop}
+    {center_x + toward_middle * (x1 - x0) * @skill_grab_inward_pct, y + h * @skill_grab_depth_pct + drop}
+  end
+
+  defp skill_point(tray, column, row, ctx) do
+    point = grab_point(tray, column, row)
 
     case Runner.to_screen_point(point) do
       {:ok, point} ->
