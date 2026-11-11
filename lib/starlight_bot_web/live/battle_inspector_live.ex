@@ -66,6 +66,8 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
       |> assign(:active_rows, nil)
       |> assign(:active_error, nil)
       |> assign(:active_mat, nil)
+      |> assign(:active_detail, nil)
+      |> assign(:active_tray, nil)
       |> assign(:watch_active?, active_watch.enabled?)
       |> assign(:last_active_at, nil)
       |> assign(:nav, Navigator.status())
@@ -91,7 +93,7 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
 
     socket =
       case {connected?(socket), active_watch.latest} do
-        {true, {frame, tray, rows, at}} -> socket |> show_active(frame, tray, rows) |> assign(:last_active_at, at)
+        {true, {frame, tray, detail, at}} -> socket |> show_active(frame, tray, detail) |> assign(:last_active_at, at)
         _ -> socket
       end
 
@@ -121,8 +123,8 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   def handle_event("read_active_skills", _, socket) do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, tray} <- SkillTray.scan(frame),
-         {:ok, rows} <- PlaybookRunner.used_rows(frame, tray) do
-      {:noreply, show_active(socket, frame, tray, rows)}
+         {:ok, detail} <- PlaybookRunner.used_rows(frame, tray) do
+      {:noreply, show_active(socket, frame, tray, detail)}
     else
       :not_found -> {:noreply, socket |> assign(:active_rows, nil) |> assign(:active_error, "skill tray not found (not a battle screen?)")}
       {:error, reason} -> {:noreply, socket |> assign(:active_rows, nil) |> assign(:active_error, inspect(reason))}
@@ -232,11 +234,11 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
 
   def handle_info({:skill_tray_scanned, _frame, _at}, socket), do: {:noreply, socket}
 
-  def handle_info({:active_skills_read, frame, tray, rows, at}, %{assigns: %{watch_active?: true}} = socket) do
-    {:noreply, socket |> show_active(frame, tray, rows) |> assign(:last_active_at, at)}
+  def handle_info({:active_skills_read, frame, tray, detail, at}, %{assigns: %{watch_active?: true}} = socket) do
+    {:noreply, socket |> show_active(frame, tray, detail) |> assign(:last_active_at, at)}
   end
 
-  def handle_info({:active_skills_read, _frame, _tray, _rows, _at}, socket), do: {:noreply, socket}
+  def handle_info({:active_skills_read, _frame, _tray, _detail, _at}, socket), do: {:noreply, socket}
 
   def handle_info({:nav_state, nav}, socket), do: {:noreply, assign(socket, :nav, nav)}
 
@@ -305,14 +307,16 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   @impl true
   def handle_info(_msg, socket), do: {:noreply, socket}
 
-  defp show_active(socket, frame, tray, rows) do
+  defp show_active(socket, frame, tray, %{rows: rows} = detail) do
     case encode_jpeg(frame.mat) do
       {:ok, jpeg} ->
         socket
         |> assign(:active_rows, rows)
+        |> assign(:active_detail, detail)
+        |> assign(:active_tray, tray)
         |> assign(:active_mat, frame.mat)
         |> assign(:active_error, nil)
-        |> push_event("load_active_frame", %{data: Base.encode64(jpeg), overlays: active_overlays(tray, rows)})
+        |> push_event("load_active_frame", %{data: Base.encode64(jpeg), overlays: active_overlays(tray, detail)})
 
       {:error, reason} ->
         assign(socket, :active_error, "Encode failed: #{inspect(reason)}")
@@ -567,25 +571,41 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
     ]
   end
 
-  defp active_overlays(tray, rows) do
-    Enum.map(rows, fn {column, row} ->
-      geometry = if row == :top, do: tray.top_row, else: tray.bottom_row
-      x = tray.tray_start_x + tray.bin_width * column
+  defp active_overlays(tray, %{rows: rows, rects: rects, region: region}) do
+    slots =
+      Enum.map(rows, fn {column, row} ->
+        geometry = if row == :top, do: tray.top_row, else: tray.bottom_row
+        x = tray.tray_start_x + tray.bin_width * column
 
-      %{
-        type: "rect",
-        x: x,
-        y: geometry.y,
-        w: tray.bin_width,
-        h: geometry.h,
-        color: if(row == :top, do: "#38bdf8", else: "#fb7185"),
-        text: "#{column + 1} #{row}",
-        text_x: x + 4,
-        text_y: geometry.y - 6,
-        outline: true,
-        font_px: 18
-      }
-    end)
+        %{
+          type: "rect",
+          x: x,
+          y: geometry.y,
+          w: tray.bin_width,
+          h: geometry.h,
+          color: if(row == :top, do: "#38bdf8", else: "#fb7185"),
+          text: "#{column + 1} #{row}",
+          text_x: x + 4,
+          text_y: geometry.y - 6,
+          outline: true,
+          font_px: 18
+        }
+      end)
+
+    centers =
+      Enum.map(rows, fn {column, _row} ->
+        x = SkillTray.slot_x(tray, column)
+        %{type: "line", x1: x, y1: tray.bottom_row.y + tray.bottom_row.h, x2: x, y2: elem(region, 1) + elem(region, 3) + 30, color: "#ffffff"}
+      end)
+
+    detections =
+      Enum.map(rects, fn {x, y, w, h} ->
+        %{type: "rect", x: x, y: y, w: w, h: h, color: "#facc15", text: "x#{x} w#{w}", text_x: x, text_y: y + h + 18, outline: true, font_px: 14}
+      end)
+
+    {rx, ry, rw, rh} = region
+    hook_region = %{type: "rect", x: rx, y: ry, w: rw, h: rh, color: "#facc15", dashed: true}
+    slots ++ [hook_region] ++ centers ++ detections
   end
 
   defp gear_overlay(x, y, w, h, gear_hook) do

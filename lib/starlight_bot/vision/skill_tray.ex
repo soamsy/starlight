@@ -225,11 +225,21 @@ defmodule StarlightBot.Vision.SkillTray do
 
   @spec columns_under(t(), [{integer, integer, integer, integer}]) :: [non_neg_integer]
   def columns_under(%__MODULE__{skill_num: skill_num} = tray, rects) do
-    Enum.filter(0..(skill_num - 1)//1, fn column ->
-      center = slot_x(tray, column)
-      Enum.any?(rects, fn {x, _y, w, _h} -> x <= center and center <= x + w end)
-    end)
+    rects
+    |> Enum.flat_map(&cluster_columns(tray, &1))
+    |> Enum.uniq()
+    |> Enum.filter(&(&1 in 0..(skill_num - 1)//1))
+    |> Enum.sort()
   end
+
+  defp cluster_columns(tray, {x, _y, w, _h}) do
+    case Enum.filter(0..(tray.skill_num - 1)//1, &(x <= slot_x(tray, &1) and slot_x(tray, &1) <= x + w)) do
+      [] -> [nearest_column(tray, x + w / 2)]
+      covered -> covered
+    end
+  end
+
+  defp nearest_column(tray, x), do: floor((x - tray.tray_start_x) / tray.bin_width)
 
   @spec column_at(t(), number) :: non_neg_integer
   def column_at(%__MODULE__{} = tray, x) do

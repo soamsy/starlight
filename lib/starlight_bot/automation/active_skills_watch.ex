@@ -15,9 +15,9 @@ defmodule StarlightBot.Automation.ActiveSkillsWatch do
     Agent.update(__MODULE__, fn state -> %{state | enabled?: enabled?, latest: if(enabled?, do: state.latest)} end)
   end
 
-  def record(frame, tray, rows) do
+  def record(frame, tray, detail) do
     at = DateTime.utc_now()
-    reading = {frame, tray, rows, at}
+    reading = {frame, tray, detail, at}
 
     recorded? =
       Agent.get_and_update(__MODULE__, fn
@@ -25,7 +25,7 @@ defmodule StarlightBot.Automation.ActiveSkillsWatch do
         state -> {false, state}
       end)
 
-    if recorded?, do: Phoenix.PubSub.broadcast(StarlightBot.PubSub, @topic, {:active_skills_read, frame, tray, rows, at})
+    if recorded?, do: Phoenix.PubSub.broadcast(StarlightBot.PubSub, @topic, {:active_skills_read, frame, tray, detail, at})
     :ok
   end
 end

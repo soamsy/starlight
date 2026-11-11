@@ -111,14 +111,21 @@
     <%= if @active_rows && @tab == :active do %>
       <div class="overflow-x-auto shrink-0">
         <table class="table table-xs w-auto">
-          <thead><tr><th>slot</th><th>skill used</th></tr></thead>
+          <thead><tr><th>slot</th><th>bin x-range</th><th>center x</th><th>skill used</th></tr></thead>
           <tbody>
             <tr :for={{column, row} <- @active_rows}>
               <td><%= column + 1 %></td>
+              <td><%= round(@active_tray.tray_start_x + @active_tray.bin_width * column) %>..<%= round(@active_tray.tray_start_x + @active_tray.bin_width * (column + 1)) %></td>
+              <td><%= round(SkillTray.slot_x(@active_tray, column)) %></td>
               <td><%= row %></td>
             </tr>
           </tbody>
         </table>
+        <div class="text-xs font-semibold text-base-content/60 mt-2">
+          Hook detections (region <%= inspect(@active_detail.region) %>)
+        </div>
+        <div :if={@active_detail.rects == []} class="text-xs text-base-content/40">none</div>
+        <div :for={{x, y, w, h} <- @active_detail.rects} class="font-mono text-xs">x <%= x %>..<%= x + w %>, y <%= y %>, <%= w %>x<%= h %></div>
       </div>
     <% end %>
 
