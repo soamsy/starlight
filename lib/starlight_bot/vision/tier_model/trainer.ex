@@ -82,7 +82,7 @@ defmodule StarlightBot.Vision.TierModel.Trainer do
     bg = SinColor.background_color(frame.mat, SkillTray.background_region(tray))
 
     for {key, row} <- [{"top", tray.top_row}, {"bottom", tray.bottom_row}],
-        classified = SinColor.classify_row(frame.mat, row, bg.hue, bg.saturation, bg.value, bg.leak),
+        classified = SinColor.classify_row(frame.mat, row, bg.hue, bg.saturation, bg.value, bg.leak, bg.unmix_bgr),
         {result, slot} <- Enum.with_index(classified) do
       %{
         id: id,

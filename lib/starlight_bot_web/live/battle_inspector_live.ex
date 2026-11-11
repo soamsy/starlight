@@ -526,7 +526,7 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   defp classify_row_with_previews(mat, row, bg) do
     tier_columns = SkillTray.row_columns(row)
     hue_columns = SkillTray.hue_scan_columns(row)
-    results = SinColor.classify_row(mat, row, bg.hue, bg.saturation, bg.value, bg.leak)
+    results = SinColor.classify_row(mat, row, bg.hue, bg.saturation, bg.value, bg.leak, bg.unmix_bgr)
 
     [results, tier_columns, hue_columns]
     |> Enum.zip()

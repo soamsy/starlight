@@ -100,6 +100,18 @@ defmodule StarlightBot.Vision.SinColor do
   @bg_chroma_floor 0.6
   @bg_spread_k 0.5
 
+  @bg_lit_min_channel 30
+  @unmix_alpha 0.7
+  @unmix_palette [wrath: 0, lust: 8, sloth: 30, gluttony: 52, gloom: 90, pride: 112, envy: 150]
+  @unmix_max_hue_dist 12
+  @unmix_bg_distance 30
+  @unmix_min_saturation 150
+  @unmix_min_value 120
+  @unmix_min_votes 40
+  @unmix_min_share 0.85
+  @unmix_margin 2
+  @unmix_max_confidence 0.95
+
   @ring_kernel_px 3
   @min_ring_area 8
 
@@ -120,9 +132,10 @@ defmodule StarlightBot.Vision.SinColor do
           0..179 | nil,
           0..255 | nil,
           0..255 | nil,
-          %{optional(sin) => float}
+          %{optional(sin) => float},
+          {number, number, number} | nil
         ) :: result
-  def classify_cell(mat, {x0, x1}, y, h, hue_scan_y \\ nil, hue_x \\ nil, bg_hue \\ nil, bg_saturation \\ nil, bg_value \\ nil, bg_leak \\ %{}) do
+  def classify_cell(mat, {x0, x1}, y, h, hue_scan_y \\ nil, hue_x \\ nil, bg_hue \\ nil, bg_saturation \\ nil, bg_value \\ nil, bg_leak \\ %{}, unmix_bgr \\ nil) do
     hue_scan_y = hue_scan_y || y
     {hx0, hx1} = hue_x || {x0, x1}
     hue_cell = Frame.crop(mat, {hx0, hue_scan_y, hx1 - hx0, h})
@@ -157,6 +170,17 @@ defmodule StarlightBot.Vision.SinColor do
       |> Enum.max(fn -> 0 end)
 
     confidence = if area <= 0, do: 0.0, else: (area - second_best) / area
+
+    {winner, mask, confidence} =
+      case unmixed_override(hue_cell, unmix_bgr, winner, confidence) do
+        {override, override_confidence} ->
+          {^override, _area, override_mask} = List.keyfind(scores, override, 0)
+          {override, override_mask, override_confidence}
+
+        nil ->
+          {winner, mask, confidence}
+      end
+
     ref_mask = reference_mask(mask)
     {mean, stddev} = Evision.meanStdDev(hue_cell, mask: ref_mask)
     detected_hue = hue_of_mean(mean)
@@ -192,6 +216,65 @@ defmodule StarlightBot.Vision.SinColor do
       tier_color_mask: tier_color_mask,
       tier_raw_mask: tier_raw_mask
     }
+  end
+
+  defp unmixed_override(_hue_cell, nil, _winner, _confidence), do: nil
+  defp unmixed_override(_hue_cell, _unmix_bgr, _winner, confidence) when confidence > @unmix_max_confidence, do: nil
+
+  defp unmixed_override(hue_cell, unmix_bgr, winner, _confidence) do
+    {votes, kept} = unmixed_votes(hue_cell, unmix_bgr)
+
+    case Enum.sort_by(votes, fn {_name, count} -> -count end) do
+      [{top, top_count}, {_second, second_count} | _]
+      when top != winner and top_count >= @unmix_min_votes and top_count >= @unmix_min_share * kept and
+             top_count >= @unmix_margin * max(second_count, 1) ->
+        if winner == :gloom and top == :pride, do: nil, else: {top, (top_count - second_count) / top_count}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp unmixed_votes(hue_cell, {bb, bg, br}) do
+    observed = hue_cell |> Evision.Mat.to_nx() |> Nx.as_type(:f32)
+    background = Nx.tensor([[[bb, bg, br]]], type: :f32)
+
+    distances =
+      observed
+      |> Nx.subtract(background)
+      |> Nx.pow(2)
+      |> Nx.sum(axes: [2])
+      |> Nx.sqrt()
+      |> Nx.reshape({:auto})
+      |> Nx.to_list()
+
+    unmixed =
+      observed
+      |> Nx.subtract(Nx.multiply(background, 1 - @unmix_alpha))
+      |> Nx.divide(@unmix_alpha)
+      |> Nx.clip(0, 255)
+      |> Nx.as_type(:u8)
+      |> Evision.Mat.from_nx_2d()
+
+    hues =
+      unmixed
+      |> Evision.cvtColor(@color_bgr2hsv)
+      |> Evision.Mat.to_nx()
+      |> Nx.reshape({:auto, 3})
+      |> Nx.to_list()
+      |> Enum.zip(distances)
+      |> Enum.filter(fn {[_h, s, v], distance} ->
+        distance > @unmix_bg_distance and s > @unmix_min_saturation and v > @unmix_min_value
+      end)
+      |> Enum.map(fn {[hue, _s, _v], _distance} -> hue end)
+
+    votes =
+      Enum.reduce(hues, Map.new(@unmix_palette, fn {name, _hue} -> {name, 0} end), fn hue, acc ->
+        {name, palette_hue} = Enum.min_by(@unmix_palette, fn {_name, palette_hue} -> hue_distance(hue, palette_hue) end)
+        if hue_distance(hue, palette_hue) <= @unmix_max_hue_dist, do: Map.update!(acc, name, &(&1 + 1)), else: acc
+      end)
+
+    {Map.to_list(votes), length(hues)}
   end
 
   defp demote_dark_blue_pride(scores, hue_cell) do
@@ -267,23 +350,23 @@ defmodule StarlightBot.Vision.SinColor do
     if Evision.countNonZero(ring) >= @min_ring_area, do: ring, else: mask
   end
 
-  @spec classify_row(term, SkillTray.row(), 0..179 | nil, 0..255 | nil, 0..255 | nil, map) :: [result]
-  def classify_row(mat, row, bg_hue \\ nil, bg_saturation \\ nil, bg_value \\ nil, bg_leak \\ %{}) do
+  @spec classify_row(term, SkillTray.row(), 0..179 | nil, 0..255 | nil, 0..255 | nil, map, {number, number, number} | nil) :: [result]
+  def classify_row(mat, row, bg_hue \\ nil, bg_saturation \\ nil, bg_value \\ nil, bg_leak \\ %{}, unmix_bgr \\ nil) do
     tier_columns = SkillTray.row_columns(row)
     hue_columns = SkillTray.hue_scan_columns(row)
 
     [tier_columns, hue_columns]
     |> Enum.zip()
     |> Enum.map(fn {{x0, x1}, hue_x} ->
-      classify_cell(mat, {x0, x1}, row.y, row.h, row.hue_scan_y, hue_x, bg_hue, bg_saturation, bg_value, bg_leak)
+      classify_cell(mat, {x0, x1}, row.y, row.h, row.hue_scan_y, hue_x, bg_hue, bg_saturation, bg_value, bg_leak, unmix_bgr)
     end)
   end
 
   @spec classify_tray(term, SkillTray.t()) :: {[result], [result]}
   def classify_tray(mat, tray) do
     bg = background_color(mat, SkillTray.background_region(tray))
-    top = classify_row(mat, tray.top_row, bg.hue, bg.saturation, bg.value, bg.leak)
-    bottom = classify_row(mat, tray.bottom_row, bg.hue, bg.saturation, bg.value, bg.leak)
+    top = classify_row(mat, tray.top_row, bg.hue, bg.saturation, bg.value, bg.leak, bg.unmix_bgr)
+    bottom = classify_row(mat, tray.bottom_row, bg.hue, bg.saturation, bg.value, bg.leak, bg.unmix_bgr)
     {top, bottom}
   end
 
@@ -292,7 +375,8 @@ defmodule StarlightBot.Vision.SinColor do
           hue: 0..179,
           saturation: 0..255,
           value: 0..255,
-          leak: %{optional(sin) => float}
+          leak: %{optional(sin) => float},
+          unmix_bgr: {number, number, number}
         }
   def background_color(mat, {x, y, w, h}) do
     strip = Frame.crop(mat, {x, y, w, h})
@@ -310,8 +394,22 @@ defmodule StarlightBot.Vision.SinColor do
       hue: bg_hue,
       saturation: bg_saturation,
       value: bg_value,
-      leak: background_leak(hsv_strip, bg_hue, bg_saturation, bg_value)
+      leak: background_leak(hsv_strip, bg_hue, bg_saturation, bg_value),
+      unmix_bgr: lit_median_bgr(strip)
     }
+  end
+
+  defp lit_median_bgr(strip) do
+    pixels = strip |> Evision.Mat.to_nx() |> Nx.reshape({:auto, 3}) |> Nx.to_list()
+
+    lit =
+      case Enum.filter(pixels, fn channels -> Enum.max(channels) >= @bg_lit_min_channel end) do
+        [] -> pixels
+        lit -> lit
+      end
+
+    [b, g, r] = for i <- 0..2, do: lit |> Enum.map(&Enum.at(&1, i)) |> Enum.sort() |> Enum.at(div(length(lit), 2))
+    {b, g, r}
   end
 
   defp background_leak(hsv_strip, bg_hue, bg_saturation, bg_value) do
