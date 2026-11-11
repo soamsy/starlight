@@ -240,6 +240,12 @@ defmodule StarlightBot.Input.Trajectory do
     (mu * noise) |> max(0.12) |> min(1.4) |> Kernel.*(1000.0)
   end
 
+  @spec expected_duration_ms(number) :: float
+  def expected_duration_ms(dist) do
+    mu = 0.14 + 0.08 * :math.log2(1.0 + dist / 40.0)
+    (mu |> max(0.12) |> min(1.4)) * 1000.0
+  end
+
   defp corrective_duration_ms(remaining_dist) do
     (70.0 + remaining_dist * 4.0) |> min(200.0)
   end

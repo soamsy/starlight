@@ -1,7 +1,7 @@
 defmodule StarlightBot.Automation.BattleChain do
   alias StarlightBot.Automation.ChainStreak
   alias StarlightBot.Ctx
-  alias StarlightBot.Input.{Leeway, Mouse}
+  alias StarlightBot.Input.{Leeway, Mouse, Trajectory}
   alias StarlightBot.Navigation.Runner
   alias StarlightBot.Vision.{Capture, Matcher, SinColor, SkillTray}
 
@@ -56,12 +56,31 @@ defmodule StarlightBot.Automation.BattleChain do
     click_defense(picks, Keyword.get(opts, :click_defense, fn _column -> :ok end))
     path = build_path({gx + gw / 2, gy + gh / 2}, picks, release_point(tray))
 
-    with {:ok, path_screens} <- to_screen_points(path) do
+    {start, moves} = plan_moves(path)
+
+    with {:ok, [start_screen | move_screens]} <- to_screen_points([start | Enum.map(moves, &elem(&1, 0))]) do
       Ctx.log(ctx, :info, "battle_chain: dragging chain #{mode} across #{tray.skill_num} slot(s)")
-      run_drag(path_screens)
+      run_drag(start_screen, Enum.zip(move_screens, Enum.map(moves, &elem(&1, 1))))
       :ok
     end
   end
+
+  @spec plan_moves([{number, number}]) :: {{number, number}, [{{number, number}, float}]}
+  def plan_moves([start | rest]) do
+    {_prev, moves} =
+      Enum.reduce(rest, {start, []}, fn {_x, y} = point, {{_px, py} = prev, acc} ->
+        ms = Trajectory.expected_duration_ms(distance(prev, point)) * @chain_duration_mult
+
+        case acc do
+          [{_last, last_ms, true} | older] when y == py -> {point, [{point, last_ms + ms, true} | older]}
+          _ -> {point, [{point, ms, y == py} | acc]}
+        end
+      end)
+
+    {start, moves |> Enum.reverse() |> Enum.map(fn {point, ms, _flat} -> {point, ms} end)}
+  end
+
+  defp distance({x0, y0}, {x1, y1}), do: :math.sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0))
 
   defp click_defense(picks, click) do
     picks
@@ -90,10 +109,10 @@ defmodule StarlightBot.Automation.BattleChain do
     Enum.reverse(points)
   end
 
-  defp run_drag([{gx, gy} | rest]) do
+  defp run_drag({gx, gy}, moves) do
     Mouse.move_to(gx, gy, duration_mult: @chain_duration_mult)
     Mouse.mouse_down()
-    Enum.each(rest, fn {x, y} -> Mouse.move_to(x, y, duration_mult: @chain_duration_mult) end)
+    Enum.each(moves, fn {{x, y}, ms} -> Mouse.move_to(x, y, duration_override: ms) end)
     Mouse.mouse_up()
   end
 
