@@ -1117,6 +1117,15 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def goal_label("abandon"), do: "Abandon"
   def goal_label(letter), do: "Goal #{letter}"
 
+  def goal_hint("required", _milestone), do: "Required: the milestone is not finished until this is owned."
+  def goal_hint("optional", _milestone), do: "Optional: never blocks the milestone. Kept, bought, fused and upgraded only when it comes along."
+  def goal_hint("abandon", _milestone), do: "Abandon: the bot does not pursue this and it does not count toward the milestone."
+
+  def goal_hint(letter, milestone) do
+    min = Enum.find_value(milestone["goals"] || [], fn goal -> goal["letter"] == letter && goal["min"] end)
+    "Goal #{letter}: the milestone needs at least #{min || "N"} of the entries in this group, not all of them."
+  end
+
   def goal_member_count(milestone, letter) do
     Enum.count(milestone["entries"] || [], fn entry -> Enum.any?(entry["floors"], &(&1["goal"] == letter and &1["disposition"] == "keep")) end)
   end
@@ -1823,6 +1832,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
       <div class="w-24 shrink-0">
         <select :if={@keep? or @skill? or (@abandoned? and not @pattern?)} name="segment[goal]"
+                title={goal_hint(if(@abandoned?, do: "abandon", else: @segment["goal"] || "required"), @milestone)}
                 class={"select select-bordered select-xs w-full " <> if(@abandoned?, do: "", else: goal_select_color(@segment["goal"] || "required"))}>
           <option :for={goal <- ["required", "optional" | GiftPlans.goal_letters(@milestone)] ++ ["abandon"]} value={goal}
                   selected={if @abandoned?, do: goal == "abandon", else: (@segment["goal"] || "required") == goal}><%= goal_label(goal) %></option>
