@@ -77,7 +77,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
-  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition select_milestone copy_milestone ms_copy_entries ms_select_tab ms_refresh_select_tab rf_pick rf_reset rf_cheapest ms_open_fusion ms_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed)
+  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition select_milestone copy_milestone ms_copy_entries ms_select_tab ms_refresh_select_tab rf_pick rf_reset rf_cheapest ms_open_fusion ms_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed)
 
   def read_only_events, do: @read_only_events
 
@@ -273,8 +273,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("toggle_gift_no_pack_filter", _params, socket) do
+    {:noreply, assign(socket, :gift_no_pack_filter, not socket.assigns.gift_no_pack_filter)}
+  end
+
   def handle_event("clear_gift_filters", _params, socket) do
-    {:noreply, socket |> assign(:gift_tier_filter, []) |> assign(:gift_affinity_filter, []) |> assign(:gift_fixed_filter, false)}
+    {:noreply, socket |> assign(:gift_tier_filter, []) |> assign(:gift_affinity_filter, []) |> assign(:gift_fixed_filter, false) |> assign(:gift_no_pack_filter, false)}
   end
 
   @impl true
@@ -1167,12 +1171,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def combo_meta(combo), do: "#{Combos.points(combo)} pts · #{Combos.keyword_odds(combo)}% keyword"
 
-  def filtered_gifts(gifts, filter, tier_filter, affinity_filter, fixed_filter, sort_by) do
+  def filtered_gifts(gifts, filter, tier_filter, affinity_filter, fixed_filter, no_pack_filter, theme_packs_by_gift_id, sort_by) do
     gifts
     |> Enum.filter(&matches_text_filter?(&1, filter))
     |> Enum.filter(&(tier_filter == [] or &1.tier in tier_filter))
     |> Enum.filter(&(affinity_filter == [] or &1.affinity in affinity_filter))
     |> Enum.filter(&(not fixed_filter or GiftPlans.fixed_recipe?(&1)))
+    |> Enum.filter(&(not no_pack_filter or not is_map_key(theme_packs_by_gift_id, &1.id)))
     |> sort_gifts(sort_by)
   end
 
@@ -1292,6 +1297,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> assign(:gift_tier_filter, [])
     |> assign(:gift_affinity_filter, [])
     |> assign(:gift_fixed_filter, false)
+    |> assign(:gift_no_pack_filter, false)
     |> assign(:gift_sort, "default")
   end
 
