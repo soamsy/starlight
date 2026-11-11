@@ -185,7 +185,7 @@
                   <span :if={issues != []} class="badge badge-warning badge-sm" title={Enum.join(issues, "\n")}>
                     <%= length(issues) %> issue(s)
                   </span>
-                    <.template_picker id="gift-template-picker" templates={@templates} editing={@editing_template} current_count={@tab_counts[:gift_plans]} status={@paste_status} selected={@template_id} plans={@plans} plan_id={@editing_id} editing_plan={@editing_plan} label="gift plan" />
+                    <.template_picker id="gift-template-picker" can_undo={@can_undo} can_redo={@can_redo} templates={@templates} editing={@editing_template} current_count={@tab_counts[:gift_plans]} status={@paste_status} selected={@template_id} plans={@plans} plan_id={@editing_id} editing_plan={@editing_plan} label="gift plan" />
                   <button type="button" phx-click="toggle_help" class="btn btn-sm btn-outline gap-0 overflow-hidden px-0" title="How gift plans work">
                     <span class="flex h-full items-center border-r border-current/30 bg-base-content/10 px-2 text-xs">guide</span>
                     <span class="flex h-full items-center px-2">

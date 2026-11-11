@@ -3,6 +3,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
   import StarlightBotWeb.Components.Icon, only: [icon: 1]
   alias Phoenix.LiveView.JS
   alias StarlightBot.{PlanCounts, PlanTemplates, Plans, Teams}
+  alias StarlightBotWeb.Components.PlanHistory
   import StarlightBotWeb.Components.PlanPicker, only: [notify_parent: 1]
 
   @selectors ~w(phx-click phx-change phx-submit phx-keyup phx-keydown phx-blur)
@@ -68,10 +69,13 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
   attr :plans, :list, default: []
   attr :plan_id, :integer, default: nil
   attr :editing_plan, :integer, default: nil
+  attr :can_undo, :boolean, default: false
+  attr :can_redo, :boolean, default: false
 
   def template_picker(assigns) do
     ~H"""
     <div id={@id} phx-hook="PlanClipboard" class="flex items-center gap-1">
+      <PlanHistory.buttons can_undo={@can_undo} can_redo={@can_redo} locked={not is_nil(@selected)} />
       <button type="button" phx-click="copy_plan" class="btn btn-sm btn-square btn-outline" title={"Copy this #{@label} to the clipboard as JSON"}>
         <.icon name="lucide-copy" class="size-4" />
       </button>

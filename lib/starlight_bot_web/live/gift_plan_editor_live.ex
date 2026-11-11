@@ -6,6 +6,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   alias StarlightBot.{PlanClipboard, PlanCounts, Conditions, EgoGifts, GiftPlans, Plans, Teams, ThemePacks}
   alias StarlightBot.GiftPlans.{Routes, FusionRouteTemplates, Combos, RefreshCosts}
+  alias StarlightBotWeb.Components.PlanHistory
 
     @gift_tiers 1..6
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)
@@ -93,6 +94,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:paste_status, :unknown)
       |> assign(:template_id, nil)
       |> read_only_guard(@read_only_events)
+      |> PlanHistory.attach(:plan_data, persist: &persist_plan/1, reconcile: &reconcile_selection/1)
       |> assign_templates(:gift_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
       |> assign(:gifts, Enum.reject(gifts, &EgoGifts.unobtainable?/1))
@@ -1257,18 +1259,31 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> assign(:refresh_paths, %{})
         |> assign(:fusion_entry_id, nil)
             |> reset_browser()
+        |> PlanHistory.reset()
     end
   end
 
   defp persist_plan(%{assigns: %{template_id: template_id}} = socket) when is_integer(template_id), do: socket
 
   defp persist_plan(socket) do
+    socket = PlanHistory.record(socket)
     attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.plan_data}
 
     case Plans.save(:gift_plans, attrs) do
       {:ok, _id} -> broadcast_count(socket, :gift_plans, socket.assigns.plan_data)
       {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
     end
+  end
+
+  defp reconcile_selection(socket) do
+    %{plan_data: data, selected_milestone_id: selected} = socket.assigns
+    selected = if GiftPlans.find_milestone(data, selected), do: selected, else: first_id(data["milestones"])
+
+    socket
+    |> assign(:selected_milestone_id, selected)
+    |> assign(:editing_milestone_id, nil)
+    |> assign(:editing_condition_case_id, nil)
+    |> assign(:fusion_entry_id, nil)
   end
 
   defp update_plan(socket, fun), do: socket |> assign(:plan_data, fun.(socket.assigns.plan_data)) |> persist_plan()

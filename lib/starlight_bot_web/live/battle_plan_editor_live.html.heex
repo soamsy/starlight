@@ -151,7 +151,7 @@
               <input type="checkbox" checked={@extreme?} phx-click="toggle_extreme" class="toggle toggle-sm toggle-primary" />
               <span class={"badge badge-sm font-bold " <> if(@extreme?, do: "badge-primary", else: "badge-ghost text-base-content/50")}>F6-F15</span>
             </label>
-            <.template_picker id="battle-template-picker" templates={@templates} editing={@editing_template} current_count={@tab_counts[:battle_plans]} status={@paste_status} selected={@template_id} plans={@plans} plan_id={@editing_id} editing_plan={@editing_plan} label="battle plan" />
+            <.template_picker id="battle-template-picker" can_undo={@can_undo} can_redo={@can_redo} templates={@templates} editing={@editing_template} current_count={@tab_counts[:battle_plans]} status={@paste_status} selected={@template_id} plans={@plans} plan_id={@editing_id} editing_plan={@editing_plan} label="battle plan" />
             <button type="button" phx-click="toggle_help" class="btn btn-sm btn-outline gap-0 overflow-hidden px-0" title="How battle plans work">
               <span class="flex h-full items-center border-r border-current/30 bg-base-content/10 px-2 text-xs">guide</span>
               <span class="flex h-full items-center px-2">

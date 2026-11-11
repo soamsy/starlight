@@ -5,6 +5,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   import StarlightBotWeb.Components.PlanTemplates
 
   alias StarlightBot.{PlanCounts, Plans, Teams, ThemePacks}
+  alias StarlightBotWeb.Components.PlanHistory
   alias StarlightBot.PackPlans.{Odds, Resolver}
 
   @modes ~w(normal hard)
@@ -27,6 +28,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       |> assign(:paste_status, :unknown)
       |> assign(:template_id, nil)
       |> read_only_guard(@read_only_events)
+      |> PlanHistory.attach(:plan_data, persist: &persist_plan/1)
       |> assign_templates(:pack_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
       |> assign(:grace_picks, (team && team.grace_picks) || [])
@@ -544,12 +546,14 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
         |> assign(:plan_data, normalize_plan_data(plan.data))
         |> assign(:floor_filter, nil)
         |> assign(:filter, "")
+        |> PlanHistory.reset()
         end
   end
 
   defp persist_plan(%{assigns: %{template_id: template_id}} = socket) when is_integer(template_id), do: socket
 
   defp persist_plan(socket) do
+    socket = PlanHistory.record(socket)
     attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.plan_data}
 
     case Plans.save(:pack_plans, attrs) do

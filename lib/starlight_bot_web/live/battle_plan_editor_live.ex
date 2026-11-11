@@ -5,6 +5,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   import StarlightBotWeb.Components.PlanTemplates
 
   alias StarlightBot.{PlanClipboard, PlanCounts, BattlePlans, Conditions, Hooks, Plans, SinnerProfiles, Teams}
+  alias StarlightBotWeb.Components.PlanHistory
   alias StarlightBot.BattlePlans.Resolver
 
   @collapsed_floors 5
@@ -27,6 +28,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       |> assign(:show_help, false)
       |> assign(:template_id, nil)
       |> read_only_guard(@read_only_events)
+      |> PlanHistory.attach(:data, persist: &persist/1, reconcile: &reconcile_selection/1)
       |> assign_templates(:battle_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
       |> assign(:hook_names, Enum.map(Hooks.list_hooks(), & &1.name))
@@ -1802,6 +1804,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         |> assign(:lineup_erase?, false)
         |> assign(:paint, first_playbook["id"])
         |> assign(:extreme?, Enum.any?(Map.values(data["tracks"]) ++ Map.values(data["lineup_tracks"] || %{}), &hidden_change_points?/1))
+        |> PlanHistory.reset()
 
       nil ->
         put_flash(socket, :error, "Plan not found.")
@@ -1814,12 +1817,29 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   defp persist(%{assigns: %{template_id: template_id}} = socket) when is_integer(template_id), do: socket
 
   defp persist(socket) do
+    socket = PlanHistory.record(socket)
     attrs = %{id: socket.assigns.editing_id, name: socket.assigns.name, data: socket.assigns.data}
 
     case Plans.save(:battle_plans, attrs) do
       {:ok, _id} -> broadcast_count(socket, :battle_plans, socket.assigns.data)
       {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
     end
+  end
+
+  defp reconcile_selection(socket) do
+    %{data: data, playbook_id: playbook_id, lineup_id: lineup_id, paint: paint} = socket.assigns
+    playbook_id = if find_playbook(data, playbook_id), do: playbook_id, else: get_in(List.first(data["playbooks"]), ["id"])
+    lineup_id = if BattlePlans.find_lineup(data, lineup_id), do: lineup_id, else: get_in(List.first(BattlePlans.lineups(data)), ["id"])
+    paint = if paint == "erase" or find_playbook(data, paint), do: paint, else: playbook_id
+
+    socket
+    |> assign(:playbook_id, playbook_id)
+    |> assign(:lineup_id, lineup_id)
+    |> assign(:paint, paint)
+    |> assign(:renaming_lineup_id, nil)
+    |> assign(:renaming_playbook_id, nil)
+    |> assign(:open_editor_id, nil)
+    |> update(:reorder_rev, &(&1 + 1))
   end
 
   defp assign_profiles(socket) do
