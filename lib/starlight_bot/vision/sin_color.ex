@@ -89,6 +89,8 @@ defmodule StarlightBot.Vision.SinColor do
   @bg_peak_window 3
   @bg_cluster_hue_tol 15
   @score_weights [gloom: 1.8]
+  @gloom_lust_ratio 1.2
+  @gloom_lust_penalty 0.8
   @bg_chroma_floor 0.6
   @bg_spread_k 0.5
 
@@ -128,8 +130,16 @@ defmodule StarlightBot.Vision.SinColor do
         mask = hue_window_mask(hsv, hue, tol, s_lo, s_hi, v_lo, v_hi, bg_hue, bg_saturation, bg_value, bg_mask)
         raw = Evision.countNonZero(mask)
         leak = min(round(Map.get(bg_leak, name, 0.0) * cell_px), div(raw, @max_leak_discount))
-        {name, round((raw - leak) * Keyword.get(@score_weights, name, 1.0)), mask}
+        {name, raw - leak, mask}
       end
+
+    lust_raw = scores |> List.keyfind(:lust, 0) |> elem(1)
+
+    scores =
+      Enum.map(scores, fn {name, net, mask} ->
+        weight = if name == :gloom and net < lust_raw * @gloom_lust_ratio, do: @gloom_lust_penalty, else: Keyword.get(@score_weights, name, 1.0)
+        {name, round(net * weight), mask}
+      end)
 
     {winner, area, mask} = Enum.max_by(scores, fn {_name, area, _mask} -> area end)
 
