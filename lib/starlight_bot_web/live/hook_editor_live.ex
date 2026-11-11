@@ -2,7 +2,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   use StarlightBotWeb, :live_view
 
   require Logger
-  alias StarlightBot.{Hooks, Vision.Capture, Vision.FrameHistory, Vision.HookRegistry, Vision.Matcher}
+  alias StarlightBot.{Hooks, Vision.Capture, Vision.FrameHandoff, Vision.FrameHistory, Vision.HookRegistry, Vision.Matcher}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -716,7 +716,19 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     category = if params["cat"] in Hooks.categories(), do: params["cat"], else: "general"
     socket = socket |> assign(:category, category) |> refresh_hooks()
 
-    {:noreply, socket}
+    {:noreply, if(connected?(socket) and params["screenshot"] == "inspector", do: load_handoff(socket), else: socket)}
+  end
+
+  defp load_handoff(socket) do
+    with mat when not is_nil(mat) <- FrameHandoff.take(),
+         {:ok, jpeg} <- encode_jpeg(mat) do
+      socket
+      |> assign(:screenshot_mat, mat)
+      |> assign(:screenshot_status, :done)
+      |> push_event("load_screenshot", %{data: Base.encode64(jpeg)})
+    else
+      _ -> socket
+    end
   end
 
   @impl true

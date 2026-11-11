@@ -1,7 +1,7 @@
 <div class="flex flex-col h-full gap-3 overflow-hidden">
   <div class="flex items-center gap-3 shrink-0">
     <h1 class="text-lg font-bold">Battle Inspector</h1>
-    <.tabs current={@tab} />
+    <.tabs current={@tab} restore={not @tab_from_url?} />
     <%= if @nav.run_kind in [:mirror_dungeon, :luxcavation] do %>
       <div class="flex items-center gap-2 ml-auto">
         <span class="text-xs text-base-content/60"><%= run_label(@nav.run_kind) %>: <%= @nav.phase %></span>
@@ -38,6 +38,24 @@
           <% end %>
         </span>
       <% end %>
+    <% end %>
+    <%= if @tab == :active do %>
+      <button phx-click="read_active_skills" class="btn btn-sm btn-primary">📸 Read active skills</button>
+      <button phx-click="view_in_hook_editor" class="btn btn-sm btn-secondary" disabled={is_nil(@active_mat)}>View in hook editor</button>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@watch_active?} phx-click="toggle_watch_active" />
+        <span class="text-sm">Watch tray</span>
+      </label>
+      <%= if @watch_active? do %>
+        <span class="text-xs text-base-content/60">
+          <%= if @last_active_at do %>
+            last read <%= Calendar.strftime(@last_active_at, "%H:%M:%S") %> UTC
+          <% else %>
+            waiting for a playbook to read the active skills…
+          <% end %>
+        </span>
+      <% end %>
+      <span :if={@active_error} class="text-xs text-error"><%= @active_error %></span>
     <% end %>
     <%= if @tab == :chain do %>
       <button phx-click="preview_chain_drag" class="btn btn-sm btn-secondary" disabled={@chain_preview_status == :running}>
@@ -85,6 +103,24 @@
         <div class="text-base-content/40 text-sm">Take a screenshot to inspect the current battle screen</div>
       <% end %>
     </div>
+
+    <div :if={@active_rows} class={"flex items-center justify-center bg-base-200 rounded-lg border border-base-300 shrink-0 " <> if(@tab != :active, do: "hidden", else: "")} style="aspect-ratio: 16/9;">
+      <canvas id="active-skills-canvas" phx-hook="ActiveSkillsCanvas" phx-update="ignore"
+              class="max-w-full max-h-full" style="aspect-ratio: 16/9;"></canvas>
+    </div>
+    <%= if @active_rows && @tab == :active do %>
+      <div class="overflow-x-auto shrink-0">
+        <table class="table table-xs w-auto">
+          <thead><tr><th>slot</th><th>skill used</th></tr></thead>
+          <tbody>
+            <tr :for={{column, row} <- @active_rows}>
+              <td><%= column + 1 %></td>
+              <td><%= row %></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    <% end %>
 
     <%= if @tray && @tab == :screen do %>
       <div class="grid grid-cols-2 gap-3 shrink-0">

@@ -1,5 +1,5 @@
 defmodule StarlightBot.Automation.PlaybookRunner do
-  alias StarlightBot.Automation.{BattleChain, RunMemory, SlotPlan, TrayWatch}
+  alias StarlightBot.Automation.{ActiveSkillsWatch, BattleChain, RunMemory, SlotPlan, TrayWatch}
   alias StarlightBot.{BattleDebug, BattlePlans, Conditions, Ctx, SinnerProfiles}
   alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Input.{Leeway, Mouse}
@@ -999,11 +999,20 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp settle(ms), do: Process.sleep(ms)
 
+  def used_rows(frame, tray) do
+    with {:ok, _hook} <- HookRegistry.find(@bottom_chosen) do
+      bottom = SkillTray.columns_under(tray, Matcher.find_all(frame, @bottom_chosen))
+      {:ok, Enum.map(all_columns(tray), &{&1, if(&1 in bottom, do: :bottom, else: :top)})}
+    end
+  end
+
   defp bottom_chosen_columns(tray, ctx) do
     with {:ok, _hook} <- HookRegistry.find(@bottom_chosen),
          :ok <- settle(@chosen_settle_ms),
-         {:ok, fresh} <- Capture.grab_frame() do
-      {:ok, SkillTray.columns_under(tray, Matcher.find_all(fresh, @bottom_chosen))}
+         {:ok, fresh} <- Capture.grab_frame(),
+         {:ok, rows} <- used_rows(fresh, tray) do
+      ActiveSkillsWatch.record(fresh, tray, rows)
+      {:ok, for({column, :bottom} <- rows, do: column)}
     else
       error ->
         Ctx.log(ctx, :error, "playbook: can't read which slots use a bottom skill (#{inspect(error)}), skipping")

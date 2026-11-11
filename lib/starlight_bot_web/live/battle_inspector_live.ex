@@ -1,9 +1,9 @@
 defmodule StarlightBotWeb.Live.BattleInspectorLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.Automation.{BattleChain, PlaybookRunner, TrayWatch}
+  alias StarlightBot.Automation.{ActiveSkillsWatch, BattleChain, PlaybookRunner, TrayWatch}
   alias StarlightBot.{Ctx, SinnerProfiles}
   alias StarlightBot.Navigation.Navigator
-  alias StarlightBot.Vision.{Capture, EnemyTargets, Frame, HookRegistry, Matcher, SinColor, SinnerLocator, SkillTray}
+  alias StarlightBot.Vision.{Capture, FrameHandoff, EnemyTargets, Frame, HookRegistry, Matcher, SinColor, SinnerLocator, SkillTray}
 
   @tmp_jpeg "/tmp/_starlight_battle_inspector.jpg"
   @tmp_chain_preview_jpeg "/tmp/_starlight_battle_inspector_chain_preview.jpg"
@@ -33,11 +33,12 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   @resume_countdown_ms 2_000
 
   attr :current, :atom, required: true
+  attr :restore, :boolean, default: false
 
   def tabs(assigns) do
     ~H"""
-    <div role="tablist" class="tabs tabs-boxed tabs-sm">
-      <.link :for={{id, label} <- [screen: "Screen", chain: "Chain drag", targets: "Enemy targets"]}
+    <div id="battle-tabs" phx-hook="BattleTabMemory" data-tab={@current} data-restore={to_string(@restore)} role="tablist" class="tabs tabs-boxed tabs-sm">
+      <.link :for={{id, label} <- [screen: "Screen", chain: "Chain drag", targets: "Enemy targets", active: "Active skills"]}
              {if @current == :history, do: [navigate: ~p"/battle?tab=#{id}"], else: [patch: ~p"/battle?tab=#{id}"]}
              role="tab" class={"tab " <> if(@current == id, do: "tab-active", else: "")}>
         <%= label %>
@@ -50,15 +51,23 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   @impl true
   def mount(_params, _session, socket) do
     tray_watch = TrayWatch.state()
+    active_watch = ActiveSkillsWatch.state()
 
     if connected?(socket) do
       Navigator.subscribe()
       if tray_watch.enabled?, do: TrayWatch.subscribe()
+      if active_watch.enabled?, do: ActiveSkillsWatch.subscribe()
     end
 
     socket =
       socket
       |> assign(:tab, :screen)
+      |> assign(:tab_from_url?, false)
+      |> assign(:active_rows, nil)
+      |> assign(:active_error, nil)
+      |> assign(:active_mat, nil)
+      |> assign(:watch_active?, active_watch.enabled?)
+      |> assign(:last_active_at, nil)
       |> assign(:nav, Navigator.status())
       |> assign(:watch_tray?, tray_watch.enabled?)
       |> assign(:last_watched_at, nil)
@@ -80,6 +89,12 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
       |> assign(:target_preview_ready?, false)
       |> assign(:target_preview_outcome, nil)
 
+    socket =
+      case {connected?(socket), active_watch.latest} do
+        {true, {frame, tray, rows, at}} -> socket |> show_active(frame, tray, rows) |> assign(:last_active_at, at)
+        _ -> socket
+      end
+
     case {connected?(socket), tray_watch.latest} do
       {true, {frame, at}} -> {:ok, socket |> show_frame(frame) |> assign(:last_watched_at, at)}
       _ -> {:ok, socket}
@@ -87,12 +102,33 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   end
 
   @impl true
-  def handle_params(%{"tab" => tab}, _uri, socket) when tab in ~w(screen chain targets),
-    do: {:noreply, assign(socket, :tab, String.to_existing_atom(tab))}
+  def handle_params(%{"tab" => tab}, _uri, socket) when tab in ~w(screen chain targets active),
+    do: {:noreply, socket |> assign(:tab, String.to_existing_atom(tab)) |> assign(:tab_from_url?, true)}
 
   def handle_params(_params, _uri, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_event("restore_tab", %{"tab" => "history"}, socket), do: {:noreply, push_navigate(socket, to: ~p"/battle/history")}
+
+  def handle_event("restore_tab", %{"tab" => tab}, socket) when tab in ~w(screen chain targets active),
+    do: {:noreply, push_patch(socket, to: ~p"/battle?tab=#{tab}")}
+
+  def handle_event("view_in_hook_editor", _, %{assigns: %{active_mat: mat}} = socket) when not is_nil(mat) do
+    FrameHandoff.put(mat)
+    {:noreply, push_navigate(socket, to: ~p"/hooks?screenshot=inspector")}
+  end
+
+  def handle_event("read_active_skills", _, socket) do
+    with {:ok, frame} <- Capture.grab_frame(),
+         {:ok, tray} <- SkillTray.scan(frame),
+         {:ok, rows} <- PlaybookRunner.used_rows(frame, tray) do
+      {:noreply, show_active(socket, frame, tray, rows)}
+    else
+      :not_found -> {:noreply, socket |> assign(:active_rows, nil) |> assign(:active_error, "skill tray not found (not a battle screen?)")}
+      {:error, reason} -> {:noreply, socket |> assign(:active_rows, nil) |> assign(:active_error, inspect(reason))}
+    end
+  end
+
   def handle_event("take_screenshot", _, socket) do
     case Capture.grab_frame() do
       {:ok, frame} ->
@@ -123,6 +159,18 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
     TrayWatch.set_enabled(true)
     TrayWatch.subscribe()
     {:noreply, assign(socket, :watch_tray?, true)}
+  end
+
+  def handle_event("toggle_watch_active", _, %{assigns: %{watch_active?: true}} = socket) do
+    ActiveSkillsWatch.set_enabled(false)
+    ActiveSkillsWatch.unsubscribe()
+    {:noreply, socket |> assign(:watch_active?, false) |> assign(:last_active_at, nil)}
+  end
+
+  def handle_event("toggle_watch_active", _, socket) do
+    ActiveSkillsWatch.set_enabled(true)
+    ActiveSkillsWatch.subscribe()
+    {:noreply, assign(socket, :watch_active?, true)}
   end
 
   def handle_event("pause_run", _, socket) do
@@ -183,6 +231,12 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   end
 
   def handle_info({:skill_tray_scanned, _frame, _at}, socket), do: {:noreply, socket}
+
+  def handle_info({:active_skills_read, frame, tray, rows, at}, %{assigns: %{watch_active?: true}} = socket) do
+    {:noreply, socket |> show_active(frame, tray, rows) |> assign(:last_active_at, at)}
+  end
+
+  def handle_info({:active_skills_read, _frame, _tray, _rows, _at}, socket), do: {:noreply, socket}
 
   def handle_info({:nav_state, nav}, socket), do: {:noreply, assign(socket, :nav, nav)}
 
@@ -250,6 +304,20 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
 
   @impl true
   def handle_info(_msg, socket), do: {:noreply, socket}
+
+  defp show_active(socket, frame, tray, rows) do
+    case encode_jpeg(frame.mat) do
+      {:ok, jpeg} ->
+        socket
+        |> assign(:active_rows, rows)
+        |> assign(:active_mat, frame.mat)
+        |> assign(:active_error, nil)
+        |> push_event("load_active_frame", %{data: Base.encode64(jpeg), overlays: active_overlays(tray, rows)})
+
+      {:error, reason} ->
+        assign(socket, :active_error, "Encode failed: #{inspect(reason)}")
+    end
+  end
 
   defp show_frame(socket, frame) do
     case encode_jpeg(frame.mat) do
@@ -497,6 +565,27 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
       gear_overlay(x, y, w, h, gear_hook),
       background_overlay(bg_region, bg_color) | tray_overlays(tray, top_sins, bottom_sins) ++ sinner_overlays(tray, sinners)
     ]
+  end
+
+  defp active_overlays(tray, rows) do
+    Enum.map(rows, fn {column, row} ->
+      geometry = if row == :top, do: tray.top_row, else: tray.bottom_row
+      x = tray.tray_start_x + tray.bin_width * column
+
+      %{
+        type: "rect",
+        x: x,
+        y: geometry.y,
+        w: tray.bin_width,
+        h: geometry.h,
+        color: if(row == :top, do: "#38bdf8", else: "#fb7185"),
+        text: "#{column + 1} #{row}",
+        text_x: x + 4,
+        text_y: geometry.y - 6,
+        outline: true,
+        font_px: 18
+      }
+    end)
   end
 
   defp gear_overlay(x, y, w, h, gear_hook) do

@@ -24,6 +24,7 @@ defmodule StarlightBot.Application do
         {StarlightBot.Vision.HookRegistry, []},
         {StarlightBot.Vision.EgoGiftDetector, []},
         {StarlightBot.Automation.TrayWatch, []},
+        {StarlightBot.Automation.ActiveSkillsWatch, []},
       ] ++
         hardware_children() ++
         [

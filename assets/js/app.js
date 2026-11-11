@@ -490,6 +490,7 @@ const BattleInspectorCanvas = overlayCanvasHook("load_battle_frame")
 const BattleHistoryCanvas = overlayCanvasHook("load_battle_history_frame")
 const ChainPreviewCanvas = overlayCanvasHook("load_chain_preview_frame")
 const TargetPreviewCanvas = overlayCanvasHook("load_target_preview_frame")
+const ActiveSkillsCanvas = overlayCanvasHook("load_active_frame")
 const DungeonInspectorCanvas = overlayCanvasHook("load_dungeon_frame")
 
 const GiftInspectorCanvas = {
@@ -1785,6 +1786,23 @@ const RunnerTabMemory = {
   }
 }
 
+const BattleTabMemory = {
+  mounted() {
+    const saved = this.el.dataset.restore === "true" && localStorage.getItem("starlight-battle-tab")
+    if (saved && saved !== this.el.dataset.tab) {
+      this.pushEvent("restore_tab", { tab: saved })
+    } else {
+      this.store()
+    }
+  },
+  updated() {
+    this.store()
+  },
+  store() {
+    localStorage.setItem("starlight-battle-tab", this.el.dataset.tab)
+  }
+}
+
 const ViewMemory = {
   mounted() {
     this.key = null
@@ -2299,7 +2317,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { Toasts, RunnerTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, CabinetBracket, FocusSelect, TeamSearch, WindowDrag, GameStream, InfoArrow }
+  hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, CabinetBracket, FocusSelect, TeamSearch, WindowDrag, GameStream, InfoArrow }
 })
 
 liveSocket.connect()
