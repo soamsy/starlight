@@ -19,7 +19,7 @@ defmodule StarlightBot.Automation.SlotPlanWhereTest do
 
   defp dodge(extra) do
     Map.merge(
-      %{"type" => "dodge", "who" => "before", "sinners" => ["faust"], "skill" => %{"pick" => "all"}, "enemy" => %{"pick" => "first", "n" => 1, "step" => "right"}},
+      %{"type" => "dodge", "who" => "before", "sinners" => ["faust"], "skill" => %{"pick" => "all"}, "enemy" => %{"pick" => "first", "offset" => 0, "step" => "right"}},
       extra
     )
   end
@@ -47,7 +47,7 @@ defmodule StarlightBot.Automation.SlotPlanWhereTest do
 
   defp target(row, extra) do
     Map.merge(
-      %{"type" => "target", "who" => "before", "sinners" => ["faust"], "skill" => %{"pick" => "all"}, "enemy" => %{"pick" => "first", "n" => 1, "step" => "right"}, "skip_bottom_target" => true, "row" => row},
+      %{"type" => "target", "who" => "before", "sinners" => ["faust"], "skill" => %{"pick" => "all"}, "enemy" => %{"pick" => "first", "offset" => 0, "step" => "right"}, "skip_bottom_target" => true, "row" => row},
       extra
     )
   end

@@ -55,8 +55,8 @@ defmodule StarlightBot.BattlePlans do
   def enemy_steps, do: @enemy_steps
 
   def target_index(count, enemy) do
-    n = if enemy["pick"] == "percent", do: 1, else: max(enemy["n"] || 1, 1)
-    start = if enemy["pick"] == "last", do: count - n, else: n - 1
+    offset = if enemy["pick"] == "percent", do: 0, else: max(enemy["offset"] || 0, 0)
+    start = if enemy["pick"] == "last", do: count - 1 - offset, else: offset
     step = Map.get(%{"left" => -1, "right" => 1}, enemy["step"], 0)
     (clamp(start, count) + step * (enemy["index"] || 0)) |> clamp(count)
   end
@@ -67,11 +67,15 @@ defmodule StarlightBot.BattlePlans do
 
   def enemy_label(%{"pick" => pick} = enemy) do
     step = if enemy["step"] in ~w(left right), do: ", then #{enemy["step"]}", else: ""
-    "#{enemy["n"] || 1} from #{if pick == "last", do: "last", else: "first"}#{step}#{ignore_label(enemy["ignore"])}"
+    "#{if pick == "last", do: "last", else: "first"}#{offset_label(pick, enemy["offset"])}#{step}#{ignore_label(enemy["ignore"])}"
   end
 
-  def parse_enemy(pick, n, step) when pick in ~w(first last) do
-    %{"pick" => pick, "n" => max(parse_count(n) || 1, 1)}
+  defp offset_label("last", offset) when is_integer(offset) and offset > 0, do: "-#{offset}"
+  defp offset_label(_pick, offset) when is_integer(offset) and offset > 0, do: "+#{offset}"
+  defp offset_label(_pick, _offset), do: ""
+
+  def parse_enemy(pick, offset, step) when pick in ~w(first last) do
+    %{"pick" => pick, "offset" => parse_count(offset) || 0}
     |> Map.put("step", if(step in ["same" | @enemy_steps], do: step, else: default_step(pick)))
   end
 
@@ -197,7 +201,7 @@ defmodule StarlightBot.BattlePlans do
   end
 
   defp fix_head_enemy(%{"enemy" => %{"pick" => "continue"}} = row, 0),
-    do: Map.put(row, "enemy", if(row["type"] == "target", do: parse_enemy("first", 1, nil), else: %{"pick" => "none"}))
+    do: Map.put(row, "enemy", if(row["type"] == "target", do: parse_enemy("first", 0, nil), else: %{"pick" => "none"}))
 
   defp fix_head_enemy(row, _index), do: row
 
@@ -487,7 +491,7 @@ defmodule StarlightBot.BattlePlans do
   defp enemy_parts(%{"enemy" => %{"pick" => "continue"}}), do: ["keep targeting"]
 
   defp enemy_parts(%{"enemy" => %{"pick" => pick} = enemy}) when pick in ~w(first last) do
-    start = "target #{pick}" <> if((enemy["n"] || 1) > 1, do: "+#{enemy["n"] - 1}", else: "")
+    start = "target #{pick}#{offset_label(pick, enemy["offset"])}"
     step = if enemy["step"] in ~w(left right), do: ", then #{enemy["step"]}", else: ""
     ignored = Enum.map_join(enemy["ignore"] || [], "", &", ignoring #{&1["side"]} #{&1["n"]}")
     [start <> step <> ignored]
@@ -988,7 +992,7 @@ defmodule StarlightBot.BattlePlans do
         "who" => "everyone",
         "sinners" => [],
         "skill" => %{"pick" => "all"},
-        "enemy" => %{"pick" => "first", "step" => "right"}
+        "enemy" => %{"pick" => "last", "offset" => 1, "step" => "left"}
       },
       "priority",
       nil

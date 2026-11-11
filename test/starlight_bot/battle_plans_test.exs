@@ -496,7 +496,7 @@ defmodule StarlightBot.BattlePlansTest do
 
     test "holder_label reads a row as plain english" do
       target = BattlePlans.new_action("target")
-      assert BattlePlans.holder_label(target) == "everyone, all slots: pick s3 > s2 > s1, target first, then right"
+      assert BattlePlans.holder_label(target) == "everyone, all slots: pick s3 > s2 > s1, target last-1, then left"
 
       ego = %{"type" => "ego", "who" => "except", "sinners" => ["yi_sang"], "skill" => BattlePlans.first_slot(), "grade" => "he", "corrode" => true, "enemy" => %{"pick" => "none"}}
       assert BattlePlans.holder_label(ego, %{"yi_sang" => "Yi Sang"}) == "all but Yi Sang, slots first rest: EGO HE corrode"
@@ -628,13 +628,14 @@ defmodule StarlightBot.BattlePlansTest do
   end
 
   describe "target_index/2" do
-    defp enemy(pick, n, step \\ nil, index \\ 0), do: %{"pick" => pick, "n" => n, "step" => step, "index" => index}
+    defp enemy(pick, offset, step \\ nil, index \\ 0), do: %{"pick" => pick, "offset" => offset, "step" => step, "index" => index}
 
-    test "counts the starting slot from either end" do
-      assert BattlePlans.target_index(6, enemy("first", 1)) == 0
-      assert BattlePlans.target_index(6, enemy("first", 3)) == 2
-      assert BattlePlans.target_index(6, enemy("last", 1)) == 5
-      assert BattlePlans.target_index(6, enemy("last", 2)) == 4
+    test "counts the starting offset from either end" do
+      assert BattlePlans.target_index(6, enemy("first", 0)) == 0
+      assert BattlePlans.target_index(6, enemy("first", 2)) == 2
+      assert BattlePlans.target_index(6, enemy("last", 0)) == 5
+      assert BattlePlans.target_index(6, enemy("last", 1)) == 4
+      assert BattlePlans.target_index(5, enemy("last", 0)) == 4
     end
 
     test "a start past the far end lands on the far end" do
@@ -644,26 +645,26 @@ defmodule StarlightBot.BattlePlansTest do
 
     test "each next sinner slot steps one target and then piles onto the end" do
       indexes = fn pick, n, step -> for i <- 0..5, do: BattlePlans.target_index(5, enemy(pick, n, step, i)) end
-      assert indexes.("first", 1, "right") == [0, 1, 2, 3, 4, 4]
-      assert indexes.("first", 3, "right") == [2, 3, 4, 4, 4, 4]
-      assert indexes.("first", 5, "left") == [4, 3, 2, 1, 0, 0]
-      assert indexes.("last", 1, "left") == [4, 3, 2, 1, 0, 0]
-      assert indexes.("first", 2, nil) == [1, 1, 1, 1, 1, 1]
+      assert indexes.("first", 0, "right") == [0, 1, 2, 3, 4, 4]
+      assert indexes.("first", 2, "right") == [2, 3, 4, 4, 4, 4]
+      assert indexes.("first", 4, "left") == [4, 3, 2, 1, 0, 0]
+      assert indexes.("last", 0, "left") == [4, 3, 2, 1, 0, 0]
+      assert indexes.("first", 1, nil) == [1, 1, 1, 1, 1, 1]
       assert indexes.("first", 99, "left") == [4, 3, 2, 1, 0, 0]
     end
 
     test "saved exact, up_to and percent picks read as from first" do
-      assert BattlePlans.target_index(5, %{"pick" => "exact", "n" => 3}) == 2
-      assert BattlePlans.target_index(5, %{"pick" => "up_to", "n" => 9}) == 4
-      assert BattlePlans.target_index(5, %{"pick" => "percent", "n" => 80}) == 0
+      assert BattlePlans.target_index(5, %{"pick" => "exact", "offset" => 2}) == 2
+      assert BattlePlans.target_index(5, %{"pick" => "up_to", "offset" => 8}) == 4
+      assert BattlePlans.target_index(5, %{"pick" => "percent", "offset" => 80}) == 0
     end
 
     test "labels and parsing" do
-      assert BattlePlans.enemy_label(%{"pick" => "last", "n" => 2, "step" => "left", "ignore" => [%{"side" => "top", "n" => 1}]}) == "2 from last, then left, ignoring top 1"
+      assert BattlePlans.enemy_label(%{"pick" => "last", "offset" => 1, "step" => "left", "ignore" => [%{"side" => "top", "n" => 1}]}) == "last-1, then left, ignoring top 1"
       assert BattlePlans.enemy_label(%{"pick" => "none"}) == "none"
-      assert BattlePlans.parse_enemy("last", "0", "up") == %{"pick" => "last", "n" => 1, "step" => "left"}
-      assert BattlePlans.parse_enemy("first", "4", "right") == %{"pick" => "first", "n" => 4, "step" => "right"}
-      assert BattlePlans.parse_enemy("exact", "2", nil) == %{"pick" => "first", "n" => 2, "step" => "right"}
+      assert BattlePlans.parse_enemy("last", "0", "up") == %{"pick" => "last", "offset" => 0, "step" => "left"}
+      assert BattlePlans.parse_enemy("first", "4", "right") == %{"pick" => "first", "offset" => 4, "step" => "right"}
+      assert BattlePlans.parse_enemy("exact", "2", nil) == %{"pick" => "first", "offset" => 2, "step" => "right"}
       assert BattlePlans.parse_enemy("none", "2", "left") == %{"pick" => "none"}
     end
   end

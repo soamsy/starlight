@@ -22,7 +22,7 @@ defmodule StarlightBot.Automation.EnvyChainPlaybookTest do
           "type" => "target",
           "who" => "everyone",
           "where" => %{"join" => "and", "conditions" => [%{"kind" => "has", "values" => ["envy"]}, %{"kind" => "not_using", "values" => ["envy"]}]},
-          "enemy" => %{"pick" => "last", "n" => 1, "step" => "left"},
+          "enemy" => %{"pick" => "last", "offset" => 0, "step" => "left"},
           "row" => "priority",
           "priority" => %{"order" => ["envy", "s3", "s2", "s1"]},
           "sinners" => [],
@@ -167,8 +167,8 @@ defmodule StarlightBot.Automation.EnvyChainPlaybookTest do
                "slots has no envy -> no free slot(s) left",
                "slot 1 priority envy > s3 > s2 > s1: top wrath/s3, bottom envy/s2 -> bottom",
                "plan: slot 3 left alone",
-               "plan: slot 1 bottom skill -> enemy 1 from last, then left (slot order 1)",
-               "plan: slot 2 dodge -> enemy 1 from last, then left (slot order 2)"
+               "plan: slot 1 bottom skill -> enemy last, then left (slot order 1)",
+               "plan: slot 2 dodge -> enemy last, then left (slot order 2)"
              ]
     end
 

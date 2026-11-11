@@ -95,7 +95,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       results =
         sinner_of_slot
         |> Enum.with_index()
-        |> Enum.map(fn {sinner, column} -> target_in_order(tray, sinner, column, column + 1, ctx) end)
+        |> Enum.map(fn {sinner, column} -> target_in_order(tray, sinner, column, column, ctx) end)
 
       {outcome, _attempts} = List.last(results)
       {:ok, {outcome, Enum.flat_map(results, &elem(&1, 1))}}
@@ -104,13 +104,13 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp target_in_order(tray, sinner, column, enemy_n, ctx) do
+  defp target_in_order(tray, sinner, column, enemy_offset, ctx) do
     row = Enum.random([:top, :bottom])
 
     case skill_point(tray, column, row, ctx) do
       {:ok, grab} ->
-        Ctx.log(ctx, :info, "playbook: sinner #{sinner + 1}: slot #{column + 1} (#{row} skill) to enemy #{enemy_n} from the left")
-        {outcome, attempts} = drag_to_enemy(grab, %{"pick" => "first", "n" => enemy_n}, ctx)
+        Ctx.log(ctx, :info, "playbook: sinner #{sinner + 1}: slot #{column + 1} (#{row} skill) to enemy #{enemy_offset + 1} from the left")
+        {outcome, attempts} = drag_to_enemy(grab, %{"pick" => "first", "offset" => enemy_offset}, ctx)
         Ctx.log(ctx, :info, "playbook: sinner #{sinner + 1}: #{inspect(outcome)}")
         {outcome, attempts}
 

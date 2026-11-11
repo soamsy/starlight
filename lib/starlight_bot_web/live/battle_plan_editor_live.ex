@@ -1451,9 +1451,9 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <%= if @type in ~w(target ego dodge) do %>
         <.radio_group name={field_name(@prefix, "enemy_pick")} value={enemy_pick_value(@enemy)} options={[{"none", "none"}, {"first", "from first"}, {"last", "from last"}] ++ if(@continue?, do: [{"continue", "continue"}], else: [])} />
         <%= if enemy_pick_value(@enemy) not in ~w(none continue) do %>
-          <div class="flex items-center gap-1" title="The target slot the first sinner slot goes to, counted from that end. Past the last target, it uses the last target.">
-            <span class="text-base-content/60">slot</span>
-            <input type="number" name={field_name(@prefix, "enemy_n")} min="1" value={@enemy["n"] || 1} class="input input-bordered input-xs w-14" phx-debounce="300" />
+          <div class="flex items-center gap-1" title="How many targets in from that end the first sinner slot goes to. 0 is the target at that end. Past the far end, it uses the last target.">
+            <span class="text-base-content/60">offset</span>
+            <input type="number" name={field_name(@prefix, "enemy_offset")} min="0" value={@enemy["offset"] || 0} class="input input-bordered input-xs w-14" phx-debounce="300" />
           </div>
           <div class="flex items-center gap-1" title="With several sinner slots, each next one goes one target further this way. Once the targets run out, the rest all use the last one.">
             <span class="text-base-content/60">then</span>
@@ -1977,7 +1977,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     pick = params["enemy_pick"] || default
     step = if get_in(holder, ["enemy", "pick"]) == pick, do: params["enemy_step"]
 
-    Map.put(holder, "enemy", pick |> BattlePlans.parse_enemy(params["enemy_n"], step) |> BattlePlans.put_ignores(params["enemy_ignore"], params["enemy_ignore_add"]))
+    Map.put(holder, "enemy", pick |> BattlePlans.parse_enemy(params["enemy_offset"], step) |> BattlePlans.put_ignores(params["enemy_ignore"], params["enemy_ignore_add"]))
   end
 
   defp apply_rest(%{"rest" => rest} = holder, %{"rest" => rest_params}, enemy?), do: Map.put(holder, "rest", apply_holder(rest, rest_params, enemy?))
