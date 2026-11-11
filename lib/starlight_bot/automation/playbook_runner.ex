@@ -1,6 +1,6 @@
 defmodule StarlightBot.Automation.PlaybookRunner do
   alias StarlightBot.Automation.{ActiveSkillsWatch, BattleChain, RunMemory, SlotPlan, TrayWatch}
-  alias StarlightBot.{BattleDebug, BattlePlans, Conditions, Ctx, SinnerProfiles}
+  alias StarlightBot.{BattleDebug, BattlePlans, Conditions, Ctx, FailureShot, SinnerProfiles}
   alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.Navigation.{DSL, Runner}
@@ -24,6 +24,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @ego_close_timeout_ms 1_500
   @ego_reclick_wait_ms 100
   @target_tries 2
+  @bad_target_radius_px 50
+  @drop_ready_timeout_ms 1_000
   @skill_hover_ms 200
   @screen_mid_x 960
   @skill_grab_inward_pct 0.1
@@ -150,6 +152,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
     scan = if Enum.any?(BattlePlans.flatten_actions(actions), &needs_tray?/1), do: scan(ctx), else: :skip
     RunMemory.put(ctx, :target_panned?, false)
+    RunMemory.put(ctx, :bad_targets, [])
     RunMemory.put(ctx, :battle_max_retries, BattlePlans.max_retries(playbook))
 
     turn_state = %{kind: kind, scan: scan, number: turn}
@@ -643,7 +646,43 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp drag_to_enemy({gx, gy}, enemy, ctx) do
+  defp drag_to_enemy(grab, enemy, ctx) do
+    case drag_once(grab, enemy, ctx) do
+      {:gave_up, attempts} = failed ->
+        remember_bad_targets(attempts, ctx)
+
+        if await(:battle_combat_ready, @drop_ready_timeout_ms) do
+          failed
+        else
+          Ctx.log(ctx, :info, "playbook: battle_combat_ready is off after the failed drop, grabbing the skill again for another target")
+          FailureShot.record("battle_combat_ready_off_after_drop", ctx)
+          {outcome, retry_attempts} = drag_once(grab, enemy, ctx)
+          if outcome == :gave_up, do: remember_bad_targets(retry_attempts, ctx)
+          {outcome, attempts ++ retry_attempts}
+        end
+
+      result ->
+        result
+    end
+  end
+
+  defp remember_bad_targets(attempts, ctx) do
+    points = for %{chosen: %{point: point}} <- attempts, do: point
+    RunMemory.update(ctx, :bad_targets, [], &(points ++ &1))
+  end
+
+  defp avoid_bad_targets(targets, ctx) do
+    bad = RunMemory.get(ctx, :bad_targets, [])
+
+    case Enum.reject(targets, fn target -> Enum.any?(bad, &near?(&1, target.point)) end) do
+      [] -> targets
+      good -> good
+    end
+  end
+
+  defp near?({bx, by}, {x, y}), do: (bx - x) ** 2 + (by - y) ** 2 <= @bad_target_radius_px ** 2
+
+  defp drag_once({gx, gy}, enemy, ctx) do
     Mouse.move_to(gx, gy)
     Process.sleep(@skill_hover_ms)
     Mouse.mouse_down()
@@ -688,7 +727,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       targets = EnemyTargets.find(frame)
       BattleDebug.record_enemies(frame, targets, ctx)
 
-      case pick_enemy(BattlePlans.apply_ignores(targets, enemy["ignore"]), enemy, attempt, ctx) do
+      case pick_enemy(targets |> BattlePlans.apply_ignores(enemy["ignore"]) |> avoid_bad_targets(ctx), enemy, attempt, ctx) do
         {:ok, target} ->
           attempts = [%{frame: frame, targets: targets, chosen: target} | attempts]
           move_held(target.point)
