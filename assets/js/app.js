@@ -1978,6 +1978,13 @@ const FocusSelect = {
 const TeamSearch = {
   mounted() {
     this.el.addEventListener("keydown", (e) => {
+      if (e.target.id !== "team-search-input") return
+      if (e.key === "Enter") {
+        e.preventDefault()
+        this.pushEvent("team_nav_search_pick", { query: e.target.value })
+        this.js().hide(this.el)
+        return
+      }
       if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return
       e.preventDefault()
       this.pushEvent("team_nav_search_move", { dir: e.key === "ArrowUp" ? "up" : "down" })

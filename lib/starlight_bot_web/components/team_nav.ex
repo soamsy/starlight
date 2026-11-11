@@ -11,7 +11,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
   @panes @plan_panes ++ ["profiles"]
 
   def init do
-    build(stored_team_id(), stored_pane(), %{renaming_id: nil, editing_hooks?: false, searching?: false, query: "", cursor: 0})
+    build(stored_team_id(), stored_pane(), %{renaming_id: nil, editing_hooks?: false, query: "", cursor: 0})
   end
 
   def reload(socket) do
@@ -31,7 +31,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
         %{nav | pane: pane}
       end
 
-    nav = %{nav | searching?: false, query: "", cursor: 0}
+    nav = %{nav | query: "", cursor: 0}
 
     if team_id && nav.team_id == team_id, do: AppSettings.put("team_nav_team", Integer.to_string(team_id))
     if pane in @plan_panes, do: AppSettings.put("team_nav_pane", pane)
@@ -56,10 +56,8 @@ defmodule StarlightBotWeb.Components.TeamNav do
   def handle_event("team_nav_search_open", _params, socket) do
     nav = socket.assigns.team_nav
     cursor = Enum.find_index(nav.teams, &(&1.id == nav.team_id)) || 0
-    {:halt, Phoenix.Component.assign(socket, :team_nav, %{nav | searching?: true, query: "", cursor: cursor, editing_hooks?: false, renaming_id: nil})}
+    {:halt, Phoenix.Component.assign(socket, :team_nav, %{nav | query: "", cursor: cursor, editing_hooks?: false, renaming_id: nil})}
   end
-
-  def handle_event("team_nav_search_close", _params, socket), do: {:halt, close_search(socket)}
 
   def handle_event("team_nav_search", %{"query" => query}, socket) do
     nav = socket.assigns.team_nav
@@ -79,7 +77,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
 
     case nav.teams |> search_teams(query) |> Enum.at(nav.cursor) do
       nil -> {:halt, socket}
-      team -> {:halt, socket |> close_search() |> select(team.id)}
+      team -> {:halt, select(socket, team.id)}
     end
   end
 
@@ -223,15 +221,10 @@ defmodule StarlightBotWeb.Components.TeamNav do
   defp first_id([%{id: id} | _]), do: id
   defp first_id([]), do: nil
 
-  defp ui(nav), do: Map.take(nav, [:renaming_id, :editing_hooks?, :searching?, :query, :cursor])
+  defp ui(nav), do: Map.take(nav, [:renaming_id, :editing_hooks?, :query, :cursor])
 
   defp put_ui(socket, key, value),
     do: Phoenix.Component.assign(socket, :team_nav, Map.put(socket.assigns.team_nav, key, value))
-
-  defp close_search(socket) do
-    nav = socket.assigns.team_nav
-    Phoenix.Component.assign(socket, :team_nav, %{nav | searching?: false, query: ""})
-  end
 
   def search_teams(teams, query) do
     needle = query |> String.trim() |> String.downcase()
@@ -331,6 +324,8 @@ defmodule StarlightBotWeb.Components.TeamNav do
   def team_path(nil, pane), do: ~p"/teams?pane=#{pane}"
   def team_path(team_id, pane), do: ~p"/teams?team=#{team_id}&pane=#{pane}"
 
+  def open_team_menu(js), do: js |> JS.push("team_nav_search_open") |> JS.focus(to: "#team-search-input")
+
   def team_menu_away(editing_hooks?) do
     js = JS.hide(to: "#team-menu")
     if editing_hooks?, do: JS.push(js, "team_nav_close_edit_hooks"), else: js
@@ -399,7 +394,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
     ~H"""
     <div class="relative" phx-click-away={team_menu_away(@nav.editing_hooks?)}>
       <div class={["flex h-6 items-stretch rounded-lg border-2 bg-base-100 shadow-sm transition hover:border-primary hover:shadow-md lg:h-8", if(@on_page, do: "border-primary/60", else: "border-primary/30 grayscale opacity-70")]}>
-        <button type="button" phx-click={if(@on_page, do: JS.toggle(to: "#team-menu") |> JS.push("team_nav_close_edit_hooks"), else: JS.push("team_nav_open"))} title={if(@on_page, do: "Switch team", else: "Open the team plans")}
+        <button type="button" phx-click={if(@on_page, do: open_team_menu(JS.toggle(to: "#team-menu")), else: JS.push("team_nav_open"))} title={if(@on_page, do: "Switch team", else: "Open the team plans")}
                 class="flex min-w-48 flex-1 items-center gap-2 rounded-l-md pl-3 pr-2 cursor-pointer hover:bg-primary/10 lg:min-w-60">
           <%= if @current do %>
             <span class="text-xs font-semibold lg:text-sm"><%= @current.name %></span>
@@ -421,15 +416,20 @@ defmodule StarlightBotWeb.Components.TeamNav do
         </button>
       </div>
 
-      <div id="team-menu" style="display: none" phx-window-keydown={JS.hide(to: "#team-menu")} phx-key="Escape"
+      <div id="team-menu" phx-hook="TeamSearch" style="display: none" phx-window-keydown={JS.hide(to: "#team-menu")} phx-key="Escape"
            class="absolute left-0 top-full z-50 mt-1 w-[38rem] max-w-[calc(100vw-1rem)] rounded-lg border border-base-300 bg-base-100 shadow-xl">
         <div class="flex flex-col p-1.5 gap-1">
+          <form phx-change="team_nav_search" autocomplete="off">
+            <input type="text" id="team-search-input" name="query" value={@nav.query} placeholder="Search teams..."
+                   class="input input-bordered input-sm w-full font-mono" />
+          </form>
           <div id="team-list" phx-hook="SortableList" data-sort-event="team_nav_reorder" class="flex max-h-[60vh] flex-col gap-0.5 overflow-y-auto">
-            <%= for team <- @nav.teams do %>
+            <% results = search_teams(@nav.teams, @nav.query) %>
+            <%= for {team, index} <- Enum.with_index(results) do %>
               <% selected? = @nav.team_id == team.id %>
-              <div id={"team-row-#{team.id}"} data-sort-id={team.id}
-                   class={"flex items-center gap-2 rounded-md border-l-4 px-2 py-1.5 " <> if(selected?, do: "border-primary bg-primary/25 ring-1 ring-inset ring-primary/50", else: "border-transparent hover:bg-base-200")}>
-                <span data-sort-handle class="cursor-grab text-base-content/40" title="Drag to reorder">⠿</span>
+              <div id={"team-row-#{team.id}"} data-sort-id={team.id} data-active={index == @nav.cursor}
+                   class={"flex items-center gap-2 rounded-md border-l-4 px-2 py-1.5 " <> if(selected?, do: "border-primary ", else: "border-transparent ") <> if(index == @nav.cursor, do: "bg-primary/25 ring-1 ring-inset ring-primary/50", else: "hover:bg-base-200")}>
+                <span :if={String.trim(@nav.query) == ""} data-sort-handle class="cursor-grab text-base-content/40" title="Drag to reorder">⠿</span>
                 <div class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 self-stretch"
                      phx-click={JS.push("team_nav_select", value: %{id: team.id}) |> JS.hide(to: "#team-menu")}>
                   <%= if @nav.renaming_id == team.id do %>
@@ -462,6 +462,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
               </div>
             <% end %>
             <div :if={@nav.teams == []} class="py-4 text-center text-sm text-base-content/40">No teams yet. Create one.</div>
+            <div :if={@nav.teams != [] and results == []} class="py-4 text-center text-sm text-base-content/40">No matching team.</div>
           </div>
 
           <div id="new-team-menu" class="hidden flex-col gap-0.5 rounded-box border border-base-300 bg-base-100 p-1">
@@ -481,24 +482,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
         </div>
       </div>
 
-      <button type="button" data-hotkey="team-search" phx-click="team_nav_search_open" class="hidden" tabindex="-1" aria-hidden="true"></button>
-
-      <div :if={@nav.searching?} id="team-search" phx-hook="TeamSearch" phx-click-away="team_nav_search_close" phx-window-keydown="team_nav_search_close" phx-key="Escape"
-           class="absolute left-0 top-full z-50 mt-1 w-[24rem] max-w-[calc(100vw-1rem)] rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-xl">
-        <form phx-change="team_nav_search" phx-submit="team_nav_search_pick" autocomplete="off">
-          <input type="text" id="team-search-input" name="query" value={@nav.query} phx-mounted={JS.focus()} placeholder="Choose a team..."
-                 class="input input-bordered input-sm w-full font-mono" />
-        </form>
-        <div class="mt-1 flex max-h-[50vh] flex-col gap-0.5 overflow-y-auto">
-          <% results = search_teams(@nav.teams, @nav.query) %>
-          <div :for={{team, index} <- Enum.with_index(results)} data-active={index == @nav.cursor} phx-click="team_nav_select" phx-value-id={team.id}
-               class={"flex cursor-pointer items-center gap-2 rounded-md border-l-4 px-2 py-1 font-mono text-xs " <> if(index == @nav.cursor, do: "border-primary bg-primary/25 font-bold", else: "border-transparent hover:bg-base-200")}>
-            <span class="min-w-0 flex-1 truncate"><%= team.name %></span>
-            <img :for={hook <- team.hooks} src={Teams.hook_icon(hook) || Teams.default_hook_icon()} class="size-4 shrink-0 object-contain" />
-          </div>
-          <div :if={results == []} class="py-2 text-center text-xs text-base-content/40">No matching team.</div>
-        </div>
-      </div>
+      <button type="button" data-hotkey="team-search" phx-click={open_team_menu(JS.show(to: "#team-menu"))} class="hidden" tabindex="-1" aria-hidden="true"></button>
 
       <div :if={@nav.editing_hooks? and @current} id="edit-hooks-panel"
            class="absolute left-0 top-full z-50 mt-1 w-[32rem] max-w-[calc(100vw-1rem)] max-h-[75vh] overflow-y-auto rounded-lg border border-base-300 bg-base-100 p-2 shadow-xl">
