@@ -54,6 +54,7 @@ defmodule StarlightBot.Application do
     if Application.get_env(:starlight_bot, :start_hardware?, true) do
       [
         {StarlightBot.Vision.Capture, []},
+        {StarlightBot.Vision.FrameHistory, []},
         {StarlightBot.Input.Mouse, []},
         {StarlightBot.Input.Keyboard, []},
         {StarlightBot.Navigation.Navigator, []},

@@ -27,6 +27,12 @@
               <.icon name="lucide-timer" class="size-3.5" /> 2s
             <% end %>
           </button>
+          <button phx-click="toggle_stream"
+                  class={"btn btn-sm #{if @stream_active, do: "btn-error", else: "btn-primary btn-outline"}"}
+                  title="Capture every 150ms into a 50-frame history">
+            <.icon name={if @stream_active, do: "lucide-square", else: "lucide-radio"} class="size-3.5" />
+            <span class="hidden lg:inline"><%= if @stream_active, do: "Stop", else: "Stream" %></span>
+          </button>
           <div class="tooltip tooltip-bottom" data-tip="Click and drag on the screenshot to select a region. Hold Shift for precision mode.">
             <span class="flex items-center justify-center w-5 h-5 rounded-full border border-base-content/30 text-base-content/40 text-xs cursor-default select-none">?</span>
           </div>
@@ -75,6 +81,26 @@
             ></canvas>
           </div>
         </div>
+
+        <%= if @history_bounds do %>
+          <% {first, last} = @history_bounds %>
+          <% shown = @history_id || last %>
+          <div class="flex items-center gap-2 mt-2 flex-none">
+            <button phx-click="history_step" phx-value-delta="-1" disabled={shown <= first} class="btn btn-xs btn-ghost">
+              <.icon name="lucide-chevron-left" class="size-4" />
+            </button>
+            <form phx-change="history_seek" class="flex-1 flex items-center">
+              <input type="range" name="frame" min={first} max={last} value={shown} step="1"
+                     phx-debounce="30" class="range range-xs range-primary w-full" />
+            </form>
+            <button phx-click="history_step" phx-value-delta="1" disabled={shown >= last} class="btn btn-xs btn-ghost">
+              <.icon name="lucide-chevron-right" class="size-4" />
+            </button>
+            <span class="text-xs font-mono text-base-content/70 whitespace-nowrap">
+              <%= if @stream_active, do: "live", else: "using" %> #<%= shown %> · <%= shown - first + 1 %>/<%= last - first + 1 %>
+            </span>
+          </div>
+        <% end %>
 
         <%!-- Selection info --%>
         <div class="flex items-center justify-end gap-2 min-h-5 mt-2">

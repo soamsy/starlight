@@ -2,7 +2,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   use StarlightBotWeb, :live_view
 
   require Logger
-  alias StarlightBot.{Hooks, Vision.Capture, Vision.HookRegistry, Vision.Matcher}
+  alias StarlightBot.{Hooks, Vision.Capture, Vision.FrameHistory, Vision.HookRegistry, Vision.Matcher}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -15,6 +15,9 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
      |> assign(:sort_dir, :desc)
      |> assign(:screenshot_mat, nil)
      |> assign(:screenshot_status, :idle)
+     |> assign(:stream_active, false)
+     |> assign(:history_bounds, nil)
+     |> assign(:history_id, nil)
      |> assign(:region, nil)
      |> assign(:click_region, nil)
      |> assign(:scan_region, nil)
@@ -66,6 +69,34 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
          |> assign(:screenshot_status, :error)
          |> put_flash(:error, "Screenshot failed: #{inspect(reason)}")}
     end
+  end
+
+  @impl true
+  def handle_event("toggle_stream", _, %{assigns: %{stream_active: true}} = socket) do
+    {:noreply, socket |> pause_stream() |> show_history_frame(nil)}
+  end
+
+  def handle_event("toggle_stream", _, socket) do
+    :ok = FrameHistory.start_capture(self())
+
+    {:noreply,
+     socket
+     |> assign(:stream_active, true)
+     |> assign(:history_bounds, nil)
+     |> assign(:history_id, nil)
+     |> assign(:screenshot_status, :loading)}
+  end
+
+  def handle_event("history_seek", %{"frame" => id}, socket) do
+    case Integer.parse(id) do
+      {id, _} -> {:noreply, socket |> pause_stream() |> show_history_frame(id)}
+      :error -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("history_step", %{"delta" => delta}, socket) do
+    current = socket.assigns.history_id || elem(socket.assigns.history_bounds || {0, 0}, 1)
+    {:noreply, socket |> pause_stream() |> show_history_frame(current + String.to_integer(delta))}
   end
 
   @impl true
@@ -724,7 +755,60 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
     end
   end
 
+  def handle_info({:frame_history, :tick, first, last, jpeg}, %{assigns: %{stream_active: true}} = socket) do
+    socket =
+      socket
+      |> assign(:history_bounds, {first, last})
+      |> assign(:screenshot_status, :done)
+
+    {:noreply, if(jpeg, do: push_event(socket, "load_screenshot", %{data: jpeg}), else: socket)}
+  end
+
+  def handle_info({:frame_history, :error, reason}, socket) do
+    message =
+      case reason do
+        :no_window -> "Game window not found. Start Limbus Company first."
+        reason -> "Stream stopped: #{inspect(reason)}"
+      end
+
+    {:noreply,
+     socket
+     |> assign(:stream_active, false)
+     |> assign(:screenshot_status, if(socket.assigns.history_bounds, do: :done, else: :idle))
+     |> flash_error(message)}
+  end
+
   def handle_info(_msg, socket), do: {:noreply, socket}
+
+  defp pause_stream(%{assigns: %{stream_active: true}} = socket) do
+    FrameHistory.stop_capture()
+    assign(socket, :stream_active, false)
+  end
+
+  defp pause_stream(socket), do: socket
+
+  defp show_history_frame(socket, id) do
+    case FrameHistory.bounds() do
+      nil ->
+        assign(socket, :screenshot_status, if(socket.assigns.screenshot_mat, do: :done, else: :idle))
+
+      {first, last} ->
+        id = (id || last) |> max(first) |> min(last)
+
+        case FrameHistory.get(id) do
+          {:ok, frame} ->
+            socket
+            |> assign(:history_bounds, {first, last})
+            |> assign(:history_id, id)
+            |> assign(:screenshot_mat, frame.mat)
+            |> assign(:screenshot_status, :done)
+            |> push_event("load_screenshot", %{data: StarlightBot.Vision.ImageB64.jpeg(frame.mat)})
+
+          :error ->
+            socket
+        end
+    end
+  end
 
   defp hook_action(socket, {:ok, _name}, message), do: socket |> refresh_hooks() |> put_flash(:info, message)
   defp hook_action(socket, {:error, reason}, _message), do: flash_error(socket, "Failed: #{inspect(reason)}")
