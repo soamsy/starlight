@@ -1745,11 +1745,14 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <span class="inline-flex items-center justify-center h-6 w-6 rounded border border-dashed border-base-content/20 text-sm text-base-content/25 select-none peer-checked:hidden">≠</span>
       <span class="hidden items-center h-6 px-1.5 rounded bg-error text-[11px] font-semibold text-error-content select-none peer-checked:inline-flex">NOT</span>
     </label>
-    <.radio_group name="op" value={@node["op"]} options={[{"tray_count", "tray slots"}, {"sinner_count", "sinner count"}, {"sinner_position", "sinner position"}, {"boss_fight", "boss"}, {"hook", "hook"}]} />
+    <.radio_group name="op" value={@node["op"]} options={[{"tray_count", "tray slots"}, {"sinner_count", "sinner count"}, {"enemy_count", "enemy count"}, {"sinner_position", "sinner position"}, {"boss_fight", "boss"}, {"hook", "hook"}]} />
     <%= cond do %>
     <% BattlePlans.sinner_leaf?(@node) -> %>
       <.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
       <input type="number" name="value" min="1" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
+    <% BattlePlans.enemy_leaf?(@node) -> %>
+      <.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
+      <input type="number" name="value" min="0" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
     <% BattlePlans.tray_leaf?(@node) -> %>
       <.sinner_multi name="sinners_csv" chosen={@node["sinners"] || []} sinner_options={@sinner_options} empty_label="(anyone)" />
       <.skill_chips values={@node["matches"] || []} extras={BattlePlans.where_extras()} name="matches[]" anchor="matches_edit" id={"chips-cond-#{@values["action"]}-#{String.replace(@path, ~r/[^a-z0-9]+/i, "-")}"} />

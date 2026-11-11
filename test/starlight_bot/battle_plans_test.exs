@@ -240,6 +240,18 @@ defmodule StarlightBot.BattlePlansTest do
   end
 
   describe "if blocks" do
+    test "enemy count leaves parse, label and match" do
+      leaf = BattlePlans.condition_leaf(%{"op" => "enemy_count", "cmp" => "lte", "value" => "2", "hook" => "ignored"})
+      assert leaf == %{"op" => "enemy_count", "cmp" => "lte", "value" => 2}
+      assert BattlePlans.condition_leaf(%{"op" => "enemy_count", "cmp" => "eq", "value" => "0"})["value"] == 0
+      assert BattlePlans.condition_leaf(%{"op" => "enemy_count"}) == %{"op" => "enemy_count", "cmp" => "gte", "value" => 1}
+      assert BattlePlans.condition_label(Conditions.add(nil, "", leaf)) == "enemies <= 2"
+      assert BattlePlans.enemy_leaf?(leaf)
+      refute BattlePlans.enemy_leaf?(%{"op" => "sinner_count"})
+      assert BattlePlans.enemy_count_matches?(leaf, 2)
+      refute BattlePlans.enemy_count_matches?(leaf, 3)
+    end
+
     test "sinner count leaves parse, label and match" do
       leaf = BattlePlans.condition_leaf(%{"op" => "sinner_count", "cmp" => "lte", "value" => "2", "hook" => "ignored"})
       assert leaf == %{"op" => "sinner_count", "cmp" => "lte", "value" => 2}

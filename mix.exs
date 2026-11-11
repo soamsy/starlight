@@ -53,7 +53,7 @@ defmodule StarlightBot.MixProject do
     [
       starlight_bot: [
         include_executables_for: [:unix],
-        steps: [:assemble, &copy_models/1],
+        steps: [:assemble, &copy_models/1, &prune_duplicate_libs/1],
       ],
     ]
   end
@@ -68,6 +68,25 @@ defmodule StarlightBot.MixProject do
     end
 
     release
+  end
+
+  defp prune_duplicate_libs(release) do
+    for dir <- Path.wildcard(Path.join([release.path, "lib", "evision-*", "priv", "lib"])),
+        {_hash, [_soname | duplicates]} <- duplicate_groups(dir),
+        duplicate <- duplicates do
+      File.rm!(duplicate)
+    end
+
+    release
+  end
+
+  defp duplicate_groups(dir) do
+    dir
+    |> File.ls!()
+    |> Enum.map(&Path.join(dir, &1))
+    |> Enum.filter(&File.regular?/1)
+    |> Enum.group_by(&:crypto.hash(:sha256, File.read!(&1)))
+    |> Enum.map(fn {hash, files} -> {hash, Enum.sort_by(files, &(not Regex.match?(~r/\.so\.\d+$/, &1)))} end)
   end
 
   defp aliases do
