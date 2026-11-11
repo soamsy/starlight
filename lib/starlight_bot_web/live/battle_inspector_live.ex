@@ -1,9 +1,9 @@
 defmodule StarlightBotWeb.Live.BattleInspectorLive do
   use StarlightBotWeb, :live_view
   alias StarlightBot.Automation.{BattleChain, PlaybookRunner, TrayWatch}
-  alias StarlightBot.Ctx
+  alias StarlightBot.{Ctx, SinnerProfiles}
   alias StarlightBot.Navigation.Navigator
-  alias StarlightBot.Vision.{Capture, EnemyTargets, Frame, HookRegistry, Matcher, SinColor, SkillTray}
+  alias StarlightBot.Vision.{Capture, EnemyTargets, Frame, HookRegistry, Matcher, SinColor, SinnerLocator, SkillTray}
 
   @tmp_jpeg "/tmp/_starlight_battle_inspector.jpg"
   @tmp_chain_preview_jpeg "/tmp/_starlight_battle_inspector_chain_preview.jpg"
@@ -19,6 +19,9 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
     pride: "#60a5fa",
     envy: "#c084fc"
   }
+  @name_stagger_rows 3
+  @name_stagger_px 16
+  @id_label_gap 16
   @chain_top_color "#38bdf8"
   @chain_bottom_color "#fb7185"
 
@@ -367,6 +370,7 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
               bg_region: bg_region,
               bg_color: bg_color,
               bg_strip_b64: encode_png_b64(Frame.crop(frame.mat, bg_region)),
+              sinners: SinnerLocator.locate(frame, tray, Enum.filter(SinnerProfiles.list(), &(SinnerProfiles.locator_hooks(&1) != []))),
               error: nil
             }
 
@@ -464,11 +468,12 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
          top_sins: top_sins,
          bottom_sins: bottom_sins,
          bg_region: bg_region,
-         bg_color: bg_color
+         bg_color: bg_color,
+         sinners: sinners
        }) do
     [
       gear_overlay(x, y, w, h, gear_hook),
-      background_overlay(bg_region, bg_color) | tray_overlays(tray, top_sins, bottom_sins)
+      background_overlay(bg_region, bg_color) | tray_overlays(tray, top_sins, bottom_sins) ++ sinner_overlays(tray, sinners)
     ]
   end
 
@@ -593,6 +598,31 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
     "#" <> hex2(r) <> hex2(g) <> hex2(b)
   end
 
+  defp sinner_overlays(tray, sinners) do
+    sinners
+    |> Enum.with_index()
+    |> Enum.map(fn {%{profile: profile, score: score, columns: columns}, i} ->
+      x0 = round(tray.tray_start_x + tray.bin_width * Enum.min(columns))
+      color = Enum.at(@palette, rem(Enum.at(tray.sinner_of_slot, hd(columns)), length(@palette)))
+
+      %{
+        type: "label",
+        text: "#{profile.name} #{Float.round(score * 1.0, 2)}",
+        text_x: x0 + 4,
+        text_y: tray.sinner_action_y - rem(i, @name_stagger_rows) * @name_stagger_px,
+        color: color,
+        font_px: 12
+      }
+    end)
+  end
+
+  defp id_label_y(tray) do
+    case HookRegistry.find(:battle_hp_finder) do
+      {:ok, %{region: {_hx, hy, _hw, hh}}} -> hy + hh + @id_label_gap
+      _ -> tray.sinner_action_y
+    end
+  end
+
   defp hp_strip_overlay(tray) do
     case HookRegistry.find(:battle_hp_finder) do
       {:ok, %{region: {_hx, hy, _hw, hh}}} ->
@@ -640,7 +670,7 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
           type: "label",
           text: "id #{sinner_id}#{marker}",
           text_x: div(x0 + x1, 2) - 20,
-          text_y: tray.sinner_action_y,
+          text_y: id_label_y(tray),
           color: color
         }
       ]

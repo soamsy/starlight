@@ -525,7 +525,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
-  def handle_event("set_chain_mode", %{"action" => action_id, "mode" => mode}, socket) when mode in ~w(fast a_res) do
+  def handle_event("set_chain_mode", %{"action" => action_id, "mode" => mode}, socket) when mode in ~w(fast a_res a_res_def) do
     {:noreply, update_action(socket, action_id, &Map.put(&1, "mode", mode))}
   end
 
@@ -772,10 +772,11 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
   def action_tooltip("if"), do: "Check the condition once against a fresh frame, then run the then actions or the else actions."
 
-  def action_tooltip("chain"), do: "Drag a chain across the skill tray. Fast skips S3, which takes too long to animate, and prefers S2, then S1. A-Res chains the longest same-sin streaks to maximize clash power."
+  def action_tooltip("chain"), do: "Drag a chain across the skill tray. Fast skips S3, which takes too long to animate, and prefers S2, then S1. A-Res chains the longest same-sin streaks to maximize clash power. A-Res+def also considers defense skills of sinners it can find in the tray."
 
   def chain_mode_tooltip("fast"), do: "Chain without S3, which takes too long to animate. Prefers S2, then S1."
   def chain_mode_tooltip("a_res"), do: "Chain for the longest same-sin streaks to maximize clash power."
+  def chain_mode_tooltip("a_res_def"), do: "A-Res, but also uses a sinner's defense skill when it extends a same-sin streak. Finds sinners in the skill tray by their sinner profile; sinners it can't find only chain with their top and bottom skills."
 
   def pick_label("all"), do: "all slots"
   def pick_label("first"), do: "first slots"
@@ -1139,9 +1140,14 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                 <span class="font-semibold whitespace-nowrap cursor-help" title={action_tooltip(type)}><%= action_label(type) %></span>
             <% end %>
             <div :if={@action["type"] == "chain"} class="join">
-              <button :for={{mode, label} <- [{"fast", "fast"}, {"a_res", "a-res"}]} type="button" phx-click="set_chain_mode" phx-value-action={@action["id"]} phx-value-mode={mode}
+              <button :for={{mode, label} <- [{"fast", "fast"}, {"a_res", "a-res"}, {"a_res_def", "a-res+def"}]} type="button" phx-click="set_chain_mode" phx-value-action={@action["id"]} phx-value-mode={mode}
                       title={chain_mode_tooltip(mode)} class={["join-item btn btn-xs", (@action["mode"] || "fast") == mode && "btn-primary"]}><%= label %></button>
             </div>
+            <label :if={@action["type"] == "chain" and @action["mode"] == "a_res_def"} class="flex items-center gap-1 text-xs" title="Chains that would need more defenses than this are skipped. Leave blank for no limit.">
+              up to
+              <input type="number" name="max_defenses" min="0" max="12" placeholder="∞" value={@action["max_defenses"]} class="input input-bordered input-xs w-14" phx-debounce="300" />
+              defenses per turn
+            </label>
           </div>
         <% end %>
 
@@ -1874,16 +1880,29 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   defp apply_action_params(%{"type" => type} = action, params) when type in ~w(target ego dodge nothing), do: apply_holder(action, params, true)
 
   defp apply_action_params(%{"pins" => _} = action, params) do
-    pins =
-      (params["pins"] || %{})
-      |> Enum.sort_by(fn {index, _} -> String.to_integer(index) end)
-      |> Enum.zip(action["pins"])
-      |> Enum.map(fn {{_index, params}, pin} -> apply_holder(pin, params, false) end)
+    action = if Map.has_key?(params, "max_defenses"), do: Map.put(action, "max_defenses", parse_max_defenses(params["max_defenses"])), else: action
 
-    Map.put(action, "pins", pins)
+    if Map.has_key?(params, "pins") do
+      pins =
+        params["pins"]
+        |> Enum.sort_by(fn {index, _} -> String.to_integer(index) end)
+        |> Enum.zip(action["pins"])
+        |> Enum.map(fn {{_index, params}, pin} -> apply_holder(pin, params, false) end)
+
+      Map.put(action, "pins", pins)
+    else
+      action
+    end
   end
 
   defp apply_action_params(action, _params), do: action
+
+  defp parse_max_defenses(value) do
+    case Integer.parse(to_string(value)) do
+      {n, _} when n >= 0 -> n
+      _ -> nil
+    end
+  end
 
   defp update_at_path(holder, [], fun), do: fun.(holder)
 

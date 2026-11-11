@@ -23,7 +23,7 @@ defmodule StarlightBot.Automation.BattleChain do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, {gx, gy, gw, gh} = gear_rect} <- Matcher.find(frame, @gear_hook),
          {:ok, tray} <- SkillTray.scan(frame),
-         {picks, _top_results, _bottom_results} = compute_picks(frame, tray, "fast", %{}),
+         {picks, _top_results, _bottom_results} = compute_picks(frame, tray, "fast", %{}, nil, nil),
          path = build_path({gx + gw / 2, gy + gh / 2}, picks, release_point(tray)),
          :ok <- click_and_release(gear_rect) do
       case Capture.grab_frame() do
@@ -47,11 +47,13 @@ defmodule StarlightBot.Automation.BattleChain do
     end
   end
 
-  @spec drag(term, SkillTray.t(), {number, number, number, number}, String.t(), %{non_neg_integer => :top | :bottom}, Ctx.t()) ::
+  @spec drag(term, SkillTray.t(), {number, number, number, number}, String.t(), %{non_neg_integer => :top | :bottom}, Ctx.t(), keyword) ::
           :ok | {:error, term}
-  def drag(frame, tray, {gx, gy, gw, gh}, mode, forced, ctx) do
-    {picks, top_results, bottom_results} = compute_picks(frame, tray, mode, forced)
-    log_skill_tray(ctx, top_results, bottom_results)
+  def drag(frame, tray, {gx, gy, gw, gh}, mode, forced, ctx, opts \\ []) do
+    defense = Keyword.get(opts, :defense_sins)
+    {picks, top_results, bottom_results} = compute_picks(frame, tray, mode, forced, defense, Keyword.get(opts, :max_defenses))
+    log_skill_tray(ctx, top_results, bottom_results, defense)
+    click_defense(picks, Keyword.get(opts, :click_defense, fn _column -> :ok end))
     path = build_path({gx + gw / 2, gy + gh / 2}, picks, release_point(tray))
 
     with {:ok, path_screens} <- to_screen_points(path) do
@@ -59,6 +61,15 @@ defmodule StarlightBot.Automation.BattleChain do
       run_drag(path_screens)
       :ok
     end
+  end
+
+  defp click_defense(picks, click) do
+    picks
+    |> Enum.with_index()
+    |> Enum.each(fn
+      {{:defense, _x, _y}, column} -> click.(column)
+      _ -> :ok
+    end)
   end
 
   defp build_path(gear_point, picks, release_point) do
@@ -103,13 +114,16 @@ defmodule StarlightBot.Automation.BattleChain do
     {tray.tray_end_x + @release_margin_px, tray.chain_top_y + 50}
   end
 
-  defp compute_picks(frame, tray, mode, forced) do
+  defp compute_picks(frame, tray, mode, forced, defense, max_defenses) do
     {top_results, bottom_results} = SinColor.classify_tray(frame.mat, tray)
 
     picks =
       case mode do
         "a_res" ->
           waypoints_by_streak(tray, Enum.map(top_results, & &1.sin), Enum.map(bottom_results, & &1.sin), forced)
+
+        "a_res_def" ->
+          waypoints_by_streak(tray, Enum.map(top_results, & &1.sin), Enum.map(bottom_results, & &1.sin), forced, defense, max_defenses)
 
         _ ->
           waypoints(tray, Enum.map(top_results, & &1.tier), Enum.map(bottom_results, & &1.tier), forced)
@@ -118,16 +132,19 @@ defmodule StarlightBot.Automation.BattleChain do
     {picks, top_results, bottom_results}
   end
 
-  defp log_skill_tray(ctx, top_results, bottom_results) do
+  defp log_skill_tray(ctx, top_results, bottom_results, defense) do
+    defense_rows = if defense, do: ["  defense " <> format_defense_row(defense)], else: []
+
     text =
-      [
-        "battle_chain: skill tray read (#{length(top_results)} column(s))",
-        format_skill_row("top", top_results),
-        format_skill_row("bottom", bottom_results)
-      ]
+      (["battle_chain: skill tray read (#{length(top_results)} column(s))", format_skill_row("top", top_results), format_skill_row("bottom", bottom_results)] ++
+         defense_rows)
       |> Enum.join("\n")
 
     Ctx.log(ctx, :info, text)
+  end
+
+  defp format_defense_row(defense) do
+    defense |> Enum.with_index(1) |> Enum.map_join("  ", fn {sin, i} -> "#{i}:#{sin || "?"}" end)
   end
 
   defp format_skill_row(label, results) do
@@ -182,11 +199,11 @@ defmodule StarlightBot.Automation.BattleChain do
     |> Enum.reverse()
   end
 
-  @spec waypoints_by_streak(SkillTray.t(), [SinColor.sin()], [SinColor.sin()], %{non_neg_integer => :top | :bottom}) ::
-          [{:top | :bottom, number, number}]
-  def waypoints_by_streak(%SkillTray{} = tray, top_sins, bottom_sins, forced \\ %{}) do
+  @spec waypoints_by_streak(SkillTray.t(), [SinColor.sin()], [SinColor.sin()], %{non_neg_integer => :top | :bottom}, [SinColor.sin() | nil] | nil, non_neg_integer | nil) ::
+          [{:top | :bottom | :defense, number, number}]
+  def waypoints_by_streak(%SkillTray{} = tray, top_sins, bottom_sins, forced \\ %{}, defense \\ nil, max_defenses \\ nil) do
     top_sins
-    |> ChainStreak.best_path(bottom_sins, forced)
+    |> ChainStreak.best_path(bottom_sins, forced, defense, max_defenses)
     |> Enum.zip(SkillTray.chain_grid(tray))
     |> Enum.map(fn {row_choice, {x, top_y, bottom_y}} ->
       y = if row_choice == :top, do: top_y, else: bottom_y

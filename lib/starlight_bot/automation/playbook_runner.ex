@@ -4,7 +4,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.Navigation.{DSL, Runner}
-  alias StarlightBot.Vision.{Capture, EnemyTargets, HookRegistry, Matcher, SinColor, SkillTray}
+  alias StarlightBot.Vision.{Capture, EnemyTargets, HookRegistry, Matcher, SinColor, SinnerLocator, SkillTray}
 
   @key_gap_ms 50
   @poll_ms 100
@@ -326,7 +326,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
          {:ok, gear_rect} <- find_gear(frame, ctx),
          forced = forced_rows(action["pins"] || [], frame, tray, ctx),
          forced = apply_forced(forced, tray, ctx),
-         :ok <- BattleChain.drag(frame, tray, gear_rect, mode, forced, ctx) do
+         :ok <- BattleChain.drag(frame, tray, gear_rect, mode, forced, ctx, chain_opts(mode, action, frame, tray, ctx)) do
       if await(@turn_started, @turn_start_timeout_ms), do: :started, else: log_pending(ctx, "chain drag didn't start the turn")
     else
       {:error, reason} -> log_pending(ctx, "chain drag failed: #{inspect(reason)}")
@@ -851,6 +851,44 @@ defmodule StarlightBot.Automation.PlaybookRunner do
         Ctx.log(ctx, :error, "playbook: can't map slot #{column + 1} to the screen: #{inspect(reason)}")
         :skip
     end
+  end
+
+  defp chain_opts("a_res_def", action, frame, tray, ctx) do
+    [
+      defense_sins: defense_sins(frame, tray, ctx),
+      max_defenses: action["max_defenses"],
+      click_defense: fn column -> click_dodge(tray, column, ctx) end
+    ]
+  end
+
+  defp chain_opts(_mode, _action, _frame, _tray, _ctx), do: []
+
+  defp defense_sins(frame, tray, ctx) do
+    found = SinnerLocator.locate(frame, tray, defense_candidates(ctx))
+
+    sins =
+      Enum.reduce(found, List.duplicate(nil, length(tray.sinner_of_slot)), fn claim, acc ->
+        sin = String.to_existing_atom(claim.profile.defense_affinity)
+        Ctx.log(ctx, :info, "playbook: #{claim.profile.name} (#{claim.hook}) found at slot #{claim.column + 1}, defense is #{sin}")
+        Enum.reduce(claim.columns, acc, &List.replace_at(&2, &1, sin))
+      end)
+
+    if found == [], do: Ctx.log(ctx, :info, "playbook: no sinner profiles found in the skill tray, chaining without defense")
+    sins
+  end
+
+  defp defense_candidates(ctx) do
+    planned = BattlePlans.profiles(RunMemory.battle_plan(ctx))
+
+    SinnerProfiles.list()
+    |> Enum.filter(&(&1.defense_affinity in SinnerProfiles.sins()))
+    |> Enum.group_by(& &1.sinner)
+    |> Enum.flat_map(fn {sinner, all} ->
+      case Enum.filter(all, &(&1.id in Map.get(planned, sinner, []))) do
+        [] -> all
+        chosen -> chosen
+      end
+    end)
   end
 
   defp profiles(ctx) do

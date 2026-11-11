@@ -111,4 +111,79 @@ defmodule StarlightBot.Automation.ChainStreakTest do
       assert ChainStreak.best_path(top, bottom, %{0 => :bottom}) == [:bottom, :bottom, :bottom]
     end
   end
+
+  describe "best_path/4 with defense skills" do
+    test "uses a defense skill when it joins a streak" do
+      top = [:wrath, :gloom, :wrath]
+      bottom = [:lust, :envy, :sloth]
+      defense = [nil, :wrath, nil]
+
+      assert ChainStreak.best_path(top, bottom, %{}, defense) == [:top, :defense, :top]
+    end
+
+    test "ignores defense when it gains nothing" do
+      top = [:wrath, :lust, :wrath]
+      bottom = [:lust, :envy, :sloth]
+      defense = [:pride, :gloom, :pride]
+
+      assert ChainStreak.best_path(top, bottom, %{}, defense) == ChainStreak.best_path(top, bottom)
+    end
+
+    test "defense that only ties an existing streak is not chosen" do
+      top = [:wrath, :wrath]
+      bottom = [:lust, :lust]
+      defense = [:wrath, :wrath]
+
+      refute :defense in ChainStreak.best_path(top, bottom, %{}, defense)
+    end
+
+    test "a pinned column keeps its forced row" do
+      top = [:wrath, :gloom, :wrath]
+      bottom = [:lust, :envy, :sloth]
+      defense = [nil, :wrath, nil]
+
+      assert ChainStreak.best_path(top, bottom, %{1 => :bottom}, defense) |> Enum.at(1) == :bottom
+    end
+
+    test "nil defense matches the two-row result" do
+      top = [:wrath, :lust, :wrath, :pride]
+      bottom = [:lust, :wrath, :lust, :pride]
+
+      assert ChainStreak.best_path(top, bottom, %{}, nil) == ChainStreak.best_path(top, bottom)
+    end
+
+    test "a defense that only makes a 2-run is not worth it over two normal attacks" do
+      top = [:wrath, :gloom]
+      bottom = [:lust, :envy]
+      defense = [nil, :wrath]
+
+      refute :defense in ChainStreak.best_path(top, bottom, %{}, defense)
+    end
+
+    test "a normal attack of the same sin beats a defense even when defense keeps the path steadier" do
+      top = [:gloom, :pride, :wrath]
+      bottom = [:wrath, :wrath, :sloth]
+      defense = [nil, nil, :wrath]
+
+      assert ChainStreak.best_path(top, bottom, %{}, defense) == [:bottom, :bottom, :top]
+    end
+
+    test "max_defenses invalidates paths that use more defenses" do
+      top = [:wrath, :gloom, :gloom, :lust]
+      bottom = [:lust, :envy, :sloth, :pride]
+      defense = [nil, :wrath, :wrath, nil]
+
+      assert ChainStreak.best_path(top, bottom, %{}, defense) == [:top, :defense, :defense, :bottom]
+      assert Enum.count(ChainStreak.best_path(top, bottom, %{}, defense, 1), &(&1 == :defense)) <= 1
+      refute :defense in ChainStreak.best_path(top, bottom, %{}, defense, 0)
+    end
+
+    test "a defense that completes a 3-run is used" do
+      top = [:wrath, :wrath, :gloom]
+      bottom = [:lust, :envy, :sloth]
+      defense = [nil, nil, :wrath]
+
+      assert List.last(ChainStreak.best_path(top, bottom, %{}, defense)) == :defense
+    end
+  end
 end
