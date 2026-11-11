@@ -1392,25 +1392,49 @@ defmodule StarlightBot.BattlePlans do
     end
   end
 
-  def move_to_container(items, from, to, id, ids) do
-    moved = find_item(items, id)
+  def move_to_container(items, from, to, id, ids), do: move_many_to_container(items, from, to, [id], ids)
+
+  def move_many_to_container(items, from, to, moved_ids, ids) do
+    moved = Enum.map(moved_ids, &find_item(items, &1))
 
     cond do
-      is_nil(moved) or from == to -> items
-      schedule?(moved) -> items
-      into_itself?(moved, to) -> items
+      from == to or Enum.any?(moved, &is_nil/1) -> items
+      Enum.any?(moved, &schedule?/1) -> items
+      Enum.any?(moved, &into_itself?(&1, to)) -> items
       true ->
-        removed = update_container(items, from, fn list -> Enum.reject(list, &(&1["id"] == id)) end)
+        removed = update_container(items, from, fn list -> Enum.reject(list, &(&1["id"] in moved_ids)) end)
 
         placed =
           update_container(removed, to, fn list ->
-            by_id = Map.new([moved | list], &{&1["id"], &1})
+            by_id = Map.new(moved ++ list, &{&1["id"], &1})
             ordered = for item_id <- ids, Map.has_key?(by_id, item_id), do: by_id[item_id]
-            if length(ordered) == length(list) + 1, do: ordered, else: list ++ [moved]
+            if length(ordered) == length(list) + length(moved), do: ordered, else: list ++ moved
           end)
 
         if terminal_conflict?(placed, to), do: items, else: placed
     end
+  end
+
+  def pastable_actions(items, container, kind, sources) do
+    allowed = action_types(kind)
+    terminal_taken? = Enum.any?(container_actions(items, container), &terminal?/1)
+
+    {clones, _taken} =
+      sources
+      |> Enum.filter(&((schedule?(&1) and container == "root") or &1["type"] in allowed))
+      |> Enum.reduce({[], terminal_taken?}, fn action, {acc, taken?} ->
+        if terminal?(action) and taken?, do: {acc, taken?}, else: {[refresh_ids(action) | acc], taken? or terminal?(action)}
+      end)
+
+    Enum.reverse(clones)
+  end
+
+  def insert_actions(items, container, clones, after_id) do
+    update_container(items, container, fn list ->
+      index = Enum.find_index(list, &(&1["id"] == after_id))
+      {before, rest} = if index, do: Enum.split(list, index + 1), else: {list, []}
+      before ++ clones ++ rest
+    end)
   end
 
   defp into_itself?(moved, to) do

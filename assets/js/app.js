@@ -1454,7 +1454,7 @@ const selectedSortIds = (list) => sortRows(list).map(r => r.dataset.sortId).filt
 
 const pasteEntriesAfter = (hook, after) => {
   navigator.clipboard.readText()
-    .then(text => hook.pushEvent("ms_paste_entries", { text, after }))
+    .then(text => hook.pushEvent(hook.el.dataset.sortPasteEvent || "ms_paste_entries", { text, after, scope: hook.el.dataset.sortScope || "" }))
     .catch(err => hook.pushEvent("plan_clipboard_failed", { message: `Couldn't read clipboard: ${err.message || err}` }))
 }
 
@@ -1479,7 +1479,7 @@ const bindSortSelectionGlobals = () => {
     if (key === "c") {
       if (!window.getSelection().isCollapsed) return
       e.preventDefault()
-      hook.pushEvent("ms_copy_entries", { ids })
+      hook.pushEvent(hook.el.dataset.sortCopyEvent || "ms_copy_entries", { ids, scope: hook.el.dataset.sortScope || "" })
     } else {
       e.preventDefault()
       pasteEntriesAfter(hook, ids[ids.length - 1])
@@ -1524,7 +1524,7 @@ const SortableList = {
           const ids = sortSelection.list === this.el && sortSelection.ids.has(row.dataset.sortId)
             ? selectedSortIds(this.el)
             : [row.dataset.sortId]
-          this.pushEvent("ms_copy_entries", { ids })
+          this.pushEvent(this.el.dataset.sortCopyEvent || "ms_copy_entries", { ids, scope: this.el.dataset.sortScope || "" })
           return
         }
 

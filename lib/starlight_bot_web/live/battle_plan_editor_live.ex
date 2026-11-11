@@ -9,7 +9,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   alias StarlightBot.BattlePlans.Resolver
 
   @collapsed_floors 5
-  @read_only_events ~w(restore_view select_playbook select_lineup set_paint select_schedule_tab open_editor close_editor copy_playbook toggle_extreme toggle_help copy_plan clipboard_status plan_clipboard_failed)
+  @read_only_events ~w(restore_view select_playbook select_lineup set_paint select_schedule_tab open_editor close_editor copy_playbook copy_actions toggle_extreme toggle_help copy_plan clipboard_status plan_clipboard_failed)
 
   def read_only_events, do: @read_only_events
 
@@ -408,8 +408,45 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
-  def handle_event("move_action_to", %{"scope" => scope, "from" => from, "id" => id, "ids" => ids}, socket) do
-    {:noreply, socket |> update_items(&BattlePlans.move_to_container(&1, from, scope, id, ids)) |> update(:reorder_rev, &(&1 + 1))}
+  def handle_event("move_action_to", %{"scope" => scope, "from" => from, "id" => id, "ids" => ids} = params, socket) do
+    moved = Map.get(params, "moved", [id])
+    {:noreply, socket |> update_items(&BattlePlans.move_many_to_container(&1, from, scope, moved, ids)) |> update(:reorder_rev, &(&1 + 1))}
+  end
+
+  @impl true
+  def handle_event("copy_actions", %{"scope" => scope, "ids" => ids}, socket) do
+    playbook = find_playbook(socket.assigns.data, socket.assigns.playbook_id)
+
+    case playbook && Enum.filter(BattlePlans.container_actions(playbook["actions"], scope), &(&1["id"] in ids)) do
+      [_ | _] = actions ->
+        label = if length(actions) == 1, do: "1 action", else: "#{length(actions)} actions"
+        {:noreply, push_event(socket, "copy_json", %{text: PlanClipboard.encode_actions(playbook["kind"], actions), toast: "Copied #{label} to the clipboard."})}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("paste_actions", %{"text" => text, "after" => after_id, "scope" => scope}, socket) do
+    playbook = find_playbook(socket.assigns.data, socket.assigns.playbook_id)
+
+    with %{} <- playbook,
+         {:ok, sources} <- PlanClipboard.decode_actions(text, playbook["kind"]) do
+      case BattlePlans.pastable_actions(playbook["actions"], scope, playbook["kind"], sources) do
+        [] ->
+          {:noreply, put_flash(socket, :error, "None of those actions fit here.")}
+
+        clones ->
+          skipped = length(sources) - length(clones)
+          note = if skipped > 0, do: " Skipped #{skipped} that don't fit here.", else: ""
+          socket = update_items(socket, &BattlePlans.insert_actions(&1, scope, clones, after_id))
+          {:noreply, put_flash(socket, :info, "Pasted #{length(clones)} #{if length(clones) == 1, do: "action", else: "actions"}.#{note}")}
+      end
+    else
+      {:error, message} -> {:noreply, put_flash(socket, :error, message)}
+      _ -> {:noreply, socket}
+    end
   end
 
   @impl true
@@ -897,6 +934,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     ~H"""
     <div class="flex flex-col gap-1">
       <div id={"actions-#{@playbook["id"]}-#{@dom_key}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_actions" data-sort-move-event="move_action_to"
+           data-sort-copy-event="copy_actions" data-sort-paste-event="paste_actions" data-sort-multi
            data-sort-shared={@playbook["id"]} data-sort-scope={@container} data-sort-highlight class="flex flex-col gap-1 min-h-6 rounded">
         <div :for={{item, index} <- Enum.with_index(@items, 1)} data-sort-id={item["id"]} data-sort-handle data-sort-stay={BattlePlans.schedule?(item)}>
           <%= if BattlePlans.schedule?(item) do %>
@@ -1058,6 +1096,14 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           <div class="flex gap-0.5 shrink-0">
             <button :if={@schedulable?} type="button" phx-click="add_schedule" phx-value-action={@action["id"]} title="Change this action across turns"
                     class="btn btn-2xs btn-ghost">Add Schedule</button>
+            <span class="hidden in-[.ring-primary]:flex items-center shrink-0">
+              <button type="button" data-copy-entry title="Copy this action or every selected action (Ctrl+C)" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
+                <.icon name="lucide-copy" class="size-3.5 pointer-events-none" />
+              </button>
+              <button type="button" data-paste-entries={@action["id"]} title="Paste copied actions below this one (Ctrl+V pastes below the last selected action)" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
+                <.icon name="lucide-clipboard-paste" class="size-3.5 pointer-events-none" />
+              </button>
+            </span>
             <button phx-click="dup_action" phx-value-action={@action["id"]} title="Duplicate this block" class="btn btn-2xs btn-ghost">Dup</button>
             <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error"><.icon name="lucide-x" class="size-3.5" /></button>
           </div>
@@ -1074,6 +1120,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
             </div>
             <% actions = BattlePlans.branch_actions(@action, branch) %>
             <div id={"branch-#{@playbook_id}-#{@action["id"]}-#{branch}-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_actions" data-sort-move-event="move_action_to"
+                 data-sort-copy-event="copy_actions" data-sort-paste-event="paste_actions" data-sort-multi
                  data-sort-shared={@playbook_id} data-sort-scope={@action["id"] <> "~" <> branch} data-sort-highlight
                  class={"flex flex-col gap-1 rounded " <> if(actions == [], do: "min-h-12 items-center justify-center border-2 border-dashed border-primary/60 bg-primary/10 text-xs font-semibold text-primary before:content-['Empty,_add_an_action_below']", else: "min-h-6")}>
               <div :for={{child, child_index} <- Enum.with_index(actions, 1)} data-sort-id={child["id"]} data-sort-handle>
@@ -1188,6 +1235,14 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <div class="flex gap-0.5">
         <button :if={@schedulable?} type="button" phx-click="add_schedule" phx-value-action={@action["id"]} title="Change this action across turns"
                 class="btn btn-2xs btn-ghost">Add Schedule</button>
+        <span class="hidden in-[.ring-primary]:flex items-center shrink-0">
+          <button type="button" data-copy-entry title="Copy this action or every selected action (Ctrl+C)" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
+            <.icon name="lucide-copy" class="size-3.5 pointer-events-none" />
+          </button>
+          <button type="button" data-paste-entries={@action["id"]} title="Paste copied actions below this one (Ctrl+V pastes below the last selected action)" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
+            <.icon name="lucide-clipboard-paste" class="size-3.5 pointer-events-none" />
+          </button>
+        </span>
         <button :if={BattlePlans.duplicable?(@action)} phx-click="dup_action" phx-value-action={@action["id"]} title="Duplicate this row" class="btn btn-2xs btn-ghost">Dup</button>
         <button phx-click="remove_action" phx-value-action={@action["id"]} class="btn btn-2xs btn-ghost text-error"><.icon name="lucide-x" class="size-3.5" /></button>
       </div>

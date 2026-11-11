@@ -69,6 +69,25 @@ defmodule StarlightBot.PlanClipboard do
     end
   end
 
+  def encode_actions(kind, actions), do: Jason.encode!(%{"v" => @format_version, "starlight_actions" => %{"kind" => kind, "actions" => actions}})
+
+  def decode_actions(text, kind) do
+    case Jason.decode(text) do
+      {:ok, %{"v" => v}} when is_integer(v) and v > @format_version -> {:error, @newer}
+      {:ok, %{"starlight_actions" => %{"kind" => ^kind, "actions" => [_ | _] = actions}}} ->
+        if valid_actions?(actions), do: {:ok, actions}, else: {:error, "Those actions are malformed and can't be pasted."}
+
+      {:ok, %{"starlight_actions" => %{"kind" => other}}} when is_binary(other) ->
+        {:error, "That clipboard holds #{other} actions, not #{kind} actions."}
+
+      {:ok, %{"starlight_playbook" => _}} ->
+        {:error, "That clipboard holds a whole playbook, not actions."}
+
+      _ ->
+        {:error, "The clipboard doesn't hold Starlight actions."}
+    end
+  end
+
   def encode_lineup(lineup), do: Jason.encode!(%{"v" => @format_version, "starlight_lineup" => lineup})
 
   def decode_lineup(text) do

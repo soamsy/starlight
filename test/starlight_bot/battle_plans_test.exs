@@ -239,6 +239,39 @@ defmodule StarlightBot.BattlePlansTest do
     end
   end
 
+  describe "multi-select" do
+    test "moving several actions into a tab keeps their order" do
+      playbook = scheduled()
+      [schedule, commit] = playbook["actions"]
+      extra = BattlePlans.new_action("damage_rate")
+      items = playbook["actions"] ++ [extra]
+      container = schedule["id"] <> "|1"
+      [win_rate] = BattlePlans.container_actions(items, container)
+
+      moved = BattlePlans.move_many_to_container(items, "root", container, [commit["id"], extra["id"]], [win_rate["id"], commit["id"], extra["id"]])
+
+      assert Enum.map(moved, & &1["type"]) == ["schedule"]
+      assert BattlePlans.container_actions(moved, container) |> Enum.map(& &1["id"]) == [win_rate["id"], commit["id"], extra["id"]]
+    end
+
+    test "pasting clones with fresh ids after the anchor and skips a second chain action" do
+      chain = BattlePlans.new_action("chain")
+      win_rate = BattlePlans.new_action("win_rate")
+      items = [win_rate, chain]
+
+      clones = BattlePlans.pastable_actions(items, "root", "chain", [win_rate, chain])
+      assert Enum.map(clones, & &1["type"]) == ["win_rate"]
+      refute hd(clones)["id"] == win_rate["id"]
+
+      pasted = items |> BattlePlans.insert_actions("root", clones, win_rate["id"]) |> BattlePlans.normalize_items()
+      assert Enum.map(pasted, & &1["type"]) == ["win_rate", "win_rate", "chain"]
+    end
+
+    test "pasting drops chain actions into a focused playbook" do
+      assert BattlePlans.pastable_actions([], "root", "focused", [BattlePlans.new_action("chain"), BattlePlans.new_action("commit")]) |> Enum.map(& &1["type"]) == ["commit"]
+    end
+  end
+
   describe "if blocks" do
     test "enemy count leaves parse, label and match" do
       leaf = BattlePlans.condition_leaf(%{"op" => "enemy_count", "cmp" => "lte", "value" => "2", "hook" => "ignored"})
