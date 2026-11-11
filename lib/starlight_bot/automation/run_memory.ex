@@ -234,6 +234,17 @@ defmodule StarlightBot.Automation.RunMemory do
     :ok
   end
 
+  def target_check_started_at(ctx), do: get(ctx, :target_check_started_at, nil)
+
+  def arm_target_check(ctx), do: put(ctx, :target_check_started_at, System.monotonic_time(:millisecond))
+
+  def disarm_target_check(ctx) do
+    if target_check_started_at(ctx) != nil, do: put(ctx, :target_check_started_at, nil)
+    :ok
+  end
+
+  def has_ego_gift_named?(ctx, name), do: Enum.any?(ego_gifts(ctx), fn {_id, gift} -> gift.name == name end)
+
   def give_up(ctx), do: get(ctx, :give_up, nil)
 
   def give_up?(ctx), do: give_up(ctx) != nil

@@ -32,6 +32,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   @fresh_check_ms 1
   @settle_check_ms 800
   @next_screen_wait_ms 15_000
+  @target_check_delay_ms 15_000
   @cabinet_available_hooks [cabinet_ego_gift_available_3: 3, cabinet_ego_gift_available_2: 2, cabinet_ego_gift_available_1: 1]
 
   def program(picks, run_count, config), do: [call(__MODULE__, :start, [picks, run_count, config])]
@@ -97,6 +98,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     RunMemory.merge(ctx, %{screen: screen, task: nil})
     unless screen in @shop_screens, do: RunMemory.clear_shop_progress(ctx)
     run = %{run | run_state: sync_state(run.run_state, screen)}
+    if screen in [:event | @shop_screens] or Engine.in_battle?(screen), do: RunMemory.disarm_target_check(ctx)
     {:steps, dispatch(screen, run, ctx)}
   end
 
@@ -168,6 +170,15 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   def forfeited_dungeon(run, run_state, result, frame, ctx), do: dispatched(run, continue_after(result, run_state), frame, ctx)
 
+  def restarted_dungeon(run, run_state, {:ok, _}, frame, ctx) do
+    Ctx.log(ctx, :info, "mirror dungeon runner: forfeited the dungeon to restart the run")
+    RunMemory.put_give_up(ctx, nil)
+    RunMemory.reset_battle_retries(ctx)
+    dispatched(run, {:continue, %{run_state | own_run?: false}}, frame, ctx)
+  end
+
+  def restarted_dungeon(run, run_state, result, frame, ctx), do: dispatched(run, continue_after(result, run_state), frame, ctx)
+
   def superposition_entered(run, run_state, {:ok, _} = result, frame, ctx) do
     RunMemory.raise_floor(ctx, max(RunMemory.floor(ctx) + 1, 6))
     resume(run, :after, run_state, result, frame, ctx)
@@ -196,6 +207,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   def run_started(run, run_state, result, frame, ctx) do
     RunMemory.put_floor(ctx, 1)
+    RunMemory.arm_target_check(ctx)
     RunMemory.put_formation(ctx, nil)
     dispatched(run, continue_after(result, %{run_state | own_run?: true}), frame, ctx)
   end
@@ -550,6 +562,11 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       screen == :theme_pack ->
         [capture([invoke(ThemePackSelector, :run, [team_id])], then: {__MODULE__, :theme_pack_done, [run, run_state]})]
 
+      screen == :dungeon_graph and missing_target_gift(ctx) != nil ->
+        Ctx.log(ctx, :info, "#{missing_target_gift(ctx)} isn't in the inventory on floor 1, forfeiting to restart the run")
+        RunMemory.disarm_target_check(ctx)
+        [goto(screen, :dungeon_forfeited, then: {__MODULE__, :restarted_dungeon, [run, run_state]})]
+
       screen == :dungeon_graph ->
         advance_dungeon_graph(run, run_state)
 
@@ -642,6 +659,23 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     steps = [toggle_search | select_affinity] ++ [call(__MODULE__, :cabinet_gift_clicks), goto(:cabinet_ego_gifts, :ego_gift_get)]
     next_screen = if searching?, do: :gift_search, else: :theme_pack
     [capture(steps, then: {__MODULE__, :continue_to_screen, [run, run_state, next_screen]})]
+  end
+
+  defp missing_target_gift(ctx) do
+    started_at = RunMemory.target_check_started_at(ctx)
+
+    with true <- is_integer(started_at) and System.monotonic_time(:millisecond) - started_at >= @target_check_delay_ms,
+         true <- RunMemory.floor(ctx) == 1 and not RunMemory.give_up?(ctx),
+         %{} = data <- RunMemory.gift_plan(ctx),
+         data = GiftPlans.normalize(data),
+         options = GiftPlans.perfected_options(data["affinity"]),
+         true <- GiftPlans.restart_without_target?(data, options),
+         target = GiftPlans.perfected_target(data, options),
+         false <- RunMemory.has_ego_gift_named?(ctx, target) do
+      target
+    else
+      _ -> nil
+    end
   end
 
   defp gift_search_names(ctx) do

@@ -269,6 +269,53 @@
                     </div>
                   <% end %>
                 </div>
+                <% perfected = GiftPlans.perfected_pick(@plan_data) %>
+                <div :if={perfected} class="flex flex-col gap-2 rounded-lg border border-base-300 p-2">
+                  <% options = perfected_options(@plan_data) %>
+                  <% priority = GiftPlans.perfected_priority(@plan_data, options) %>
+                  <% unprioritized = GiftPlans.perfected_unprioritized(@plan_data, options) %>
+                  <span class="text-xs font-medium text-base-content/70">Perfected Possibility gifts. Higher in the list is picked first; drag to reorder, or ban a gift to move it to the unprioritized side.</span>
+                  <div class="flex flex-wrap gap-3 items-start">
+                    <div id="perfected-priority" phx-hook="SortableList" data-sort-event="reorder_perfected_gifts" data-sort-move-event="move_perfected_gift"
+                         data-sort-axis="x" data-sort-scope="priority" data-sort-shared="perfected" data-sort-highlight
+                         class="flex flex-wrap items-center gap-1 min-[600px]:gap-2 min-h-12 flex-1 min-w-48 rounded-lg p-1 transition-colors">
+                      <div :for={{name, index} <- Enum.with_index(priority, 1)} data-sort-id={name}
+                           class="flex items-center gap-1 min-[600px]:gap-2 min-w-0 rounded-lg border border-base-300 bg-base-200 p-1 min-[600px]:p-2 min-h-10 min-[600px]:min-h-14">
+                        <span data-sort-handle class="cursor-grab text-base-content/40 select-none">⠿</span>
+                        <span class="text-[10px] text-base-content/40"><%= index %></span>
+                        <% gift = @gifts_by_name[name] %>
+                        <div data-gift-popup={name} class="flex items-center gap-1 min-[600px]:gap-2 min-w-0 cursor-pointer">
+                          <img :if={gift} src={gift.image_path} class="w-6 h-6 min-[600px]:w-10 min-[600px]:h-10 rounded object-cover" />
+                          <span class="text-[10px] min-[600px]:text-xs font-semibold truncate"><%= name %></span>
+                        </div>
+                        <button type="button" phx-click="toggle_perfected_gift" phx-value-gift={name} title="Don't prioritize" class="btn btn-ghost btn-xs btn-square">
+                          <.icon name="lucide-ban" class="size-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <div id="perfected-pool" phx-hook="SortableList" data-sort-event="reorder_perfected_gifts" data-sort-move-event="move_perfected_gift"
+                         data-sort-axis="x" data-sort-scope="pool" data-sort-shared="perfected" data-sort-highlight
+                         class="flex flex-wrap items-center gap-1 min-[600px]:gap-2 min-h-12 flex-1 min-w-48 rounded-lg border-2 border-dashed border-base-content/20 p-1 transition-colors">
+                      <div :for={name <- unprioritized} data-sort-id={name}
+                           class="flex items-center gap-1 min-[600px]:gap-2 min-w-0 rounded-lg border border-base-300 bg-base-200 p-1 min-[600px]:p-2 min-h-10 min-[600px]:min-h-14 opacity-60">
+                        <span data-sort-handle class="cursor-grab text-base-content/40 select-none">⠿</span>
+                        <% gift = @gifts_by_name[name] %>
+                        <div data-gift-popup={name} class="flex items-center gap-1 min-[600px]:gap-2 min-w-0 cursor-pointer">
+                          <img :if={gift} src={gift.image_path} class="w-6 h-6 min-[600px]:w-10 min-[600px]:h-10 rounded object-cover" />
+                          <span class="text-[10px] min-[600px]:text-xs font-semibold truncate"><%= name %></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <form :if={priority != []} phx-change="set_perfected_restart">
+                    <label class="flex items-center gap-2 cursor-pointer w-fit"
+                           title="Checked at the dungeon graph on floor 1, at least 15 seconds into the run, and only until the first event, battle or shop. Forfeits and restarts the run if the gift isn't in your inventory.">
+                      <input type="hidden" name="restart" value="false" />
+                      <input type="checkbox" name="restart" value="true" checked={perfected["restart_without_target"] == true} class="toggle toggle-sm toggle-primary" />
+                      <span class="text-xs">Restart the run if <%= List.first(priority) %> isn't in my inventory</span>
+                    </label>
+                  </form>
+                </div>
               </div>
 
               <div class="divider my-0"></div>

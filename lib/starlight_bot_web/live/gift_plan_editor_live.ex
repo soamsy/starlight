@@ -179,7 +179,54 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("set_affinity", %{"affinity" => affinity}, socket) do
     affinity = blank_to_nil(affinity)
-    {:noreply, update_plan(socket, &Map.merge(&1, %{"affinity" => affinity, "cabinet_gifts" => GiftPlans.starting_gifts(affinity)}))}
+
+    {:noreply,
+     update_plan(socket, fn data ->
+       data
+       |> Map.merge(%{"affinity" => affinity, "cabinet_gifts" => GiftPlans.starting_gifts(affinity)})
+       |> GiftPlans.clear_perfected_priority()
+     end)}
+  end
+
+  @impl true
+  def handle_event("reorder_perfected_gifts", %{"scope" => "priority", "ids" => ids}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.set_perfected_priority(&1, ids, GiftPlans.perfected_unprioritized(&1, perfected_options(&1))))}
+  end
+
+  @impl true
+  def handle_event("reorder_perfected_gifts", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("move_perfected_gift", %{"scope" => scope, "id" => id}, socket) do
+    {:noreply,
+     update_plan(socket, fn data ->
+       options = perfected_options(data)
+       priority = GiftPlans.perfected_priority(data, options)
+       pool = GiftPlans.perfected_unprioritized(data, options)
+
+       if scope == "priority",
+         do: GiftPlans.set_perfected_priority(data, priority ++ [id], List.delete(pool, id)),
+         else: GiftPlans.set_perfected_priority(data, List.delete(priority, id), pool ++ [id])
+     end)}
+  end
+
+  @impl true
+  def handle_event("toggle_perfected_gift", %{"gift" => name}, socket) do
+    {:noreply,
+     update_plan(socket, fn data ->
+       options = perfected_options(data)
+       priority = GiftPlans.perfected_priority(data, options)
+       pool = GiftPlans.perfected_unprioritized(data, options)
+
+       if name in priority,
+         do: GiftPlans.set_perfected_priority(data, List.delete(priority, name), pool ++ [name]),
+         else: GiftPlans.set_perfected_priority(data, priority ++ [name], List.delete(pool, name))
+     end)}
+  end
+
+  @impl true
+  def handle_event("set_perfected_restart", params, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.set_perfected_restart(&1, params["restart"] == "true"))}
   end
 
   @impl true
@@ -937,6 +984,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def affinities, do: @affinities
 
   def searchable_gifts(gifts), do: Enum.filter(gifts, &GiftPlans.gift_searchable?/1)
+
+  def perfected_options(plan_data), do: GiftPlans.perfected_options(plan_data["affinity"])
 
   def grace_pick(plan_data, index), do: Enum.find(plan_data["grace_picks"], &(&1["index"] == index))
 

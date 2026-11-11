@@ -1,6 +1,7 @@
 defmodule StarlightBot.Navigation.Screens.CabinetReward do
   use StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.{GiftPicker, RewardHelpers}
+  alias StarlightBot.Automation.{GiftPicker, RewardHelpers, RunMemory}
+  alias StarlightBot.GiftPlans
 
   @tier_hooks [:cabinet_reward_tier_3, :cabinet_reward_tier_2, :cabinet_reward_tier_1]
 
@@ -9,6 +10,7 @@ defmodule StarlightBot.Navigation.Screens.CabinetReward do
       [
         call(__MODULE__, :select_tier_gift),
         key(:enter),
+        branch([{:ego_gift_get, [RewardHelpers.record_ego_gift_items_step()]}, default: []], wait: 1_500),
         RewardHelpers.dismiss_ego_gift_get_step(leaving: :cabinet_reward)
       ]
     end
@@ -16,5 +18,17 @@ defmodule StarlightBot.Navigation.Screens.CabinetReward do
 
   screen :cabinet_reward_over, identity: nil, catch_all: true
 
-  def select_tier_gift(_frame, ctx), do: GiftPicker.pick(:cabinet_reward_scan_area, 1, @tier_hooks, :cabinet_reward, ctx, 0, anchor_hook: :cabinet_reward)
+  def select_tier_gift(_frame, ctx),
+    do: GiftPicker.pick(:cabinet_reward_scan_area, 1, @tier_hooks, :cabinet_reward, ctx, 0, anchor_hook: :cabinet_reward, priority_gifts: priority_gifts(ctx))
+
+  defp priority_gifts(ctx) do
+    case RunMemory.gift_plan(ctx) do
+      %{} = data ->
+        data = GiftPlans.normalize(data)
+        GiftPlans.perfected_priority(data, GiftPlans.perfected_options(data["affinity"]))
+
+      _ ->
+        []
+    end
+  end
 end

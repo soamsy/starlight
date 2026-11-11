@@ -18,6 +18,7 @@ defmodule StarlightBot.Automation.GiftPicker do
     slots = assign_hp(named ++ badge_slots, hp_badges(frame, opts[:hp_hooks]), hp_gates(frame, opts[:hp_gate_hook]))
     {selected, available} = split_selected(slots, frame, opts[:selected_hook])
     ranked = rank(available, wanted_names(ctx), RunMemory.ego_gifts(ctx), gifts_by_id)
+    ranked = prioritize(ranked, opts[:priority_gifts] || [])
     ranked = if opts[:hp_hooks], do: avoid_hp(ranked), else: ranked
     chosen = Enum.take(ranked, count)
 
@@ -53,6 +54,14 @@ defmodule StarlightBot.Automation.GiftPicker do
     {bx, _} = center(rect)
     nearest = Enum.min_by(slots, fn %{center: {cx, _}} -> abs(cx - bx) end, fn -> nil end)
     if nearest && abs(elem(nearest.center, 0) - bx) <= @slot_w / 2, do: nearest
+  end
+
+  def prioritize(ranked, []), do: ranked
+
+  def prioritize(ranked, names) do
+    order = names |> Enum.with_index() |> Map.new()
+    {wanted, rest} = Enum.split_with(ranked, &Map.has_key?(order, &1.gift_name))
+    Enum.sort_by(wanted, &order[&1.gift_name]) ++ rest
   end
 
   def avoid_hp(ranked), do: Enum.sort_by(ranked, & &1.hp)

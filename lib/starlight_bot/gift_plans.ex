@@ -1,5 +1,5 @@
 defmodule StarlightBot.GiftPlans do
-  alias StarlightBot.Conditions
+  alias StarlightBot.{Conditions, EgoGifts, ThemePacks}
   alias StarlightBot.GiftPlans.Routes
 
   @version 5
@@ -75,11 +75,47 @@ defmodule StarlightBot.GiftPlans do
   end
 
   @cabinet_choice_graces [3, 9]
+  @perfected_possibility 9
   @max_cabinet_picks 3
 
   def cabinet_pick_count(data) do
     extra = Enum.count(data["grace_picks"] || [], &(&1["index"] in @cabinet_choice_graces))
     min(1 + extra, @max_cabinet_picks)
+  end
+
+  def perfected_pick(data), do: Enum.find(data["grace_picks"] || [], &(&1["index"] == @perfected_possibility))
+
+  def perfected_options(affinity) do
+    perfected_target_options(EgoGifts.list_gifts(), ThemePacks.names_by_gift_id(), affinity)
+  end
+
+  def perfected_target_options(gifts, theme_packs_by_gift_id, affinity) do
+    for gift <- gifts, gift.tier == 3, gift.affinity == affinity, not is_map_key(theme_packs_by_gift_id, gift.id), do: gift.name
+  end
+
+  def perfected_priority(data, options) do
+    excluded = perfected_list(data, "target_excluded")
+    chosen = Enum.filter(perfected_list(data, "target_gifts"), &(&1 in options and &1 not in excluded))
+    Enum.uniq(chosen ++ Enum.reject(options, &(&1 in excluded)))
+  end
+
+  def perfected_unprioritized(data, options), do: Enum.filter(options, &(&1 in perfected_list(data, "target_excluded")))
+
+  def perfected_target(data, options), do: if(perfected_pick(data), do: data |> perfected_priority(options) |> List.first())
+
+  def restart_without_target?(data, options), do: perfected_target(data, options) != nil and perfected_pick(data)["restart_without_target"] == true
+
+  def set_perfected_priority(data, priority, unprioritized), do: update_perfected(data, &Map.merge(&1, %{"target_gifts" => priority, "target_excluded" => unprioritized}))
+
+  def set_perfected_restart(data, restart?), do: update_perfected(data, &Map.put(&1, "restart_without_target", restart?))
+
+  def clear_perfected_priority(data), do: set_perfected_priority(data, [], [])
+
+  defp perfected_list(data, key), do: (perfected_pick(data) || %{})[key] || []
+
+  defp update_perfected(data, fun) do
+    picks = Enum.map(data["grace_picks"] || [], fn pick -> if pick["index"] == @perfected_possibility, do: fun.(pick), else: pick end)
+    Map.put(data, "grace_picks", picks)
   end
 
   def cabinet_slots(data) do
