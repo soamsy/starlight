@@ -19,7 +19,7 @@ defmodule StarlightBot.BattleDebug do
     :ok
   end
 
-  def record_enemies(%Frame{} = frame, [_ | _] = targets, %Ctx{} = ctx) do
+  def record_enemies(%Frame{} = frame, targets, %Ctx{} = ctx) when is_list(targets) do
     if enabled?() do
       context = context(ctx)
       spawn_write("focused_enemies", frame, fn -> Detect.enemies(targets) end, context)
@@ -27,8 +27,6 @@ defmodule StarlightBot.BattleDebug do
 
     :ok
   end
-
-  def record_enemies(_frame, _targets, _ctx), do: :ok
 
   def list do
     dir = Data.battle_debug_dir()
