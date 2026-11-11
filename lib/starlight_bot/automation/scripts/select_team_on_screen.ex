@@ -3,6 +3,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Ctx
   alias StarlightBot.{BattlePlans, Plans, Teams}
+  alias StarlightBot.Vision.{Capture, HookRegistry, Matcher}
   alias StarlightBot.BattlePlans.Resolver
 
   @max_sweep_scrolls 14
@@ -10,6 +11,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   @hefty_scroll_clicks @scroll_clicks * 2
   @scroll_settle_ms 400
   @click_settle_ms 100
+  @order_settle_ms 300
   @list_ready_timeout_ms 2_000
   @scroll_down_available :team_selector_scroll_down_available
   @scroll_up_available %{
@@ -147,24 +149,105 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     Engine.act([move_to(:clear_selection)], ctx)
     formation = formation(order)
 
-    case order_mismatches(formation) do
-      [] ->
-        Ctx.log(ctx, :ok, "sinner order already set — nothing to do")
-        RunMemory.put_formation(ctx, BattlePlans.formation(order))
+    result =
+      case order_mismatches(formation) do
+        [] ->
+          fix_first_sinner(formation, ctx)
+
+        mismatches ->
+          log_mismatches(mismatches, ctx)
+          reselect(formation, ctx)
+      end
+
+    with :ok <- result do
+      RunMemory.put_formation(ctx, BattlePlans.formation(order))
+      :ok
+    end
+  end
+
+  defp log_mismatches(mismatches, ctx) do
+    Ctx.log(ctx, :info, "sinner order needs clearing + reselecting:")
+    Enum.each(mismatches, &Ctx.log(ctx, :info, "  #{&1}"))
+  end
+
+  defp reselect(formation, ctx) do
+    case Engine.act(order_steps(formation, ctx), ctx) do
+      {:ok, _} -> :ok
+      {:error, _} = err -> err
+    end
+  end
+
+  defp fix_first_sinner(%{front: front, backup: backup} = formation, ctx) do
+    sinners = front ++ backup
+    wanted = List.first(sinners)
+    last = List.last(sinners)
+
+    case current_first(sinners) do
+      nil ->
+        Ctx.log(ctx, :ok, "sinner order already set (first sinner not detected)")
         :ok
 
-      mismatches ->
-        Ctx.log(ctx, :info, "sinner order needs clearing + reselecting:")
-        Enum.each(mismatches, &Ctx.log(ctx, :info, "  #{&1}"))
+      ^wanted ->
+        Ctx.log(ctx, :ok, "sinner order already set")
+        :ok
 
-        case Engine.act(order_steps(formation, ctx), ctx) do
-          {:ok, _} ->
-            RunMemory.put_formation(ctx, BattlePlans.formation(order))
-            :ok
+      ^last = found ->
+        Ctx.log(ctx, :info, "#{found} is first but should be last: re-clicking to move it to the back")
+        move_first_to_last(found, formation, ctx)
 
-          {:error, _} = err ->
-            err
-        end
+      found ->
+        Ctx.log(ctx, :info, "#{found} is first, expected #{wanted}: clearing + reselecting")
+        reselect(formation, ctx)
+    end
+  end
+
+  defp move_first_to_last(sinner, formation, ctx) do
+    hook = sinner_hook(sinner, :selected)
+
+    steps = [
+      click(hook, duration_mult: 0.8),
+      sleep(@order_settle_ms),
+      click(hook, duration_mult: 0.8),
+      move_to(:clear_selection),
+      sleep(@order_settle_ms)
+    ]
+
+    with {:ok, _} <- Engine.act(steps, ctx) do
+      case order_mismatches(formation) do
+        [] ->
+          Ctx.log(ctx, :ok, "moved #{sinner} to the back")
+          :ok
+
+        mismatches ->
+          log_mismatches(mismatches, ctx)
+          reselect(formation, ctx)
+      end
+    end
+  end
+
+  defp current_first(sinners) do
+    with {:ok, frame} <- Capture.grab_frame(),
+         {:ok, [_ | _] = matches} <- Matcher.find_all_with_scores(frame, :sinner_order_first) do
+      {{x, y, w, h}, _score} = Enum.max_by(matches, &elem(&1, 1))
+      closest_sinner(sinners, {x + w / 2, y + h / 2})
+    else
+      _ -> nil
+    end
+  end
+
+  defp closest_sinner(sinners, {mx, my}) do
+    sinners
+    |> Enum.flat_map(fn sinner ->
+      case HookRegistry.find(sinner_hook(sinner, :selected)) do
+        {:ok, %{click_region: {x, y, w, h}}} -> [{sinner, {x + w / 2, y + h / 2}}]
+        {:ok, %{region: {x, y, w, h}}} -> [{sinner, {x + w / 2, y + h / 2}}]
+        _ -> []
+      end
+    end)
+    |> Enum.min_by(fn {_sinner, {sx, sy}} -> (sx - mx) ** 2 + (sy - my) ** 2 end, fn -> nil end)
+    |> case do
+      {sinner, _} -> sinner
+      nil -> nil
     end
   end
 
