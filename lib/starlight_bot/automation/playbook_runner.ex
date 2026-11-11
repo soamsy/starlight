@@ -26,7 +26,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @target_tries 2
   @bad_target_radius_px 50
   @drop_ready_timeout_ms 1_000
-  @skill_hover_ms 200
+  @skill_hover_ms 400
   @screen_mid_x 960
   @skill_grab_inward_pct 0.1
   @skill_grab_depth_pct 0.6
