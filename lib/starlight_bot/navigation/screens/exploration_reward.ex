@@ -26,7 +26,7 @@ defmodule StarlightBot.Navigation.Screens.ExplorationReward do
           [
             {any_of([:exploration_reward_give_up_confirm, :exploration_reward_give_up_confirm_2]),
              confirm_either(:exploration_reward_give_up_confirm, :exploration_reward_give_up_confirm_2, @confirm_timeout)},
-            {not_hook(:exploration_reward), []},
+            {:mirror_dungeon_door_popup_white_enter, []},
             default: []
           ],
           wait: @confirm_timeout
