@@ -360,6 +360,19 @@ defmodule StarlightBot.GiftPlansTest do
     assert GiftPlans.condition_label(at_least) == "refreshes >= 2"
   end
 
+  test "cost after refresh subtracts the next refresh price of the case's action" do
+    after_refresh = %{"op" => "cost", "cmp" => "gte", "value" => 100, "when" => "after"}
+    env = %{wallet: 150, refresh_costs: %{"refresh" => 45, "affinity_refresh" => 120}, case_action: "refresh"}
+
+    assert GiftPlans.eval_condition(after_refresh, env)
+    refute GiftPlans.eval_condition(after_refresh, %{env | case_action: "affinity_refresh"})
+    assert GiftPlans.eval_condition(after_refresh, %{env | case_action: "leave"})
+    assert GiftPlans.eval_condition(%{after_refresh | "when" => "before"}, %{env | case_action: "affinity_refresh"})
+    assert GiftPlans.condition_label(after_refresh) == "cost after refresh >= 100"
+    assert GiftPlans.condition_leaf(%{"op" => "cost", "cmp" => "gte", "value" => "5", "when" => "after"})["when"] == "after"
+    refute Map.has_key?(GiftPlans.condition_leaf(%{"op" => "cost", "value" => "5", "when" => "before"}), "when")
+  end
+
   test "prune_condition/1 drops empty groups and collapses an empty root to nil" do
     assert GiftPlans.prune_condition(%{"op" => "and", "children" => []}) == nil
 

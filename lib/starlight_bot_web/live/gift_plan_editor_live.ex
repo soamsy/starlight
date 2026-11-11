@@ -467,7 +467,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("add_milestone", _, socket) do
     milestone = GiftPlans.new_milestone("Milestone #{length(socket.assigns.plan_data["milestones"]) + 1}")
-    refresh_case = %{"id" => GiftPlans.new_id("rc"), "condition" => Conditions.add(nil, "", %{"op" => "cost", "cmp" => "gte", "value" => 300}), "action" => "refresh", "affinity" => nil, "max" => 4}
+    refresh_case = %{"id" => GiftPlans.new_id("rc"), "condition" => Conditions.add(nil, "", %{"op" => "cost", "cmp" => "gte", "value" => 250, "when" => "after"}), "action" => "refresh", "affinity" => nil, "max" => 4}
     milestone = %{milestone | "refresh" => [refresh_case]}
 
     {:noreply,
@@ -720,7 +720,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
       entries ->
         label = if length(entries) == 1, do: "1 entry", else: "#{length(entries)} entries"
-        {:noreply, socket |> push_event("copy_json", %{text: PlanClipboard.encode_entries(entries)}) |> put_flash(:info, "Copied #{label} to the clipboard.")}
+        {:noreply, socket |> push_event("copy_json", %{text: PlanClipboard.encode_entries(entries), toast: "Copied #{label} to the clipboard."})}
     end
   end
 
@@ -1512,6 +1512,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       options={[{"cost", "cost"}, {"refreshes", "refreshes"}, {"owns", "owns"}, {"milestone", "milestone done"}, {"goal", "goal done"}]} />
     <%= cond do %>
       <% @node["op"] in ["cost", "refreshes"] -> %>
+        <StarlightBotWeb.Live.BattlePlanEditorLive.radio_group :if={@node["op"] == "cost"} name="when" value={@node["when"] || "before"} options={[{"before", "before refresh"}, {"after", "after refresh"}]} />
         <StarlightBotWeb.Live.BattlePlanEditorLive.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
         <input type="number" name="value" min="0" value={@node["value"]} phx-debounce="400" class="input input-bordered input-xs w-24" />
       <% @node["op"] == "milestone" -> %>
@@ -1932,10 +1933,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         <%= for {{name, present?}, index} <- Enum.with_index(@made_from) do %><%= if index > 0, do: ", " %><span class={if present?, do: "", else: "text-error font-semibold"}><%= name %></span><% end %>
       </span>
       <span class="hidden in-[.ring-primary]:flex items-center shrink-0 ml-auto">
-        <button type="button" data-copy-entry title="Copy this entry (or every selected entry)" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
-          <.icon name="lucide-clipboard-copy" class="size-3.5 pointer-events-none" />
+        <button type="button" data-copy-entry title="Copy this entry or every selected entry (Ctrl+C)" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
+          <.icon name="lucide-copy" class="size-3.5 pointer-events-none" />
         </button>
-        <button type="button" data-paste-entries={@entry["id"]} title="Paste copied entries below this one" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
+        <button type="button" data-paste-entries={@entry["id"]} title="Paste copied entries below this one (Ctrl+V pastes below the last selected entry)" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
           <.icon name="lucide-clipboard-paste" class="size-3.5 pointer-events-none" />
         </button>
       </span>

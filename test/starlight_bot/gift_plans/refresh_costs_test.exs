@@ -44,4 +44,15 @@ defmodule StarlightBot.GiftPlans.RefreshCostsTest do
   test "cheapest handles an empty path" do
     assert RefreshCosts.cheapest([], {1, 1}) == {0, []}
   end
+
+  test "next costs follow the refresh count, free graces and per-kind use" do
+    picks = [%{"index" => 0, "enhance" => 0}]
+    assert RefreshCosts.next_costs(picks, 0, %{normal: 0, keyword: 0}) == %{"refresh" => 0, "affinity_refresh" => 90}
+    assert RefreshCosts.next_costs(picks, 1, %{normal: 1, keyword: 0}) == %{"refresh" => 30, "affinity_refresh" => 105}
+  end
+
+  test "record counts a refresh against its kind" do
+    state = %{refreshes: 0} |> RefreshCosts.record(:keyword) |> RefreshCosts.record(:normal) |> RefreshCosts.record(:keyword)
+    assert %{refreshes: 3, refresh_used: %{normal: 1, keyword: 2}} = state
+  end
 end

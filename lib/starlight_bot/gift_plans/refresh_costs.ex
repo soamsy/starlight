@@ -34,6 +34,20 @@ defmodule StarlightBot.GiftPlans.RefreshCosts do
     |> Enum.take(columns)
   end
 
+  def next_costs(grace_picks, refreshes, used) do
+    free = grace_picks |> free() |> free_map()
+
+    Map.new(@kinds, fn {action, kind} ->
+      {cost, _free?} = price(kind, refreshes, used, free)
+      {action, cost}
+    end)
+  end
+
+  def record(state, kind) do
+    used = Map.get(state, :refresh_used, %{normal: 0, keyword: 0})
+    state |> Map.put(:refreshes, state.refreshes + 1) |> Map.put(:refresh_used, Map.update!(used, kind, &(&1 + 1)))
+  end
+
   def kind("normal"), do: :normal
   def kind("keyword"), do: :keyword
 

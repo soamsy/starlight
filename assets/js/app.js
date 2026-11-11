@@ -657,7 +657,25 @@ const Toasts = {
     this.index = 0
     this.seen = {}
     this.view = this.el.querySelector("#flash-toasts-view")
+    this.onLocalToast = (e) => this.local(e.detail.kind, e.detail.msg)
+    window.addEventListener("starlight:toast", this.onLocalToast)
     this.sync()
+  },
+  destroyed() {
+    window.removeEventListener("starlight:toast", this.onLocalToast)
+    clearTimeout(this.localTimer)
+  },
+  local(kind, msg) {
+    this.queue = this.queue.filter(t => !t.local)
+    this.queue.push({ kind, msg, local: true })
+    this.index = this.queue.length - 1
+    this.render()
+    clearTimeout(this.localTimer)
+    this.localTimer = setTimeout(() => {
+      this.queue = this.queue.filter(t => !t.local)
+      this.index = Math.max(0, Math.min(this.index, this.queue.length - 1))
+      this.render()
+    }, 2000)
   },
   updated() {
     this.sync()
@@ -1204,8 +1222,10 @@ const PlanClipboard = {
 
 const ItemClipboard = {
   mounted() {
-    this.handleEvent("copy_json", ({ text }) => {
-      navigator.clipboard.writeText(text).catch(err => {
+    this.handleEvent("copy_json", ({ text, toast }) => {
+      navigator.clipboard.writeText(text).then(() => {
+        if (toast) window.dispatchEvent(new CustomEvent("starlight:toast", { detail: { kind: "info", msg: toast } }))
+      }).catch(err => {
         this.pushEvent("plan_clipboard_failed", { message: `Couldn't copy to clipboard: ${err.message || err}` })
       })
     })
@@ -1427,6 +1447,17 @@ const setSortSelection = (list, ids, anchor) => {
 
 const clearSortSelection = () => setSortSelection(sortSelection.list, new Set(), null)
 
+const sortHooks = new WeakMap()
+const EDITABLE = "input, textarea, select, [contenteditable]"
+
+const selectedSortIds = (list) => sortRows(list).map(r => r.dataset.sortId).filter(id => sortSelection.ids.has(id))
+
+const pasteEntriesAfter = (hook, after) => {
+  navigator.clipboard.readText()
+    .then(text => hook.pushEvent("ms_paste_entries", { text, after }))
+    .catch(err => hook.pushEvent("plan_clipboard_failed", { message: `Couldn't read clipboard: ${err.message || err}` }))
+}
+
 let sortSelectionBound = false
 const bindSortSelectionGlobals = () => {
   if (sortSelectionBound) return
@@ -1437,6 +1468,22 @@ const bindSortSelectionGlobals = () => {
   })
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && sortSelection.list) clearSortSelection()
+    if (!sortSelection.list || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
+    const key = e.key.toLowerCase()
+    if (key !== "c" && key !== "v") return
+    if (document.activeElement?.closest(EDITABLE)) return
+    const hook = sortHooks.get(sortSelection.list)
+    if (!hook) return
+    const ids = selectedSortIds(sortSelection.list)
+    if (!ids.length) return
+    if (key === "c") {
+      if (!window.getSelection().isCollapsed) return
+      e.preventDefault()
+      hook.pushEvent("ms_copy_entries", { ids })
+    } else {
+      e.preventDefault()
+      pasteEntriesAfter(hook, ids[ids.length - 1])
+    }
   })
 }
 
@@ -1457,7 +1504,10 @@ const SortableList = {
 
   mounted() {
     const multi = "sortMulti" in this.el.dataset
-    if (multi) bindSortSelectionGlobals()
+    if (multi) {
+      bindSortSelectionGlobals()
+      sortHooks.set(this.el, this)
+    }
 
     const rowOf = (e) => {
       const row = eventElement(e)?.closest("[data-sort-id]")
@@ -1472,7 +1522,7 @@ const SortableList = {
         const copy = eventElement(e).closest("[data-copy-entry]")
         if (copy) {
           const ids = sortSelection.list === this.el && sortSelection.ids.has(row.dataset.sortId)
-            ? sortRows(this.el).map(r => r.dataset.sortId).filter(id => sortSelection.ids.has(id))
+            ? selectedSortIds(this.el)
             : [row.dataset.sortId]
           this.pushEvent("ms_copy_entries", { ids })
           return
@@ -1480,9 +1530,7 @@ const SortableList = {
 
         const paste = eventElement(e).closest("[data-paste-entries]")
         if (paste) {
-          navigator.clipboard.readText()
-            .then(text => this.pushEvent("ms_paste_entries", { text, after: paste.dataset.pasteEntries }))
-            .catch(err => this.pushEvent("plan_clipboard_failed", { message: `Couldn't read clipboard: ${err.message || err}` }))
+          pasteEntriesAfter(this, paste.dataset.pasteEntries)
           return
         }
 

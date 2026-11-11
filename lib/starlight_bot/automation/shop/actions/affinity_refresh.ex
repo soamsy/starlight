@@ -1,5 +1,6 @@
 defmodule StarlightBot.Automation.Shop.Actions.AffinityRefresh do
   alias StarlightBot.Automation.Shop.Ops
+  alias StarlightBot.GiftPlans.RefreshCosts
 
   def run(step, _definition, state, ctx) do
     case step["affinity"] || state.plan["affinity"] do
@@ -8,7 +9,7 @@ defmodule StarlightBot.Automation.Shop.Actions.AffinityRefresh do
 
       affinity ->
         case Ops.keyword_refresh(affinity, ctx) do
-          :ok -> {:done, "refreshed for #{affinity} (refresh #{state.refreshes + 1} this shop)", %{state | refreshes: state.refreshes + 1}}
+          :ok -> {:done, "refreshed for #{affinity} (refresh #{state.refreshes + 1} this shop)", RefreshCosts.record(state, :keyword)}
           {:error, reason} -> {:failed, inspect(reason), state}
         end
     end

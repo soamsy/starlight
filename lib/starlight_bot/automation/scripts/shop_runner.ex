@@ -4,6 +4,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
   alias StarlightBot.Automation.Shop.Actions.{Heal, Milestone}
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.{Ctx, EgoGifts, GiftPlans, Teams}
+  alias StarlightBot.GiftPlans.RefreshCosts
   alias StarlightBot.Navigation.Screens.Shop
   alias StarlightBot.Vision.Capture
 
@@ -170,6 +171,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       shop_type: Ops.shop_type(),
       reserve: 0,
       refreshes: 0,
+      refresh_used: %{normal: 0, keyword: 0},
       replaced: MapSet.new(),
       failed_replace_options: MapSet.new(),
       sold: %{},
@@ -225,6 +227,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       gifts: state.gifts_by_name,
       gifts_by_id: state.gifts_by_id,
       refreshes: state.refreshes,
+      refresh_costs: RefreshCosts.next_costs(state.plan["grace_picks"], state.refreshes, Map.get(state, :refresh_used, %{normal: 0, keyword: 0})),
       skill_replaces: RunMemory.skill_replaces(ctx),
       case_runs: Map.get(state, :case_runs, %{})
     }

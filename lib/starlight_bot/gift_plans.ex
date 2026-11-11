@@ -691,7 +691,10 @@ defmodule StarlightBot.GiftPlans do
   def matching_refresh_case(milestone, env) do
     runs = Map.get(env, :case_runs, %{})
     env = Map.put(env, :current_milestone, milestone["id"])
-    Enum.find(refresh_cases_at(milestone, Map.get(env, :floor) || 1), &(under_cap?(&1, runs) and eval_condition(&1["condition"], env)))
+
+    Enum.find(refresh_cases_at(milestone, Map.get(env, :floor) || 1), fn refresh_case ->
+      under_cap?(refresh_case, runs) and eval_condition(refresh_case["condition"], Map.put(env, :case_action, refresh_case["action"]))
+    end)
   end
 
   defp under_cap?(%{"max" => max, "id" => id}, runs) when is_integer(max), do: Map.get(runs, id, 0) < max
@@ -1124,22 +1127,31 @@ defmodule StarlightBot.GiftPlans do
 
   defp eval_leaf(leaf, env), do: eval_base(leaf, env) != (leaf["not"] == true)
 
-  defp eval_base(%{"op" => "cost"} = leaf, %{wallet: wallet}), do: is_integer(wallet) and compare(wallet, leaf["cmp"], leaf["value"])
+  defp eval_base(%{"op" => "cost"} = leaf, %{wallet: wallet} = env) when is_integer(wallet), do: compare(wallet - refresh_spend(leaf, env), leaf["cmp"], leaf["value"])
+  defp eval_base(%{"op" => "cost"}, _env), do: false
   defp eval_base(%{"op" => "refreshes"} = leaf, env), do: compare(Map.get(env, :refreshes, 0), leaf["cmp"], leaf["value"])
   defp eval_base(%{"op" => "owns", "gift" => gift}, %{owned: owned}), do: MapSet.member?(owned, gift)
   defp eval_base(%{"op" => "milestone"} = leaf, %{plan: plan} = env), do: milestone_reached?(plan, leaf["milestone"], env)
   defp eval_base(%{"op" => "goal"} = leaf, %{plan: plan} = env), do: goal_reached?(plan, env[:current_milestone], leaf["goal"], env)
 
+  defp refresh_spend(%{"when" => "after"}, %{case_action: action, refresh_costs: costs}), do: Map.get(costs, action, 0)
+  defp refresh_spend(_leaf, _env), do: 0
+
   defp compare(left, "eq", right), do: left == right
   defp compare(left, "lte", right), do: left <= right
   defp compare(left, _cmp, right), do: left >= right
 
-  def default_leaf, do: %{"op" => "cost", "cmp" => "gte", "value" => 0}
+  def default_leaf, do: %{"op" => "cost", "cmp" => "gte", "value" => 250, "when" => "after"}
 
   def condition_leaf(params), do: params |> build_leaf() |> put_not(params)
 
-  defp build_leaf(%{"op" => op} = params) when op in ["cost", "refreshes"] do
-    %{"op" => op, "cmp" => if(params["cmp"] in @cmps, do: params["cmp"], else: "gte"), "value" => max(parse_count(params["value"]), 0)}
+  defp build_leaf(%{"op" => "cost"} = params) do
+    leaf = %{"op" => "cost", "cmp" => if(params["cmp"] in @cmps, do: params["cmp"], else: "gte"), "value" => max(parse_count(params["value"]), 0)}
+    if params["when"] == "after", do: Map.put(leaf, "when", "after"), else: leaf
+  end
+
+  defp build_leaf(%{"op" => "refreshes"} = params) do
+    %{"op" => "refreshes", "cmp" => if(params["cmp"] in @cmps, do: params["cmp"], else: "gte"), "value" => max(parse_count(params["value"]), 0)}
   end
 
   defp build_leaf(%{"op" => "milestone"} = params), do: %{"op" => "milestone", "milestone" => blank_to_nil(params["milestone"])}
@@ -1166,6 +1178,10 @@ defmodule StarlightBot.GiftPlans do
   def condition_label(node, data \\ nil), do: Conditions.label(node, &leaf_label(&1, data))
 
   @cmp_symbols %{"eq" => "=", "gte" => ">=", "lte" => "<="}
+
+  defp leaf_label(%{"op" => "cost", "when" => "after"} = leaf, _data) do
+    "#{if leaf["not"], do: "not "}cost after refresh #{Map.get(@cmp_symbols, leaf["cmp"], ">=")} #{leaf["value"]}"
+  end
 
   defp leaf_label(%{"op" => op} = leaf, _data) when op in ["cost", "refreshes"] do
     "#{if leaf["not"], do: "not "}#{op} #{Map.get(@cmp_symbols, leaf["cmp"], ">=")} #{leaf["value"]}"
