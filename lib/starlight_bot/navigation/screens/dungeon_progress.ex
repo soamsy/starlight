@@ -9,6 +9,8 @@ defmodule StarlightBot.Navigation.Screens.DungeonProgress do
     transition to: :dungeon_forfeited do
       [click(:dungeon_progress_forfeit)] ++
         confirm_enter(:dungeon_progress_forfeit_confirm) ++
+        [await(:battle_over_black_confirm, timeout: 30_000)] ++
+        confirm(:battle_over_black_confirm) ++
         [await_any([:exploration_reward, :exploration_complete], timeout: 30_000)]
     end
 

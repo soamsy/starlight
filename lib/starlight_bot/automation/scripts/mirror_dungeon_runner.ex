@@ -97,7 +97,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     Ctx.log(ctx, :ok, "on screen: #{screen}")
     RunMemory.merge(ctx, %{screen: screen, task: nil})
     unless screen in @shop_screens, do: RunMemory.clear_shop_progress(ctx)
-    run = %{run | run_state: sync_state(run.run_state, screen)}
+    run = %{run | run_state: sync_state(run.run_state, screen, RunMemory.restart_pending?(ctx))}
     if screen in [:event | @shop_screens] or Engine.in_battle?(screen), do: RunMemory.disarm_target_check(ctx)
     {:steps, dispatch(screen, run, ctx)}
   end
@@ -172,6 +172,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   def restarted_dungeon(run, run_state, {:ok, _}, frame, ctx) do
     Ctx.log(ctx, :info, "mirror dungeon runner: forfeited the dungeon to restart the run")
+    RunMemory.put_restart_pending(ctx, false)
     RunMemory.put_give_up(ctx, nil)
     RunMemory.reset_battle_retries(ctx)
     dispatched(run, {:continue, %{run_state | own_run?: false}}, frame, ctx)
@@ -565,6 +566,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       screen == :dungeon_graph and missing_target_gift(ctx) != nil ->
         Ctx.log(ctx, :info, "#{missing_target_gift(ctx)} isn't in the inventory on floor 1, forfeiting to restart the run")
         RunMemory.disarm_target_check(ctx)
+        RunMemory.put_restart_pending(ctx, true)
         [goto(screen, :dungeon_forfeited, then: {__MODULE__, :restarted_dungeon, [run, run_state]})]
 
       screen == :dungeon_graph ->
@@ -708,7 +710,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   defp continue_after({:error, :window_not_focused}, run_state), do: {:paused, run_state}
   defp continue_after({:error, _} = err, _run_state), do: err
 
-  defp sync_state(run_state, screen) do
+  defp sync_state(run_state, _screen, true), do: %{run_state | own_run?: false}
+
+  defp sync_state(run_state, screen, false) do
     if screen in @own_run_screens,
       do: %{run_state | own_run?: true},
       else: run_state

@@ -251,6 +251,10 @@ defmodule StarlightBot.Automation.RunMemory do
 
   def put_give_up(ctx, reason), do: put(ctx, :give_up, reason)
 
+  def restart_pending?(ctx), do: get(ctx, :restart_pending, false)
+
+  def put_restart_pending(ctx, pending), do: put(ctx, :restart_pending, pending)
+
   def claim_battle_retry(ctx) do
     retries = battle_retries(ctx)
     max_retries = max_battle_retries(ctx)
