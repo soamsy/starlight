@@ -106,7 +106,7 @@ defmodule StarlightBotWeb.Live.PackPlanCellsTest do
     assert html =~ "bg-warning/30"
     assert html =~ "bg-success/30"
     assert html =~ "bg-error/30"
-    assert html =~ "★"
+    assert html =~ "lucide-filled-star"
     refute html =~ "priority-list-"
     refute html =~ "copy_priority"
   end

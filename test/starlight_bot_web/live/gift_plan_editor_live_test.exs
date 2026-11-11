@@ -351,7 +351,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     socket = socket |> shop() |> event("ms_add_refresh_case", %{}) |> event("ms_add_refresh_case", %{})
     [first, second] = milestone(socket)["refresh"]
     path_total = fn socket ->
-      ~r/<td class="text-center font-semibold">\s*(\d*)\s*<\/td>/ |> Regex.scan(render(socket), capture: :all_but_first) |> List.flatten() |> Enum.reject(&(&1 == "")) |> List.last() |> String.to_integer()
+      ~r/<td class="text-center font-semibold"><span[^>]*>\s*(\d*)\s*<img/ |> Regex.scan(render(socket), capture: :all_but_first) |> List.flatten() |> Enum.reject(&(&1 == "")) |> List.last() |> String.to_integer()
     end
 
     socket =
