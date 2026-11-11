@@ -125,7 +125,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   def dispatched(run, :run_complete, _frame, ctx) do
     Ctx.log(ctx, :ok, "mirror dungeon run complete — #{run.count - 1} remaining")
     unless Map.get(run.config, :single?, false), do: RunnerForms.advance_mirror_dungeon_start()
-    DailyProgress.record("md", 1)
+    if run.config.rewards != :none, do: DailyProgress.record("md", 1)
     finish_run(run, true, ctx)
   end
 
