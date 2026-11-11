@@ -142,7 +142,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
 
         case run_milestone(milestone, state, mode, ctx, :full) do
           :interrupted -> {:error, :window_not_focused}
-          state -> {:steps, [call(__MODULE__, :work, [if(milestone["endless"] == true, do: [], else: rest), state, mode])]}
+          state -> {:steps, [call(__MODULE__, :work, [remaining(milestone, rest, state, mode, ctx), state, mode])]}
         end
     end
   end
@@ -152,6 +152,13 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       nil -> {:skip, "no gift plan for this team"}
       data -> {:ok, GiftPlans.normalize(data)}
     end
+  end
+
+  defp remaining(%{"endless" => true}, _rest, _state, _mode, _ctx), do: []
+  defp remaining(_milestone, rest, _state, :dry_run, _ctx), do: rest
+
+  defp remaining(milestone, rest, state, :run, ctx) do
+    if GiftPlans.milestone_reached?(state.plan, milestone["id"], condition_env(state, ctx)), do: rest, else: []
   end
 
   defp fetch_milestones(plan) do
