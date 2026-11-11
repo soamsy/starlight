@@ -106,7 +106,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
         ],
         every: 80,
         timeout: 4_000),
-        attempt([retry_until(any_of(@node_arrival_hooks), [key(:space), key(:enter)], every: 80, timeout: 4_000)], else: [])
+        attempt([retry_until(any_of(@node_arrival_hooks), [key(:space)], every: 80, timeout: 4_000)], else: [])
       ], ctx)
     end
   end
