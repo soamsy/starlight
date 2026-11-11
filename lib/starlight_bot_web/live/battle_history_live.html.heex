@@ -1,7 +1,7 @@
 <div class="flex flex-col h-full gap-3 overflow-hidden">
   <div class="flex items-center gap-3 shrink-0">
-    <h1 class="text-lg font-bold">Battle History</h1>
-    <.link navigate={~p"/battle"} class="btn btn-sm btn-ghost">Inspector</.link>
+    <h1 class="text-lg font-bold">Battle Inspector</h1>
+    <StarlightBotWeb.Live.BattleInspectorLive.tabs current={:history} />
     <div class="join">
       <button phx-click="view" phx-value-view="captures" class={"btn btn-sm join-item " <> if(@view == "captures", do: "btn-primary", else: "")}>Captures</button>
       <button phx-click="view" phx-value-view="bulk" class={"btn btn-sm join-item " <> if(@view == "bulk", do: "btn-primary", else: "")}>Bulk test</button>

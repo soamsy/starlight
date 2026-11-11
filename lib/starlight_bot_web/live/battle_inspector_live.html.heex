@@ -1,36 +1,7 @@
 <div class="flex flex-col h-full gap-3 overflow-hidden">
   <div class="flex items-center gap-3 shrink-0">
     <h1 class="text-lg font-bold">Battle Inspector</h1>
-    <button phx-click="take_screenshot" class="btn btn-sm btn-primary" disabled={@status == :loading}>
-      📸 Take Screenshot
-    </button>
-    <button phx-click="preview_chain_drag" class="btn btn-sm btn-secondary" disabled={@chain_preview_status == :running}>
-      🖱️ Preview Chain Drag (2s delay)
-    </button>
-    <button phx-click="preview_target" phx-value-enemy="first" class="btn btn-sm btn-secondary" disabled={@target_preview_status == :running}>
-      🎯 First skill to first enemy (2s delay)
-    </button>
-    <button phx-click="preview_target" phx-value-enemy="last" class="btn btn-sm btn-secondary" disabled={@target_preview_status == :running}>
-      🎯 First skill to last enemy (2s delay)
-    </button>
-    <button phx-click="preview_target_everyone" class="btn btn-sm btn-secondary" disabled={@target_preview_status == :running}
-            title="Every slot drags a random skill, top or bottom, to each enemy left to right, ending on the last enemy if there are more slots than enemies">
-      🎲 Every slot to enemies left to right (2s delay)
-    </button>
-    <.link navigate={~p"/battle/history"} class="btn btn-sm btn-ghost">History</.link>
-    <label class="flex items-center gap-2 cursor-pointer">
-      <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@watch_tray?} phx-click="toggle_watch_tray" />
-      <span class="text-sm">Watch tray</span>
-    </label>
-    <%= if @watch_tray? do %>
-      <span class="text-xs text-base-content/60">
-        <%= if @last_watched_at do %>
-          last scan <%= Calendar.strftime(@last_watched_at, "%H:%M:%S") %> UTC
-        <% else %>
-          waiting for a runner to scan the skill tray…
-        <% end %>
-      </span>
-    <% end %>
+    <.tabs current={@tab} />
     <%= if @nav.run_kind in [:mirror_dungeon, :luxcavation] do %>
       <div class="flex items-center gap-2 ml-auto">
         <span class="text-xs text-base-content/60"><%= run_label(@nav.run_kind) %>: <%= @nav.phase %></span>
@@ -46,6 +17,44 @@
           <% true -> %>
         <% end %>
       </div>
+    <% end %>
+  </div>
+
+  <div class="flex items-center gap-3 shrink-0 flex-wrap">
+    <%= if @tab == :screen do %>
+      <button phx-click="take_screenshot" class="btn btn-sm btn-primary" disabled={@status == :loading}>
+        📸 Take Screenshot
+      </button>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@watch_tray?} phx-click="toggle_watch_tray" />
+        <span class="text-sm">Watch tray</span>
+      </label>
+      <%= if @watch_tray? do %>
+        <span class="text-xs text-base-content/60">
+          <%= if @last_watched_at do %>
+            last scan <%= Calendar.strftime(@last_watched_at, "%H:%M:%S") %> UTC
+          <% else %>
+            waiting for a runner to scan the skill tray…
+          <% end %>
+        </span>
+      <% end %>
+    <% end %>
+    <%= if @tab == :chain do %>
+      <button phx-click="preview_chain_drag" class="btn btn-sm btn-secondary" disabled={@chain_preview_status == :running}>
+        🖱️ Preview Chain Drag (2s delay)
+      </button>
+    <% end %>
+    <%= if @tab == :targets do %>
+      <button phx-click="preview_target" phx-value-enemy="first" class="btn btn-sm btn-secondary" disabled={@target_preview_status == :running}>
+        🎯 First skill to first enemy (2s delay)
+      </button>
+      <button phx-click="preview_target" phx-value-enemy="last" class="btn btn-sm btn-secondary" disabled={@target_preview_status == :running}>
+        🎯 First skill to last enemy (2s delay)
+      </button>
+      <button phx-click="preview_target_everyone" class="btn btn-sm btn-secondary" disabled={@target_preview_status == :running}
+              title="Every slot drags a random skill, top or bottom, to each enemy left to right, ending on the last enemy if there are more slots than enemies">
+        🎲 Every slot to enemies left to right (2s delay)
+      </button>
     <% end %>
     <%= if @frame_b64 do %>
       <span class="text-xs text-base-content/60">
@@ -68,7 +77,7 @@
   </div>
 
   <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3">
-    <div class="flex items-center justify-center bg-base-200 rounded-lg border border-base-300 shrink-0" style="aspect-ratio: 16/9;">
+    <div class={"flex items-center justify-center bg-base-200 rounded-lg border border-base-300 shrink-0 " <> if(@tab != :screen, do: "hidden", else: "")} style="aspect-ratio: 16/9;">
       <%= if @frame_b64 do %>
         <canvas id="battle-inspector-canvas" phx-hook="BattleInspectorCanvas" phx-update="ignore"
                 class="max-w-full max-h-full" style="aspect-ratio: 16/9;"></canvas>
@@ -77,7 +86,7 @@
       <% end %>
     </div>
 
-    <%= if @tray do %>
+    <%= if @tray && @tab == :screen do %>
       <div class="grid grid-cols-2 gap-3 shrink-0">
         <div class="overflow-x-auto">
           <table class="table table-xs">
@@ -204,7 +213,7 @@
         </div>
       </div>
     <% end %>
-    <div class="flex flex-col gap-1 shrink-0">
+    <div class={"flex flex-col gap-1 shrink-0 " <> if(@tab != :chain, do: "hidden", else: "")}>
       <div class="text-xs font-semibold text-base-content/60">
         Chain drag preview — mouse-down snapshot with the computed trajectory overlaid, mouse released without dragging
       </div>
@@ -217,7 +226,7 @@
         <% end %>
       </div>
     </div>
-    <div class="flex flex-col gap-1 shrink-0">
+    <div class={"flex flex-col gap-1 shrink-0 " <> if(@tab != :targets, do: "hidden", else: "")}>
       <div class="text-xs font-semibold text-base-content/60">
         Enemy target preview: last detection frame, every detected target and the chosen one
         <%= if @target_preview_outcome do %>

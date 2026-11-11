@@ -32,6 +32,21 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
 
   @resume_countdown_ms 2_000
 
+  attr :current, :atom, required: true
+
+  def tabs(assigns) do
+    ~H"""
+    <div role="tablist" class="tabs tabs-boxed tabs-sm">
+      <.link :for={{id, label} <- [screen: "Screen", chain: "Chain drag", targets: "Enemy targets"]}
+             {if @current == :history, do: [navigate: ~p"/battle?tab=#{id}"], else: [patch: ~p"/battle?tab=#{id}"]}
+             role="tab" class={"tab " <> if(@current == id, do: "tab-active", else: "")}>
+        <%= label %>
+      </.link>
+      <.link navigate={~p"/battle/history"} role="tab" class={"tab " <> if(@current == :history, do: "tab-active", else: "")}>History</.link>
+    </div>
+    """
+  end
+
   @impl true
   def mount(_params, _session, socket) do
     tray_watch = TrayWatch.state()
@@ -43,6 +58,7 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
 
     socket =
       socket
+      |> assign(:tab, :screen)
       |> assign(:nav, Navigator.status())
       |> assign(:watch_tray?, tray_watch.enabled?)
       |> assign(:last_watched_at, nil)
@@ -69,6 +85,12 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
       _ -> {:ok, socket}
     end
   end
+
+  @impl true
+  def handle_params(%{"tab" => tab}, _uri, socket) when tab in ~w(screen chain targets),
+    do: {:noreply, assign(socket, :tab, String.to_existing_atom(tab))}
+
+  def handle_params(_params, _uri, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("take_screenshot", _, socket) do
