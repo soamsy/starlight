@@ -289,7 +289,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
       finish_heal(
         [
           click(:shop_heal_revive),
-          click(sinner_heal_hook(sinner)),
+          click(sinner_heal_hook(sinner), settle_ms: 100),
           await(:shop_heal_confirm, timeout: @heal_confirm_timeout)
         ],
         ctx
@@ -1198,7 +1198,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   defp open_uptie_popup(ctx) do
     if Engine.check(:shop_uptie_popup),
       do: {:ok, :already_open},
-      else: Engine.act([click(:shop_uptie), await(:shop_uptie_popup)], ctx)
+      else: Engine.act([retry_until(:shop_uptie_popup, [click(:shop_uptie, settle_ms: 50)], every: 1_500, tries: 3)], ctx)
   end
 
   defp commit_uptie(from, to, ctx) do
