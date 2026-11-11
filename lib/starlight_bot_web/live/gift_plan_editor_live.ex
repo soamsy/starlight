@@ -1938,9 +1938,14 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           <input type="number" min="1" name="segment[max]" value={@segment["max"]} placeholder="no cap" phx-debounce="400" class="input input-bordered input-xs w-20" />
         </label>
       <% end %>
-      <span :if={@made_from} class="text-[11px] text-base-content/60 truncate min-w-0 max-w-64">
-        Made from:
-        <%= for {{name, present?}, index} <- Enum.with_index(@made_from) do %><%= if index > 0, do: ", " %><span class={if present?, do: "", else: "text-error font-semibold"}><%= name %></span><% end %>
+      <span :if={@made_from} title={"Made from: " <> Enum.map_join(@made_from, ", ", &elem(&1, 0))}
+            class="flex items-center gap-1 h-5 text-[11px] text-base-content/60 min-w-0 max-w-64 overflow-hidden">
+        <%= for {{name, present?}, index} <- Enum.with_index(@made_from) do %>
+          <span :if={index > 0} class="shrink-0">+</span>
+          <% ingredient = @gifts_by_name[name] %>
+          <img :if={ingredient} src={ingredient.image_path} class={"w-5 h-5 rounded object-cover shrink-0 " <> if(present?, do: "", else: "ring-2 ring-error")} />
+          <span :if={!ingredient} class={"whitespace-nowrap " <> if(present?, do: "", else: "text-error font-semibold")}><%= name %></span>
+        <% end %>
       </span>
       <span class="hidden in-[.ring-primary]:flex items-center shrink-0 ml-auto">
         <button type="button" data-copy-entry title="Copy this entry or every selected entry (Ctrl+C)" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
