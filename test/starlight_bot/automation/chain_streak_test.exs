@@ -178,6 +178,22 @@ defmodule StarlightBot.Automation.ChainStreakTest do
       refute :defense in ChainStreak.best_path(top, bottom, %{}, defense, 0)
     end
 
+    test "min_run applies to every run and stay prefers the rows already in use" do
+      top = [:wrath, :gloom]
+      bottom = [:lust, :wrath]
+
+      assert ChainStreak.best_path(top, bottom, %{}, nil, nil, stay: [:top, :top], min_run: 3) == [:top, :top]
+      assert ChainStreak.best_path(top, bottom, %{}, nil, nil, stay: [:top, :top]) == [:top, :bottom]
+    end
+
+    test "committed_columns lists the columns inside runs of at least min_run" do
+      top = [:wrath, :wrath, :wrath, :gloom, :gloom]
+      bottom = [:lust, :lust, :lust, :envy, :envy]
+      path = [:top, :top, :top, :top, :top]
+
+      assert ChainStreak.committed_columns(path, top, bottom, nil, 3) == MapSet.new([0, 1, 2])
+    end
+
     test "a defense that completes a 3-run is used" do
       top = [:wrath, :wrath, :gloom]
       bottom = [:lust, :envy, :sloth]

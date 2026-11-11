@@ -1406,9 +1406,20 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     <div class="flex flex-col gap-1.5 rounded bg-base-100 p-1.5 shrink-0">
       <.radio_group :if={@ego_only?} name={field_name(@prefix, "kind")} value={@type} options={[{"ego", "EGO"}, {"dodge", "Dodge"}]} />
       <.radio_group :if={not @ego_only?} name={field_name(@prefix, "kind")} value={action_kind(@holder)} options={[{"priority", "Priority"}, {"ego", "EGO"}] ++ if(@nothing?, do: [{"nothing", "Nothing"}], else: [])} />
+      <%= if @holder["row"] == "priority" and not @chain? do %>
+        <div class="flex flex-wrap items-center gap-2" title={run_mode_tooltip()}>
+          <.radio_group name={field_name(@prefix, "mode")} value={@holder["mode"] || "none"} options={[{"none", "none"}, {"a_res", "a-res"}, {"a_res_def", "a-res+def"}]} />
+          <label :if={@holder["mode"] == "a_res_def"} class="flex items-center gap-1 text-xs" title="Runs that would need more defenses than this are skipped. Leave blank for no limit.">
+            up to
+            <input type="number" name={field_name(@prefix, "max_defenses")} min="0" max="12" placeholder="any" value={@holder["max_defenses"]} class="input input-bordered input-xs w-14" phx-debounce="300" />
+            defenses
+          </label>
+        </div>
+      <% end %>
       <%= if @holder["row"] == "priority" do %>
+        <span :if={@holder["mode"] in ~w(a_res a_res_def)} class="text-xs text-base-content/60">otherwise, for slots not in a run of 3+:</span>
         <div class="flex flex-wrap items-center gap-1">
-          <.row_picker holder={@holder} prefix={@prefix} select?={false} owner={@owner} />
+          <.row_picker holder={@holder} prefix={@prefix} select?={false} owner={@owner} chain?={@chain?} />
         </div>
       <% end %>
       <%= if @type == "ego" do %>
@@ -1634,6 +1645,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   attr :prefix, :string, required: true
   attr :select?, :boolean, default: true
   attr :owner, :string, default: nil
+  attr :chain?, :boolean, default: false
 
   def row_picker(assigns) do
     priority = assigns.holder["priority"]
@@ -1642,7 +1654,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     assigns =
       assign(assigns,
         order: order,
-        unused: BattlePlans.priority_values() -- (order || []),
+        unused: BattlePlans.priority_values(assigns.chain?) -- (order || []),
         input_name: field_name(assigns.prefix, "priority_order") <> "[]",
         chips_id: "chips-#{assigns.owner}-#{assigns.prefix}"
       )
@@ -1692,7 +1704,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         <% @kind == :sin -> %>
           <img src={"/images/sin/#{@sin}.webp"} alt={@sin} class="size-4 pointer-events-none" draggable="false" />
         <% true -> %>
-          <span class={@tier && "uppercase"}><%= @tier || @value %></span>
+          <span class={@tier && "uppercase"}><%= @tier || chip_label(@value) %></span>
           <span :if={@sin} data-chip-sin class="ml-1 inline-flex rounded bg-base-200 p-px">
             <img src={"/images/sin/#{@sin}.webp"} alt={@sin} class="size-4 pointer-events-none" draggable="false" />
           </span>
@@ -1700,6 +1712,11 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     </span>
     """
   end
+
+  defp chip_label("in_use"), do: "in use"
+  defp chip_label(value), do: value
+
+  def run_mode_tooltip, do: "none: pick each slot by the priority below. a-res: choose skills on the selected slots to make runs of 3 or more of the same sin, counting unselected slots as they are now. a-res+def also uses defense skills."
 
   defp chip_kind(value) do
     cond do
@@ -1930,6 +1947,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   defp apply_rule_fields(%{"type" => "target"} = holder, params, enemy?) do
     holder
     |> BattlePlans.put_row(params["kind"] || params["row"], params["priority_order"])
+    |> BattlePlans.put_run_mode(params)
     |> put_enemy(params, enemy?, "first")
     |> put_skip_bottom_target(params)
   end

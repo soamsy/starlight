@@ -988,6 +988,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       tray_groups: tray_groups(tray),
       classified: if(SlotPlan.needs_classified?(holder), do: SinColor.classify_tray(frame.mat, tray)),
       bottom_columns: fn -> bottom_chosen_columns(tray, ctx) end,
+      defense_sins: fn -> defense_sins(frame, tray, ctx) end,
       sinner_groups: fn sinner_holder -> sinner_groups(sinner_holder["who"], sinner_holder["sinners"] || [], frame, tray, profiles, ctx) end
     }
   end

@@ -38,7 +38,7 @@ defmodule StarlightBot.BattlePlans do
   ]
   @sins ~w(wrath lust sloth gluttony gloom pride envy)
   @tiers ~w(s3 s2 s1)
-  @priority_values @tiers ++ @sins ++ ["dodge", "top", "bottom"]
+  @priority_values @tiers ++ @sins ++ ["dodge", "top", "bottom", "in_use"]
   @default_priority_order @tiers
 
   def tracks, do: @tracks
@@ -133,6 +133,8 @@ defmodule StarlightBot.BattlePlans do
   def rows, do: @rows
   def tiers, do: @tiers
   def priority_values, do: @priority_values
+  def priority_values(chain?), do: if(chain?, do: @priority_values -- ["in_use"], else: @priority_values)
+  def run_modes, do: ~w(none a_res a_res_def)
   def count_cmps, do: @count_cmps
 
   def put_row(holder, "priority", order) do
@@ -145,10 +147,29 @@ defmodule StarlightBot.BattlePlans do
   end
 
   def put_row(holder, row, _order) do
-    holder |> Map.put("row", if(row == "top", do: "top", else: "bottom")) |> Map.delete("priority")
+    holder |> Map.put("row", if(row == "top", do: "top", else: "bottom")) |> Map.drop(~w(priority mode max_defenses))
   end
 
-  @row_keys ~w(type who sinners where skill row priority grade corrode enemy skip_bottom_target)
+  def put_run_mode(%{"row" => "priority"} = holder, %{"mode" => mode} = params) when mode in ~w(none a_res a_res_def) do
+    case mode do
+      "none" -> Map.drop(holder, ~w(mode max_defenses))
+      "a_res" -> holder |> Map.put("mode", mode) |> Map.delete("max_defenses")
+      "a_res_def" -> holder |> Map.put("mode", mode) |> put_max_defenses(params)
+    end
+  end
+
+  def put_run_mode(holder, _params), do: holder
+
+  defp put_max_defenses(holder, %{"max_defenses" => value}) do
+    case Integer.parse(to_string(value)) do
+      {n, _} when n >= 0 -> Map.put(holder, "max_defenses", n)
+      _ -> Map.delete(holder, "max_defenses")
+    end
+  end
+
+  defp put_max_defenses(holder, _params), do: holder
+
+  @row_keys ~w(type who sinners where skill row priority grade corrode enemy skip_bottom_target mode max_defenses)
 
   def put_rest(holder, "true"), do: Map.put_new(holder, "rest", new_rest())
   def put_rest(holder, "false"), do: Map.delete(holder, "rest")
@@ -334,10 +355,15 @@ defmodule StarlightBot.BattlePlans do
 
   defp parse_count(_value), do: nil
 
-  def pick_row(%{"row" => "top"}, _top, _bottom), do: :top
+  def pick_row(holder, top, bottom, in_use \\ nil)
 
-  def pick_row(%{"row" => "priority", "priority" => %{"order" => order}}, top, bottom) do
+  def pick_row(%{"row" => "top"}, _top, _bottom, _in_use), do: :top
+
+  def pick_row(%{"row" => "priority", "priority" => %{"order" => order}}, top, bottom, in_use) do
     Enum.find_value(order, :bottom, fn
+      "in_use" ->
+        in_use
+
       "dodge" ->
         :dodge
 
@@ -356,7 +382,7 @@ defmodule StarlightBot.BattlePlans do
     end)
   end
 
-  def pick_row(_holder, _top, _bottom), do: :bottom
+  def pick_row(_holder, _top, _bottom, _in_use), do: :bottom
 
   def cell_label(%{sin: sin, tier: tier}), do: "#{sin}/#{tier_name(tier)}"
 
@@ -442,10 +468,20 @@ defmodule StarlightBot.BattlePlans do
   defp action_parts(%{"type" => "ego"} = holder),
     do: ["EGO #{String.upcase(holder["grade"] || "zayin")}" <> if(holder["corrode"], do: " corrode", else: "")]
 
-  defp action_parts(%{"row" => "priority", "priority" => %{"order" => order}}) when order != [], do: ["pick " | terms(order, " > ")]
+  defp action_parts(%{"row" => "priority", "priority" => %{"order" => order}} = holder) when order != [] do
+    case run_mode_label(holder) do
+      nil -> ["pick " | terms(order, " > ")]
+      label -> [label <> ", else pick " | terms(order, " > ")]
+    end
+  end
+
   defp action_parts(%{"row" => "priority"}), do: ["pick priority (empty)"]
   defp action_parts(%{"row" => row}), do: ["pick #{row}"]
   defp action_parts(_holder), do: nil
+
+  def run_mode_label(%{"mode" => "a_res"}), do: "a-res runs"
+  def run_mode_label(%{"mode" => "a_res_def"} = holder), do: "a-res+def runs" <> if(is_integer(holder["max_defenses"]), do: " (up to #{holder["max_defenses"]} defenses)", else: "")
+  def run_mode_label(_holder), do: nil
 
   defp enemy_parts(%{"enemy" => %{"pick" => "none"}}), do: nil
   defp enemy_parts(%{"enemy" => %{"pick" => "continue"}}), do: ["keep targeting"]
@@ -712,7 +748,7 @@ defmodule StarlightBot.BattlePlans do
 
   def chip_values, do: @tiers ++ @sins
 
-  def priority_term?(value), do: value in ~w(dodge top bottom) or chip_term?(value)
+  def priority_term?(value), do: value in ~w(dodge top bottom in_use) or chip_term?(value)
 
   def chip_term?(value) when is_binary(value) do
     case String.split(value, "+") do
@@ -987,7 +1023,7 @@ defmodule StarlightBot.BattlePlans do
 
   def convert_action(action, "dodge") do
     action
-    |> Map.drop(~w(grade corrode row priority))
+    |> Map.drop(~w(grade corrode row priority mode max_defenses))
     |> Map.put("type", "dodge")
     |> Map.put_new("enemy", %{"pick" => "none"})
     |> Map.put_new("skip_bottom_target", true)
@@ -995,7 +1031,7 @@ defmodule StarlightBot.BattlePlans do
 
   def convert_action(action, "ego") do
     action
-    |> Map.drop(~w(row priority))
+    |> Map.drop(~w(row priority mode max_defenses))
     |> Map.put("type", "ego")
     |> Map.put_new("grade", "zayin")
     |> Map.put_new("corrode", false)
@@ -1004,7 +1040,7 @@ defmodule StarlightBot.BattlePlans do
 
   def convert_action(action, "nothing") do
     action
-    |> Map.drop(~w(grade corrode row priority enemy))
+    |> Map.drop(~w(grade corrode row priority enemy mode max_defenses))
     |> Map.put("type", "nothing")
   end
 

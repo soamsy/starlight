@@ -330,6 +330,36 @@ defmodule StarlightBot.BattlePlansTest do
     end
   end
 
+  describe "pick_row/4 in use" do
+    defp in_use_order(order), do: %{"row" => "priority", "priority" => %{"order" => order}}
+
+    test "the in use chip resolves to the row currently chosen" do
+      assert BattlePlans.pick_row(in_use_order(["in_use"]), cell(:wrath, :skill1), cell(:envy, :skill2), :top) == :top
+      assert BattlePlans.pick_row(in_use_order(["s3", "in_use"]), cell(:wrath, :skill1), cell(:envy, :skill2), :bottom) == :bottom
+    end
+
+    test "it falls through to later chips when the row in use is unknown" do
+      assert BattlePlans.pick_row(in_use_order(["in_use", "top"]), cell(:wrath, :skill1), cell(:envy, :skill2), nil) == :top
+    end
+  end
+
+  describe "put_run_mode/2" do
+    test "stores the mode and a defense cap only for a-res+def" do
+      holder = BattlePlans.new_rest()
+
+      assert %{"mode" => "a_res_def", "max_defenses" => 2} = BattlePlans.put_run_mode(holder, %{"mode" => "a_res_def", "max_defenses" => "2"})
+      refute Map.has_key?(BattlePlans.put_run_mode(holder, %{"mode" => "a_res", "max_defenses" => "2"}), "max_defenses")
+      refute Map.has_key?(BattlePlans.put_run_mode(Map.put(holder, "mode", "a_res"), %{"mode" => "none"}), "mode")
+    end
+
+    test "a blank cap means no limit and switching to a fixed row drops the mode" do
+      holder = BattlePlans.new_rest() |> Map.put("mode", "a_res_def") |> Map.put("max_defenses", 2)
+
+      refute Map.has_key?(BattlePlans.put_run_mode(holder, %{"mode" => "a_res_def", "max_defenses" => ""}), "max_defenses")
+      refute Map.has_key?(BattlePlans.put_row(holder, "top", nil), "mode")
+    end
+  end
+
   describe "pick_row/3" do
     defp cell(sin, tier), do: %{sin: sin, tier: tier}
     defp priority(order), do: %{"row" => "priority", "priority" => %{"order" => order}}

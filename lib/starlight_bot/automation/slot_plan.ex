@@ -1,5 +1,9 @@
 defmodule StarlightBot.Automation.SlotPlan do
+  alias StarlightBot.Automation.ChainStreak
   alias StarlightBot.BattlePlans
+
+  @run_modes ~w(a_res a_res_def)
+  @min_run 3
 
   def needs_classified?(holder),
     do: Enum.any?(BattlePlans.holders(holder), &(&1["row"] == "priority" or is_map(&1["where"])))
@@ -22,7 +26,9 @@ defmodule StarlightBot.Automation.SlotPlan do
           {enemy, continued?} = resolve_enemy(holder["enemy"], previous)
           start = if continued?, do: offset, else: 0
           holder = Map.put(holder, "enemy", enemy)
-          bottom_columns = bottom_columns_to_skip(holder, env)
+          bottom_result = if skips_target?(holder) or needs_in_use?(holder), do: env.bottom_columns.()
+          bottom_columns = if skips_target?(holder), do: bottom_columns_to_skip(bottom_result)
+          {env, run_note} = with_rows(holder, taken, bottom_result, env)
 
           {steps, next} =
             Enum.map_reduce(taken, start, fn column, index ->
@@ -33,22 +39,67 @@ defmodule StarlightBot.Automation.SlotPlan do
                 else: {planned, index + 1}
             end)
 
-          {steps, {next, enemy}}
+          {add_note(steps, run_note), {next, enemy}}
       end)
 
     {steps, Enum.flat_map(steps, & &1.notes)}
   end
 
-  defp bottom_columns_to_skip(%{"enemy" => %{"pick" => pick}} = holder, env) do
-    if pick != "none" and Map.get(holder, "skip_bottom_target", true) do
-      case env.bottom_columns.() do
-        {:ok, bottom_columns} -> bottom_columns
-        :skip -> nil
-      end
-    end
+  defp skips_target?(%{"enemy" => %{"pick" => pick}} = holder), do: pick != "none" and Map.get(holder, "skip_bottom_target", true)
+  defp skips_target?(_holder), do: false
+
+  defp needs_in_use?(holder) do
+    order = List.wrap(get_in(holder, ["priority", "order"]))
+    holder["mode"] in @run_modes or "in_use" in order
   end
 
-  defp bottom_columns_to_skip(_holder, _env), do: nil
+  defp bottom_columns_to_skip({:ok, bottom_columns}), do: bottom_columns
+  defp bottom_columns_to_skip(_result), do: nil
+
+  defp with_rows(%{"row" => "priority"} = holder, taken, {:ok, bottom_columns}, %{classified: {top, _bottom}} = env) do
+    in_use = Map.new(0..(length(top) - 1)//1, &{&1, if(&1 in bottom_columns, do: :bottom, else: :top)})
+    {committed, note} = committed_rows(holder, taken, in_use, env)
+    {Map.merge(env, %{in_use: in_use, committed: committed}), note}
+  end
+
+  defp with_rows(%{"mode" => mode}, _taken, _bottom_result, env) when mode in @run_modes,
+    do: {env, "#{mode_label(mode)}: can't read which skills are in use, picking by priority"}
+
+  defp with_rows(_holder, _taken, _bottom_result, env), do: {env, nil}
+
+  defp committed_rows(%{"mode" => mode} = holder, taken, in_use, %{classified: {top, bottom}} = env) when mode in @run_modes do
+    columns = Enum.to_list(0..(length(top) - 1)//1)
+    top_sins = Enum.map(top, & &1.sin)
+    bottom_sins = Enum.map(bottom, & &1.sin)
+    defense = if mode == "a_res_def", do: env.defense_sins.()
+    stay = Enum.map(columns, &Map.fetch!(in_use, &1))
+    forced = for column <- columns, column not in taken, into: %{}, do: {column, Map.fetch!(in_use, column)}
+
+    path = ChainStreak.best_path(top_sins, bottom_sins, forced, defense, holder["max_defenses"], stay: stay, min_run: @min_run)
+    committed = ChainStreak.committed_columns(path, top_sins, bottom_sins, defense, @min_run)
+    rows = for column <- taken, MapSet.member?(committed, column), into: %{}, do: {column, row_of_choice(Enum.at(path, column))}
+
+    {rows, run_note(mode, rows)}
+  end
+
+  defp committed_rows(_holder, _taken, _in_use, _env), do: {%{}, nil}
+
+  defp row_of_choice(:defense), do: :dodge
+  defp row_of_choice(choice), do: choice
+
+  defp run_note(mode, rows) when map_size(rows) == 0, do: "#{mode_label(mode)}: no run of #{@min_run}+ reachable, picking by priority"
+
+  defp run_note(mode, rows) do
+    picks = rows |> Enum.sort() |> Enum.map_join(", ", fn {column, row} -> "#{column + 1} #{row}" end)
+    "#{mode_label(mode)}: runs of #{@min_run}+ on slot(s) #{picks}"
+  end
+
+  defp mode_label("a_res"), do: "a-res"
+  defp mode_label("a_res_def"), do: "a-res+def"
+
+  defp add_note(steps, nil), do: steps
+  defp add_note([], _note), do: []
+  defp add_note([first | rest], note), do: [%{first | notes: [note | first.notes]} | rest]
 
   defp kept_step(%{action: "target", row: row} = planned, holder, column, _index, _env) when row in [:top, :bottom],
     do: %{action: "nothing", holder: holder, column: column, row: nil, enemy: nil, notes: planned.notes}
@@ -81,11 +132,17 @@ defmodule StarlightBot.Automation.SlotPlan do
     %{action: holder["type"], holder: Map.put(holder, "enemy", enemy), column: column, row: row, enemy: enemy, notes: notes}
   end
 
-  defp row_for(%{"row" => "priority"} = holder, column, %{classified: {top, bottom}}) do
-    top_cell = Enum.at(top, column)
-    bottom_cell = Enum.at(bottom, column)
-    row = BattlePlans.pick_row(holder, top_cell, bottom_cell)
-    {row, ["slot #{column + 1} #{BattlePlans.row_label(holder)}: top #{BattlePlans.cell_label(top_cell)}, bottom #{BattlePlans.cell_label(bottom_cell)} -> #{row}"]}
+  defp row_for(%{"row" => "priority"} = holder, column, %{classified: {top, bottom}} = env) do
+    case Map.fetch(Map.get(env, :committed, %{}), column) do
+      {:ok, row} ->
+        {row, []}
+
+      :error ->
+        top_cell = Enum.at(top, column)
+        bottom_cell = Enum.at(bottom, column)
+        row = BattlePlans.pick_row(holder, top_cell, bottom_cell, env |> Map.get(:in_use, %{}) |> Map.get(column))
+        {row, ["slot #{column + 1} #{BattlePlans.row_label(holder)}: top #{BattlePlans.cell_label(top_cell)}, bottom #{BattlePlans.cell_label(bottom_cell)} -> #{row}"]}
+    end
   end
 
   defp row_for(holder, _column, _env), do: {BattlePlans.pick_row(holder, nil, nil), []}
