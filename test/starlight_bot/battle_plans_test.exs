@@ -98,8 +98,9 @@ defmodule StarlightBot.BattlePlansTest do
   describe "schedules" do
     defp scheduled(kind \\ "focused") do
       playbook = BattlePlans.new_playbook(kind, "Win rate")
-      [first | _] = playbook["actions"]
-      %{playbook | "actions" => BattlePlans.wrap_in_schedule(playbook["actions"], first["id"])}
+      actions = if kind == "focused", do: playbook["actions"] ++ [BattlePlans.new_action("commit")], else: playbook["actions"]
+      [first | _] = actions
+      %{playbook | "actions" => BattlePlans.wrap_in_schedule(actions, first["id"])}
     end
 
     test "wrapping an action puts it in a single turn 1 tab, in place" do

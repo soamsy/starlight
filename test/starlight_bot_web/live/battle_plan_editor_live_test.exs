@@ -10,6 +10,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     {:noreply, socket} = Live.handle_event("new_plan", %{}, socket)
     focused = Enum.find(socket.assigns.data["playbooks"], &(&1["kind"] == "focused"))
     {:noreply, socket} = Live.handle_event("select_playbook", %{"id" => focused["id"]}, socket)
+    {:noreply, socket} = Live.handle_event("add_action", %{"container" => "root", "type" => "commit"}, socket)
     %{socket: socket, playbook_id: focused["id"]}
   end
 
@@ -462,6 +463,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
     socket =
       socket
       |> event("select_playbook", %{"id" => focused["id"]})
+      |> event("add_action", %{"container" => "root", "type" => "commit"})
       |> event("set_sinner_profile", %{"sinner" => "faust", "profile_ids" => to_string(faust_profile)})
       |> event("set_sinner_profile", %{"sinner" => "ryoshu", "profile_ids" => to_string(ryoshu_profile)})
       |> event("add_action", %{"container" => "root", "type" => "target"})

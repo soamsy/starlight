@@ -964,7 +964,7 @@ defmodule StarlightBot.BattlePlans do
   end
 
   defp default_actions("chain"), do: [new_action("chain")]
-  defp default_actions("focused"), do: [new_action("win_rate"), new_action("commit")]
+  defp default_actions("focused"), do: [new_action("win_rate")]
 
   def new_action(type) when type in ~w(win_rate damage_rate commit retry), do: %{"id" => GiftPlans.new_id("ac"), "type" => type}
 

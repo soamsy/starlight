@@ -153,7 +153,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     RunMemory.put(ctx, :battle_max_retries, BattlePlans.max_retries(playbook))
 
     turn_state = %{kind: kind, scan: scan, number: turn}
-    {:steps, [run_actions(actions |> merge_keys() |> commit_trailing_damage_rate(), turn_state)]}
+    {:steps, [run_actions(actions |> merge_keys() |> commit_trailing_rate(), turn_state)]}
   end
 
   def run_actions([], turn, _frame, _ctx), do: {:steps, [DSL.call(__MODULE__, :finish_turn, [:pending, turn])]}
@@ -240,8 +240,9 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp merge_keys([action | rest]), do: [action | merge_keys(rest)]
   defp merge_keys([]), do: []
 
-  defp commit_trailing_damage_rate(actions) do
+  defp commit_trailing_rate(actions) do
     case List.last(actions) do
+      %{"type" => "win_rate"} -> List.replace_at(actions, -1, %{"type" => "win_rate_commit"})
       %{"type" => "damage_rate"} -> List.replace_at(actions, -1, %{"type" => "damage_rate_commit"})
       _ -> actions
     end
