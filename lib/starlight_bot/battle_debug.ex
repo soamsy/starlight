@@ -44,6 +44,7 @@ defmodule StarlightBot.BattleDebug do
             record -> [record]
           end
         end)
+        |> Enum.sort_by(&is_nil(&1["review"]))
 
       {:error, _} ->
         []
@@ -53,7 +54,7 @@ defmodule StarlightBot.BattleDebug do
   def get(id) do
     with {:ok, body} <- File.read(json_path(id)),
          {:ok, record} <- Jason.decode(body) do
-      Map.merge(record, %{"id" => safe_id(id), "labeled?" => File.exists?(truth_path(id)), "in_suite?" => in_suite?(id)})
+      Map.merge(record, %{"id" => safe_id(id), "labeled?" => File.exists?(truth_path(id)), "in_suite?" => in_suite?(id), "review" => review(id)})
     else
       _ -> nil
     end
@@ -68,7 +69,21 @@ defmodule StarlightBot.BattleDebug do
     end
   end
 
-  def save_truth(id, truth), do: File.write!(truth_path(id), Jason.encode!(truth, pretty: true))
+  def save_truth(id, truth) do
+    clear_review(id)
+    File.write!(truth_path(id), Jason.encode!(truth, pretty: true))
+  end
+
+  def review(id) do
+    with {:ok, body} <- File.read(review_path(id)),
+         {:ok, cells} <- Jason.decode(body) do
+      cells
+    else
+      _ -> nil
+    end
+  end
+
+  def clear_review(id), do: File.rm(review_path(id))
 
   def reset_truth(id) do
     File.rm(truth_path(id))
@@ -88,7 +103,10 @@ defmodule StarlightBot.BattleDebug do
 
   def in_suite?(id), do: File.exists?(suite_path(id))
 
-  def set_suite(id, true), do: File.write!(suite_path(id), "")
+  def set_suite(id, true) do
+    clear_review(id)
+    File.write!(suite_path(id), "")
+  end
 
   def set_suite(id, false) do
     File.rm(suite_path(id))
@@ -99,11 +117,17 @@ defmodule StarlightBot.BattleDebug do
     {kept, doomed} = list() |> Enum.split_with(& &1["in_suite?"])
 
     files =
-      Enum.flat_map(doomed, fn %{"id" => id} -> [json_path(id), image_path(id), truth_path(id)] end)
+      Enum.flat_map(doomed, fn %{"id" => id} -> [json_path(id), image_path(id), truth_path(id), review_path(id)] end)
       |> Enum.filter(&File.exists?/1)
 
     if files != [], do: System.cmd("gio", ["trash" | files], stderr_to_stdout: true)
     %{deleted: length(doomed), kept: length(kept)}
+  end
+
+  def delete(id) do
+    files = Enum.filter([json_path(id), image_path(id), truth_path(id), review_path(id), suite_path(id)], &File.exists?/1)
+    if files != [], do: System.cmd("gio", ["trash" | files], stderr_to_stdout: true)
+    :ok
   end
 
   def load_frame(id) do
@@ -120,6 +144,7 @@ defmodule StarlightBot.BattleDebug do
   def image_path(id), do: Path.join(Data.battle_debug_dir(), safe_id(id) <> ".png")
 
   defp json_path(id), do: Path.join(Data.battle_debug_dir(), safe_id(id) <> ".json")
+  defp review_path(id), do: Path.join(Data.battle_debug_dir(), safe_id(id) <> ".review")
   defp suite_path(id), do: Path.join(Data.battle_debug_dir(), safe_id(id) <> ".suite")
   defp truth_path(id), do: Path.join(Data.battle_debug_dir(), safe_id(id) <> ".truth.json")
   defp safe_id(id), do: id |> to_string() |> Path.basename()

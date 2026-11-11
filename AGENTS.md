@@ -103,6 +103,12 @@ phx.server`, and this is a read query, not a file copy.
 
 ---
 
+## Tier Model
+
+`Vision.TierModel` classifies skill 1/2/3 from the sin's tier mask with a ridge model stored in `priv/vision/tier_model.f32`. After adding or relabeling suite captures, or after changing anything that feeds the tier mask, run `mix tier_model.train --cv --write` and commit the regenerated model. Design, numbers and the dead ends are in `docs/tier_model.md`.
+
+---
+
 ## Testing
 
 ```sh

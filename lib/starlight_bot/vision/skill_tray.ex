@@ -15,20 +15,19 @@ defmodule StarlightBot.Vision.SkillTray do
   @bottom_row_y 818
   @bottom_row_h 40
 
-  @top_row_inset_def [15.5, 7.63, 18]
-  @bottom_row_inset_def [24, 0.31, 5]
+  @top_slot_pitch 100.5
+  @bottom_slot_pitch 114.5
+  @top_row_dx 2
+  @bottom_row_dx 2
 
   @top_cell_inset_pct 0.14
   @bottom_cell_inset_pct 0.15
 
   @top_hue_scan_offset 0
-  @bottom_hue_scan_offset 45
+  @bottom_hue_scan_offset 34
 
   @top_hue_inset_x_pct 0.18
   @bottom_hue_inset_x_pct 0.07
-
-  @outer_shift_px 2
-  @outer_shift_min_columns 7
 
   @bg_strip_top_margin 10
   @bg_strip_w 20
@@ -166,7 +165,8 @@ defmodule StarlightBot.Vision.SkillTray do
           skill_num,
           top_row_y,
           top_row_h,
-          @top_row_inset_def,
+          @top_slot_pitch,
+          @top_row_dx,
           @top_cell_inset_pct,
           @top_hue_scan_offset,
           @top_hue_inset_x_pct
@@ -178,7 +178,8 @@ defmodule StarlightBot.Vision.SkillTray do
           skill_num,
           @bottom_row_y,
           @bottom_row_h,
-          @bottom_row_inset_def,
+          @bottom_slot_pitch,
+          @bottom_row_dx,
           @bottom_cell_inset_pct,
           @bottom_hue_scan_offset,
           @bottom_hue_inset_x_pct
@@ -186,11 +187,9 @@ defmodule StarlightBot.Vision.SkillTray do
     }
   end
 
-  defp row(tray_start_x, tray_end_x, skill_num, y, h, inset_def, cell_inset_pct, hue_scan_offset, hue_inset_x_pct) do
-    [base_inset, multiplier, inverse_proportional] = inset_def
-    inset = base_inset + (skill_num * multiplier) + (inverse_proportional / Float.pow(skill_num * 1.0, 0.8))
-    start_x = tray_start_x + inset
-    end_x = tray_end_x - inset
+  defp row(tray_start_x, tray_end_x, skill_num, y, h, slot_pitch, dx, cell_inset_pct, hue_scan_offset, hue_inset_x_pct) do
+    start_x = (tray_start_x + tray_end_x) / 2 - slot_pitch * skill_num / 2 + dx
+    end_x = start_x + slot_pitch * skill_num
 
     %{
       y: y,
@@ -198,7 +197,7 @@ defmodule StarlightBot.Vision.SkillTray do
       hue_scan_y: y + hue_scan_offset,
       start_x: start_x,
       end_x: end_x,
-      bin_width: (end_x - start_x) / skill_num,
+      bin_width: slot_pitch,
       columns: skill_num,
       cell_inset_pct: cell_inset_pct,
       hue_inset_x_pct: hue_inset_x_pct
@@ -267,15 +266,9 @@ defmodule StarlightBot.Vision.SkillTray do
     inset = bin_width * inset_pct
 
     for i <- 0..(columns - 1) do
-      shift = outer_shift(i, columns)
-      {round(start_x + bin_width * i + inset + shift), round(start_x + bin_width * (i + 1) - inset + shift)}
+      {round(start_x + bin_width * i + inset), round(start_x + bin_width * (i + 1) - inset)}
     end
   end
-
-  defp outer_shift(_i, columns) when columns < @outer_shift_min_columns, do: 0
-  defp outer_shift(0, _columns), do: -@outer_shift_px
-  defp outer_shift(i, columns) when i == columns - 1, do: @outer_shift_px
-  defp outer_shift(_i, _columns), do: 0
 
   defp assign_sinner_of_slot(%__MODULE__{} = tray, %Frame{mat: mat}) do
     case HookRegistry.find(@hp_hook) do

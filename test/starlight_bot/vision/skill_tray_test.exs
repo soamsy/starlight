@@ -56,10 +56,10 @@ defmodule StarlightBot.Vision.SkillTrayTest do
         cell_inset = row.bin_width * row.cell_inset_pct
 
         {x0, _} = List.first(columns)
-        assert_in_delta x0, row.start_x + cell_inset - 2, 1
+        assert_in_delta x0, row.start_x + cell_inset, 1
 
         {_, x1} = List.last(columns)
-        assert_in_delta x1, row.end_x - cell_inset + 2, 1
+        assert_in_delta x1, row.end_x - cell_inset, 1
 
         assert Enum.all?(columns, fn {a, b} -> a < b end)
       end

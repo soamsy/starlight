@@ -1,5 +1,6 @@
 defmodule StarlightBotWeb.Live.BattleInspectorLive do
   use StarlightBotWeb, :live_view
+  alias StarlightBot.BattleDebug
   alias StarlightBot.Automation.{ActiveSkillsWatch, BattleChain, PlaybookRunner, TrayWatch}
   alias StarlightBot.{Ctx, SinnerProfiles}
   alias StarlightBot.Navigation.Navigator
@@ -104,6 +105,16 @@ defmodule StarlightBotWeb.Live.BattleInspectorLive do
   end
 
   @impl true
+  def handle_params(%{"capture" => id} = params, uri, socket) do
+    socket =
+      case BattleDebug.load_frame(id) do
+        {:ok, frame} -> show_frame(socket, frame)
+        :error -> put_flash(socket, :error, "Capture not found: #{id}")
+      end
+
+    handle_params(Map.delete(params, "capture"), uri, socket)
+  end
+
   def handle_params(%{"tab" => tab}, _uri, socket) when tab in ~w(screen chain targets active),
     do: {:noreply, socket |> assign(:tab, String.to_existing_atom(tab)) |> assign(:tab_from_url?, true)}
 

@@ -76,7 +76,7 @@
             <span class="flex items-start gap-2">
               <span class={"w-2 h-2 rounded-full mt-1 shrink-0 " <> cell_class(result)}></span>
               <span class="flex flex-col items-start">
-                <span class="font-mono text-xs"><%= String.slice(entry["captured_at"], 11, 12) %><.icon :if={entry["labeled?"]} name="lucide-pencil" class="size-3 inline" /><.icon :if={entry["in_suite?"]} name="lucide-filled-star" class="size-3 inline" /></span>
+                <span class="font-mono text-xs"><%= String.slice(entry["captured_at"], 11, 12) %><.icon :if={entry["labeled?"]} name="lucide-pencil" class="size-3 inline" /><.icon :if={entry["in_suite?"]} name="lucide-filled-star" class="size-3 inline" /><.icon :if={entry["review"]} name="lucide-flag" class="size-3 inline text-warning" /></span>
                 <span class="text-xs"><%= summary(entry) %></span>
               </span>
             </span>
@@ -96,6 +96,12 @@
             </label>
             <button phx-click="test" class="btn btn-sm btn-primary">Test detection</button>
             <button phx-click="reset_truth" class="btn btn-sm" data-confirm="Throw away your labels and go back to the recorded detection?">Reset labels</button>
+            <.link navigate={~p"/battle?tab=screen&capture=#{@selected["id"]}"} class="btn btn-sm">
+              <.icon name="lucide-monitor-up" class="size-4" /> Send to screen
+            </.link>
+            <button phx-click="delete_capture" class="btn btn-sm btn-error btn-outline" data-confirm="Move this capture to the trash?">
+              <.icon name="lucide-trash" class="size-4" />
+            </button>
             <button :if={@selected["kind"] == "focused_enemies"} phx-click="clear_enemies" class="btn btn-sm">Clear boxes</button>
             <span class="text-xs text-base-content/60 font-mono"><%= @selected["id"] %></span>
             <%= if @result do %>
@@ -103,7 +109,11 @@
             <% end %>
           </div>
 
-          <div class="flex items-center justify-center bg-base-200 rounded-lg border border-base-300 shrink-0" style="aspect-ratio: 16/9;">
+          <div :if={@selected["review"]} class="text-xs text-warning flex flex-wrap gap-x-4 shrink-0">
+            <span :for={cell <- @selected["review"]}><%= cell["row"] %> slot <%= cell["slot"] %>: detector <%= cell["detector"] %>, model <%= cell["model"] %></span>
+          </div>
+
+          <div class="flex items-center justify-center bg-base-200 rounded-lg border border-base-300 shrink-0 w-full max-w-7xl mx-auto" style="aspect-ratio: 16/9;">
             <%= if @selected["kind"] == "chain_tray" do %>
               <canvas id="battle-history-canvas" phx-hook="BattleHistoryCanvas" phx-update="ignore"
                       class="max-w-full max-h-full" style="aspect-ratio: 16/9;"></canvas>
@@ -127,7 +137,7 @@
             <% end %>
           <% else %>
             <form phx-change="tray_edit" class="overflow-x-auto shrink-0">
-              <table class="table table-xs">
+              <table class="table table-xs w-3/5">
                 <thead>
                   <tr>
                     <th></th>

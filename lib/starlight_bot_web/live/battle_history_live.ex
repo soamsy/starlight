@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.BattleHistoryLive do
   use StarlightBotWeb, :live_view
   alias StarlightBot.BattleDebug
-  alias StarlightBot.BattleDebug.Verify
+  alias StarlightBot.BattleDebug.{Detect, Verify}
 
   @sins ~w(wrath lust sloth gluttony gloom pride envy)
   @tiers ~w(skill1 skill2 skill3)
@@ -85,6 +85,11 @@ defmodule StarlightBotWeb.Live.BattleHistoryLive do
     in_suite? = not record["in_suite?"]
     BattleDebug.set_suite(id, in_suite?)
     {:noreply, socket |> refresh_entries() |> assign(:selected, Map.put(record, "in_suite?", in_suite?))}
+  end
+
+  def handle_event("delete_capture", _, %{assigns: %{selected: %{"id" => id}}} = socket) do
+    BattleDebug.delete(id)
+    {:noreply, socket |> refresh_entries() |> assign(:selected, nil) |> assign(:truth, nil) |> assign(:result, nil)}
   end
 
   def handle_event("delete_non_suite", _, socket) do
@@ -196,6 +201,8 @@ defmodule StarlightBotWeb.Live.BattleHistoryLive do
         socket
 
       record ->
+        record = refresh_geometry(record)
+
         socket
         |> assign(:selected, record)
         |> assign(:truth, BattleDebug.truth(id, record))
@@ -203,6 +210,17 @@ defmodule StarlightBotWeb.Live.BattleHistoryLive do
         |> push_editor(true)
     end
   end
+
+  defp refresh_geometry(%{"kind" => "chain_tray", "id" => id} = record) do
+    with {:ok, frame} <- BattleDebug.load_frame(id),
+         {:ok, detected} <- Detect.run("chain_tray", frame) do
+      put_in(record, ["detected", "geometry"], detected.geometry |> Jason.encode!() |> Jason.decode!())
+    else
+      _ -> record
+    end
+  end
+
+  defp refresh_geometry(record), do: record
 
   defp save(%{assigns: %{selected: %{"id" => id}}} = socket, truth) do
     BattleDebug.save_truth(id, truth)

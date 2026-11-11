@@ -1,5 +1,5 @@
 defmodule StarlightBot.Vision.SinColor do
-  alias StarlightBot.Vision.{Frame, Matcher, SkillTray}
+  alias StarlightBot.Vision.{Frame, Matcher, SkillTray, TierModel}
 
   @color_bgr2hsv 40
 
@@ -42,6 +42,8 @@ defmodule StarlightBot.Vision.SinColor do
           confidence: float,
           reference: %{bgr: {number, number, number}, stddev: {number, number, number}},
           tier: tier,
+          rule_tier: tier,
+          tier_features: [float],
           tier_area: non_neg_integer,
           wedge_area: non_neg_integer,
           tier_pct: float,
@@ -91,6 +93,10 @@ defmodule StarlightBot.Vision.SinColor do
   @score_weights [gloom: 1.8]
   @gloom_lust_ratio 1.2
   @gloom_lust_penalty 0.8
+  @dark_blue_min_hue 113
+  @dark_blue_min_saturation 240
+  @dark_blue_max_value 105
+  @dark_blue_min_gloom 30
   @bg_chroma_floor 0.6
   @bg_spread_k 0.5
 
@@ -133,6 +139,7 @@ defmodule StarlightBot.Vision.SinColor do
         {name, raw - leak, mask}
       end
 
+    scores = demote_dark_blue_pride(scores, hue_cell)
     lust_raw = scores |> List.keyfind(:lust, 0) |> elem(1)
 
     scores =
@@ -163,13 +170,17 @@ defmodule StarlightBot.Vision.SinColor do
     wedge_area = Evision.countNonZero(wedge)
     tier_pct = if wedge_area > 0, do: tier_area / wedge_area, else: 0.0
     flame = flame_density(tier_raw_mask, x1 - x0, h)
-    tier = classify_tier(winner, tier_pct, flame)
+    rule_tier = classify_tier(winner, tier_pct, flame)
+    tier_features = TierModel.features(winner, tier_pct, flame, tier_raw_mask)
+    tier = TierModel.predict(tier_features) || rule_tier
 
     %{
       sin: winner,
       confidence: confidence,
       reference: %{bgr: to_bgr(mean), stddev: to_bgr(stddev)},
       tier: tier,
+      rule_tier: rule_tier,
+      tier_features: tier_features,
       tier_area: tier_area,
       wedge_area: wedge_area,
       tier_pct: tier_pct,
@@ -181,6 +192,19 @@ defmodule StarlightBot.Vision.SinColor do
       tier_color_mask: tier_color_mask,
       tier_raw_mask: tier_raw_mask
     }
+  end
+
+  defp demote_dark_blue_pride(scores, hue_cell) do
+    with {:pride, pride_net, pride_mask} <- List.keyfind(scores, :pride, 0),
+         {:gloom, gloom_net, _mask} <- List.keyfind(scores, :gloom, 0),
+         true <- pride_net > 0 and gloom_net >= @dark_blue_min_gloom,
+         {mean, _stddev} = Evision.meanStdDev(hue_cell, mask: pride_mask),
+         {hue, saturation, value} = hsv_of_mean(mean),
+         true <- hue >= @dark_blue_min_hue and saturation >= @dark_blue_min_saturation and value <= @dark_blue_max_value do
+      List.keystore(scores, :pride, 0, {:pride, 0, pride_mask})
+    else
+      _ -> scores
+    end
   end
 
   defp tier_color_mask(mat, {x0, x1}, y, h, winner, detected_hue, bg_hue, bg_saturation, bg_value) do
@@ -260,21 +284,7 @@ defmodule StarlightBot.Vision.SinColor do
     bg = background_color(mat, SkillTray.background_region(tray))
     top = classify_row(mat, tray.top_row, bg.hue, bg.saturation, bg.value, bg.leak)
     bottom = classify_row(mat, tray.bottom_row, bg.hue, bg.saturation, bg.value, bg.leak)
-    {top, Enum.zip_with(top, bottom, &inherit_top_tier/2)}
-  end
-
-  defp inherit_top_tier(%{sin: sin, tier: tier}, %{sin: sin} = bottom), do: %{bottom | tier: tier}
-  defp inherit_top_tier(%{tier: tier}, %{tier: tier} = bottom), do: %{bottom | tier: next_best_tier(bottom.sin, tier, bottom.tier_pct)}
-  defp inherit_top_tier(_top, bottom), do: bottom
-
-  defp next_best_tier(sin, banned, pct) do
-    {tier2_min_pct, tier3_min_pct} = Keyword.fetch!(@tier_thresholds, sin)
-
-    case banned do
-      :skill1 -> if pct >= tier3_min_pct, do: :skill3, else: :skill2
-      :skill2 -> if pct >= (tier2_min_pct + tier3_min_pct) / 2, do: :skill3, else: :skill1
-      :skill3 -> if pct >= tier2_min_pct, do: :skill2, else: :skill1
-    end
+    {top, bottom}
   end
 
   @spec background_color(term, {integer, integer, integer, integer}) :: %{
