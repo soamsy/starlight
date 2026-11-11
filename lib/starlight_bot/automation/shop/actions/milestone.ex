@@ -52,7 +52,13 @@ defmodule StarlightBot.Automation.Shop.Actions.Milestone do
     {outcome, Enum.join(details, "; "), state}
   end
 
-  defp refresh_case(milestone, state, ctx), do: GiftPlans.matching_refresh_case(milestone, ShopRunner.condition_env(state, ctx))
+  defp refresh_case(milestone, state, ctx) do
+    case GiftPlans.matching_refresh_case(milestone, ShopRunner.condition_env(state, ctx)) do
+      %{"action" => "leave"} = leave -> leave
+      nil -> nil
+      refresh_case -> if Ops.refresh_locked?(state.shop_type, ctx), do: nil, else: refresh_case
+    end
+  end
 
   defp refresh(%{"action" => "affinity_refresh"} = refresh_case, state, ctx), do: AffinityRefresh.run(%{"affinity" => refresh_case["affinity"]}, nil, state, ctx)
   defp refresh(_refresh_case, state, ctx), do: Refresh.run(%{}, nil, state, ctx)

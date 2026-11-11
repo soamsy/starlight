@@ -117,6 +117,9 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @fuse_confirm_retry_ms 1_200
   @fuse_confirm_tries 3
   @purchased_key :shop_purchased
+  @buy_count_key :shop_buy_count
+  @refresh_lock_normal 4
+  @refresh_lock_super 6
   @shelf_key :shop_shelf
   @unaffordable_key :shop_unaffordable
   @fuse_affinity_key :fuse_affinity
@@ -555,6 +558,12 @@ defmodule StarlightBot.Automation.Shop.Ops do
     forget_shelf(ctx)
   end
 
+  def reset_buy_count(ctx), do: RunMemory.put(ctx, @buy_count_key, 0)
+
+  def refresh_locked?(shop_type, ctx) do
+    RunMemory.get(ctx, @buy_count_key, 0) >= if(shop_type == :super, do: @refresh_lock_super, else: @refresh_lock_normal)
+  end
+
   def forget_shelf(ctx) do
     RunMemory.put(ctx, @shelf_key, nil)
     RunMemory.put(ctx, @unaffordable_key, %{})
@@ -794,6 +803,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     with {:ok, _} <- Engine.act([click(:shop_purchase_popup_confirm)], ctx),
          {:ok, _} <-
            Engine.act([await(:ego_gift_get), RewardHelpers.record_ego_gift_items_step(), RewardHelpers.dismiss_ego_gift_get_step()], ctx) do
+      RunMemory.update(ctx, @buy_count_key, 0, &(&1 + 1))
       Ctx.log(ctx, :ok, "shop: bought #{gift_name}")
       {:ok, :bought}
     end
