@@ -162,7 +162,7 @@ defmodule StarlightBot.Automation.BattleChain do
   def waypoints(%SkillTray{} = tray, top_skills, bottom_skills, forced \\ %{}) do
     top_skills
     |> Enum.zip(bottom_skills)
-    |> steady_rows(forced)
+    |> pick_rows(forced)
     |> Enum.zip(SkillTray.chain_grid(tray))
     |> Enum.map(fn {row_choice, {x, top_y, bottom_y}} ->
       y = if row_choice == :top, do: top_y, else: bottom_y
@@ -170,33 +170,18 @@ defmodule StarlightBot.Automation.BattleChain do
     end)
   end
 
-  defp steady_rows([], _forced), do: []
-
-  defp steady_rows(columns, forced) do
+  defp pick_rows(columns, forced) do
     columns
     |> Enum.with_index()
-    |> Enum.reduce(%{start: {{0, 0}, []}}, fn {{top_skill, bottom_skill}, index}, paths ->
-      rows = if row = Map.get(forced, index), do: [row], else: [:bottom, :top]
-
-      Map.new(rows, fn row ->
-        tier = if row == :top, do: top_skill, else: bottom_skill
-
-        best =
-          paths
-          |> Enum.map(fn {prev_row, {{ranks, switches}, picked}} ->
-            switched = if prev_row in [:start, row], do: 0, else: 1
-            {{ranks + tier_rank(tier), switches + switched}, [row | picked], prev_row != :top}
-          end)
-          |> Enum.min_by(fn {cost, _picked, from_other?} -> {cost, from_other?} end)
-          |> Tuple.delete_at(2)
-
-        {row, best}
-      end)
+    |> Enum.map(fn {{top_skill, bottom_skill}, index} ->
+      Map.get(forced, index) || pick_row(top_skill, bottom_skill)
     end)
-    |> Enum.min_by(fn {row, {cost, _picked}} -> {cost, row != :top} end)
-    |> elem(1)
-    |> elem(1)
-    |> Enum.reverse()
+  end
+
+  defp pick_row(:skill3, :skill3), do: :bottom
+
+  defp pick_row(top_skill, bottom_skill) do
+    if tier_rank(bottom_skill) < tier_rank(top_skill), do: :bottom, else: :top
   end
 
   @spec waypoints_by_streak(SkillTray.t(), [SinColor.sin()], [SinColor.sin()], %{non_neg_integer => :top | :bottom}, [SinColor.sin() | nil] | nil, non_neg_integer | nil) ::
