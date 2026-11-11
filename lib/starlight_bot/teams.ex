@@ -44,6 +44,7 @@ defmodule StarlightBot.Teams do
         select: %{
           id: t.id,
           name: t.name,
+          notes: t.notes,
           hooks: t.hooks,
           free_sinners: t.free_sinners,
           gift_plan_id: t.gift_plan_id,
@@ -73,6 +74,7 @@ defmodule StarlightBot.Teams do
         select: %{
           id: t.id,
           name: t.name,
+          notes: t.notes,
           hooks: t.hooks,
           gift_plan_id: t.gift_plan_id,
           gift_plan_data: g.data,
@@ -100,6 +102,8 @@ defmodule StarlightBot.Teams do
       battle_plan_id: attrs[:battle_plan_id],
       pack_plan_id: attrs[:pack_plan_id]
     }
+
+    row = if Map.has_key?(attrs, :notes), do: Map.put(row, :notes, attrs.notes), else: row
 
     case attrs[:id] do
       id when is_integer(id) ->
