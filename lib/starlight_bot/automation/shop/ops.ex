@@ -34,7 +34,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @sell_select_tries 3
   @sell_scroll_clicks 4
   @sell_scroll_settle_ms 700
-  @sell_close_every_ms 250
+  @sell_close_every_ms 900
   @sell_confirm_steady_ms 200
   @sell_confirm_steady_timeout_ms 1_500
   @sell_confirm_retry_ms 1_200
@@ -89,9 +89,11 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @fuse_scroll_bottom_hook :shop_fuse_popup_scroll_bottom
   @fuse_scroll_track_hook :shop_fuse_popup_scroll_track
   @fuse_scroll_hooks [@fuse_scroll_top_hook, @fuse_scroll_bottom_hook, @fuse_scroll_track_hook]
-  @fuse_item_0_empty_hook :shop_fuse_popup_item_0_empty
   @fuse_item_1_empty_hook :shop_fuse_popup_item_1_empty
-  @fuse_item_2_empty_hook :shop_fuse_popup_item_2_empty
+  @fuse_merge_area_hook :shop_fuse_popup_merge_area
+  @fuse_dismiss_info_hook :shop_fuse_popup_dismiss_gift_info_popup
+  @fuse_merge_retries 3
+  @fuse_merge_settle_ms 300
   @fuse_confirm_confirm_hooks [:shop_fuse_popup_confirm_confirm, :shop_fuse_popup_confirm_confirm_2]
   @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
@@ -529,7 +531,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   def open_sell_popup(ctx) do
-    with {:ok, _} = ok <- Engine.act([click(@sell_open_hook), await(@sell_popup_hook)], ctx) do
+    with {:ok, _} = ok <- Engine.act([click(@sell_open_hook, settle_ms: 100), await(@sell_popup_hook)], ctx) do
       RunMemory.put(ctx, @sell_popup_pass_key, 0)
       ok
     end
@@ -831,10 +833,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
   def perform_fusion(target, click_plan, ctx) do
     forget_shelf(ctx)
 
-    with {:ok, _} <- ensure_fuse_popup(ctx),
-         :ok <- select_affinity(target, ctx),
-         {:ok, consumed_ids} <- select_fuse_ingredients(target, click_plan, ctx),
-         :ok <- confirm_fuse(target.shop_type, length(consumed_ids), ctx),
+    with {:ok, consumed_ids} <- stage_fusion(target, click_plan, ctx, 0),
+         :ok <- confirm_fuse(ctx),
          Enum.each(consumed_ids, &RunMemory.remove_ego_gift(ctx, &1)),
          {:ok, _} <-
            Engine.act(
@@ -871,12 +871,89 @@ defmodule StarlightBot.Automation.Shop.Ops do
 
   defp collect_chance_comet_gift(_target, _ctx), do: {:ok, nil}
 
+  defp stage_fusion(target, click_plan, ctx, attempt) do
+    with {:ok, _} <- ensure_fuse_popup(ctx),
+         :ok <- select_affinity(target, ctx),
+         {:ok, ids} <- select_fuse_ingredients(target, click_plan, ctx) do
+      settle_merge_area(target, click_plan, ids, ctx, attempt)
+    end
+  end
+
+  defp settle_merge_area(target, click_plan, ids, ctx, attempt) do
+    needed = Enum.frequencies(ids)
+
+    case merge_area_status(needed, ctx) do
+      :ok ->
+        {:ok, ids}
+
+      {:error, _} = err ->
+        err
+
+      _ when attempt >= @fuse_merge_retries ->
+        Ctx.log(ctx, :error, "shop fuse: merge area still doesn't match the ingredients after #{attempt} retries")
+        {:error, :merge_area_mismatch}
+
+      {:extras, extras} ->
+        reopen_fuse_popup(target, click_plan, ctx, attempt, "unexpected gifts in the merge area (#{Enum.join(extras, ", ")})")
+
+      {:missing, _} ->
+        with {:ok, _} <- Engine.act([click(@fuse_dismiss_info_hook, missing: :ok)], ctx) do
+          recheck_merge_area(target, click_plan, ids, needed, ctx, attempt)
+        end
+    end
+  end
+
+  defp recheck_merge_area(target, click_plan, ids, needed, ctx, attempt) do
+    case merge_area_status(needed, ctx) do
+      :ok ->
+        {:ok, ids}
+
+      {:error, _} = err ->
+        err
+
+      {:extras, extras} ->
+        reopen_fuse_popup(target, click_plan, ctx, attempt, "unexpected gifts in the merge area (#{Enum.join(extras, ", ")})")
+
+      {:missing, missing} ->
+        Ctx.log(ctx, :info, "shop fuse: merge area is missing #{Enum.join(Map.keys(missing), ", ")}, clicking them again (retry #{attempt + 1}/#{@fuse_merge_retries})")
+        scroll_popup_to_bottom(@fuse_popup, ctx, 0)
+
+        case select_fuse_pass({:strict, missing, %{}}, ctx, 0, true) do
+          {:ok, _} -> settle_merge_area(target, click_plan, ids, ctx, attempt + 1)
+          {:error, reason} -> reopen_fuse_popup(target, click_plan, ctx, attempt, "re-click failed: #{inspect(reason)}")
+        end
+    end
+  end
+
+  defp reopen_fuse_popup(target, click_plan, ctx, attempt, why) do
+    Ctx.log(ctx, :info, "shop fuse: #{why}, reopening the fuse popup (retry #{attempt + 1}/#{@fuse_merge_retries})")
+    recover_to_shop(ctx)
+    stage_fusion(target, click_plan, ctx, attempt + 1)
+  end
+
+  defp merge_area_status(needed, ctx) do
+    Engine.act([sleep(@fuse_merge_settle_ms)], ctx)
+
+    with {:ok, hook} <- find_hook(@fuse_merge_area_hook, ctx, "shop fuse merge area scan"),
+         {:ok, frame} <- Capture.grab_frame() do
+      found = frame |> detect_inventory_gifts(hook.scan_region || hook.region, ctx) |> Enum.frequencies_by(& &1.gift_id)
+      missing = for {id, n} <- needed, Map.get(found, id, 0) < n, into: %{}, do: {id, n - Map.get(found, id, 0)}
+      extras = for {id, n} <- found, n > Map.get(needed, id, 0), do: id
+
+      cond do
+        map_size(missing) == 0 -> :ok
+        extras != [] -> {:extras, extras}
+        true -> {:missing, missing}
+      end
+    end
+  end
+
   defp ensure_fuse_popup(ctx) do
     if fuse_popup_open?() do
       {:ok, :already_open}
     else
       RunMemory.put(ctx, @fuse_affinity_key, nil)
-      Engine.act([retry_until(@fuse_popup_hook, [click(@fuse_open_hook)], every: @fuse_open_retry_ms, tries: @fuse_open_tries, retry_if: @fuse_open_hook)], ctx)
+      Engine.act([retry_until(@fuse_popup_hook, [click(@fuse_open_hook, settle_ms: 100)], every: @fuse_open_retry_ms, tries: @fuse_open_tries, retry_if: @fuse_open_hook)], ctx)
     end
   end
 
@@ -1123,33 +1200,23 @@ defmodule StarlightBot.Automation.Shop.Ops do
     end
   end
 
-  defp confirm_fuse(shop_type, count, ctx) do
-    if not Engine.check_within(not_hook(filled_slot_hook(shop_type, count)), @fuse_slots_filled_ms) do
-      {:error, :no_ingredients_selected}
-    else
-      steps = [
-        key(:enter),
-        await(any_of(@fuse_confirm_confirm_hooks)),
-        hold(any_of(@fuse_confirm_confirm_hooks), @fuse_confirm_steady_ms, within: @fuse_confirm_steady_timeout_ms),
-        retry_until(not_hook(any_of(@fuse_confirm_confirm_hooks)), [key(:enter)],
-          every: @fuse_confirm_retry_ms,
-          tries: @fuse_confirm_tries,
-          retry_if: any_of(@fuse_confirm_confirm_hooks)
-        )
-      ]
+  defp confirm_fuse(ctx) do
+    steps = [
+      key(:enter),
+      await(any_of(@fuse_confirm_confirm_hooks)),
+      hold(any_of(@fuse_confirm_confirm_hooks), @fuse_confirm_steady_ms, within: @fuse_confirm_steady_timeout_ms),
+      retry_until(not_hook(any_of(@fuse_confirm_confirm_hooks)), [key(:enter)],
+        every: @fuse_confirm_retry_ms,
+        tries: @fuse_confirm_tries,
+        retry_if: any_of(@fuse_confirm_confirm_hooks)
+      )
+    ]
 
-      case Engine.act(steps, ctx) do
-        {:ok, _} -> :ok
-        {:error, _} = err -> err
-      end
+    case Engine.act(steps, ctx) do
+      {:ok, _} -> :ok
+      {:error, _} = err -> err
     end
   end
-
-  defp filled_slot_hook(:normal, count) when count >= 3, do: @fuse_item_2_empty_hook
-  defp filled_slot_hook(:normal, 2), do: @fuse_item_1_empty_hook
-  defp filled_slot_hook(:super, count) when count >= 5, do: @fuse_item_2_empty_hook
-  defp filled_slot_hook(:super, count) when count >= 3, do: @fuse_item_1_empty_hook
-  defp filled_slot_hook(_shop_type, _count), do: @fuse_item_0_empty_hook
 
   def sell_gift(gift_id, ctx) do
     with :ok <- select_sell_gift(gift_id, ctx, 1),
@@ -1208,7 +1275,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   defp open_uptie_popup(ctx) do
     if Engine.check(:shop_uptie_popup),
       do: {:ok, :already_open},
-      else: Engine.act([retry_until(:shop_uptie_popup, [click(:shop_uptie, settle_ms: 50)], every: 1_500, tries: 3)], ctx)
+      else: Engine.act([retry_until(:shop_uptie_popup, [click(:shop_uptie, settle_ms: 100)], every: 1_500, tries: 3)], ctx)
   end
 
   defp commit_uptie(from, to, ctx) do
