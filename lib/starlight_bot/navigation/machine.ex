@@ -12,6 +12,7 @@ defmodule StarlightBot.Navigation.Machine do
   @loading_hooks [:loading_stage_1, :loading_stage_2]
   @loading_grace_ms 2_500
   @goto_recovery_attempts 3
+  @retry_fallback_after 2
   @refinement_timeout_ms 1_500
   @hold_poll_ms 30
   @locate_poll_ms 200
@@ -646,9 +647,17 @@ defmodule StarlightBot.Navigation.Machine do
     do: continue(%{data | result: {:ok, arrived}}, nil)
 
   defp retry_loop(loop, attempt, data) do
-    if retry_exhausted?(loop.bound, attempt),
-      do: retry_gave_up(loop, attempt, data),
-      else: push(loop.steps ++ [{:__retry_after__, loop, attempt}], nil, data)
+    cond do
+      retry_exhausted?(loop.bound, attempt) ->
+        retry_gave_up(loop, attempt, data)
+
+      attempt == @retry_fallback_after and loop.retry_if != nil ->
+        Ctx.log(data.ctx, :error, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: #{attempt} attempt(s) failed, running the fallback before retrying")
+        push(Recovery.nudge_steps() ++ loop.steps ++ [{:__retry_after__, loop, attempt}], nil, data)
+
+      true ->
+        push(loop.steps ++ [{:__retry_after__, loop, attempt}], nil, data)
+    end
   end
 
   defp retry_gave_up(loop, attempt, data) do

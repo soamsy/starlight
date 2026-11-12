@@ -16,6 +16,7 @@ defmodule StarlightBot.Navigation.Screens.StartScreen do
         [
           branch([
             {:random_confirm, [click(:random_confirm)]},
+            {:random_confirm_2, [click(:random_confirm_2)]},
             {:clear_all_caches, [click(:clear_all_caches)]},
             {:default, [click(:safe_corner)]},
           ]),

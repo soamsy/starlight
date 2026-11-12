@@ -87,16 +87,23 @@ defmodule StarlightBot.Automation.Recovery do
 
   defp close_server_error(_errors), do: []
 
-  defp fallback(then, ctx) do
-    Ctx.log(ctx, :error, "still unrecognized — trying #{@escape_hook}/esc/#{@escape_hook} to find a pickoff point")
-
+  def nudge_steps do
     escape_steps = [
       click(@escape_hook), sleep(@escape_click_sleep_ms),
       key(:esc), sleep(@escape_click_sleep_ms),
-      click(@escape_hook), sleep(@escape_click_sleep_ms)
+      click(@escape_hook), sleep(@escape_click_sleep_ms),
+      branch([
+        {:random_confirm, [click(:random_confirm)]},
+        {:random_confirm_2, [click(:random_confirm_2)]},
+      ]),
     ]
 
-    [attempt(escape_steps, else: []), locate_screen(then: then)]
+    [attempt(escape_steps, else: [])]
+  end
+
+  defp fallback(then, ctx) do
+    Ctx.log(ctx, :error, "still unrecognized — trying #{@escape_hook}/esc/#{@escape_hook} to find a pickoff point")
+    nudge_steps() ++ [locate_screen(then: then)]
   end
 
   defp deliver({mod, fun, args}, result), do: {:steps, [call(mod, fun, args ++ [result])]}
