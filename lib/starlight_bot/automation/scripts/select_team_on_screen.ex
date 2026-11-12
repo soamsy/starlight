@@ -167,7 +167,37 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
   defp log_mismatches(mismatches, ctx) do
     Ctx.log(ctx, :info, "sinner order needs clearing + reselecting:")
-    Enum.each(mismatches, &Ctx.log(ctx, :info, "  #{&1}"))
+    Enum.each(mismatches, &Ctx.log(ctx, :info, "  #{describe_mismatch(&1)}"))
+  end
+
+  defp describe_mismatch({:front, sinner}), do: "#{sinner}: expected in front line, not detected as selected"
+  defp describe_mismatch({:backup, sinner}), do: "#{sinner}: expected in backup, not detected as backup"
+  defp describe_mismatch({:extra, sinner, kind}), do: "#{sinner}: expected unplaced, detected in #{if kind == :selected, do: "front line", else: "backup"}"
+
+  defp first_sinner_survives?(extras, %{front: front, backup: backup}) do
+    sinners = front ++ backup
+    found = current_first(sinners ++ Enum.map(extras, &elem(&1, 1)))
+    found in [nil, List.first(sinners), List.last(sinners)]
+  end
+
+  defp remove_extras(extras, formation, ctx) do
+    Ctx.log(ctx, :info, "team is a subset of the current one: removing #{Enum.map_join(extras, ", ", &elem(&1, 1))}")
+
+    steps =
+      Enum.map(extras, fn {:extra, sinner, kind} -> click(sinner_hook(sinner, kind), duration_mult: 0.8) end) ++
+        [move_to(:clear_selection), sleep(@order_settle_ms)]
+
+    with {:ok, _} <- Engine.act(steps, ctx) do
+      case order_mismatches(formation) do
+        [] ->
+          Ctx.log(ctx, :ok, "removed extra sinners")
+          fix_first_sinner(formation, ctx)
+
+        mismatches ->
+          log_mismatches(mismatches, ctx)
+          reselect(formation, ctx)
+      end
+    end
   end
 
   defp reselect(formation, ctx) do
@@ -219,8 +249,12 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
           :ok
 
         mismatches ->
-          log_mismatches(mismatches, ctx)
-          reselect(formation, ctx)
+          if Enum.all?(mismatches, &match?({:extra, _, _}, &1)) and first_sinner_survives?(mismatches, formation) do
+            remove_extras(mismatches, formation, ctx)
+          else
+            log_mismatches(mismatches, ctx)
+            reselect(formation, ctx)
+          end
       end
     end
   end
@@ -266,19 +300,18 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     front_mismatches =
       front
       |> Enum.reject(&checks[sinner_hook(&1, :selected)])
-      |> Enum.map(&"#{&1}: expected in front line, not detected as selected")
+      |> Enum.map(&{:front, &1})
 
     backup_mismatches =
       backup
       |> Enum.reject(&checks[sinner_hook(&1, :backup)])
-      |> Enum.map(&"#{&1}: expected in backup, not detected as backup")
+      |> Enum.map(&{:backup, &1})
 
     unplaced_mismatches =
       unplaced
       |> Enum.filter(&(checks[sinner_hook(&1, :selected)] or checks[sinner_hook(&1, :backup)]))
       |> Enum.map(fn sinner ->
-        where = if checks[sinner_hook(sinner, :selected)], do: "front line", else: "backup"
-        "#{sinner}: expected unplaced, detected in #{where}"
+        {:extra, sinner, if(checks[sinner_hook(sinner, :selected)], do: :selected, else: :backup)}
       end)
 
     front_mismatches ++ backup_mismatches ++ unplaced_mismatches
