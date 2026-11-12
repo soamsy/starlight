@@ -32,7 +32,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @sell_nothing_selected_hook :shop_sell_popup_nothing_selected
   @sell_select_check_ms 800
   @sell_select_tries 3
-  @sell_scroll_clicks 4
+  @sell_scroll_clicks 2
   @sell_scroll_settle_ms 700
   @sell_close_every_ms 900
   @sell_confirm_steady_ms 200
@@ -44,7 +44,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @sell_popup_pass_key :shop_sell_popup_pass
   @scroll_poll_ms 50
   @scroll_still_threshold 1.0
-  @max_sell_scroll_passes 10
+  @max_sell_scroll_passes 12
   @max_gift_search_passes 8
   @scroll_to_top_clicks 12
   @uptie_commit_result_ms 1_500
