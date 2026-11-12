@@ -10,8 +10,8 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   @scroll_clicks 8
   @hefty_scroll_clicks @scroll_clicks * 2
   @scroll_settle_ms 400
-  @click_settle_ms 100
-  @order_settle_ms 300
+  @click_settle_ms 50
+  @order_settle_ms 200
   @list_ready_timeout_ms 2_000
   @scroll_down_available :team_selector_scroll_down_available
   @scroll_up_available %{
