@@ -191,7 +191,7 @@ defmodule StarlightBot.Automation.RewardHelpers do
   def click_point(point, ctx) do
     case Runner.to_screen_point(point) do
       {:ok, {sx, sy}} ->
-        Mouse.click(sx, sy, settle_ms: 70)
+        Mouse.click(sx, sy)
         {:ok, nil}
 
       {:error, reason} ->

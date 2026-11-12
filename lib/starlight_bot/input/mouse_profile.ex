@@ -9,7 +9,7 @@ defmodule StarlightBot.Input.MouseProfile do
   def scroll_delay_mult, do: @scroll_delay_mult * personality().tempo
 
   def click_hold_ms do
-    personality().click_hold_ms |> lognormal(0.25) |> round() |> max(45) |> min(180)
+    personality().click_hold_ms |> lognormal(0.25) |> round() |> max(90) |> min(160)
   end
 
   def double_click_gap_ms do
@@ -40,8 +40,8 @@ defmodule StarlightBot.Input.MouseProfile do
     %{
       tempo: between(0.85, 1.2),
       hesitation_ms: between(10.0, 90.0),
-      click_hold_ms: between(65.0, 105.0),
-      double_click_gap_ms: between(70.0, 110.0),
+      click_hold_ms: between(90.0, 120.0),
+      double_click_gap_ms: between(90.0, 120.0),
       rest: {between(0.5, 0.85), between(0.45, 0.8)},
       idle_span: {between(0.3, 0.5), between(0.3, 0.5)},
       scroll_burst: Enum.random(2..5),

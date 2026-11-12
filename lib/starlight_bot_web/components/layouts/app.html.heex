@@ -47,25 +47,38 @@
     <% status = window_status(assigns[:game_window_rect]) %>
     <% busy = assigns[:game_window_busy] %>
     <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button"
-           class={[
-             "btn btn-square btn-xs lg:btn-sm",
-             status == :exact && "btn-success",
-             status == :scaled && "btn-warning",
-             status == :bad_aspect && "btn-error animate-pulse",
-             status == :missing && "btn-neutral"
-           ]}
-           title={window_status_title(status)}>
-        <%= cond do %>
-          <% busy -> %>
-            <span class="loading loading-spinner loading-xs"></span>
-          <% status == :exact -> %>
-            <.icon name="lucide-check" class="size-4 lg:size-5" />
-          <% status == :missing -> %>
-            <.icon name="lucide-monitor" class="size-4 lg:size-5" />
-          <% true -> %>
-            <.icon name="lucide-circle-exclamation-point" class="size-4 lg:size-5" />
-        <% end %>
+      <div tabindex="0" role="button" class="btn btn-ghost btn-xs lg:btn-sm gap-0 overflow-hidden p-0">
+        <span
+          class={[
+            "flex size-6 lg:size-8 items-center justify-center",
+            status == :exact && "bg-success text-success-content",
+            status == :scaled && "bg-warning text-warning-content",
+            status == :bad_aspect && "bg-error text-error-content animate-pulse",
+            status == :missing && "bg-neutral text-neutral-content"
+          ]}
+          title={window_status_title(status)}>
+          <%= cond do %>
+            <% busy -> %>
+              <span class="loading loading-spinner loading-xs"></span>
+            <% status == :exact -> %>
+              <.icon name="lucide-check" class="size-4 lg:size-5" />
+            <% status == :missing -> %>
+              <.icon name="lucide-monitor" class="size-4 lg:size-5" />
+            <% true -> %>
+              <.icon name="lucide-circle-exclamation-point" class="size-4 lg:size-5" />
+          <% end %>
+        </span>
+        <span
+          class={[
+            "flex size-6 lg:size-8 items-center justify-center border-l border-base-100/40",
+            if(scheduler_on, do: "bg-success text-success-content", else: "bg-base-200 text-base-content/40")
+          ]}
+          title={if(scheduler_on, do: "Scheduler on", else: "Scheduler off")}>
+          <span :if={assigns[:run_live]} class="loading loading-spinner loading-xs lg:loading-sm"></span>
+          <%= unless assigns[:run_live] do %>
+          <.icon name={if scheduler_on, do: "lucide-clock", else: "lucide-timer-off"} class="size-4 lg:size-5" />
+          <% end %>
+        </span>
       </div>
       <div tabindex="0" class={[
         "dropdown-content z-50 mt-2 w-72 rounded-lg border bg-base-100 p-3 shadow-lg text-xs",
@@ -74,13 +87,34 @@
         status == :bad_aspect && "border-error",
         status == :missing && "border-base-300"
       ]}>
+        <button :if={assigns[:run_live]} type="button" phx-click="run_cancel" onclick="document.activeElement.blur()" class="btn btn-error btn-xs w-full mb-2">Cancel</button>
+        <div class="flex items-center justify-between gap-2">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" class="toggle toggle-xs toggle-success" checked={runs_on} phx-click="scheduler_toggle" />
+            <span class="font-semibold">Daily runs</span>
+          </label>
+          <button type="button" phx-click="settings_open" onclick="document.activeElement.blur()"
+                  class="btn btn-ghost btn-square btn-xs text-base-content/60">
+            <.icon name="lucide-sliders-horizontal" class="size-4" />
+          </button>
+        </div>
+        <label class="mt-2 flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" class="toggle toggle-xs toggle-success" checked={charger_on} phx-click="enkephalin_toggle" />
+          <span class="font-semibold">Enkephalin charger</span>
+        </label>
+        <div class={["mt-2 font-mono", !scheduler_on && "text-base-content/30"]}>{overview && overview.label}</div>
+        <div :if={overview && overview.runs_text} class="mt-1 text-base-content/60"><span class="font-semibold text-base-content/80">Runs:</span> {overview.runs_text}</div>
+        <div :if={overview && overview.charge_text} class="mt-1 text-base-content/60"><span class="font-semibold text-base-content/80">Charger:</span> {overview.charge_text}</div>
+        <div class="mt-2"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={overview && overview.blocked} pending={overview && overview.runs_pending} /></div>
+        <div class="divider my-2"></div>
         <div class={[
-          "font-semibold mb-2",
+          "flex items-center justify-between gap-2 font-semibold mb-2",
           status == :exact && "text-success",
           status == :scaled && "text-warning",
           status == :bad_aspect && "text-error"
         ]}>
-          {window_status_title(status)}
+          <span>{window_status_title(status)}</span>
+          <button :if={status != :missing} class="btn btn-xs font-normal text-base-content" phx-click="game_window_poke" disabled={busy != nil or assigns[:run_live] == true}>Poke</button>
         </div>
         <%= if status == :missing do %>
           <%= if launch = assigns[:game_launch_label] do %>
@@ -104,9 +138,6 @@
           <% end %>
         <% else %>
           <% {_x, _y, w, h} = @game_window_rect %>
-          <button :if={!assigns[:run_live]} class="btn btn-error btn-outline btn-xs w-full mb-2" phx-click="game_window_close" data-confirm="Close Limbus? Any unsaved progress in the game will be lost." disabled={busy != nil}>
-            Close Limbus
-          </button>
           <table class="w-full">
             <tbody>
               <tr>
@@ -134,42 +165,10 @@
           <%= if busy do %>
             <div class="mt-1 text-base-content/60">{String.capitalize(busy)}…</div>
           <% end %>
-          <div class="mt-2 flex justify-end">
-            <button class="btn btn-xs" phx-click="game_window_poke" disabled={busy != nil or assigns[:run_live] == true}>Poke</button>
-          </div>
-        <% end %>
-      </div>
-    </div>
-
-    <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button"
-           class={["btn btn-square btn-xs lg:btn-sm", if(scheduler_on, do: "btn-success", else: "btn-ghost text-base-content/40")]}
-           title={if(scheduler_on, do: "Scheduler on", else: "Scheduler off")}>
-        <span :if={assigns[:run_live]} class="loading loading-spinner loading-xs lg:loading-sm"></span>
-        <%= unless assigns[:run_live] do %>
-        <.icon name={if scheduler_on, do: "lucide-clock", else: "lucide-timer-off"} class="size-4 lg:size-5" />
-        <% end %>
-      </div>
-      <div tabindex="0" class={["dropdown-content z-50 mt-2 w-72 rounded-lg border bg-base-100 p-3 shadow-lg text-xs", if(scheduler_on, do: "border-success", else: "border-base-300")]}>
-        <button :if={assigns[:run_live]} type="button" phx-click="run_cancel" onclick="document.activeElement.blur()" class="btn btn-error btn-xs w-full mb-2">Cancel</button>
-        <div class="flex items-center justify-between gap-2">
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" class="toggle toggle-xs toggle-success" checked={runs_on} phx-click="scheduler_toggle" />
-            <span class="font-semibold">Daily runs</span>
-          </label>
-          <button type="button" phx-click="settings_open" onclick="document.activeElement.blur()"
-                  class="btn btn-ghost btn-square btn-xs text-base-content/60">
-            <.icon name="lucide-sliders-horizontal" class="size-4" />
+          <button :if={!assigns[:run_live]} class="btn btn-error btn-outline btn-xs w-full mt-2" phx-click="game_window_close" data-confirm="Close Limbus? Any unsaved progress in the game will be lost." disabled={busy != nil}>
+            Close Limbus
           </button>
-        </div>
-        <label class="mt-2 flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" class="toggle toggle-xs toggle-success" checked={charger_on} phx-click="enkephalin_toggle" />
-          <span class="font-semibold">Enkephalin charger</span>
-        </label>
-        <div class={["mt-2 font-mono", !scheduler_on && "text-base-content/30"]}>{overview && overview.label}</div>
-        <div :if={overview && overview.runs_text} class="mt-1 text-base-content/60"><span class="font-semibold text-base-content/80">Runs:</span> {overview.runs_text}</div>
-        <div :if={overview && overview.charge_text} class="mt-1 text-base-content/60"><span class="font-semibold text-base-content/80">Charger:</span> {overview.charge_text}</div>
-        <div class="mt-2"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={overview && overview.blocked} pending={overview && overview.runs_pending} /></div>
+        <% end %>
       </div>
     </div>
 

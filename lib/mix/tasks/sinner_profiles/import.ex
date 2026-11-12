@@ -19,9 +19,9 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
   @gll_sins %{"glut" => "gluttony"}
 
   @region {60, 972, 45, 40}
-  @scan_region {60, 972, 1800, 40}
+  @scan_region {40, 972, 1840, 40}
   @match_method "gray"
-  @confidence 0.79
+  @confidence 0.77
 
   @impl Mix.Task
   def run(_args) do

@@ -11,7 +11,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   @scroll_clicks 8
   @hefty_scroll_clicks @scroll_clicks * 2
   @scroll_settle_ms 200
-  @click_settle_ms 50
+  @click_settle_ms 100
   @order_settle_ms 200
   @list_ready_timeout_ms 2_000
   @scroll_down_available :team_selector_scroll_down_available
@@ -28,7 +28,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   def prepare_team(team, hook, ctx) do
-    with {:ok, _} <- Engine.act([click(hook, settle_ms: @click_settle_ms), sleep(@click_settle_ms)], ctx),
+    with {:ok, _} <- Engine.act([click(hook, settle_ms: @click_settle_ms)], ctx),
          {:ok, checks} <- check_selectors(ctx) do
       maybe_select_order(checks.clear_selection or checks.sinner_count_0, first_lineup_sinners(team, ctx), ctx)
     end
@@ -185,7 +185,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     Ctx.log(ctx, :info, "team is a subset of the current one: removing #{Enum.map_join(extras, ", ", &elem(&1, 1))}")
 
     steps =
-      Enum.map(extras, fn {:extra, sinner, kind} -> click(sinner_hook(sinner, kind), duration_mult: 0.65) end) ++
+      Enum.map(extras, fn {:extra, sinner, kind} -> click(sinner_hook(sinner, kind), settle_ms: @click_settle_ms) end) ++
         [move_to(:clear_selection), sleep(@order_settle_ms)]
 
     with {:ok, _} <- Engine.act(steps, ctx) do
@@ -354,7 +354,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
       Ctx.log(ctx, :info, "looking for #{hook} in team selector (#{selector})")
 
       with true <- find_team(hook, selector, ctx),
-           {:ok, _} <- Engine.act([click(hook, settle_ms: @click_settle_ms), sleep(@click_settle_ms)], ctx) do
+           {:ok, _} <- Engine.act([click(hook, settle_ms: @click_settle_ms)], ctx) do
         Ctx.log(ctx, :ok, "selected #{hook}")
         {:ok, hook}
       else

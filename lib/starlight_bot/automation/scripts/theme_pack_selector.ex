@@ -447,7 +447,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   end
 
   defp enable_pack_search(clicks_left, ctx) do
-    with {:ok, _} <- Engine.act([click(:theme_pack_select_pack_search, settle_ms: 50)], ctx) do
+    with {:ok, _} <- Engine.act([click(:theme_pack_select_pack_search)], ctx) do
       clicked_at = System.monotonic_time(:millisecond)
 
       case poll_leftmost_refresh_icon(@search_icon_poll_tries) do
@@ -518,7 +518,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     click_rect_center(frame, rect)
 
     steps =
-      [click(:theme_pack_search_popup_black_confirm, settle_ms: 50)] ++
+      [click(:theme_pack_search_popup_black_confirm)] ++
       confirm_enter(:theme_pack_search_popup_white_confirm)
 
     with {:ok, _} <- Engine.act(steps, ctx) do
