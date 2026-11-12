@@ -872,12 +872,19 @@ defmodule StarlightBot.Automation.Shop.Ops do
   defp collect_chance_comet_gift(_target, _ctx), do: {:ok, nil}
 
   defp stage_fusion(target, click_plan, ctx, attempt) do
-    with {:ok, _} <- ensure_fuse_popup(ctx),
+    with {:ok, opened} <- ensure_fuse_popup(ctx),
+         :ok <- dismiss_reused_popup_info(opened, ctx),
          :ok <- select_affinity(target, ctx),
          {:ok, ids} <- select_fuse_ingredients(target, click_plan, ctx) do
       settle_merge_area(target, click_plan, ids, ctx, attempt)
     end
   end
+
+  defp dismiss_reused_popup_info(:already_open, ctx) do
+    with {:ok, _} <- Engine.act([click(@fuse_dismiss_info_hook, missing: :ok)], ctx), do: :ok
+  end
+
+  defp dismiss_reused_popup_info(_opened, _ctx), do: :ok
 
   defp settle_merge_area(target, click_plan, ids, ctx, attempt) do
     needed = Enum.frequencies(ids)
