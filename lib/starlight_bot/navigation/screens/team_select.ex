@@ -17,7 +17,7 @@ defmodule StarlightBot.Navigation.Screens.TeamSelect do
     transition to: :exit_team_select, do: [key(:esc)]
     transition to: :grace do
       [
-        retry_until_arrived([key(:enter)], every: 200, timeout: 10_000)
+        retry_until(:grace_available, [key(:enter)], every: 200, timeout: 10_000)
       ]
     end
   end
