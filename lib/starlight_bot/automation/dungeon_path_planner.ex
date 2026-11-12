@@ -64,6 +64,9 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
     end
   end
 
+  defp arrival_hooks([]), do: @node_arrival_hooks
+  defp arrival_hooks(_shop_exit), do: @node_arrival_hooks -- [:shop, :shop_super]
+
   defp advance(direction, kind, venue, leading_clauses, ctx) do
     cond do
     kind in [:battle, :hard_battle, :risky_battle, :boss] and formation_set?(venue, ctx) ->
@@ -75,11 +78,11 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
           branch(leading_clauses ++ [gift_popup_clause(), {:default, [key(direction), key(:enter)]}])
         ], every: 100, timeout: 8_000)
       ] ++ loading() ++ [premove(:battle_safe_click_spot), await(:battle_settings, timeout: 5_000, premove: false)], ctx)
-    kind in [:battle, :hard_battle, :risky_battle, :boss] ->
+    kind in [:battle, :hard_battle, :risky_battle, :boss, :unknown] ->
       Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead, moving to team select")
 
       Engine.act([
-        retry_until(any_of([:team_selector, :team_selector_tall, :team_selector_gone]),
+        retry_until(any_of(arrival_hooks(leading_clauses)),
         [
           premove(:clear_selection),
           branch(leading_clauses ++ [
