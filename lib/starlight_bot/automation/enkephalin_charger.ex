@@ -22,13 +22,58 @@ defmodule StarlightBot.Automation.EnkephalinCharger do
 
   def max_convert_count, do: @max_convert_count
 
-  def steps(from, 0), do: [goto(from, :home, then: {__MODULE__, :at_home, []})]
+  def steps(from, count) when is_integer(count) and count in 0..@max_convert_count do
+    [goto(from, :charge_enkephalin_modules_tab, then: {__MODULE__, :at_entry, [count]})]
+  end
 
-  def steps(from, count) when is_integer(count) and count in 1..@max_convert_count do
-    [
-      log(:info, "charging enkephalin (up to #{count} lunacy spend(s))"),
-      goto(from, :charge_enkephalin_lunacy_tab, then: {__MODULE__, :at_lunacy_tab, [count]})
-    ]
+  def at_entry(count, {:ok, modules_tab}, _frame, ctx) do
+    if Engine.check(:charge_enkephalin_nothing_to_convert) do
+      at_entry_empty(count, modules_tab, ctx)
+    else
+      at_entry_stocked(count, modules_tab, ctx)
+    end
+  end
+
+  def at_entry(_count, {:error, _} = err, _frame, _ctx), do: err
+
+  defp at_entry_empty(0, modules_tab, ctx) do
+    Ctx.log(ctx, :info, "nothing to convert and no lunacy conversions allowed, leaving popup")
+    {:steps, [goto(modules_tab, :home)]}
+  end
+
+  defp at_entry_empty(count, modules_tab, ctx) do
+    Ctx.log(ctx, :info, "nothing to convert, charging enkephalin (up to #{count} lunacy spend(s))")
+    {:steps, [goto(modules_tab, :charge_enkephalin_lunacy_tab, then: {__MODULE__, :at_lunacy_tab_empty, [count]})]}
+  end
+
+  defp at_entry_stocked(0, modules_tab, _ctx),
+    do: {:steps, [goto(modules_tab, :home, then: {__MODULE__, :at_home, []})]}
+
+  defp at_entry_stocked(count, modules_tab, _ctx) do
+    {:steps,
+     [
+       log(:info, "charging enkephalin (up to #{count} lunacy spend(s))"),
+       goto(modules_tab, :charge_enkephalin_lunacy_tab, then: {__MODULE__, :at_lunacy_tab, [count]})
+     ]}
+  end
+
+  def at_lunacy_tab_empty(count, {:ok, lunacy_tab}, _frame, ctx) do
+    before = detect_spent_count(ctx)
+    {:steps, [call(__MODULE__, :spend_lunacy, [count]), call(__MODULE__, :after_empty_spend, [before, lunacy_tab])]}
+  end
+
+  def at_lunacy_tab_empty(_count, {:error, _} = err, _frame, _ctx), do: err
+
+  def after_empty_spend(before, lunacy_tab, _frame, ctx) do
+    case {before, detect_spent_count(ctx)} do
+      {{:ok, b}, {:ok, a}} when a > b ->
+        Ctx.log(ctx, :info, "lunacy spent, converting to modules")
+        {:steps, make_modules_from(lunacy_tab)}
+
+      _ ->
+        Ctx.log(ctx, :info, "no lunacy spent and nothing to convert, leaving popup")
+        {:steps, [goto(lunacy_tab, :home)]}
+    end
   end
 
   def at_home({:ok, home}, _frame, ctx) do
