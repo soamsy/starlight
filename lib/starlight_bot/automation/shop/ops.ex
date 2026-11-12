@@ -1008,13 +1008,28 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp select_fuse_ingredients(target, {:strict, ingredient_ids}, ctx) do
-    scroll_popup_to_top(@fuse_popup, ctx, 0)
+    if fixed_target?(target) do
+      scroll_popup_to_top(@fuse_popup, ctx, 0)
+    end
 
     if click_fixed_shortcut(target, ctx) do
       {:ok, ingredient_ids}
     else
-      scroll_popup_to_bottom(@fuse_popup, ctx, 0)
-      select_fuse_pass({:strict, Enum.frequencies(ingredient_ids), %{}}, ctx, 0, false)
+      select_visible_then_scroll({:strict, Enum.frequencies(ingredient_ids), %{}}, ctx)
+    end
+  end
+
+  defp fixed_target?(%{fixed_id: _}), do: true
+  defp fixed_target?(_target), do: false
+
+  defp select_visible_then_scroll(state, ctx) do
+    with {:ok, state_after} <- scan_and_click_fuse_items(state, ctx) do
+      if fuse_selection_done?(state_after) do
+        {:ok, clicked_ids(state_after)}
+      else
+        scroll_popup_to_bottom(@fuse_popup, ctx, 0)
+        select_fuse_pass(state_after, ctx, 0, false)
+      end
     end
   end
 
