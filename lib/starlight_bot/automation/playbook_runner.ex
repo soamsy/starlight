@@ -26,7 +26,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @target_tries 2
   @bad_target_radius_px 50
   @drop_ready_timeout_ms 1_000
-  @skill_hover_ms 100
+  @skill_hover_ms 50
   @screen_mid_x 960
   @skill_grab_inward_pct 0.03
   @skill_grab_depth_pct 0.6
@@ -350,7 +350,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     with {:ok, {sx, sy}} <- skill_point(tray, column, row, ctx) do
       Ctx.log(ctx, :info, "playbook: choosing the #{row} skill on slot #{column + 1} without a target")
       Mouse.click(sx, sy)
-      Process.sleep(@slot_click_settle_ms)
+      Mouse.dwell(@slot_click_settle_ms)
     end
   end
 
@@ -376,7 +376,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     with {:ok, {sx, sy}} <- slot_point(tray, column, ctx) do
       Ctx.log(ctx, :info, "playbook: dodge on slot #{column + 1}")
       Mouse.click(sx, sy)
-      Process.sleep(@slot_click_settle_ms)
+      Mouse.dwell(@slot_click_settle_ms)
     end
   end
 
@@ -475,7 +475,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       if action["corrode"], do: overclock(cx, cy, ctx)
 
       Mouse.click(cx, cy)
-      Process.sleep(@ego_reclick_wait_ms)
+      Mouse.dwell(@ego_reclick_wait_ms)
 
       unless await(DSL.not_hook(@ego_menu), 0), do: Mouse.click(cx, cy)
 
@@ -511,7 +511,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     Mouse.mouse_down()
     warned? = await(@overclocked, @overclock_timeout_ms)
     Mouse.mouse_up()
-    Process.sleep(@overclock_release_settle_ms)
+    Mouse.dwell(@overclock_release_settle_ms)
 
     if warned?,
       do: Ctx.log(ctx, :info, "playbook: overclock applied, confirming"),
@@ -691,7 +691,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp drag_once({gx, gy}, enemy, ctx) do
     Mouse.move_to(gx, gy)
-    Process.sleep(@skill_hover_ms)
+    Mouse.dwell(@skill_hover_ms)
+    Mouse.move_to(gx, gy)
     Mouse.mouse_down()
 
     settle = if RunMemory.get(ctx, :target_panned?, false), do: [], else: [DSL.sleep(@target_pan_settle_ms)]
@@ -706,7 +707,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       end
     after
       Mouse.mouse_up()
-      Process.sleep(@target_release_settle_ms)
+      Mouse.dwell(@target_release_settle_ms, jitter_px: 2)
     end
   end
 
@@ -764,7 +765,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp still_hovering?(point, ctx) do
-    Process.sleep(@target_found_hold_ms)
+    Mouse.dwell(@target_found_hold_ms)
     hovering?(point, 0, ctx)
   end
 
@@ -806,7 +807,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
         false
 
       true ->
-        Process.sleep(@poll_ms)
+        Mouse.dwell(@poll_ms)
         poll_hover(point, deadline, ctx)
     end
   end

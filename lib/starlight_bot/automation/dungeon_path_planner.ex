@@ -7,6 +7,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
   alias StarlightBot.Ctx
   alias StarlightBot.{Data, RunHistory}
   alias StarlightBot.Vision.{Capture, DungeonGraph, HookRegistry, Matcher}
+  alias StarlightBot.Input.Mouse
 
   @levels DungeonGraph.levels()
   @ready_timeout_ms 3_000
@@ -218,7 +219,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
             if System.monotonic_time(:millisecond) >= deadline do
               with_frame(result, frame)
             else
-              Process.sleep(@ready_poll_ms)
+              Mouse.dwell(@ready_poll_ms)
               await_ready_graph(deadline, ctx)
             end
         end

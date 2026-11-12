@@ -2,6 +2,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
   alias StarlightBot.Automation.{Engine, RunMemory}
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.{Ctx, GiftPlans, Teams}
+  alias StarlightBot.Input.Mouse
 
   @menu_check_ms 1_000
   @heal_settle_poll_ms 200
@@ -124,7 +125,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
     if settled? or now() >= deadline do
       statuses
     else
-      Process.sleep(@first_check_poll_ms)
+      Mouse.dwell(@first_check_poll_ms)
       poll_statuses(sinners, fullness_sinners, deadline)
     end
   end
@@ -141,13 +142,13 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
       full?(sinner) -> true
       now() >= deadline -> false
       true ->
-        Process.sleep(@first_check_poll_ms)
+        Mouse.dwell(@first_check_poll_ms)
         poll_full(sinner, deadline)
     end
   end
 
   defp await_settled(sinner, previous, deadline) do
-    Process.sleep(@heal_settle_poll_ms)
+    Mouse.dwell(@heal_settle_poll_ms)
     current = Ops.sinner_full_reading(sinner)
 
     if steady?(previous, current) or now() >= deadline,

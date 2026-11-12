@@ -5,11 +5,12 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   alias StarlightBot.{BattlePlans, Plans, Teams}
   alias StarlightBot.Vision.{Capture, HookRegistry, Matcher}
   alias StarlightBot.BattlePlans.Resolver
+  alias StarlightBot.Input.Mouse
 
   @max_sweep_scrolls 14
   @scroll_clicks 8
   @hefty_scroll_clicks @scroll_clicks * 2
-  @scroll_settle_ms 400
+  @scroll_settle_ms 200
   @click_settle_ms 50
   @order_settle_ms 200
   @list_ready_timeout_ms 2_000
@@ -184,7 +185,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     Ctx.log(ctx, :info, "team is a subset of the current one: removing #{Enum.map_join(extras, ", ", &elem(&1, 1))}")
 
     steps =
-      Enum.map(extras, fn {:extra, sinner, kind} -> click(sinner_hook(sinner, kind), duration_mult: 0.8) end) ++
+      Enum.map(extras, fn {:extra, sinner, kind} -> click(sinner_hook(sinner, kind), duration_mult: 0.65) end) ++
         [move_to(:clear_selection), sleep(@order_settle_ms)]
 
     with {:ok, _} <- Engine.act(steps, ctx) do
@@ -413,7 +414,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp select_top_team(ctx, top_team) do
-    Process.sleep(@scroll_settle_ms)
+    Mouse.dwell(@scroll_settle_ms)
 
     case Engine.act([click(top_team)], ctx) do
       {:ok, _} ->

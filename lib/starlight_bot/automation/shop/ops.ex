@@ -5,7 +5,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   alias StarlightBot.EgoGifts
   alias StarlightBot.FailureShot
   alias StarlightBot.GiftPlans
-  alias StarlightBot.Input.Leeway
+  alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.Teams
   alias StarlightBot.Vision.{Capture, EgoGiftDetector, Frame, HookRegistry, Matcher, NumberScanner}
 
@@ -617,7 +617,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
           {:ok, scanned}
 
         true ->
-          Process.sleep(@new_shelf_poll_ms)
+          Mouse.dwell(@new_shelf_poll_ms)
           settled_shelf_scan(scanned, deadline, ctx)
       end
     end
@@ -649,7 +649,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
         Ctx.log(ctx, :info, "shop shelf: no settled new shelf within #{@new_shelf_timeout_ms}ms of refresh, moving on")
 
       true ->
-        Process.sleep(@new_shelf_poll_ms)
+        Mouse.dwell(@new_shelf_poll_ms)
         poll_new_shelf(before_ids, signature, started_at, deadline, ctx)
     end
   end
@@ -1422,7 +1422,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     if System.monotonic_time(:millisecond) >= deadline do
       if previous == nil, do: :unmoved, else: :moved
     else
-      Process.sleep(@scroll_poll_ms)
+      Mouse.dwell(@scroll_poll_ms)
 
       case Capture.grab_frame() do
         {:ok, frame} ->
@@ -1460,7 +1460,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
       RunMemory.put_cost(ctx, previous)
     else
       result when tries_left > 1 ->
-        Process.sleep(@cost_read_every_ms)
+        Mouse.dwell(@cost_read_every_ms)
         next = with {:ok, cost} <- result, do: cost, else: (_ -> nil)
         detect_and_update_cost(tries_left - 1, next, ctx)
 

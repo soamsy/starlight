@@ -98,7 +98,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
         if System.monotonic_time(:millisecond) >= deadline do
           :timeout
         else
-          Process.sleep(@ready_poll_every_ms)
+          Mouse.dwell(@ready_poll_every_ms)
           poll_mode_frame(deadline)
         end
     end
@@ -153,7 +153,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
   defp position_cursor_at_refresh(ctx) do
     with {:ok, _} <- Engine.act([move_to(:theme_pack_select_refresh)], ctx) do
-      Process.sleep(@refresh_hover_settle_ms)
+      Mouse.dwell(@refresh_hover_settle_ms)
       Capture.grab_frame()
     end
   end
@@ -186,7 +186,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
           not Runner.hook_matches?(frame, :theme_pack_select_ready) -> :dropped
           System.monotonic_time(:millisecond) >= deadline -> :timeout
           true ->
-            Process.sleep(@refresh_drop_poll_every_ms)
+            Mouse.dwell(@refresh_drop_poll_every_ms)
             poll_ready_drop(deadline)
         end
 
@@ -194,7 +194,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
         if System.monotonic_time(:millisecond) >= deadline do
           :timeout
         else
-          Process.sleep(@refresh_drop_poll_every_ms)
+          Mouse.dwell(@refresh_drop_poll_every_ms)
           poll_ready_drop(deadline)
         end
     end
@@ -211,12 +211,12 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
         if Enum.all?(hooks, &Runner.hook_matches?(frame, &1)) do
           {:ok, frame}
         else
-          Process.sleep(@ready_poll_every_ms)
+          Mouse.dwell(@ready_poll_every_ms)
           poll_hooks(hooks, tries_left - 1, ctx)
         end
 
       {:error, _} ->
-        Process.sleep(@ready_poll_every_ms)
+        Mouse.dwell(@ready_poll_every_ms)
         poll_hooks(hooks, tries_left - 1, ctx)
     end
   end
@@ -252,12 +252,12 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
         if current_mode(frame) == expected_mode do
           {:ok, frame}
         else
-          Process.sleep(@ready_poll_every_ms)
+          Mouse.dwell(@ready_poll_every_ms)
           verify_mode(expected_mode, tries_left - 1, ctx)
         end
 
       {:error, _} ->
-        Process.sleep(@ready_poll_every_ms)
+        Mouse.dwell(@ready_poll_every_ms)
         verify_mode(expected_mode, tries_left - 1, ctx)
     end
   end
@@ -473,7 +473,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
       {:ok, frame, Enum.min_by(icons, fn {x, _y, _w, _h} -> x end)}
     else
       _ ->
-        Process.sleep(@search_poll_every_ms)
+        Mouse.dwell(@search_poll_every_ms)
         poll_leftmost_refresh_icon(tries_left - 1)
     end
   end
@@ -507,7 +507,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
           if fast_steps > 0 do
             scroll_to_pack(search_hook, {fast_steps - 1, settle_steps}, ctx)
           else
-            Process.sleep(@search_scroll_settle_ms)
+            Mouse.dwell(@search_scroll_settle_ms)
             scroll_to_pack(search_hook, {0, settle_steps - 1}, ctx)
           end
         end
@@ -550,7 +550,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
             end
 
           true ->
-            Process.sleep(@search_poll_every_ms)
+            Mouse.dwell(@search_poll_every_ms)
             await_search_popup_closed(search_hook, tries_left - 1)
         end
 
@@ -558,7 +558,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
         :closed
 
       {:error, _} ->
-        Process.sleep(@search_poll_every_ms)
+        Mouse.dwell(@search_poll_every_ms)
         await_search_popup_closed(search_hook, tries_left - 1)
     end
   end
@@ -572,7 +572,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
       {:ok, rect}
     else
       _ ->
-        Process.sleep(@ready_poll_every_ms)
+        Mouse.dwell(@ready_poll_every_ms)
         poll_replaced_pack(hook, tries_left - 1)
     end
   end
@@ -612,7 +612,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
             {:none, frame}
 
           true ->
-            Process.sleep(@scan_poll_every_ms)
+            Mouse.dwell(@scan_poll_every_ms)
 
             case Capture.grab_frame() do
               {:ok, next_frame} -> scan_until(next_frame, wanted, pool, pack_count, seen, deadline, plan_data, mode, floor, ctx)
@@ -789,7 +789,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
       {:ok, true_x}
     else
       _ ->
-        Process.sleep(@ready_poll_every_ms)
+        Mouse.dwell(@ready_poll_every_ms)
         recheck_x(hook, expected_x, tries_left - 1, ctx)
     end
   end
@@ -802,14 +802,14 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     case Capture.grab_frame() do
       {:ok, frame} ->
         if Runner.hook_matches?(frame, :theme_pack_select) do
-          Process.sleep(@drag_confirm_poll_every_ms)
+          Mouse.dwell(@drag_confirm_poll_every_ms)
           poll_gone(tries_left - 1, ctx)
         else
           true
         end
 
       {:error, _} ->
-        Process.sleep(@drag_confirm_poll_every_ms)
+        Mouse.dwell(@drag_confirm_poll_every_ms)
         poll_gone(tries_left - 1, ctx)
     end
   end

@@ -2,6 +2,7 @@ defmodule StarlightBot.Navigation.Runner do
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.{Vision.Capture, Vision.Frame, Vision.Matcher}
   alias StarlightBot.Navigation.{Action, Catalog, Machine, Screen}
+  alias StarlightBot.Input.Mouse
 
   @poll_interval_ms 100
   @fallback_settle_ms 2_000
@@ -124,7 +125,7 @@ defmodule StarlightBot.Navigation.Runner do
         ok
 
       true ->
-        Process.sleep(@poll_interval_ms)
+        Mouse.dwell(@poll_interval_ms)
 
         case recheck.() do
           {:ok, _} = next -> settle_fallback(next, recheck, deadline)
