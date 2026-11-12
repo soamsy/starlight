@@ -33,7 +33,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @sell_select_check_ms 800
   @sell_select_tries 3
   @sell_scroll_clicks 4
-  @sell_scroll_settle_ms 400
+  @sell_scroll_settle_ms 700
   @sell_close_every_ms 250
   @sell_confirm_steady_ms 200
   @sell_confirm_steady_timeout_ms 1_500
@@ -1428,7 +1428,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
         {:ok, frame} ->
           cond do
             previous == nil and same_region?(frame, before, region) -> await_scroll_settled(region, before, nil, deadline)
-            previous != nil and same_region?(frame, previous, region) -> :moved
+            previous != nil and same_region?(frame, previous, region) ->
+              if same_region?(frame, before, region), do: :unmoved, else: :moved
             true -> await_scroll_settled(region, before, frame, deadline)
           end
 

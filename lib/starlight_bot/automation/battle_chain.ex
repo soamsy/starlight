@@ -60,7 +60,9 @@ defmodule StarlightBot.Automation.BattleChain do
 
     with {:ok, [start_screen | move_screens]} <- to_screen_points([start | Enum.map(moves, &elem(&1, 0))]) do
       Ctx.log(ctx, :info, "battle_chain: dragging chain #{mode} across #{tray.skill_num} slot(s)")
-      run_drag(start_screen, Enum.zip(move_screens, Enum.map(moves, &elem(&1, 1))))
+      {_, py} = start
+      arcs = moves |> Enum.map_reduce(py, fn {{_x, y}, _ms}, prev_y -> {if(y == prev_y, do: arc_for(y, tray)), y} end) |> elem(0)
+      run_drag(start_screen, Enum.zip([move_screens, Enum.map(moves, &elem(&1, 1)), arcs]))
       :ok
     end
   end
@@ -109,10 +111,18 @@ defmodule StarlightBot.Automation.BattleChain do
     Enum.reverse(points)
   end
 
+  defp arc_for(y, tray) do
+    cond do
+      y == tray.chain_top_y -> :upper
+      y == tray.chain_bottom_y -> :lower
+      true -> nil
+    end
+  end
+
   defp run_drag({gx, gy}, moves) do
     Mouse.move_to(gx, gy, duration_mult: @chain_duration_mult)
     Mouse.mouse_down()
-    Enum.each(moves, fn {{x, y}, ms} -> Mouse.move_to(x, y, duration_override: ms) end)
+    Enum.each(moves, fn {{x, y}, ms, arc} -> Mouse.move_to(x, y, duration_override: ms, arc: arc) end)
     Mouse.mouse_up()
   end
 

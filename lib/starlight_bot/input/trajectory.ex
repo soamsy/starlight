@@ -39,16 +39,18 @@ defmodule StarlightBot.Input.Trajectory do
   @type point :: {float, float}
   @type waypoint :: {float, float, float}
 
-  @spec build(point, point, point, number | {:duration_ms, number}) :: [waypoint]
-  def build(from, to, vel_in, {:duration_ms, duration_ms}) do
-    human_trajectory(from, to, vel_in, fn _dist -> duration_ms * 1.0 end)
+  @spec build(point, point, point, number | {:duration_ms, number}, :upper | :lower | nil) :: [waypoint]
+  def build(from, to, vel_in, profile, arc \\ nil)
+
+  def build(from, to, vel_in, {:duration_ms, duration_ms}, arc) do
+    human_trajectory(from, to, vel_in, fn _dist -> duration_ms * 1.0 end, arc)
   end
 
-  def build(from, to, vel_in, duration_mult) when is_number(duration_mult) do
-    human_trajectory(from, to, vel_in, &(sample_duration(&1) * duration_mult))
+  def build(from, to, vel_in, duration_mult, arc) when is_number(duration_mult) do
+    human_trajectory(from, to, vel_in, &(sample_duration(&1) * duration_mult), arc)
   end
 
-  defp human_trajectory(from, to, vel_in, base_duration) do
+  defp human_trajectory(from, to, vel_in, base_duration, arc) do
     dist = distance(from, to)
 
     if dist < 1.0 do
@@ -64,11 +66,11 @@ defmodule StarlightBot.Input.Trajectory do
           start = primary_duration * (@correction_start_min + :rand.uniform() * (@correction_start_max - @correction_start_min))
 
           [
-            submovement(from, landing, 0.0, primary_duration, shape(dist)),
+            submovement(from, landing, 0.0, primary_duration, shape(from, to, arc)),
             submovement(landing, to, start, corrective_duration_ms(distance(landing, to)), @flat)
           ]
         else
-          [from |> submovement(to, 0.0, duration, shape(dist)) |> with_approach()]
+          [from |> submovement(to, 0.0, duration, shape(from, to, arc)) |> with_approach()]
         end
 
       sample(from, to, vel_in, submovements)
@@ -252,11 +254,19 @@ defmodule StarlightBot.Input.Trajectory do
 
   defp bow_fraction(dist), do: @bow_median_fraction + @bow_short_boost * :math.exp(-dist / @bow_short_scale_px)
 
-  defp shape(dist) do
-    sign = if :rand.uniform() < 0.5, do: -1.0, else: 1.0
+  defp bow_sign(_from, _to, nil), do: if(:rand.uniform() < 0.5, do: -1.0, else: 1.0)
+
+  defp bow_sign(from, to, arc) do
+    {_px, py} = perpendicular(from, to)
+    up = if py > 0.0, do: -1.0, else: 1.0
+    if arc == :upper, do: up, else: -up
+  end
+
+  defp shape(from, to, arc) do
+    dist = distance(from, to)
 
     %{
-      bow: sign * min(dist * bow_fraction(dist) * :math.exp(:rand.normal(0.0, @bow_sigma)), min(@bow_max_px, dist * @bow_max_fraction)),
+      bow: bow_sign(from, to, arc) * min(dist * bow_fraction(dist) * :math.exp(:rand.normal(0.0, @bow_sigma)), min(@bow_max_px, dist * @bow_max_fraction)),
       s_curve: :rand.normal(0.0, dist * @s_curve_fraction),
       asym: @asym_min + :rand.uniform() * (@asym_max - @asym_min),
       drift: min(dist * @drift_fraction, @drift_max_px),

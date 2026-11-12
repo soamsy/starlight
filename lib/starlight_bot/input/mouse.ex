@@ -410,7 +410,7 @@ defmodule StarlightBot.Input.Mouse do
         duration_ms -> {:duration_ms, duration_ms}
       end
 
-    waypoints = Trajectory.build({fx * 1.0, fy * 1.0}, {tx * 1.0, ty * 1.0}, {vx, vy}, profile)
+    waypoints = Trajectory.build({fx * 1.0, fy * 1.0}, {tx * 1.0, ty * 1.0}, {vx, vy}, profile, Keyword.get(opts, :arc))
 
     play_trajectory(from_pos, waypoints)
     last_vel = terminal_velocity(waypoints)
