@@ -428,6 +428,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     keys
     |> Enum.map(&DSL.key/1)
     |> Enum.intersperse(DSL.sleep(@key_gap_ms))
+    |> then(&[DSL.premove(:battle_safe_click_spot) | &1])
     |> Runner.run_steps(ctx)
   end
 
