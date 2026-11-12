@@ -11,15 +11,12 @@ defmodule StarlightBot.Input.DwellTest do
     {Agent.get(agent, &Enum.reverse/1), elapsed}
   end
 
-  test "jitters within the radius and ends exactly on the anchor" do
+  test "jitters within the radius" do
     {moves, elapsed} = record(100, {400, 300}, 5)
     assert length(moves) > 2
     assert elapsed >= 95 and elapsed < 160
 
-    {_, last} = List.last(moves)
-    assert last == {400.0, 300.0}
-
-    for {_from, {x, y}} <- Enum.drop(moves, -1) do
+    for {_from, {x, y}} <- moves do
       assert :math.sqrt((x - 400) ** 2 + (y - 300) ** 2) <= 5.5
     end
   end

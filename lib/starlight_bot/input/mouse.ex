@@ -11,7 +11,7 @@ defmodule StarlightBot.Input.Mouse do
   @mouse_down_settle_ms 5
   @release_settle_ms 50
   @click_settle_ms 35
-  @dwell_jitter_px 5
+  @dwell_jitter_px 10
   @min_hover_ms 70
   @land_check_delay_ms 5
   @land_tolerance_px 3
@@ -141,8 +141,8 @@ defmodule StarlightBot.Input.Mouse do
   end
 
   def handle_call({:dwell, ms, opts}, _from, state) do
-    Dwell.run(ms, state.current_pos, Keyword.get(opts, :jitter_px, @dwell_jitter_px), &step/2)
-    {:reply, :ok, state}
+    pos = Dwell.run(ms, state.current_pos, Keyword.get(opts, :jitter_px, @dwell_jitter_px), &step/2)
+    {:reply, :ok, %{state | current_pos: pos}}
   end
 
   @impl true
@@ -152,9 +152,9 @@ defmodule StarlightBot.Input.Mouse do
     new_state = state |> execute_move(x, y, opts) |> elem(0)
     new_state = land(new_state, x, y, within, opts, @land_attempts)
 
-    hover(max(MouseProfile.hesitation_ms(), @min_hover_ms), new_state.current_pos)
+    pos = hover(max(MouseProfile.hesitation_ms(), @min_hover_ms), new_state.current_pos)
     do_click(button)
-    {:reply, :ok, new_state}
+    {:reply, :ok, %{new_state | current_pos: pos}}
   end
 
   @impl true
@@ -179,9 +179,9 @@ defmodule StarlightBot.Input.Mouse do
     Native.button_event(@btn_left, true)
     hover(Keyword.get(opts, :mouse_down_settle_ms, @mouse_down_settle_ms), {fx, fy})
     {final_state, _} = execute_move(new_state, tx, ty, [duration_override: Keyword.get(opts, :duration_ms)])
-    hover(Keyword.get(opts, :release_settle_ms, @release_settle_ms), {tx, ty})
+    pos = hover(Keyword.get(opts, :release_settle_ms, @release_settle_ms), {tx, ty})
     Native.button_event(@btn_left, false)
-    {:reply, :ok, final_state}
+    {:reply, :ok, %{final_state | current_pos: pos}}
   end
 
   @impl true

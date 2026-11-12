@@ -1,22 +1,24 @@
 defmodule StarlightBot.Input.Dwell do
-  alias StarlightBot.Input.Leeway
+  alias StarlightBot.Input.Wander
 
   @tick_ms 12
   @min_ms 20
 
-  def run(ms, _anchor, radius, _step_fun) when ms < @min_ms or radius <= 0 do
+  def run(ms, anchor, radius, _step_fun) when ms < @min_ms or radius <= 0 do
     if ms > 0, do: :timer.sleep(ms)
-    :ok
+    anchor
   end
 
   def run(ms, {ax, ay} = anchor, radius, step_fun) do
-    deadline = System.monotonic_time(:millisecond) + ms
-    last = loop(deadline, {ax * 1.0, ay * 1.0}, anchor, radius, step_fun)
-    if last != anchor, do: step_fun.(last, {ax * 1.0, ay * 1.0})
-    :ok
+    start = System.monotonic_time(:millisecond)
+    deadline = start + ms
+    origin = {ax * 1.0, ay * 1.0}
+    area = {ax - radius * 1.0, ay - radius * 1.0, ax + radius * 1.0, ay + radius * 1.0}
+    wander = Wander.new(area, origin, held: true)
+    loop(deadline, start, origin, wander, anchor, radius, step_fun)
   end
 
-  defp loop(deadline, pos, anchor, radius, step_fun) do
+  defp loop(deadline, prev_t, pos, wander, anchor, radius, step_fun) do
     remaining = deadline - System.monotonic_time(:millisecond)
 
     if remaining <= @tick_ms do
@@ -24,9 +26,24 @@ defmodule StarlightBot.Input.Dwell do
       pos
     else
       :timer.sleep(@tick_ms)
-      next = Leeway.point(anchor, radius)
+      now = System.monotonic_time(:millisecond)
+      wander = Wander.step(wander, (now - prev_t) / 1000)
+      next = within_radius(wander.pos, anchor, radius)
       step_fun.(pos, next)
-      loop(deadline, next, anchor, radius, step_fun)
+      loop(deadline, now, next, wander, anchor, radius, step_fun)
+    end
+  end
+
+  defp within_radius({x, y}, {ax, ay}, radius) do
+    dx = x - ax
+    dy = y - ay
+    dist = :math.sqrt(dx * dx + dy * dy)
+
+    if dist <= radius do
+      {x * 1.0, y * 1.0}
+    else
+      scale = radius / dist
+      {ax + dx * scale, ay + dy * scale}
     end
   end
 end
