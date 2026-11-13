@@ -167,7 +167,7 @@ fn open_display_within(name: &str) -> Option<Display> {
             None
         }
         Err(_) => {
-            eprintln!("[starlight_native] X display {name} did not answer, skipping it for a while");
+            crate::elog!("[starlight_native] X display {name} did not answer, skipping it for a while");
             unresponsive.lock().ok()?.insert(name.to_string(), Instant::now());
             None
         }

@@ -81,8 +81,8 @@ pub mod linux {
         match std::fs::write(&path, token)
             .and_then(|_| std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)))
         {
-            Ok(()) => eprintln!("[eis] saved portal restore token to {}", path.display()),
-            Err(e) => eprintln!("[eis] could not save portal restore token: {e}"),
+            Ok(()) => crate::elog!("[eis] saved portal restore token to {}", path.display()),
+            Err(e) => crate::elog!("[eis] could not save portal restore token: {e}"),
         }
     }
 
@@ -165,11 +165,11 @@ pub mod linux {
             while let Some(ev) = self.converter.next_event() {
                 match ev {
                     EiEvent::DeviceRemoved(r) => {
-                        eprintln!("[eis] DeviceRemoved: name={:?}, reconnecting", r.device.name());
+                        crate::elog!("[eis] DeviceRemoved: name={:?}, reconnecting", r.device.name());
                         self.dead = true;
                     }
                     EiEvent::DeviceResumed(r) => {
-                        eprintln!(
+                        crate::elog!(
                             "[eis] DeviceResumed: name={:?} serial={}",
                             r.device.name(),
                             r.serial
@@ -192,11 +192,11 @@ pub mod linux {
                         }
                     }
                     EiEvent::Disconnected(d) => {
-                        eprintln!("[eis] Disconnected: reason={:?}", d.reason);
+                        crate::elog!("[eis] Disconnected: reason={:?}", d.reason);
                         self.dead = true;
                     }
                     other => {
-                        eprintln!("[eis] unhandled event: {other:?}");
+                        crate::elog!("[eis] unhandled event: {other:?}");
                     }
                 }
             }
@@ -215,7 +215,7 @@ pub mod linux {
             .map_err(|e| NativeError::EisConnectFailed(format!("CreateSession: {e}")))?;
 
         let saved_token = read_restore_token();
-        eprintln!(
+        crate::elog!(
             "[eis] portal restore token: {}",
             if saved_token.is_some() { "found" } else { "none" }
         );
@@ -231,14 +231,14 @@ pub mod linux {
             .await
             .map_err(|e| NativeError::EisConnectFailed(format!("SelectDevices: {e}")))?;
 
-        eprintln!("[eis] portal Start — approve the permission dialog if one appears");
+        crate::elog!("[eis] portal Start — approve the permission dialog if one appears");
         let selected = proxy
             .start(&session, None, Default::default())
             .await
             .map_err(|e| NativeError::EisConnectFailed(format!("Start: {e}")))?
             .response()
             .map_err(|e| NativeError::EisConnectFailed(format!("Start denied: {e}")))?;
-        eprintln!("[eis] Start approved");
+        crate::elog!("[eis] Start approved");
 
         if let Some(token) = selected.restore_token() {
             if saved_token.as_deref() != Some(token) {
@@ -246,12 +246,12 @@ pub mod linux {
             }
         }
 
-        eprintln!("[eis] calling ConnectToEIS");
+        crate::elog!("[eis] calling ConnectToEIS");
         let fd = proxy
             .connect_to_eis(&session, ConnectToEISOptions::default())
             .await
             .map_err(|e| NativeError::EisConnectFailed(format!("ConnectToEIS: {e}")))?;
-        eprintln!("[eis] ConnectToEIS returned fd");
+        crate::elog!("[eis] ConnectToEIS returned fd");
 
         let socket = UnixStream::from(fd);
         let ctx = ei::Context::new(socket)
@@ -292,7 +292,7 @@ pub mod linux {
     fn connect(mut display: Option<String>) -> Result<EisClient, NativeError> {
         let (ctx, mut session) = match (&display, nested_eis_socket()) {
             (Some(name), Some(path)) => {
-                eprintln!("[eis] game is on nested display {name}, connecting to {}", path.display());
+                crate::elog!("[eis] game is on nested display {name}, connecting to {}", path.display());
                 let stream = UnixStream::connect(&path)
                     .map_err(|e| NativeError::EisConnectFailed(format!("{}: {e}", path.display())))?;
                 let ctx = ei::Context::new(stream)
@@ -311,11 +311,11 @@ pub mod linux {
 
         let ctx_clone = ctx.clone();
 
-        eprintln!("[eis] starting EIS handshake");
+        crate::elog!("[eis] starting EIS handshake");
         let resp =
             handshake::ei_handshake_blocking(&ctx, "starlight", ei::handshake::ContextType::Sender)
                 .map_err(|e| NativeError::EisHandshakeFailed(e.to_string()))?;
-        eprintln!("[eis] handshake complete, polling for seat/device events");
+        crate::elog!("[eis] handshake complete, polling for seat/device events");
 
         let mut converter = EiEventConverter::new(&ctx, resp);
         let connection = converter.connection().clone();
@@ -367,25 +367,25 @@ pub mod linux {
 
             // Dispatch high-level events.
             while let Some(ev) = converter.next_event() {
-                eprintln!("[eis] event: {:?}", ev);
+                crate::elog!("[eis] event: {:?}", ev);
                 match ev {
                     EiEvent::SeatAdded(seat_added) => {
-                        eprintln!("[eis] SeatAdded: {:?}", seat_added.seat.name());
+                        crate::elog!("[eis] SeatAdded: {:?}", seat_added.seat.name());
                         seat_added
                             .seat
                             .bind_capabilities(BitFlags::<DeviceCapability>::all());
                         let _ = connection.flush();
                     }
                     EiEvent::DeviceAdded(ref r) => {
-                        eprintln!(
+                        crate::elog!(
                             "[eis] DeviceAdded: name={:?} type={:?}",
                             r.device.name(),
                             r.device.device_type()
                         );
                     }
                     EiEvent::DeviceResumed(r) => {
-                        eprintln!("[eis] DeviceResumed serial={}", r.serial);
-                        eprintln!(
+                        crate::elog!("[eis] DeviceResumed serial={}", r.serial);
+                        crate::elog!(
                             "[eis] device offers: pointer={} button={} keyboard={} scroll={}",
                             r.device.interface::<ei::Pointer>().is_some(),
                             r.device.interface::<ei::Button>().is_some(),
@@ -397,7 +397,7 @@ pub mod linux {
                             found_absolute = Some(absolute);
                         }
                         if found_keyboard.is_none() && keyboard.is_some() {
-                            eprintln!("[eis] keyboard device acquired (serial={})", r.serial);
+                            crate::elog!("[eis] keyboard device acquired (serial={})", r.serial);
                             found_keyboard = keyboard;
                         }
                         if found_pointer.is_none() && pointer.is_some() {
@@ -406,7 +406,7 @@ pub mod linux {
                         }
                     }
                     EiEvent::Disconnected(ref d) => {
-                        eprintln!("[eis] Disconnected: reason={:?}", d.reason);
+                        crate::elog!("[eis] Disconnected: reason={:?}", d.reason);
                         return Err(NativeError::EisConnectFailed(format!(
                             "disconnected during EIS setup: reason={:?}",
                             d.reason
@@ -427,8 +427,8 @@ pub mod linux {
                         None => (None, None, 0),
                     };
 
-                    eprintln!("[eis] keyboard: {}", keyboard.is_some());
-                    eprintln!("[eis] scroll: {}", scroll.is_some());
+                    crate::elog!("[eis] keyboard: {}", keyboard.is_some());
+                    crate::elog!("[eis] scroll: {}", scroll.is_some());
 
                     break 'outer EisClient {
                         connection: connection.clone(),
@@ -470,7 +470,7 @@ pub mod linux {
             None => nested.is_some(),
         };
         if stale {
-            eprintln!("[eis] connection lost or game display is now {nested:?}, reconnecting");
+            crate::elog!("[eis] connection lost or game display is now {nested:?}, reconnecting");
             *guard = None;
             *guard = Some(connect(nested)?);
         }

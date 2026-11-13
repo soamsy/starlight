@@ -19,14 +19,14 @@ pub fn init_input(window_title: &str, token_path: &str) -> Result<(), NativeErro
             Ok(())
         }
         Err(eis_error) if crate::capture::nested_display_name().is_none() => {
-            eprintln!("[input] libei unavailable ({eis_error}), trying the Wayland virtual pointer and keyboard");
+            crate::elog_warn!("[input] libei unavailable ({eis_error}), trying the Wayland virtual pointer and keyboard");
             match wlr::linux::init() {
                 Ok(()) => {
                     WLR_ACTIVE.store(true, Ordering::Relaxed);
                     Ok(())
                 }
                 Err(wlr_error) => {
-                    eprintln!("[input] virtual pointer and keyboard unavailable too: {wlr_error}");
+                    crate::elog_warn!("[input] virtual pointer and keyboard unavailable too: {wlr_error}");
                     Err(eis_error)
                 }
             }

@@ -11,6 +11,7 @@ defmodule StarlightBot.Application do
 
     children =
       [
+        StarlightBot.NativeLog,
         StarlightBot.Repo,
         StarlightBot.BaseRepo,
         StarlightBot.RunsRepo,

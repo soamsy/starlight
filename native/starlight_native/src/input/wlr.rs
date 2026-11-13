@@ -192,7 +192,7 @@ pub mod linux {
         if state.bounds().is_none() {
             return Err(NativeError::EisConnectFailed("compositor reported no output sizes".to_owned()));
         }
-        eprintln!("[wlr] virtual pointer and keyboard ready, layout {:?}", state.bounds().map(|b| (b.x, b.y, b.w, b.h)));
+        crate::elog!("[wlr] virtual pointer and keyboard ready, layout {:?}", state.bounds().map(|b| (b.x, b.y, b.w, b.h)));
 
         Ok(WlrClient { connection, queue, state, pointer, keyboard })
     }

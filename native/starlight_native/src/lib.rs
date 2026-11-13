@@ -1,6 +1,7 @@
 mod capture;
 mod error;
 mod input;
+mod log;
 mod scale;
 
 use rustler::{Binary, Encoder, Env, OwnedBinary, Term};
@@ -15,7 +16,7 @@ fn grab_frame<'a>(env: Env<'a>, window_title: String) -> Term<'a> {
     match capture::grab_frame(&window_title, new_binary) {
         Ok((owned, w, h)) => (ok(), owned.release(env), w, h).encode(env),
         Err(e) => {
-            eprintln!("[starlight_native] grab_frame error: {e}");
+            crate::elog_warn!("[starlight_native] grab_frame error: {e}");
             (error(), e.to_atom(env)).encode(env)
         }
     }
@@ -26,7 +27,7 @@ fn grab_frame_region<'a>(env: Env<'a>, window_title: String, rx: u32, ry: u32, r
     match capture::grab_frame_region(&window_title, (rx, ry, rw, rh), new_binary) {
         Ok((owned, w, h)) => (ok(), owned.release(env), w, h).encode(env),
         Err(e) => {
-            eprintln!("[starlight_native] grab_frame_region error: {e}");
+            crate::elog_warn!("[starlight_native] grab_frame_region error: {e}");
             (error(), e.to_atom(env)).encode(env)
         }
     }
@@ -37,7 +38,7 @@ fn grab_regions<'a>(env: Env<'a>, window_title: String, rects: Vec<(u32, u32, u3
     match capture::grab_regions(&window_title, &rects, new_binary) {
         Ok(images) => (ok(), images.into_iter().map(|b| b.release(env)).collect::<Vec<Binary>>()).encode(env),
         Err(e) => {
-            eprintln!("[starlight_native] grab_regions error: {e}");
+            crate::elog_warn!("[starlight_native] grab_regions error: {e}");
             (error(), e.to_atom(env)).encode(env)
         }
     }
@@ -48,7 +49,7 @@ fn save_png(bgr: Binary, width: u32, height: u32, path: String) -> rustler::Atom
     match capture::save_png(bgr.as_slice(), width, height, &path) {
         Ok(()) => ok(),
         Err(e) => {
-            eprintln!("[starlight_native] save_png error: {e}");
+            crate::elog_warn!("[starlight_native] save_png error: {e}");
             error()
         }
     }
@@ -66,7 +67,7 @@ fn get_window_rect<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
         Ok((wx, wy, w, h)) => (ok(), wx, wy, w, h).encode(env),
         Err(e) => {
             if !matches!(e, crate::error::NativeError::WindowNotFound) {
-                eprintln!("[starlight_native] get_window_rect error: {e}");
+                crate::elog_warn!("[starlight_native] get_window_rect error: {e}");
             }
             (error(), e.to_atom(env)).encode(env)
         }
@@ -86,7 +87,7 @@ fn resize_window<'a>(env: Env<'a>, class_name: String, width: u32, height: u32) 
     match capture::resize_window(&class_name, width, height) {
         Ok(()) => ok().encode(env),
         Err(e) => {
-            eprintln!("[starlight_native] resize_window error: {e}");
+            crate::elog_warn!("[starlight_native] resize_window error: {e}");
             (error(), e.to_atom(env)).encode(env)
         }
     }
@@ -97,10 +98,16 @@ fn is_window_focused<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
     match capture::is_window_focused(&class_name) {
         Ok(focused) => (ok(), focused).encode(env),
         Err(e) => {
-            eprintln!("[starlight_native] is_window_focused error: {e}");
+            crate::elog_warn!("[starlight_native] is_window_focused error: {e}");
             (error(), e.to_atom(env)).encode(env)
         }
     }
+}
+
+#[rustler::nif]
+fn init_logger(pid: rustler::LocalPid) -> rustler::Atom {
+    log::attach(pid);
+    ok()
 }
 
 #[rustler::nif]
@@ -113,7 +120,7 @@ fn init_input<'a>(env: Env<'a>, window_title: String, token_path: String) -> Ter
     match input::init_input(&window_title, &token_path) {
         Ok(()) => ok().encode(env),
         Err(e) => {
-            eprintln!("[starlight_native] init_input error: {e}");
+            crate::elog_warn!("[starlight_native] init_input error: {e}");
             (error(), e.to_atom(env)).encode(env)
         }
     }
@@ -171,7 +178,7 @@ fn get_cursor_pos<'a>(env: Env<'a>) -> Term<'a> {
     match input::get_cursor_pos() {
         Ok((x, y)) => (ok(), x, y).encode(env),
         Err(e) => {
-            eprintln!("[starlight_native] get_cursor_pos error: {e}");
+            crate::elog_warn!("[starlight_native] get_cursor_pos error: {e}");
             (error(), e.to_atom(env)).encode(env)
         }
     }
