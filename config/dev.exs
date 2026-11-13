@@ -1,6 +1,6 @@
 import Config
 
-config :logger, level: :debug
+config :logger, level: :info
 
 config :starlight_bot, :log_to_file, true
 
