@@ -3,6 +3,19 @@ defmodule StarlightBot.Navigation.SettleFallbackTest do
 
   alias StarlightBot.Navigation.Runner
 
+  defmodule DwellStub do
+    use GenServer
+
+    def start_link(_), do: GenServer.start_link(__MODULE__, nil, name: StarlightBot.Input.Mouse)
+    def init(state), do: {:ok, state}
+    def handle_call({:dwell, _ms, _opts}, _from, state), do: {:reply, {0, 0}, state}
+  end
+
+  setup do
+    start_supervised!(DwellStub)
+    :ok
+  end
+
   test "parent-only fallbacks are the no-identity refinements" do
     assert Runner.fallback_screen?(:lux_unknown)
     assert Runner.fallback_screen?(:home_unknown)

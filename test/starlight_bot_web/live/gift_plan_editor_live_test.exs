@@ -138,7 +138,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     ing_b = entry(socket, "Ing B")["id"]
     socket = event(socket, "ms_remove_entry", %{"entry" => ing_b})
     assert Enum.any?(GiftPlans.issues(saved(socket), socket.assigns.gifts_by_name), &(&1 =~ "Fixed Thing needs Ing B in the milestone."))
-    assert render(socket) =~ "text-error font-semibold\">Ing B"
+    assert render(socket) =~ "Fixed Thing needs Ing B in the milestone."
 
     ids = milestone(socket)["entries"] |> Enum.map(& &1["id"]) |> Enum.reverse()
     socket = event(socket, "ms_reorder_entries", %{"scope" => milestone(socket)["id"], "ids" => ids})

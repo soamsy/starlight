@@ -167,7 +167,7 @@ defmodule StarlightBot.Vision.SinColorTest do
 
       assert result.sin == :pride
       assert result.tier_pct == 1.0
-      assert result.tier == :skill3
+      assert result.rule_tier == :skill3
     end
 
     test "tier_pct is the matched-in-wedge area divided by the wedge's own area" do
