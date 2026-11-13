@@ -3,7 +3,7 @@ defmodule StarlightBot.Navigation.Navigator do
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Automation.Scripts.ShopRunner
   alias StarlightBot.{Ctx, EnkephalinSchedule, LogStore, RunHistory, Teams}
-  alias StarlightBot.Automation.Scripts.{ClaimRewards, EnkephalinConversion, LuxcavationRunner, MirrorDungeonRunner, PrepareLineups, SelectTeamOnScreen}
+  alias StarlightBot.Automation.Scripts.{ClaimRewards, EnkephalinConversion, LuxcavationRunner, MirrorDungeonRunner, PrepareLineups, SelectTeamOnScreen, SurveyTeamHooks}
   alias StarlightBot.Navigation.{Catalog, DSL, Machine, RunArchive, RunClock, RunSplits, Runner, ScreenTimes}
 
   @topic "navigation"
@@ -64,6 +64,8 @@ defmodule StarlightBot.Navigation.Navigator do
     do: GenServer.cast(__MODULE__, {:queue_after_run, next})
 
   def prepare_lineups, do: manual(:prepare_lineups)
+
+  def survey_team_hooks, do: manual(:survey_team_hooks)
 
   def charge_enkephalin(convert_count), do: GenServer.cast(__MODULE__, {:charge_enkephalin, convert_count})
 
@@ -144,6 +146,19 @@ defmodule StarlightBot.Navigation.Navigator do
     state = add_log(state, :info, "Preparing lineups")
     state = launch(state, :run_script, PrepareLineups.program(), nav_ctx(), nil)
     state = %{state | phase: :running, goal: nil, run_kind: :prepare_lineups}
+    broadcast(state)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast(:survey_team_hooks, %{task_pid: pid} = state) when is_pid(pid),
+    do: refuse_run(state, "team hook survey", "another run")
+
+  def handle_cast(:survey_team_hooks, state) do
+    state = cancel_running(state)
+    state = add_log(state, :info, "Surveying team hooks")
+    state = launch(state, :run_script, SurveyTeamHooks.program(), nav_ctx(), nil)
+    state = %{state | phase: :running, goal: nil, run_kind: :team_survey}
     broadcast(state)
     {:noreply, state}
   end

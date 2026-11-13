@@ -1,0 +1,34 @@
+<div class="flex flex-col h-full gap-2 overflow-hidden">
+  <div class="flex items-center gap-3 shrink-0">
+    <h2 class="text-lg font-semibold">Prepare Lineups</h2>
+    <%= if assigns[:run_phase] not in [nil, :idle] do %>
+      <span class="flex items-center gap-1 text-sm text-base-content/60">
+        <span class="loading loading-spinner loading-xs"></span>
+        {busy_label(assigns[:run_kind])}
+      </span>
+    <% end %>
+  </div>
+
+  <div class="flex gap-2 flex-1 min-h-0 overflow-hidden">
+    <div class="w-80 shrink-0 flex flex-col gap-3 overflow-y-auto">
+      <div class="bg-base-200 rounded-xl p-3 text-xs text-base-content/70 flex flex-col gap-2">
+        <p>Prepare Lineups opens the Lux EXP team select, selects each team and sets its sinner order to the first lineup, then returns home.</p>
+        <p>Survey Team Hooks clicks every known team_X hook in the Lux team select and reports which were found, which were not, and their match scores against each threshold.</p>
+        <p>Keep the Limbus Company window focused before starting.</p>
+      </div>
+
+      <% idle = assigns[:run_phase] in [nil, :idle] %>
+      <button type="button" phx-click="prepare_lineups" disabled={not idle} class="btn btn-primary btn-sm">
+        <.icon name="lucide-list-checks" class="size-4" /> Prepare Lineups
+      </button>
+      <button type="button" phx-click="survey_team_hooks" disabled={not idle} class="btn btn-outline btn-sm">
+        <.icon name="lucide-scan-search" class="size-4" /> Survey Team Hooks
+      </button>
+      <button :if={assigns[:run_kind] in [:prepare_lineups, :team_survey]} type="button" phx-click="cancel" class="btn btn-ghost btn-sm btn-error">
+        Cancel
+      </button>
+    </div>
+
+    <StarlightBotWeb.Live.LogLive.panel socket={@socket} id="prepare-lineups-log" class="flex-1 min-h-0" />
+  </div>
+</div>

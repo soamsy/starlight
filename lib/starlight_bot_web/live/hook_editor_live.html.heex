@@ -85,6 +85,25 @@
         <%= if @history_bounds do %>
           <% {first, last} = @history_bounds %>
           <% shown = @history_id || last %>
+          <%= if @watch_hook do %>
+            <div class="flex items-center gap-2 mt-2 flex-none">
+              <span class="text-xs font-mono text-base-content/70 whitespace-nowrap truncate max-w-[14rem]" title={@watch_hook}><%= @watch_hook %></span>
+              <div class="flex flex-1 h-4 gap-px">
+                <%= for id <- first..last do %>
+                  <button type="button" phx-click="history_seek" phx-value-frame={id}
+                          class={[
+                            "flex-1 h-full rounded-sm",
+                            case @watch_results[id] do
+                              true -> "bg-success"
+                              false -> "bg-error"
+                              nil -> "bg-base-300"
+                            end,
+                            id == shown && "ring-2 ring-base-content"
+                          ]}></button>
+                <% end %>
+              </div>
+            </div>
+          <% end %>
           <div class="flex items-center gap-2 mt-2 flex-none">
             <button phx-click="history_step" phx-value-delta="-1" disabled={shown <= first} class="btn btn-xs btn-ghost">
               <.icon name="lucide-chevron-left" class="size-4" />
@@ -613,6 +632,9 @@
                     <button phx-click="test_hook" phx-value-name={hook.name}
                             class="btn btn-xs btn-outline btn-secondary">Test</button>
                     <.test_badge result={@test_result} name={hook.name} />
+                    <button phx-click="watch_hook" phx-value-name={hook.name}
+                            class={"btn btn-xs #{if @watch_hook == hook.name, do: "btn-accent", else: "btn-outline btn-accent"}"}
+                            title="Run this hook against every streamed frame and color the timeline">Watch</button>
                     <button phx-click="test_hook_all" phx-value-name={hook.name}
                             class="btn btn-xs btn-outline btn-warning"
                             title="Find every match on the screenshot already loaded">All</button>

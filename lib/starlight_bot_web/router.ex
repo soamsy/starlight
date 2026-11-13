@@ -26,6 +26,7 @@ defmodule StarlightBotWeb.Router do
       live "/luxcavation", Live.RunnerLive, :luxcavation
       live "/mirror-dungeon", Live.RunnerLive, :mirror_dungeon
       live "/shop-runner", Live.ShopRunnerLive
+      live "/prepare-lineups", Live.PrepareLineupsLive
       live "/rewards", Live.RewardsLive
       live "/log", Live.LogLive
       live "/data", Live.DataLive

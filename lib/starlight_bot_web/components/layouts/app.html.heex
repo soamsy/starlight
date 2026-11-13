@@ -174,7 +174,7 @@
 
       <div class="dropdown dropdown-end">
         <% profiles_on = on_teams and assigns[:team_nav] != nil and @team_nav.pane == "profiles" %>
-        <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :rewards, :linux_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
+        <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :prepare_lineups, :rewards, :linux_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
           <.icon name="lucide-layout-grid" class="size-4 lg:size-5" />
         </div>
         <div tabindex="0" class="dropdown-content z-50 mt-2 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
@@ -187,27 +187,17 @@
       <span class="text-[10px] font-normal leading-tight text-center">{if profiles_on, do: "Back to plans", else: "Sinner Profiles"}</span>
     </.link>
     <% end %>
-    <%= cond do %>
-      <% assigns[:run_phase] in [nil, :idle] -> %>
-        <button type="button" phx-click="prepare_lineups" onclick="document.activeElement.blur()"
-                title="Select each team in the Lux EXP team select and set its sinner order to the first lineup, then return home"
-                class="btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 btn-ghost text-base-content/50">
-          <.icon name="lucide-list-checks" class="size-4 lg:size-5" />
-          <span class="text-[10px] font-normal leading-tight text-center">Prepare Lineups</span>
-        </button>
-      <% assigns[:run_kind] == :prepare_lineups -> %>
-        <button type="button" phx-click="run_cancel" onclick="document.activeElement.blur()"
-                class="btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 btn-ghost text-error">
-          <span class="loading loading-spinner loading-xs"></span>
-          <span class="text-[10px] font-normal leading-tight text-center">Cancel Lineups</span>
-        </button>
-      <% true -> %>
-        <button type="button" disabled title="Another run is in progress"
-                class="btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 btn-ghost">
-          <.icon name="lucide-list-checks" class="size-4 lg:size-5" />
-          <span class="text-[10px] font-normal leading-tight text-center">Prepare Lineups</span>
-        </button>
-    <% end %>
+    <.link navigate={~p"/prepare-lineups"}
+           onclick="document.activeElement.blur()"
+           title="Select each team in the Lux EXP team select and set its sinner order to the first lineup"
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :prepare_lineups, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <%= if assigns[:run_kind] in [:prepare_lineups, :team_survey] do %>
+        <span class="loading loading-spinner loading-xs"></span>
+      <% else %>
+        <.icon name="lucide-list-checks" class="size-4 lg:size-5" />
+      <% end %>
+      <span class="text-[10px] font-normal leading-tight text-center">Prepare Lineups</span>
+    </.link>
     <%!-- Inspectors / debug tools --%>
     <.link navigate={~p"/hooks"}
            class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :hooks, do: "btn-primary", else: "btn-ghost text-base-content/50")}>

@@ -411,6 +411,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   def other_running_notice(:mirror_dungeon), do: "Mirror dungeon is running. Cancel it from its tab before starting this."
   def other_running_notice(:enkephalin), do: "Enkephalin charge is running. Wait for it to finish before starting this."
   def other_running_notice(:prepare_lineups), do: "Lineup preparation is running. Wait for it to finish before starting this."
+  def other_running_notice(:team_survey), do: "Team hook survey is running. Wait for it to finish before starting this."
   def other_running_notice(_), do: "Another run is in progress. Wait for it to finish before starting this."
 
   def cycle_locked?(phase, other_running?), do: phase != :idle and not other_running?

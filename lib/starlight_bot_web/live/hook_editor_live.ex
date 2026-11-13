@@ -18,6 +18,8 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
      |> assign(:stream_active, false)
      |> assign(:history_bounds, nil)
      |> assign(:history_id, nil)
+     |> assign(:watch_hook, nil)
+     |> assign(:watch_results, %{})
      |> assign(:region, nil)
      |> assign(:click_region, nil)
      |> assign(:scan_region, nil)
@@ -85,6 +87,16 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
      |> assign(:history_bounds, nil)
      |> assign(:history_id, nil)
      |> assign(:screenshot_status, :loading)}
+  end
+
+  def handle_event("watch_hook", %{"name" => name}, socket) do
+    name = if name == socket.assigns.watch_hook, do: nil, else: name
+
+    {:noreply,
+     socket
+     |> assign(:watch_hook, name)
+     |> assign(:watch_results, %{})
+     |> update_watch()}
   end
 
   def handle_event("history_seek", %{"frame" => id}, socket) do
@@ -772,6 +784,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
       socket
       |> assign(:history_bounds, {first, last})
       |> assign(:screenshot_status, :done)
+      |> update_watch()
 
     {:noreply, if(jpeg, do: push_event(socket, "load_screenshot", %{data: jpeg}), else: socket)}
   end
@@ -791,6 +804,31 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
+
+  defp update_watch(%{assigns: %{watch_hook: nil}} = socket), do: socket
+  defp update_watch(%{assigns: %{history_bounds: nil}} = socket), do: socket
+
+  defp update_watch(%{assigns: %{watch_hook: name, history_bounds: {first, last}}} = socket) do
+    hook = safe_to_atom(name)
+    ids = Enum.to_list(first..last)
+    kept = Map.take(socket.assigns.watch_results, ids)
+
+    results =
+      ids
+      |> Enum.reject(&Map.has_key?(kept, &1))
+      |> Enum.reduce(kept, fn id, acc ->
+        case FrameHistory.get(id) do
+          {:ok, frame} -> Map.put(acc, id, hook != nil and frame_matches?(frame, hook))
+          :error -> acc
+        end
+      end)
+
+    assign(socket, :watch_results, results)
+  end
+
+  defp frame_matches?(frame, hook) do
+    match?({:ok, _score, {:ok, _rect}}, Matcher.find_with_score(frame, hook))
+  end
 
   defp pause_stream(%{assigns: %{stream_active: true}} = socket) do
     FrameHistory.stop_capture()

@@ -43,7 +43,7 @@ defmodule StarlightBot.Automation.Scripts.PrepareLineups do
     scan(pending, selector, 0, ctx)
   end
 
-  defp scroll_to_top(selector, scrolls, ctx) do
+  def scroll_to_top(selector, scrolls, ctx) do
     if scrolls < @max_scrolls and Engine.check(Map.fetch!(@scroll_up_available, selector)) do
       Engine.act([move_to(selector), scroll_up(@top_clicks), sleep(@scroll_settle_ms)], ctx)
       scroll_to_top(selector, scrolls + 1, ctx)

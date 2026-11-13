@@ -33,6 +33,7 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.RewardsLive => :rewards,
     StarlightBotWeb.Live.RunnerLive => :runner,
     StarlightBotWeb.Live.ShopRunnerLive => :shop_runner,
+    StarlightBotWeb.Live.PrepareLineupsLive => :prepare_lineups,
     StarlightBotWeb.Live.LogLive => :log,
     StarlightBotWeb.Live.LinuxChecksLive => :linux_checks,
     StarlightBotWeb.Live.DataLive => :data
@@ -258,13 +259,6 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp handle_window_event(event, _params, %{assigns: %{game_window_busy: busy}} = socket)
        when busy != nil and event in ["game_window_resize", "game_window_launch", "game_window_close", "run"],
        do: {:halt, socket}
-
-  defp handle_window_event("prepare_lineups", _params, %{assigns: %{run_phase: :idle}} = socket) do
-    Navigator.prepare_lineups()
-    {:halt, socket}
-  end
-
-  defp handle_window_event("prepare_lineups", _params, socket), do: {:halt, socket}
 
   defp handle_window_event("run_cancel", _params, socket) do
     Navigator.cancel()
