@@ -26,7 +26,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @target_tries 2
   @bad_target_radius_px 50
   @drop_ready_timeout_ms 1_000
-  @skill_hover_ms 50
+  @skill_hover_ms 80
   @screen_mid_x 960
   @skill_grab_inward_pct 0.03
   @skill_grab_depth_pct 0.6
@@ -699,7 +699,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     settle = if RunMemory.get(ctx, :target_panned?, false), do: [], else: [DSL.sleep(@target_pan_settle_ms)]
 
     try do
-      case Runner.run_steps([DSL.move_to(:battle_drag_checkpoint) | settle], ctx) do
+      case Runner.run_steps([DSL.sleep(60), DSL.move_to(:battle_drag_checkpoint) | settle], ctx) do
         {:ok, _} ->
           RunMemory.put(ctx, :target_panned?, true)
           aim(enemy, 1, nil, [], ctx)
