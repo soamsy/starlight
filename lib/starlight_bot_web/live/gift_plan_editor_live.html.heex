@@ -81,12 +81,17 @@
                               class="btn btn-ghost btn-xs text-error"><.icon name="lucide-x" class="size-3.5" /></button>
                     </div>
                     <div :if={@plan_data["milestones"] == []} class="text-[11px] text-base-content/40 italic">None yet.</div>
+                    <div id="gift-end-state-btn" phx-click="set_tab" phx-value-tab="end_state"
+                         class={"flex items-center gap-1 rounded px-2 py-1 cursor-pointer text-xs " <> if(@active_tab == :end_state, do: "border-l-2 border-primary ring-1 ring-primary/40", else: "hover:bg-base-200")}>
+                      <.icon name="lucide-flag" class="size-3.5 w-4 shrink-0 text-base-content/50" />
+                      <span class="flex-1 truncate select-none">End state</span>
+                    </div>
                   </div>
                   <div :if={issues != []} class="flex flex-col gap-1 text-[11px] text-warning shrink-0 max-h-24 overflow-y-auto">
                     <span :for={issue <- issues}><%= issue %></span>
                   </div>
 
-                  <%= if @active_tab == :loadout or milestone do %>
+                  <%= if @active_tab != :end_state and (@active_tab == :loadout or milestone) do %>
                     <div class="flex items-center gap-1 shrink-0">
                       <label class="input input-bordered input-xs flex flex-1 min-w-0 items-center gap-1.5">
                         <.icon name="lucide-search" class="size-3.5 shrink-0 text-base-content/50" />
@@ -199,7 +204,7 @@
                 </div>
               </div>
 
-              <.read_only_banner container="gift-view-memory" allowed={read_only_events()} template_id={@template_id} templates={@templates} label="gift plan" />
+              <.read_only_banner container="gift-view-memory" allowed={read_only_events()} template_id={@template_id} templates={@templates} label="gift plan" force={@active_tab == :end_state} />
                 <div id="gift-drop-zone" phx-hook="GiftDropZone"
                      data-drop-event={if @active_tab == :loadout, do: "toggle_search_gift", else: milestone && "ms_add_gift"}
                      class="flex flex-col gap-3 overflow-y-auto flex-1 min-h-0 pr-1 rounded-lg transition-colors">
@@ -441,7 +446,12 @@
                   <% else %>
                   <%= if milestone do %>
                     <div class="flex items-start gap-2">
-                      <div class={"flex items-stretch gap-2 flex-wrap flex-1 min-w-0 rounded-xl border " <> applies_group_color(milestone["applies"])}>
+                      <div :if={@active_tab == :end_state} class="flex items-center gap-1 flex-wrap flex-1 min-w-0">
+                        <span class="text-xs font-semibold text-base-content/70">End state for</span>
+                        <button :for={kind <- ~w(all_normal becomes_hard all_hard extreme)} type="button" phx-click="set_end_state_kind" phx-value-kind={kind} title={applies_hint(kind)}
+                                class={"btn btn-xs " <> if(kind == @end_state_kind, do: "btn-primary", else: "btn-ghost border-base-300")}><%= applies_label(kind) %></button>
+                      </div>
+                      <div :if={@active_tab != :end_state} class={"flex items-stretch gap-2 flex-wrap flex-1 min-w-0 rounded-xl border " <> applies_group_color(milestone["applies"])}>
                         <div class="dropdown">
                           <div tabindex="0" role="button" title={applies_hint(milestone["applies"] || "always")}
                                class={"h-full rounded-lg border px-2 py-1 flex items-center text-[11px] font-semibold cursor-pointer " <> applies_badge_color(milestone["applies"])}>
@@ -476,7 +486,7 @@
                                 title="Never count this milestone as reached, so it keeps going until a refresh case leaves the shop"
                                 class="rounded-lg border border-dashed border-base-content/30 px-3 text-[11px] text-base-content/60 hover:bg-base-200">+ Endless</button>
                       </div>
-                      <div class="flex flex-col items-end gap-1 shrink-0 ml-auto">
+                      <div :if={@active_tab != :end_state} class="flex flex-col items-end gap-1 shrink-0 ml-auto">
                       <div class="flex items-center gap-1">
                         <div :for={{action, label} <- [{"heal", "+ Greatly heal"}, {"revive", "+ Revive"}]} class="dropdown dropdown-end">
                           <div tabindex="0" role="button" class="btn btn-xs btn-outline"><%= label %></div>
@@ -539,13 +549,14 @@
                     </div>
 
                     <.milestone_entries milestone={milestone} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
-                    <div :if={Enum.all?(milestone["entries"], &GiftPlans.action_entry?/1)} class="text-xs text-base-content/40 italic">No entries yet. Add gifts from the search on the left.</div>
+                    <div :if={@active_tab != :end_state and Enum.all?(milestone["entries"], &GiftPlans.action_entry?/1)} class="text-xs text-base-content/40 italic">No entries yet. Add gifts from the search on the left.</div>
 
                     <% refresh_from = active_refresh_from(@refresh_tabs, milestone) %>
                     <% refresh_scheduled = milestone["refresh_scheduled"] == true %>
-                    <div class="flex flex-col">
+                    <div :if={@active_tab != :end_state or milestone["endless"] == true} class="flex flex-col">
                       <div class="flex items-center gap-2 pb-1">
                         <span class="text-xs font-semibold text-base-content/70">Refresh</span>
+                        <span :if={milestone["refresh_source"]} class="text-[11px] text-base-content/60">from <%= milestone["refresh_source"] %></span>
                         <button phx-click="ms_add_refresh_case" class="btn btn-xs btn-outline">+ Case</button>
                         <.refresh_costs milestone={milestone} from={refresh_from} path={refresh_path(assigns, milestone, refresh_from)} plan_data={@plan_data} />
                         <button :if={not refresh_scheduled} type="button" phx-click="ms_refresh_add_schedule" class="btn btn-ghost btn-xs ml-auto">Add Schedule</button>

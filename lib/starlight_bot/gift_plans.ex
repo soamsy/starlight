@@ -1029,6 +1029,39 @@ defmodule StarlightBot.GiftPlans do
 
   def milestone_reached?(data, id, env), do: data |> progress(id, env) |> reached?()
 
+  def end_state_milestone(data, run_kind) do
+    milestones = for_run(data, run_kind)["milestones"] || []
+    {before, rest} = Enum.split_while(milestones, &(&1["endless"] != true))
+    endless = List.first(rest)
+    reachable = if endless, do: before ++ [endless], else: before
+
+    heals = for milestone <- reachable, entry <- milestone["entries"] || [], applies_at_some_floor?(milestone, entry, &heal_resolved?/1), do: Map.put(entry, "source", milestone["name"])
+    buys = for milestone <- List.wrap(endless), entry <- milestone["entries"] || [], applies_at_some_floor?(milestone, entry, &post_goal_buy?/1), do: Map.put(entry, "source", milestone["name"])
+
+    base = %{"id" => "end_state", "name" => "End state", "applies" => run_kind, "goals" => [], "entries" => heals ++ buys, "refresh" => [], "refresh_floors" => [], "refresh_scheduled" => false, "endless" => false}
+
+    case endless do
+      nil -> base
+      milestone -> Map.merge(base, %{"endless" => true, "refresh_source" => milestone["name"], "refresh" => milestone["refresh"] || [], "refresh_floors" => milestone["refresh_floors"] || [], "refresh_scheduled" => milestone["refresh_scheduled"] == true})
+    end
+  end
+
+  defp applies_at_some_floor?(milestone, entry, predicate), do: Enum.any?(segment_floors(milestone), &predicate.(resolve(entry, &1)))
+
+  defp heal_resolved?(resolved), do: heal_entries([resolved]) != []
+
+  defp post_goal_buy?(%{subject: %{"action" => _}}), do: false
+  defp post_goal_buy?(%{buy: true, disposition: "ignore"}), do: true
+  defp post_goal_buy?(%{buy: true, goal: "optional"}), do: true
+  defp post_goal_buy?(_resolved), do: false
+
+  def milestone_effectively_reached?(data, id, env) do
+    case progress(data, id, env) do
+      %{milestone: nil} -> false
+      %{milestone: milestone} = progress -> reached?(%{progress | milestone: Map.put(milestone, "endless", false)})
+    end
+  end
+
   def goal_reached?(data, milestone_id, letter, env) do
     progress = progress(data, milestone_id, env)
     letter = letter || "required"

@@ -138,7 +138,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
 
     cond do
       GiftPlans.milestone_reached?(state.plan, milestone["id"], env) and Milestone.heals?(milestone, state) and
-          Enum.all?(rest, &GiftPlans.milestone_reached?(state.plan, &1["id"], env)) ->
+          Enum.all?(rest, &GiftPlans.milestone_effectively_reached?(state.plan, &1["id"], env)) ->
         case run_milestone(milestone, close_sell_popup(state, ctx), mode, ctx, :heal_only) do
           :interrupted -> {:error, :window_not_focused}
           state -> {:steps, [call(__MODULE__, :work, [rest, state, mode])]}

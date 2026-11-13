@@ -705,4 +705,62 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.for_run(plan, "extreme") == plan
     end
   end
+
+  describe "end_state_milestone" do
+    defp end_entry(id, subject, segment) do
+      %{"id" => id, "subject" => subject, "fusion" => nil, "floors" => [Map.merge(GiftPlans.default_segment(), segment)]}
+    end
+
+    defp end_plan(milestones) do
+      defaults = %{"applies" => "always", "goals" => [], "refresh" => []}
+      GiftPlans.normalize(%{"version" => GiftPlans.version(), "milestones" => Enum.map(milestones, &Map.merge(defaults, &1))})
+    end
+
+    defp heal_segment, do: %{"disposition" => "ignore", "goal" => nil, "buy" => false, "sinners" => ["yi_sang"], "repeat" => "once"}
+
+    defp end_entries(data, kind), do: GiftPlans.end_state_milestone(data, kind)["entries"] |> Enum.map(&{&1["id"], &1["source"]})
+
+    test "collects heals from every applicable milestone with the milestone they come from" do
+      data = end_plan([
+        %{"id" => "a", "name" => "A", "entries" => [end_entry("h1", %{"action" => "heal"}, heal_segment())]},
+        %{"id" => "b", "name" => "B", "entries" => [end_entry("h2", %{"action" => "heal_all"}, heal_segment())]}
+      ])
+
+      assert end_entries(data, "all_normal") == [{"h1", "A"}, {"h2", "B"}]
+    end
+
+    test "only takes what an endless milestone still buys once its required and goals are done" do
+      required = end_entry("g1", %{"gift" => "One"}, %{})
+      grouped = end_entry("g3", %{"gift" => "Three"}, %{"goal" => "A"})
+      optional = end_entry("g4", %{"gift" => "Four"}, %{"goal" => "optional"})
+      capped = end_entry("g2", %{"tiers" => [2]}, %{"disposition" => "ignore", "goal" => nil, "max" => 4})
+      plain = %{"id" => "a", "name" => "A", "entries" => [optional]}
+      endless = %{"id" => "b", "name" => "B", "endless" => true, "entries" => [required, grouped, optional, capped]}
+
+      assert end_entries(end_plan([plain, endless]), "all_normal") == [{"g4", "B"}, {"g2", "B"}]
+    end
+
+    test "ignores milestones after the first endless one" do
+      first = %{"id" => "a", "name" => "A", "endless" => true, "entries" => [end_entry("h1", %{"action" => "heal_all"}, heal_segment())]}
+      second = %{"id" => "b", "name" => "B", "endless" => true, "entries" => [end_entry("h2", %{"action" => "heal_all"}, heal_segment())]}
+
+      assert end_entries(end_plan([first, second]), "all_normal") == [{"h1", "A"}]
+    end
+
+    test "copies the refresh cases of the endless milestone" do
+      refresh = [%{"id" => "rc", "action" => "refresh"}]
+      endless = %{"id" => "a", "name" => "A", "endless" => true, "refresh" => refresh, "entries" => []}
+
+      assert GiftPlans.end_state_milestone(end_plan([endless]), "all_normal")["refresh"] == refresh
+      assert GiftPlans.end_state_milestone(end_plan([%{"id" => "b", "name" => "B", "entries" => []}]), "all_normal")["endless"] == false
+    end
+
+    test "only includes milestones that apply to the run kind" do
+      heal = end_entry("h1", %{"action" => "heal_all"}, heal_segment())
+      data = end_plan([%{"id" => "a", "name" => "A", "applies" => "all_hard", "entries" => [heal]}])
+
+      assert end_entries(data, "all_normal") == []
+      assert end_entries(data, "extreme") == [{"h1", "A"}]
+    end
+  end
 end

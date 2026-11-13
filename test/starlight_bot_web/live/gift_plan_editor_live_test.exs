@@ -563,4 +563,24 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert saved(socket)["gift_search"] == ["Fiery Down", "Ing B"]
   end
 
+  test "the end state tab renders a read-only milestone built from heals and the endless milestone's refresh and buys", %{socket: socket} do
+    socket =
+      socket
+      |> event("ms_add_action", %{"action" => "heal_all"})
+      |> event("ms_set_endless", %{"endless" => "true"})
+      |> event("ms_add_refresh_case", %{})
+      |> event("set_tab", %{"tab" => "end_state"})
+
+    html = render(socket)
+
+    assert socket.assigns.active_tab == :end_state
+    assert html =~ "End state for"
+    assert html =~ "Heal Everyone"
+    assert html =~ "Refresh"
+    assert html =~ "from #{milestone(socket)["name"]}"
+    refute html =~ "+ Endless"
+    refute html =~ "+ Greatly heal"
+
+    assert socket |> event("set_end_state_kind", %{"kind" => "extreme"}) |> Map.fetch!(:assigns) |> Map.fetch!(:end_state_kind) == "extreme"
+  end
 end

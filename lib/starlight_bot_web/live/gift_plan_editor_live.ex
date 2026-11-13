@@ -77,7 +77,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
-  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition select_milestone copy_milestone ms_copy_entries ms_select_tab ms_refresh_select_tab rf_pick rf_reset rf_cheapest ms_open_fusion ms_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed)
+  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition select_milestone copy_milestone set_end_state_kind ms_copy_entries ms_select_tab ms_refresh_select_tab rf_pick rf_reset rf_cheapest ms_open_fusion ms_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed)
 
   def read_only_events, do: @read_only_events
 
@@ -108,6 +108,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:gift_popup, nil)
       |> assign(:show_help, false)
       |> assign(:view_from_url, false)
+      |> assign(:end_state_kind, "all_normal")
       |> reset_editor()
 
     socket = if team && team.gift_plan_id, do: socket |> load_plan(team.gift_plan_id, team.gift_template_id) |> apply_url_view(session), else: socket
@@ -243,6 +244,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("restore_view", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("set_end_state_kind", %{"kind" => kind}, socket) when kind in ~w(all_normal becomes_hard all_hard extreme) do
+    {:noreply, assign(socket, :end_state_kind, kind)}
+  end
 
   @impl true
   def handle_event("toggle_help", _, socket), do: {:noreply, update(socket, :show_help, &(!&1))}
@@ -717,7 +723,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("ms_copy_entries", %{"ids" => ids}, socket) do
-    milestone = GiftPlans.find_milestone(socket.assigns.plan_data, socket.assigns.selected_milestone_id)
+    milestone = selected_milestone(socket.assigns)
 
     case Enum.filter(milestone["entries"], &(&1["id"] in ids)) do
       [] ->
@@ -1026,6 +1032,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     end
   end
 
+  def selected_milestone(%{active_tab: :end_state} = assigns), do: GiftPlans.end_state_milestone(assigns.plan_data, assigns.end_state_kind)
   def selected_milestone(assigns), do: GiftPlans.find_milestone(assigns.plan_data, assigns.selected_milestone_id)
 
   def active_from(entry_tabs, entry) do
@@ -1379,7 +1386,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     update_plan(socket, &GiftPlans.update_entry(&1, socket.assigns.selected_milestone_id, entry_id, fn entry -> Map.put(entry, "scheduled", true) end))
   end
 
-  defp refresh_path_key(socket), do: {socket.assigns.selected_milestone_id, refresh_from(socket)}
+  defp refresh_path_key(socket), do: {selected_milestone(socket.assigns)["id"], refresh_from(socket)}
 
   defp put_refresh_path(socket, path), do: assign(socket, :refresh_paths, Map.put(socket.assigns.refresh_paths, refresh_path_key(socket), path))
 
@@ -1394,7 +1401,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp refresh_from(socket), do: active_refresh_from(socket.assigns.refresh_tabs, selected_milestone(socket.assigns))
 
-  defp put_refresh_tab(socket, from), do: assign(socket, :refresh_tabs, Map.put(socket.assigns.refresh_tabs, socket.assigns.selected_milestone_id, from))
+  defp put_refresh_tab(socket, from), do: assign(socket, :refresh_tabs, Map.put(socket.assigns.refresh_tabs, selected_milestone(socket.assigns)["id"], from))
 
   defp tab_key(socket, entry_id), do: GiftPlans.group_key(GiftPlans.find_entry(selected_milestone(socket.assigns), entry_id))
 
@@ -1837,6 +1844,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <input type="hidden" name="entry" value={@entry["id"]} />
       <input type="hidden" name="from" value={@from} />
       <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
+      <span :if={@entry["source"]} class="badge badge-ghost badge-xs shrink-0 max-w-32 truncate" title={"From milestone " <> @entry["source"]}><%= @entry["source"] %></span>
       <div class="w-24 shrink-0">
         <select :if={@keep? or @skill? or (@abandoned? and not @pattern?)} name="segment[goal]"
                 title={goal_hint(if(@abandoned?, do: "abandon", else: @segment["goal"] || "required"), @milestone)}
