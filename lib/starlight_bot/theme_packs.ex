@@ -4,10 +4,15 @@ defmodule StarlightBot.ThemePacks do
   alias StarlightBot.Data
 
   @unplannable_ids ["thm_117"]
+  @hidden_ids ["thm_116"]
 
-  def plannable?(pack), do: pack.id not in @unplannable_ids
+  def plannable?(pack), do: pack.id not in @unplannable_ids and pack.id not in @hidden_ids
 
   def list_plannable_theme_packs do
+    Enum.filter(list_theme_packs(), &plannable?/1)
+  end
+
+  def list_pickable_theme_packs do
     Enum.reject(list_theme_packs(), &(&1.id in @unplannable_ids))
   end
 

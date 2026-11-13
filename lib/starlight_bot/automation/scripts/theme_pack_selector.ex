@@ -51,7 +51,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     team = Teams.get_team(team_id)
     plan_data = team |> fetch_plan_data() |> Resolver.with_mode_override(team_override(ctx, :mode_override)) |> Resolver.with_search_override(team_override(ctx, :search_override))
     grace_picks = team[:grace_picks] || []
-    theme_packs = ThemePacks.list_plannable_theme_packs()
+    theme_packs = ThemePacks.list_pickable_theme_packs()
 
     with {:ok, frame} <- enter(plan_data, ctx) do
       detect_and_update_floor(frame, ctx)
