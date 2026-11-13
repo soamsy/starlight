@@ -35,6 +35,17 @@ defmodule StarlightBot.PlanClipboard do
     end
   end
 
+  def encode_cells(status, cells), do: Jason.encode!(%{"v" => @format_version, "starlight_pack_cells" => %{"status" => status, "cells" => cells}})
+
+  def decode_cells(text, status) do
+    case Jason.decode(text) do
+      {:ok, %{"v" => v}} when is_integer(v) and v > @format_version -> {:error, @newer}
+      {:ok, %{"starlight_pack_cells" => %{"status" => ^status, "cells" => cells}}} when is_list(cells) -> {:ok, cells}
+      {:ok, %{"starlight_pack_cells" => %{"status" => other}}} when is_binary(other) -> {:error, "That clipboard holds #{other} cells, not #{status} cells."}
+      _ -> {:error, "The clipboard doesn't hold copied pack cells."}
+    end
+  end
+
   def encode_entries(entries), do: Jason.encode!(%{"v" => @format_version, "starlight_entries" => entries})
 
   def decode_entries(text) do

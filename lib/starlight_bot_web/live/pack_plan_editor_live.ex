@@ -4,14 +4,14 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   import StarlightBotWeb.Components.PlanPicker
   import StarlightBotWeb.Components.PlanTemplates
 
-  alias StarlightBot.{PlanCounts, Plans, Teams, ThemePacks}
+  alias StarlightBot.{PlanClipboard, PlanCounts, Plans, Teams, ThemePacks}
   alias StarlightBotWeb.Components.PlanHistory
   alias StarlightBot.PackPlans.{Odds, Resolver}
 
   @modes ~w(normal hard)
   @cell_actions ~w(hunt favorite banned)
   @hunted ~w(hunt favorite)
-  @read_only_events ~w(set_floor_filter set_view filter_packs toggle_help copy_plan clipboard_status plan_clipboard_failed)
+  @read_only_events ~w(set_floor_filter set_view filter_packs toggle_help copy_plan copy_cells clipboard_status plan_clipboard_failed)
 
   def read_only_events, do: @read_only_events
 
@@ -161,6 +161,28 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
         target = if row_status?(plan_data, pack_id, mode, floors, status), do: "none", else: status
         plan_data = Enum.reduce(floors, plan_data, &put_status(&2, pack_id, mode, &1, target))
         {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
+    end
+  end
+
+  @impl true
+  def handle_event("copy_cells", %{"status" => status}, socket) when status in @cell_actions do
+    cells = status_cells(socket.assigns.plan_data, status)
+    if cells == [] do
+      {:noreply, put_flash(socket, :error, "No #{status} cells to copy.")}
+    else
+      {:noreply, push_event(socket, "copy_json", %{text: PlanClipboard.encode_cells(status, cells), toast: "Copied #{length(cells)} #{status} cells to the clipboard."})}
+    end
+  end
+
+  @impl true
+  def handle_event("paste_cells", %{"text" => text, "kind" => status}, socket) when status in @cell_actions do
+    case PlanClipboard.decode_cells(text, status) do
+      {:ok, cells} ->
+        {plan_data, applied} = apply_cells(socket, cells, status)
+        {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan() |> put_flash(:info, "Pasted #{applied} #{status} cells.")}
+
+      {:error, message} ->
+        {:noreply, put_flash(socket, :error, message)}
     end
   end
 
@@ -596,6 +618,28 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
 
   defp drop_extreme_unless_allowed(plan_data) do
     if Resolver.extreme_allowed?(plan_data), do: plan_data, else: Map.put(plan_data, "extreme", false)
+  end
+
+  defp status_cells(plan_data, status) do
+    for {pack_id, modes} <- plan_data["packs"] || %{},
+        {mode, floors} <- modes,
+        mode in @modes,
+        {floor, ^status} <- floors,
+        do: %{"pack" => pack_id, "mode" => mode, "floor" => String.to_integer(floor)}
+  end
+
+  defp apply_cells(socket, cells, status) do
+    Enum.reduce(cells, {socket.assigns.plan_data, 0}, fn
+      %{"pack" => pack_id, "mode" => mode, "floor" => floor}, {plan_data, applied} when is_binary(pack_id) and mode in @modes and is_integer(floor) ->
+        pack = socket.assigns.packs_by_id[pack_id]
+
+        if pack && floor in Resolver.eligible_floors(pack, mode),
+          do: {put_status(plan_data, pack_id, mode, floor, status), applied + 1},
+          else: {plan_data, applied}
+
+      _cell, acc ->
+        acc
+    end)
   end
 
   defp requested_floors(socket, pack_id, mode, floors) do

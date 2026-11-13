@@ -51,7 +51,21 @@
                    class="group/pan flex-1 min-h-0 grid content-start gap-x-2 gap-y-0.5 overflow-auto data-[pan=ready]:cursor-grab data-[pan=active]:cursor-grabbing"
                    style={"grid-template-columns: auto repeat(#{floor_count}, minmax(#{if extreme?, do: "calc(6rem + 100px)", else: "6rem"}, 1fr))#{if overflow?, do: " 9rem"}"}>
                 <div class="col-span-full grid grid-cols-subgrid sticky top-0 bg-base-100 z-10 border-b border-base-300">
-                  <span class="row-start-2 col-start-1 sticky left-0 z-20 bg-base-100 text-[10px] text-base-content/40 px-1 whitespace-nowrap self-end" data-no-pan><span class="invisible group-data-[pan]/pan:visible">drag chart to pan ⇆</span></span>
+                  <div id="status-cells-clipboard" phx-hook="ItemClipboard" class="row-start-2 col-start-1 sticky left-0 z-20 bg-base-100 px-1 whitespace-nowrap self-end flex flex-col gap-0.5" data-no-pan>
+                    <span class="text-[10px] text-base-content/40"><span class="invisible group-data-[pan]/pan:visible">drag chart to pan ⇆</span></span>
+                    <div class="grid grid-cols-[repeat(3,3.5rem)] gap-1">
+                      <%= for {status, label} <- [{"favorite", "favorites"}, {"hunt", "hunt"}, {"banned", "banned packs"}] do %>
+                        <div class="join w-full">
+                          <button type="button" phx-click="copy_cells" phx-value-status={status} class="btn btn-xs btn-ghost join-item h-5 min-h-0 flex-1 px-1" title={"Copy every #{label} cell (normal and hard) in this plan"}>
+                            <.icon name="lucide-copy" class="size-3.5" />
+                          </button>
+                          <button type="button" data-paste-event="paste_cells" data-kind={status} class="btn btn-xs btn-ghost join-item h-5 min-h-0 flex-1 px-1" title={"Paste #{label} copied from another plan. Overwrites those pack and floor cells here."}>
+                            <.icon name="lucide-clipboard-paste" class="size-3.5" />
+                          </button>
+                        </div>
+                      <% end %>
+                    </div>
+                  </div>
                   <span class="row-start-1 col-start-1 sticky left-0 z-20 bg-base-100 text-[10px] font-medium text-base-content/50 px-1 whitespace-nowrap self-center text-right" data-no-pan>likely path ▸</span>
                   <%= for floor <- 1..floor_count do %>
                     <% hard? = StarlightBot.PackPlans.Resolver.mode_for_floor(@plan_data["mode_schedule"], floor) == "hard" %>
@@ -223,11 +237,11 @@
                     <%= if extreme_disabled? do %>
                       <div class="self-stretch -my-px" style={"grid-row: 1; grid-column: 7 / -1; " <> disabled_stripes_style()}></div>
                     <% end %>
-                    <div class="sticky left-0 z-[5] flex gap-1 px-1 bg-base-100 group-hover:bg-base-200 cursor-default" style="grid-row: 1; grid-column: 1" data-no-pan>
+                    <div class="sticky left-0 z-[5] grid grid-cols-[repeat(3,3.5rem)] gap-1 px-1 bg-base-100 group-hover:bg-base-200 cursor-default" style="grid-row: 1; grid-column: 1" data-no-pan>
                       <%= for {status, label, active_class, title} <- [{"favorite", :star, "btn-warning", "favorite"}, {"hunt", "hunt", "btn-success", "hunt"}, {"banned", "banned", "btn-error", "banned"}] do %>
                         <% all? = row_status?(@plan_data, pack.id, row.mode, row.floors, status) %>
                         <button type="button" phx-click="set_row_status" phx-value-pack_id={pack.id} phx-value-mode={row.mode} phx-value-floors={Enum.join(row.floors, ",")} phx-value-status={status}
-                                class={"btn btn-xs h-5 min-h-0 px-1.5 text-[10px] " <> if(all?, do: active_class, else: "btn-outline")}
+                                class={"btn btn-xs h-5 min-h-0 w-full px-1.5 text-[10px] " <> if(all?, do: active_class, else: "btn-outline")}
                                 title={if all?, do: "Clear #{title} on every #{row.mode} floor", else: "Make every #{row.mode} floor #{title}"}>
                           <%= if label == :star do %><.icon name="lucide-filled-star" class="size-3" /><% else %><%= label %><% end %>
                         </button>
