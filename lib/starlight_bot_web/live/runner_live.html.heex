@@ -18,7 +18,8 @@
         phx-change="update_form"
         class="flex flex-col gap-3">
         <% gate = StarlightBotWeb.Components.WindowGate.gate(assigns) %>
-        <% locked = cycle_locked?(@phase, @other_running?) %>
+        <% locked = cycle_locked?(@phase, @other_running?, @run_kind) %>
+        <% live = live_cycle?(@phase, @other_running?, @run_kind) %>
         <% run_disabled = @teams == [] or @phase != :idle or @countdown != nil or @other_running? or gate != :ready %>
         <%= if @other_running? do %>
           <span class="text-xs text-warning"><%= other_running_notice(@run_kind) %></span>
@@ -126,7 +127,7 @@
             <div class="modal-backdrop" phx-click="toggle_forecast_info"></div>
           </div>
           <div id={"team-list-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_teams" class="flex flex-col gap-1">
-            <.pick_row :for={{pick, index} <- Enum.with_index(@picks)} pick={pick} index={index} list="cycle" teams={@teams} locked={locked}
+            <.pick_row :for={{pick, index} <- Enum.with_index(@picks)} pick={pick} index={index} list="cycle" teams={@teams} locked={locked or (live and running_team?(@run_memory, pick))} live={live}
                        forecast={Enum.at(cycle_forecast(@picks, @teams).rows, index)}
                        cycle_size={length(@picks)} start_index={@start_index} run_disabled={run_disabled} />
             <div data-sort-id="split" class="flex items-center gap-2 py-0.5 text-base-content/40">
@@ -135,7 +136,7 @@
               <span class="text-[10px] uppercase tracking-wide">Reserve below (not cycled)</span>
               <span class="flex-1 border-t border-dashed border-base-content/30"></span>
             </div>
-            <.pick_row :for={{pick, index} <- Enum.with_index(@reserve)} pick={pick} index={index} list="reserve" teams={@teams} locked={locked}
+            <.pick_row :for={{pick, index} <- Enum.with_index(@reserve)} pick={pick} index={index} list="reserve" teams={@teams} locked={locked or (live and running_team?(@run_memory, pick))} live={live}
                        run_disabled={run_disabled} />
           </div>
           <button :if={@teams != [] and not locked} type="button" phx-click="add_team" class="btn btn-ghost btn-xs self-start">+ team</button>

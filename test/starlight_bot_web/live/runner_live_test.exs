@@ -13,7 +13,7 @@ defmodule StarlightBotWeb.Live.RunnerLiveTest do
 
   defp socket(picks) do
     %Phoenix.LiveView.Socket{
-      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, reserve: [], reorder_rev: 0, start_index: 0, run_count: "1", rewards: "auto", collect_enkephalin: false, collect_xp: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil, phase: :idle, other_running?: false}
+      assigns: %{__changed__: %{}, flash: %{}, teams: @teams, picks: picks, reserve: [], reorder_rev: 0, start_index: 0, run_count: "1", rewards: "auto", collect_enkephalin: false, collect_xp: false, enkephalin_convert_count: "0", pending_action: nil, countdown: nil, phase: :idle, other_running?: false, run_kind: nil, run_memory: %{}}
     }
   end
 
@@ -172,6 +172,22 @@ defmodule StarlightBotWeb.Live.RunnerLiveTest do
     assert running.assigns.picks == [@burn, @saikai]
     assert running.assigns.start_index == 0
     assert running.assigns.run_count == "5"
+  end
+
+  test "a running mirror dungeon cycle can be reordered and edited, except the star" do
+    socket = socket([@burn, @saikai])
+    running = %{socket | assigns: %{socket.assigns | phase: :running, run_kind: :mirror_dungeon}}
+
+    running =
+      running
+      |> event("set_cycle_start", %{"index" => "1"})
+      |> event("reorder_teams", %{"ids" => ["c1", "c0", "split"]})
+
+    assert running.assigns.picks == [@saikai, @burn]
+    assert running.assigns.start_index == 1
+
+    running = event(running, "add_team", %{})
+    assert running.assigns.reserve == [@burn]
   end
 
   test "a completed run moves the saved star to the next team, wrapping around" do

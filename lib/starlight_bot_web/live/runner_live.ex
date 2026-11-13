@@ -154,7 +154,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   @impl true
   def handle_event("update_form", %{"run_count" => run_count} = params, socket) do
     socket =
-      if cycle_locked?(socket.assigns.phase, socket.assigns.other_running?) do
+      if cycle_locked?(socket.assigns.phase, socket.assigns.other_running?, socket.assigns.run_kind) do
         socket
       else
         picks = RunnerForms.parse_team_picks(params["team_ids"], params["team_hooks"], params["team_modes"], params["team_searches"], socket.assigns.teams, socket.assigns.picks)
@@ -173,7 +173,8 @@ defmodule StarlightBotWeb.Live.RunnerLive do
 
   @impl true
   def handle_event(event, _params, socket)
-      when event in ~w(add_team remove_cycle_team set_cycle_start reorder_teams set_pick_option remove_reserve_team single_run) and
+      when (event in ~w(set_cycle_start single_run) or
+              (event in ~w(add_team remove_cycle_team reorder_teams set_pick_option remove_reserve_team) and socket.assigns.run_kind != :mirror_dungeon)) and
              socket.assigns.phase != :idle and not socket.assigns.other_running? do
     {:noreply, socket}
   end
@@ -414,7 +415,11 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   def other_running_notice(:team_survey), do: "Team hook survey is running. Wait for it to finish before starting this."
   def other_running_notice(_), do: "Another run is in progress. Wait for it to finish before starting this."
 
-  def cycle_locked?(phase, other_running?), do: phase != :idle and not other_running?
+  def cycle_locked?(phase, other_running?, run_kind), do: phase != :idle and not other_running? and run_kind != :mirror_dungeon
+
+  def live_cycle?(phase, other_running?, run_kind), do: phase != :idle and not other_running? and run_kind == :mirror_dungeon
+
+  def running_team?(run_memory, %{id: id, hook: hook}), do: match?(%{id: ^id, hook: ^hook}, Map.get(run_memory, :team))
 
   def run_progress(run_memory), do: Map.get(run_memory, :run_progress)
 
@@ -783,6 +788,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   attr :list, :string, required: true
   attr :teams, :list, required: true
   attr :locked, :boolean, required: true
+  attr :live, :boolean, default: false
   attr :cycle_size, :integer, default: 1
   attr :start_index, :integer, default: 0
   attr :run_disabled, :boolean, default: false
@@ -805,12 +811,14 @@ defmodule StarlightBotWeb.Live.RunnerLive do
          end}>
       <span :if={not @locked} data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to move or reorder">⠿</span>
       <button :if={not @reserve? and @cycle_size > 1} type="button" phx-click="set_cycle_start" phx-value-index={@index}
-              disabled={@locked}
-              title={if @locked, do: "Locked while a run is active", else: "Start the cycle with this team"}
+              disabled={@locked or @live}
+              title={if @locked or @live, do: "Locked while a run is active", else: "Start the cycle with this team"}
               class={"btn btn-ghost btn-xs px-1 " <> if(@index == @start_index, do: "text-primary", else: "text-base-content/30")}>
         <.icon name={if @index == @start_index, do: "lucide-filled-star", else: "lucide-star"} class="size-4" />
       </button>
       <span :if={not @reserve? and @cycle_size > 1} class="text-xs text-base-content/50 w-5 text-right"><%= @index + 1 %>.</span>
+      <input :if={@locked} type="hidden" name={"#{@prefix}_ids[]"} value={@pick.id} />
+      <input :if={@locked} type="hidden" name={"#{@prefix}_hooks[]"} value={@pick.hook} />
       <select name={"#{@prefix}_ids[]"} class="select select-sm select-bordered flex-1 min-w-0" disabled={@teams == [] or @locked}>
         <%= for team <- @teams do %>
           <option value={team.id} selected={team.id == @pick.id}><%= team.name %></option>
@@ -892,6 +900,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
 
   defp save_form(socket) do
     RunnerForms.put("mirror_dungeon", form_params(socket.assigns))
+    if live_cycle?(socket.assigns.phase, socket.assigns.other_running?, socket.assigns.run_kind), do: Navigator.update_cycle(socket.assigns.picks)
     socket
   end
 

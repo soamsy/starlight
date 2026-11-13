@@ -374,6 +374,19 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     Map.put(cycle, :team, team)
   end
 
+  defp apply_cycle_update(%{teams: teams, index: index} = cycle, ctx) do
+    with picks when is_list(picks) and picks != [] <- RunMemory.get(ctx, :cycle_update, nil),
+         {:ok, new_teams} <- prepare_teams(picks, ctx) do
+      current_id = Enum.at(teams, index).id
+      positions = for {team, position} <- Enum.with_index(new_teams), team.id == current_id, do: position
+      new_index = Enum.find(positions, &(&1 >= index)) || List.first(positions) || length(new_teams) - 1
+      Ctx.log(ctx, :info, "team cycle updated: #{length(new_teams)} team(s)")
+      %{cycle | teams: new_teams, index: new_index}
+    else
+      _ -> cycle
+    end
+  end
+
   defp next_team(%{teams: teams, index: index} = cycle, ctx), do: activate(%{cycle | index: rem(index + 1, length(teams))}, ctx)
 
   defp team_memory(team), do: %{id: team.id, name: team.name, hook: team.hook, type: team.type, affinity: Atom.to_string(team.affinity), mode_override: team.mode_override, search_override: team.search_override}
@@ -446,7 +459,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     cycle =
       if run.count > 1 do
         progress = RunMemory.get(ctx, :run_progress, %{current: 0, total: 0})
-        cycle = if own_run?, do: next_team(run.cycle, ctx), else: run.cycle
+        cycle = if own_run?, do: run.cycle |> apply_cycle_update(ctx) |> next_team(ctx), else: run.cycle
         RunMemory.merge(ctx, %{floor: 1, run_progress: %{progress | current: progress.current + 1}, team: team_memory(cycle.team)})
         cycle
       else

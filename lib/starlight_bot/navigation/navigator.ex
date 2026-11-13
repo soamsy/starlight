@@ -56,6 +56,8 @@ defmodule StarlightBot.Navigation.Navigator do
   def run_mirror_dungeon(picks, run_count, config),
     do: manual({:run_mirror_dungeon, picks, run_count, config})
 
+  def update_cycle(picks), do: GenServer.cast(__MODULE__, {:update_cycle, picks})
+
   def run_scheduled(action), do: GenServer.cast(__MODULE__, {:scheduled, action})
 
   def origin, do: GenServer.call(__MODULE__, :origin)
@@ -313,6 +315,14 @@ defmodule StarlightBot.Navigation.Navigator do
     broadcast(state)
     {:noreply, state}
   end
+
+  @impl true
+  def handle_cast({:update_cycle, picks}, %{run_kind: :mirror_dungeon, run_memory_agent: agent} = state) when is_pid(agent) do
+    if Process.alive?(agent), do: Agent.update(agent, &Map.put(&1, :cycle_update, picks))
+    {:noreply, state}
+  end
+
+  def handle_cast({:update_cycle, _picks}, state), do: {:noreply, state}
 
   @impl true
   def handle_cast(:cancel, state) do
