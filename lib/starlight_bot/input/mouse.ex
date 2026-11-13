@@ -8,11 +8,11 @@ defmodule StarlightBot.Input.Mouse do
   @scroll_click_delay_ms 60
   @scroll_click_delay_sigma 15
   @drag_settle_ms 100
-  @mouse_down_settle_ms 5
+  @mouse_down_settle_ms 10
   @release_settle_ms 50
-  @click_settle_ms 65
-  @dwell_jitter_px 15
-  @min_hover_ms 70
+  @click_settle_ms 80
+  @click_trailing_ms 20
+  @dwell_jitter_px 5
   @land_check_delay_ms 5
   @land_tolerance_px 3
   @land_attempts 3
@@ -152,9 +152,12 @@ defmodule StarlightBot.Input.Mouse do
     new_state = state |> execute_move(x, y, opts) |> elem(0)
     new_state = land(new_state, x, y, within, opts, @land_attempts)
 
-    pos = hover(max(MouseProfile.hesitation_ms(), @min_hover_ms), new_state.current_pos)
+    settle_ms = Keyword.get(opts, :settle_ms, @click_settle_ms)
+    pos = hover(max(settle_ms, MouseProfile.hesitation_ms()), new_state.current_pos)
     do_click(button)
-    {:reply, :ok, %{new_state | current_pos: pos}}
+    trailing_ms = Keyword.get(opts, :trailing_ms, @click_trailing_ms)
+    last_pos = hover(max(trailing_ms, MouseProfile.trailing_ms()), pos)
+    {:reply, :ok, %{new_state | current_pos: last_pos}}
   end
 
   @impl true
@@ -385,7 +388,6 @@ defmodule StarlightBot.Input.Mouse do
 
   defp land(state, x, y, within, opts, attempts) do
     if on_target?(start_pos(state), x, y, within) do
-      hover(Keyword.get(opts, :settle_ms, @click_settle_ms), {x, y})
       state
     else
       :timer.sleep(@land_check_delay_ms)

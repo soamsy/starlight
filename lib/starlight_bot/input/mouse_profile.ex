@@ -1,6 +1,6 @@
 defmodule StarlightBot.Input.MouseProfile do
-  @move_duration_mult 0.48
-  @scroll_delay_mult 0.4
+  @move_duration_mult 0.50
+  @scroll_delay_mult 0.45
   @drift_decay 0.97
   @drift_sigma 0.02
   @drift_limit 0.15
@@ -9,11 +9,11 @@ defmodule StarlightBot.Input.MouseProfile do
   def scroll_delay_mult, do: @scroll_delay_mult * personality().tempo
 
   def click_hold_ms do
-    personality().click_hold_ms |> lognormal(0.25) |> round() |> max(90) |> min(160)
+    personality().click_hold_ms |> lognormal(0.25) |> round()
   end
 
   def double_click_gap_ms do
-    personality().double_click_gap_ms |> lognormal(0.3) |> round() |> max(50) |> min(180)
+    personality().double_click_gap_ms |> lognormal(0.3) |> round()
   end
 
   def personality do
@@ -32,6 +32,10 @@ defmodule StarlightBot.Input.MouseProfile do
     personality().hesitation_ms |> lognormal(0.5) |> round()
   end
 
+  def trailing_ms do
+    personality().trailing_ms |> lognormal(0.5) |> round()
+  end
+
   def reroll do
     :persistent_term.put({__MODULE__, :personality}, roll())
   end
@@ -39,9 +43,10 @@ defmodule StarlightBot.Input.MouseProfile do
   defp roll do
     %{
       tempo: between(0.85, 1.2),
-      hesitation_ms: between(10.0, 90.0),
-      click_hold_ms: between(90.0, 120.0),
-      double_click_gap_ms: between(90.0, 120.0),
+      hesitation_ms: between(30.0, 70.0),
+      click_hold_ms: between(33.0, 45.0),
+      trailing_ms: between(20, 30),
+      double_click_gap_ms: between(75, 90.0),
       rest: {between(0.5, 0.85), between(0.45, 0.8)},
       idle_span: {between(0.3, 0.5), between(0.3, 0.5)},
       scroll_burst: Enum.random(2..5),

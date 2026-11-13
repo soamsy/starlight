@@ -517,7 +517,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
   defp confirm_search(search_hook, retries_left, ctx) do
     steps =
-      [click(:theme_pack_search_popup_black_confirm, settle_ms: 150)] ++
+      [click(:theme_pack_search_popup_black_confirm)] ++
       confirm_enter(:theme_pack_search_popup_white_confirm)
 
     case Engine.act(steps, ctx) do
@@ -783,7 +783,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
          {:ok, frame} <- Capture.grab_frame() do
       from = Frame.to_screen_coords(frame, {true_x + dx, @pull_y})
       to = frame |> Frame.to_screen_coords({true_x + dx, @pull_y + @drag_distance}) |> Leeway.point(@drop_radius_px)
-      Mouse.drag(from, to, settle_ms: 150, mouse_down_settle_ms: 10, release_settle_ms: 200)
+      Mouse.drag(from, to, settle_ms: 150, release_settle_ms: 200)
 
       if await_moved_away(ctx), do: :ok, else: try_pulls(rest, span, hook, ctx)
     else

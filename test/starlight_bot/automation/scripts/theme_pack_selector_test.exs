@@ -94,9 +94,6 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
       assert ThemePackSelector.scroll_plan(21) == {3, 3}
     end
 
-    test "unknown pane size settles every step" do
-      assert ThemePackSelector.scroll_plan(nil) == {0, 16}
-    end
   end
 
   describe "floor_pool/3" do

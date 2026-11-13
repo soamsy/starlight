@@ -653,8 +653,8 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
 
   defp forfeit_keeps_rewards?(ctx, config), do: RunMemory.floor(ctx) >= 6 and config.rewards != :none
 
-  defp grace_pick_steps({index, 0}), do: [click(:"grace_#{index}", settle_ms: 100)]
-  defp grace_pick_steps({index, enhance}), do: [click(:"grace_#{index}", settle_ms: 100), click(:"grace_#{index}_#{enhance}", settle_ms: 100)]
+  defp grace_pick_steps({index, 0}), do: [click(:"grace_#{index}")]
+  defp grace_pick_steps({index, enhance}), do: [click(:"grace_#{index}"), click(:"grace_#{index}_#{enhance}")]
 
   defp cabinet_steps(affinity, run, run_state, ctx) do
     GiftSearchPicker.reset(ctx)

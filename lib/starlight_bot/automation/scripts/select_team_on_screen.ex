@@ -11,8 +11,10 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   @scroll_clicks 8
   @hefty_scroll_clicks @scroll_clicks * 2
   @scroll_settle_ms 200
-  @click_settle_ms 100
   @order_settle_ms 200
+  @sinner_state_timeout_ms 500
+  @team_settle_ms 250
+  @max_removable_extras 2
   @list_ready_timeout_ms 2_000
   @scroll_down_available :team_selector_scroll_down_available
   @scroll_up_available %{
@@ -28,7 +30,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   def prepare_team(team, hook, ctx) do
-    with {:ok, _} <- Engine.act([click(hook, settle_ms: @click_settle_ms)], ctx),
+    with {:ok, _} <- Engine.act([click(hook, trailing_ms: @team_settle_ms)], ctx),
          {:ok, checks} <- check_selectors(ctx) do
       maybe_select_order(checks.clear_selection or checks.sinner_count_0, first_lineup_sinners(team, ctx), ctx)
     end
@@ -96,15 +98,27 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     can_choose_team = checks.team_selector or checks.team_selector_tall
     can_choose_order = checks.clear_selection or checks.sinner_count_0 or checks.team_selector_gone
 
-    with :ok <- maybe_select_team(can_choose_team, team, ctx),
+    with {:ok, team_action} <- maybe_select_team(can_choose_team, team, ctx),
+         :ok <- prepare_order_scan(can_choose_order, team_action, ctx),
          :ok <- maybe_select_order(can_choose_order, sinners, ctx) do
       {:ok, %{team: can_choose_team, order: can_choose_order}}
     end
   end
 
+  defp prepare_order_scan(false, _team_action, _ctx), do: :ok
+
+  defp prepare_order_scan(true, team_action, ctx) do
+    steps = if team_action == :acted, do: [sleep(@team_settle_ms)], else: [move_to(:clear_selection)]
+
+    case Engine.act(steps, ctx) do
+      {:ok, _} -> :ok
+      {:error, _} = err -> err
+    end
+  end
+
   defp maybe_select_team(false, _team, ctx) do
     Ctx.log(ctx, :info, "team selector not present — skipping team choice")
-    :ok
+    {:ok, :idle}
   end
 
   defp maybe_select_team(true, team, ctx) do
@@ -120,7 +134,8 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
   defp select_team_hook(hook, ctx) do
     case select_hook(String.to_existing_atom(hook), ctx) do
-      {:ok, _} -> :ok
+      {:ok, :unchanged} -> {:ok, :idle}
+      {:ok, _} -> {:ok, :acted}
       {:error, _} = err -> err
     end
   rescue
@@ -147,7 +162,6 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp maybe_select_order(true, order, ctx) do
-    Engine.act([move_to(:clear_selection)], ctx)
     formation = formation(order)
 
     result =
@@ -175,6 +189,10 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   defp describe_mismatch({:backup, sinner}), do: "#{sinner}: expected in backup, not detected as backup"
   defp describe_mismatch({:extra, sinner, kind}), do: "#{sinner}: expected unplaced, detected in #{if kind == :selected, do: "front line", else: "backup"}"
 
+  defp removable_extras?(mismatches) do
+    length(mismatches) <= @max_removable_extras and Enum.all?(mismatches, &match?({:extra, _, _}, &1))
+  end
+
   defp first_sinner_survives?(extras, %{front: front, backup: backup}) do
     sinners = front ++ backup
     found = current_first(sinners ++ Enum.map(extras, &elem(&1, 1)))
@@ -185,7 +203,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
     Ctx.log(ctx, :info, "team is a subset of the current one: removing #{Enum.map_join(extras, ", ", &elem(&1, 1))}")
 
     steps =
-      Enum.map(extras, fn {:extra, sinner, kind} -> click(sinner_hook(sinner, kind), settle_ms: @click_settle_ms) end) ++
+      Enum.flat_map(extras, fn {:extra, sinner, kind} -> click_sinner(sinner, kind, :none) end) ++
         [move_to(:clear_selection), sleep(@order_settle_ms)]
 
     with {:ok, _} <- Engine.act(steps, ctx) do
@@ -233,15 +251,11 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
   end
 
   defp move_first_to_last(sinner, formation, ctx) do
-    hook = sinner_hook(sinner, :selected)
-
-    steps = [
-      click(hook, duration_mult: 0.8),
-      sleep(@order_settle_ms),
-      click(hook, duration_mult: 0.8),
-      move_to(:clear_selection),
-      sleep(@order_settle_ms)
-    ]
+    steps =
+      click_sinner(sinner, :selected, :none) ++
+        [sleep(@order_settle_ms)] ++
+        click_sinner(sinner, :selected, placement(sinner, formation)) ++
+        [move_to(:clear_selection), sleep(@order_settle_ms)]
 
     with {:ok, _} <- Engine.act(steps, ctx) do
       case order_mismatches(formation) do
@@ -250,7 +264,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
           :ok
 
         mismatches ->
-          if Enum.all?(mismatches, &match?({:extra, _, _}, &1)) and first_sinner_survives?(mismatches, formation) do
+          if removable_extras?(mismatches) and first_sinner_survives?(mismatches, formation) do
             remove_extras(mismatches, formation, ctx)
           else
             log_mismatches(mismatches, ctx)
@@ -320,9 +334,47 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
   defp order_steps(%{front: front, backup: backup}, ctx) do
     clear_steps(ctx) ++
-      Enum.map(front, &click(sinner_hook(&1, :selected), duration_mult: 0.8)) ++
-      Enum.map(backup, &click(sinner_hook(&1, :backup), duration_mult: 0.8))
+      Enum.flat_map(front, &click_sinner(&1, :selected, :selected)) ++
+      Enum.flat_map(backup, &click_sinner(&1, :backup, :backup))
   end
+
+  defp click_sinner(sinner, hook_kind, expected) do
+    [
+      click(sinner_hook(sinner, hook_kind)),
+      call(__MODULE__, :await_sinner_state, [sinner, expected])
+    ]
+  end
+
+  defp placement(sinner, %{front: front}), do: if(sinner in front, do: :selected, else: :backup)
+
+  def await_sinner_state(sinner, expected, frame, ctx) do
+    deadline = System.monotonic_time(:millisecond) + @sinner_state_timeout_ms
+
+    if poll_sinner_state(sinner, expected, deadline) do
+      {:ok, frame}
+    else
+      Ctx.log(ctx, :info, "#{sinner} did not reach #{expected} within #{@sinner_state_timeout_ms}ms")
+      {:ok, frame}
+    end
+  end
+
+  defp poll_sinner_state(sinner, expected, deadline) do
+    selected = sinner_hook(sinner, :selected)
+    backup = sinner_hook(sinner, :backup)
+    checks = Engine.check_all([selected, backup])
+
+    cond do
+      sinner_state_matches?(expected, checks[selected], checks[backup]) -> true
+      System.monotonic_time(:millisecond) >= deadline -> false
+      true ->
+        Process.sleep(50)
+        poll_sinner_state(sinner, expected, deadline)
+    end
+  end
+
+  defp sinner_state_matches?(:selected, selected, _backup), do: selected
+  defp sinner_state_matches?(:backup, _selected, backup), do: backup
+  defp sinner_state_matches?(:none, selected, backup), do: not selected and not backup
 
   defp formation(order), do: order |> alive_order() |> BattlePlans.formation()
 
@@ -348,13 +400,13 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
 
     if Engine.check(selected_hook) do
       Ctx.log(ctx, :ok, "#{selected_hook} already selected — nothing to do")
-      {:ok, selected_hook}
+      {:ok, :unchanged}
     else
       {selector, top_team} = selector_pair()
       Ctx.log(ctx, :info, "looking for #{hook} in team selector (#{selector})")
 
       with true <- find_team(hook, selector, ctx),
-           {:ok, _} <- Engine.act([click(hook, settle_ms: @click_settle_ms)], ctx) do
+           {:ok, _} <- Engine.act([click(hook)], ctx) do
         Ctx.log(ctx, :ok, "selected #{hook}")
         {:ok, hook}
       else

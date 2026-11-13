@@ -32,7 +32,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @sell_nothing_selected_hook :shop_sell_popup_nothing_selected
   @sell_select_check_ms 800
   @sell_select_tries 3
-  @sell_scroll_clicks 2
+  @sell_scroll_clicks 3
   @sell_scroll_settle_ms 700
   @sell_close_every_ms 900
   @sell_confirm_steady_ms 200
@@ -93,7 +93,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @fuse_merge_area_hook :shop_fuse_popup_merge_area
   @fuse_dismiss_info_hook :shop_fuse_popup_dismiss_gift_info_popup
   @fuse_merge_retries 3
-  @fuse_merge_settle_ms 300
+  @fuse_merge_settle_ms 200
   @fuse_confirm_confirm_hooks [:shop_fuse_popup_confirm_confirm, :shop_fuse_popup_confirm_confirm_2]
   @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
@@ -111,7 +111,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @new_shelf_poll_ms 100
   @shelf_settle_timeout_ms 1_000
   @fuse_dismiss_offset_px 15
-  @fuse_item_click_settle_ms 130
+  @fuse_item_click_settle_ms 50
   @fuse_rise_min_px 1
   @fuse_slots_filled_ms 1_000
   @fuse_confirm_steady_ms 120
@@ -128,7 +128,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @chance_comet_used_key :shop_chance_comet_used
   @fuse_change_affinity_hook :shop_fuse_popup_empty_result
   @max_escape_attempts 10
-  @escape_settle_ms 400
+  @escape_settle_ms 200
   @fuse_popup %{
     name: "fuse",
     inventory: @fuse_inventory_hook,
