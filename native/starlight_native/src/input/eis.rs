@@ -1,10 +1,8 @@
 //! libei EIS client for Wayland input injection.
 //!
 //! Connection path, chosen by where `capture::x11::locate` last found the game:
-//!   - Nested display (not the host `$DISPLAY`): the nested KWin's
-//!     `org.kde.KWin.EIS.RemoteDesktop.connectToEIS` over the bus at
-//!     `$XDG_RUNTIME_DIR/starlight-nested/bus`. The bus connection is held for
-//!     the client's lifetime, since KWin drops the EIS context when it closes.
+//!   - Nested display (not the host `$DISPLAY`): the newest live
+//!     `$XDG_RUNTIME_DIR/gamescope-N-ei` socket.
 //!   - Host display, tried in order:
 //!       1. LIBEI_SOCKET env var → reis EI handshake directly
 //!       2. XDG Remote Desktop portal via ashpd:
@@ -55,7 +53,6 @@ pub mod linux {
         dead: bool,
         /// Keeps the portal session alive; closes when EisClient is dropped.
         _session: Option<Session<RemoteDesktop>>,
-        _kwin_bus: Option<zbus::Connection>,
         display: Option<String>,
     }
 
@@ -263,12 +260,6 @@ pub mod linux {
         Ok((ctx, session))
     }
 
-    fn nested_bus_address() -> Result<String, NativeError> {
-        let runtime = std::env::var("XDG_RUNTIME_DIR")
-            .map_err(|_| NativeError::EisConnectFailed("XDG_RUNTIME_DIR not set".to_string()))?;
-        Ok(format!("unix:path={runtime}/starlight-nested/bus"))
-    }
-
     fn nested_eis_socket() -> Option<std::path::PathBuf> {
         let runtime = std::path::PathBuf::from(std::env::var("XDG_RUNTIME_DIR").ok()?);
         newest_live_gamescope_socket(&runtime)
@@ -290,45 +281,6 @@ pub mod linux {
             .map(|entry| entry.path())
     }
 
-    fn nested_kwin_bus_exists() -> bool {
-        nested_bus_address()
-            .map(|address| std::path::Path::new(address.trim_start_matches("unix:path=")).exists())
-            .unwrap_or(false)
-    }
-
-    async fn connect_via_kwin_dbus(address: &str) -> Result<(ei::Context, zbus::Connection), NativeError> {
-        const KEYBOARD_AND_POINTER: i32 = 1 | 2;
-
-        let bus = zbus::connection::Builder::address(address)
-            .map_err(|e| NativeError::EisConnectFailed(format!("bus address {address}: {e}")))?
-            .build()
-            .await
-            .map_err(|e| NativeError::EisConnectFailed(format!("bus {address}: {e}")))?;
-
-        let reply = bus
-            .call_method(
-                Some("org.kde.KWin"),
-                "/org/kde/KWin/EIS/RemoteDesktop",
-                Some("org.kde.KWin.EIS.RemoteDesktop"),
-                "connectToEIS",
-                &KEYBOARD_AND_POINTER,
-            )
-            .await
-            .map_err(|e| NativeError::EisConnectFailed(format!("KWin connectToEIS: {e}")))?;
-
-        let (fd, _cookie): (zbus::zvariant::OwnedFd, i32) = reply
-            .body()
-            .deserialize()
-            .map_err(|e| NativeError::EisConnectFailed(format!("KWin connectToEIS reply: {e}")))?;
-        eprintln!("[eis] KWin connectToEIS returned fd");
-
-        let socket = UnixStream::from(std::os::fd::OwnedFd::from(fd));
-        let ctx = ei::Context::new(socket)
-            .map_err(|e| NativeError::EisConnectFailed(format!("EIS context: {e}")))?;
-
-        Ok((ctx, bus))
-    }
-
     pub fn init_input(window_title: &str, token_path: &str) -> Result<(), NativeError> {
         *TOKEN_PATH.lock().unwrap() = Some(std::path::PathBuf::from(token_path));
         let _ = crate::capture::x11::locate(window_title);
@@ -338,26 +290,20 @@ pub mod linux {
     }
 
     fn connect(mut display: Option<String>) -> Result<EisClient, NativeError> {
-        let (ctx, mut session, mut kwin_bus) = match (&display, nested_eis_socket()) {
-            (Some(name), _) if nested_kwin_bus_exists() => {
-                eprintln!("[eis] game is on nested display {name}, connecting to its KWin");
-                let address = nested_bus_address()?;
-                let (ctx, bus) = futures_lite::future::block_on(connect_via_kwin_dbus(&address))?;
-                (ctx, None, Some(bus))
-            }
+        let (ctx, mut session) = match (&display, nested_eis_socket()) {
             (Some(name), Some(path)) => {
                 eprintln!("[eis] game is on nested display {name}, connecting to {}", path.display());
                 let stream = UnixStream::connect(&path)
                     .map_err(|e| NativeError::EisConnectFailed(format!("{}: {e}", path.display())))?;
                 let ctx = ei::Context::new(stream)
                     .map_err(|e| NativeError::EisConnectFailed(format!("EIS context: {e}")))?;
-                (ctx, None, None)
+                (ctx, None)
             }
             _ => match reis::ei::Context::connect_to_env() {
-                Ok(Some(ctx)) => (ctx, None, None),
+                Ok(Some(ctx)) => (ctx, None),
                 Ok(None) => {
                     let (ctx, s) = futures_lite::future::block_on(connect_via_portal())?;
-                    (ctx, Some(s), None)
+                    (ctx, Some(s))
                 }
                 Err(e) => return Err(NativeError::EisConnectFailed(e.to_string())),
             },
@@ -499,7 +445,6 @@ pub mod linux {
                         converter,
                         dead: false,
                         _session: session.take(),
-                        _kwin_bus: kwin_bus.take(),
                         display: display.take(),
                     };
                 }

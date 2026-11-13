@@ -52,8 +52,8 @@ defmodule StarlightBot.Native do
   @doc """
   Initialize the libei EIS client for whichever display the game window is on.
   Locates `window_title` across every X display first: if it's on a nested
-  display (not the host `$DISPLAY`), connects to that nested KWin's EIS over
-  `$XDG_RUNTIME_DIR/starlight-nested/bus`; otherwise uses `LIBEI_SOCKET`, then
+  display (not the host `$DISPLAY`), connects to the newest live gamescope EIS
+  socket in `$XDG_RUNTIME_DIR`; otherwise uses `LIBEI_SOCKET`, then
   the RemoteDesktop portal. If the game isn't running yet, connects to the host;
   input calls reconnect automatically once the game is found on another display.
   `token_path` is where the portal's restore token is kept so the permission

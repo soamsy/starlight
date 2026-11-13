@@ -8,7 +8,7 @@ defmodule StarlightBotWeb.Components.LaunchFields do
   attr :exe_path, :string, required: true
   attr :launch_timeout_s, :any, required: true
   attr :reset_event, :string, required: true
-  attr :launcher, :string, default: "kwin"
+  attr :launcher, :string, default: "gamescope_window"
   attr :gamescope_resolution, :string, default: "1920x1080"
   attr :gamescope_flags, :string, default: ""
   attr :requirements, :list, default: []

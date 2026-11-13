@@ -1,5 +1,5 @@
 defmodule StarlightBot.GameWindow do
-  alias StarlightBot.{AppSettings, LauncherDeps, LogStore, Native, NestedGamescope, NestedKwin, SteamLaunch}
+  alias StarlightBot.{AppSettings, LauncherDeps, LogStore, Native, NestedGamescope, SteamLaunch}
   alias StarlightBot.Vision.Capture
 
   @target_w 1920
@@ -110,17 +110,9 @@ defmodule StarlightBot.GameWindow do
   defp start("gamescope", argv, env, cwd), do: NestedGamescope.spawn("headless", argv, env, cwd)
   defp start("gamescope_window", argv, env, cwd), do: NestedGamescope.spawn("wayland", argv, env, cwd)
 
-  defp start(_kwin, argv, env, cwd) do
-    with {:ok, kwin_pid} <- NestedKwin.ensure(),
-         :ok <- NestedKwin.lock_frame(kwin_pid) do
-      NestedKwin.spawn(argv, env, cwd)
-    end
-  end
-
   defp launcher_label("direct"), do: "a native window"
   defp launcher_label("gamescope"), do: "a headless gamescope"
   defp launcher_label("gamescope_window"), do: "a gamescope window"
-  defp launcher_label(_kwin), do: "a nested KWin"
 
   def close do
     case System.cmd("pkill", ["-TERM", "-f", window_class() <> ".exe"], stderr_to_stdout: true) do
@@ -329,18 +321,7 @@ defmodule StarlightBot.GameWindow do
     end
   end
 
-  defp buses do
-    host = [{:host, ["--session"]}]
-
-    case System.get_env("XDG_RUNTIME_DIR") do
-      nil ->
-        host
-
-      runtime_dir ->
-        nested = Path.join([runtime_dir, "starlight-nested", "bus"])
-        if File.exists?(nested), do: host ++ [{:nested, ["--address", "unix:path=#{nested}"]}], else: host
-    end
-  end
+  defp buses, do: [{:host, ["--session"]}]
 
   defp load_and_run(bus_args, path) do
     gdbus(bus_args, "/Scripting", "org.kde.kwin.Scripting.unloadScript", [@plugin_name])

@@ -45,7 +45,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   end
 
   @impl true
-  def handle_event("game_launcher_set", %{"launcher" => launcher}, socket) when launcher in ["direct", "kwin", "gamescope", "gamescope_window"] do
+  def handle_event("game_launcher_set", %{"launcher" => launcher}, socket) when launcher in ["direct", "gamescope", "gamescope_window"] do
     AppSettings.put_launcher(launcher)
     {:noreply, assign(socket, :game_launcher, launcher)}
   end

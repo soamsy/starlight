@@ -26,11 +26,9 @@ defmodule StarlightBot.LinuxCheck do
     %{id: :keyboard, group: "Input and capture", title: "Type a key", active?: true},
     %{id: :close, group: "Input and capture", title: "Close test window", active?: true},
     %{id: :winprobe_direct, group: "Windows input", title: "Injected input, native window", active?: true, manual?: true},
-    %{id: :winprobe_kwin, group: "Windows input", title: "Injected input, nested KWin", active?: true, manual?: true},
     %{id: :winprobe_gamescope_window, group: "Windows input", title: "Injected input, gamescope window", active?: true, manual?: true},
     %{id: :winprobe_gamescope, group: "Windows input", title: "Injected input, headless gamescope", active?: true, manual?: true},
     %{id: :winprobe_hardware_direct, group: "Windows input", title: "Real hardware baseline, native window", active?: true, manual?: true},
-    %{id: :winprobe_hardware_kwin, group: "Windows input", title: "Real hardware baseline, nested KWin", active?: true, manual?: true},
     %{id: :winprobe_hardware_gamescope_window, group: "Windows input", title: "Real hardware baseline, gamescope window", active?: true, manual?: true}
   ]
 
@@ -332,11 +330,9 @@ defmodule StarlightBot.LinuxCheck do
   end
 
   defp check(:winprobe_direct, log), do: run_probe(:injected, "direct", log)
-  defp check(:winprobe_kwin, log), do: run_probe(:injected, "kwin", log)
   defp check(:winprobe_gamescope_window, log), do: run_probe(:injected, "gamescope_window", log)
   defp check(:winprobe_gamescope, log), do: run_probe(:injected, "gamescope", log)
   defp check(:winprobe_hardware_direct, log), do: run_probe(:hardware, "direct", log)
-  defp check(:winprobe_hardware_kwin, log), do: run_probe(:hardware, "kwin", log)
   defp check(:winprobe_hardware_gamescope_window, log), do: run_probe(:hardware, "gamescope_window", log)
 
   defp check(:close, log) do

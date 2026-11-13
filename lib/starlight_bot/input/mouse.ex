@@ -467,7 +467,7 @@ defmodule StarlightBot.Input.Mouse do
   defp relative?, do: :persistent_term.get({__MODULE__, :relative}, false)
 
   defp sync(state) do
-    relative = AppSettings.launcher() in ["gamescope", "gamescope_window", "kwin"]
+    relative = AppSettings.launcher() in ["gamescope", "gamescope_window"]
     :persistent_term.put({__MODULE__, :relative}, relative)
     now = System.monotonic_time(:millisecond)
 

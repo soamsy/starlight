@@ -30,11 +30,11 @@ defmodule StarlightBot.AppSettings do
       "direct" -> "direct"
       "gamescope" -> "gamescope"
       "gamescope_window" -> "gamescope_window"
-      _ -> "kwin"
+      _ -> "gamescope_window"
     end
   end
 
-  def put_launcher(launcher) when launcher in ["direct", "kwin", "gamescope", "gamescope_window"], do: put("launcher", launcher)
+  def put_launcher(launcher) when launcher in ["direct", "gamescope", "gamescope_window"], do: put("launcher", launcher)
 
   @gamescope_resolutions ["1920x1080", "1280x720"]
 

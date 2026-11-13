@@ -1,5 +1,5 @@
 defmodule StarlightBot.NestedGamescope do
-  alias StarlightBot.{AppSettings, LogStore, NestedKwin}
+  alias StarlightBot.{AppSettings, LogStore}
 
   @width 1920
   @height 1080
@@ -16,7 +16,7 @@ defmodule StarlightBot.NestedGamescope do
   end
 
   defp start(gamescope, backend, argv, extra_env, cwd) do
-    dir = NestedKwin.state_dir()
+    dir = state_dir()
     File.mkdir_p!(dir)
     File.chmod!(dir, 0o700)
     log_path = Path.join(dir, "gamescope.log")
@@ -32,6 +32,8 @@ defmodule StarlightBot.NestedGamescope do
       {out, code} -> {:error, {:launch_failed, code, String.trim(out)}}
     end
   end
+
+  defp state_dir, do: Path.join(System.get_env("XDG_RUNTIME_DIR") || System.tmp_dir!(), "starlight-nested")
 
   defp extra_flags, do: String.split(AppSettings.gamescope_flags())
 
