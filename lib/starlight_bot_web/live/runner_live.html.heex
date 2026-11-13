@@ -84,8 +84,7 @@
             </span>
             <button :if={forecast.rows != []} type="button" phx-click="toggle_forecast_info"
                     class={"btn btn-xs btn-outline gap-1 font-mono " <> if(forecast.total >= 0, do: "btn-success", else: "btn-error")}>
-              <%= signed(forecast.total) %>
-              <img src={~p"/images/icons/starlight.webp"} alt="Starlight" class="h-4 w-4" />
+              Max <img src={~p"/images/icons/starlight.webp"} alt="Starlight" class="h-4 w-4" /> possible: <%= signed(forecast.total) %>
             </button>
           </div>
           <input type="hidden" name="start_index" value={@start_index} />
