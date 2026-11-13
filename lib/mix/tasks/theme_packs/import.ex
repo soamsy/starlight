@@ -1,8 +1,9 @@
 defmodule Mix.Tasks.ThemePacks.Import do
   @shortdoc "Add new Mirror Dungeon theme packs from gll-fun"
   @moduledoc """
-  Add-only: theme packs already in `theme_packs` are skipped entirely, and only new
-  packs get their poster image downloaded and their gift links inserted.
+  Theme packs already in `theme_packs` are left alone except for their possible
+  bosses, which are refreshed. Only new packs get their poster image downloaded and
+  their gift links inserted.
 
       mix theme_packs.import
   """
@@ -14,9 +15,12 @@ defmodule Mix.Tasks.ThemePacks.Import do
 
   @theme_images_dir Path.expand("../../../../priv/static/images/theme_packs", __DIR__)
 
-  @theme_image_base "https://gll-fun.com/images/md-themes"
+  @enemy_images_dir Path.expand("../../../../priv/static/images/enemies", __DIR__)
 
-  @theme_columns ~w(id name_en name_ru description_en description_ru normal_floors hard_floors tip event_ids image_path node_count)a
+  @theme_image_base "https://gll-fun.com/images/md-themes"
+  @enemy_image_base "https://gll-fun.com/images/enemies"
+
+  @theme_columns ~w(id name_en name_ru description_en description_ru normal_floors hard_floors tip event_ids image_path node_count possible_bosses)a
 
   @impl Mix.Task
   def run(_args) do
@@ -24,6 +28,7 @@ defmodule Mix.Tasks.ThemePacks.Import do
     StarlightBot.Data.require_authoring!()
 
     File.mkdir_p!(@theme_images_dir)
+    File.mkdir_p!(@enemy_images_dir)
 
     case GllFun.fetch_api_key() do
       {:ok, api_key} -> do_import(api_key)
@@ -36,8 +41,15 @@ defmodule Mix.Tasks.ThemePacks.Import do
 
     %{rows: rows} = Ecto.Adapters.SQL.query!(Repo, "SELECT id FROM theme_packs", [])
     existing = MapSet.new(rows, &hd/1)
-    parsed = raw_themes |> Enum.map(&parse_theme/1) |> Enum.reject(&MapSet.member?(existing, &1.id))
+    themes = Enum.map(raw_themes, &parse_theme/1)
+    parsed = Enum.reject(themes, &MapSet.member?(existing, &1.id))
+    boss_updates = themes |> Enum.filter(&MapSet.member?(existing, &1.id)) |> Enum.map(&update_possible_bosses/1) |> Enum.sum()
     Enum.each(parsed, &ensure_theme_image/1)
+
+    themes
+    |> Enum.flat_map(&Jason.decode!(&1.possible_bosses))
+    |> Enum.uniq_by(& &1["id"])
+    |> Enum.each(&ensure_boss_image/1)
 
     gift_links =
       Repo.checkout(fn ->
@@ -49,7 +61,7 @@ defmodule Mix.Tasks.ThemePacks.Import do
 
     Mix.shell().info(
       "Added #{length(parsed)} new theme pack(s) and #{gift_links} gift link(s), " <>
-        "left #{MapSet.size(existing)} existing pack(s) untouched"
+        "refreshed bosses on #{boss_updates} existing pack(s), left the rest of #{MapSet.size(existing)} existing pack(s) untouched"
     )
   end
 
@@ -71,7 +83,8 @@ defmodule Mix.Tasks.ThemePacks.Import do
       tip: raw["tip"],
       event_ids: raw["events"],
       image_path: "/images/theme_packs/#{id}.webp",
-      gift_ids: parse_gift_ids(raw["uniquegifts"])
+      gift_ids: parse_gift_ids(raw["uniquegifts"]),
+      possible_bosses: raw["possiblebosses"] |> StarlightBot.ThemePacks.parse_bosses() |> Jason.encode!()
     }
   end
 
@@ -113,13 +126,28 @@ defmodule Mix.Tasks.ThemePacks.Import do
     str |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
   end
 
-  defp ensure_theme_image(%{id: id}) do
-    dest = Path.join(@theme_images_dir, "#{id}.webp")
+  defp ensure_theme_image(%{id: id}), do: ensure_download(Path.join(@theme_images_dir, "#{id}.webp"), "#{@theme_image_base}/#{id}.webp")
+
+  defp ensure_boss_image(%{"id" => id}) do
+    dest = Path.join(@enemy_images_dir, "#{id}.webp")
+    {first, rest} = String.split_at(id, 1)
+    decapitalized = String.downcase(first) <> rest
 
     unless File.exists?(dest) do
-      case GllFun.download_image("#{@theme_image_base}/#{id}.webp") do
+      with {:error, _} <- GllFun.download_image("#{@enemy_image_base}/#{id}.webp"),
+           {:error, reason} <- GllFun.download_image("#{@enemy_image_base}/#{decapitalized}.webp") do
+        Mix.shell().error("Image #{Path.basename(dest)}: #{inspect(reason)}")
+      else
         {:ok, bytes} -> File.write!(dest, bytes)
-        {:error, reason} -> Mix.shell().error("Theme image #{id}: #{inspect(reason)}")
+      end
+    end
+  end
+
+  defp ensure_download(dest, url) do
+    unless File.exists?(dest) do
+      case GllFun.download_image(url) do
+        {:ok, bytes} -> File.write!(dest, bytes)
+        {:error, reason} -> Mix.shell().error("Image #{Path.basename(dest)}: #{inspect(reason)}")
       end
     end
   end
@@ -139,6 +167,17 @@ defmodule Mix.Tasks.ThemePacks.Import do
       """,
       values
     )
+  end
+
+  defp update_possible_bosses(theme) do
+    %{num_rows: rows} =
+      Ecto.Adapters.SQL.query!(
+        Repo,
+        "UPDATE theme_packs SET possible_bosses = ? WHERE id = ? AND possible_bosses IS NOT ?",
+        [theme.possible_bosses, theme.id, theme.possible_bosses]
+      )
+
+    rows
   end
 
   defp add_theme_pack_gifts(theme_id, gift_ids) do

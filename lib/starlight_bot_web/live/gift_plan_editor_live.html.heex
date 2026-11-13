@@ -5,7 +5,7 @@
 
   <% popup_gift = @gift_popup && @gifts_by_name[@gift_popup.name] %>
   <div id="gift-popup" phx-hook="GiftPopup" class="contents" data-gift={popup_gift && popup_gift.name} data-x={@gift_popup && @gift_popup.x} data-y={@gift_popup && @gift_popup.y}>
-    <div :if={popup_gift} data-popup-control class="fixed z-50 w-max max-w-sm max-h-[calc(100vh-1rem)] overflow-y-auto rounded-lg border border-base-300 bg-base-100 p-2 shadow-xl flex flex-col gap-1">
+    <div :if={popup_gift} data-popup-control class="fixed z-50 w-max max-w-sm max-h-[calc(100vh-1rem)] overflow-y-auto rounded-lg border border-base-300 bg-base-100 p-2 shadow-[0_10px_30px_rgba(0,0,0,0.6),0_2px_8px_rgba(0,0,0,0.4)] flex flex-col gap-1">
       <div class="flex items-center gap-2">
         <img src={popup_gift.image_path} class="w-8 h-8 rounded object-cover shrink-0" />
         <div class="flex flex-col min-w-0">

@@ -11,7 +11,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   @modes ~w(normal hard)
   @cell_actions ~w(hunt favorite banned)
   @hunted ~w(hunt favorite)
-  @read_only_events ~w(set_floor_filter set_view filter_packs toggle_help copy_plan copy_cells clipboard_status plan_clipboard_failed)
+  @read_only_events ~w(set_floor_filter set_view filter_packs toggle_help show_bosses close_bosses copy_plan copy_cells clipboard_status plan_clipboard_failed)
 
   def read_only_events, do: @read_only_events
 
@@ -36,6 +36,8 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       |> assign(:packs_by_id, Map.new(theme_packs, &{&1.id, &1}))
       |> assign(:view, "plan")
       |> assign(:show_help, false)
+      |> assign(:bosses_popup, nil)
+      |> assign(:gifts_by_pack_id, ThemePacks.gifts_by_pack_id())
       |> reset_editor()
 
     {:ok, if(team && team.pack_plan_id, do: load_plan(socket, team.pack_plan_id, team.pack_template_id), else: socket)}
@@ -276,6 +278,12 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     plan_data = put_status(socket.assigns.plan_data, pack_id, mode, String.to_integer(floor), "none")
     {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
   end
+
+  @impl true
+  def handle_event("show_bosses", %{"pack_id" => pack_id, "x" => x, "y" => y}, socket), do: {:noreply, assign(socket, :bosses_popup, %{pack_id: pack_id, x: x, y: y})}
+
+  @impl true
+  def handle_event("close_bosses", _, socket), do: {:noreply, assign(socket, :bosses_popup, nil)}
 
   @impl true
   def handle_event("toggle_help", _, socket), do: {:noreply, update(socket, :show_help, &(!&1))}

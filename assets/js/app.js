@@ -1929,6 +1929,50 @@ const GiftPopup = {
   }
 }
 
+const BossPopup = {
+  mounted() {
+    this.onClick = (e) => {
+      const trigger = e.target.closest("[data-boss-popup]")
+      const open = this.el.dataset.open
+
+      if (open && this.el.contains(e.target)) return
+
+      if (trigger && trigger.dataset.bossPopup !== open) {
+        e.preventDefault()
+        e.stopPropagation()
+        this.pushEvent("show_bosses", { pack_id: trigger.dataset.bossPopup, x: e.clientX, y: e.clientY })
+      } else if (open) {
+        if (trigger) {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+        this.pushEvent("close_bosses", {})
+      }
+    }
+    document.addEventListener("click", this.onClick, true)
+    this.place()
+  },
+  updated() {
+    this.place()
+  },
+  destroyed() {
+    document.removeEventListener("click", this.onClick, true)
+  },
+  place() {
+    const box = this.el.firstElementChild
+    if (!box) return
+    const margin = 8
+    const x = Number(this.el.dataset.x)
+    const y = Number(this.el.dataset.y)
+    const { width, height } = box.getBoundingClientRect()
+    const left = Math.max(margin, Math.min(x - width - margin * 2, window.innerWidth - width - margin))
+    const below = y + margin
+    const top = below + height <= window.innerHeight - margin ? below : Math.max(margin, y - height - margin)
+    box.style.left = `${left}px`
+    box.style.top = `${top}px`
+  }
+}
+
 const WindowDrag = {
   mounted() {
     this.el.addEventListener("pointerdown", (e) => {
@@ -2443,7 +2487,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, CabinetBracket, FocusSelect, GiftSearchNav, TeamSearch, WindowDrag, GameStream, InfoArrow }
+  hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, BossPopup, CabinetBracket, FocusSelect, GiftSearchNav, TeamSearch, WindowDrag, GameStream, InfoArrow }
 })
 
 liveSocket.connect()
