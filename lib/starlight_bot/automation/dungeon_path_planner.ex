@@ -96,7 +96,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
         timeout: 4_000)
       ], ctx)
     true ->
-      Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead (#{venue}), spamming #{direction} + enter until dungeon_graph is gone, then space + enter until it shows")
+      Ctx.log(ctx, :info, "dungeon path planner: #{kind} ahead (#{venue}), spamming #{direction} + enter until dungeon_graph is gone, then space until it shows")
 
       Engine.act([
         retry_until(not_hook(:dungeon_graph),
@@ -108,9 +108,9 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
             {:default, [key(direction), key(:enter)]}
           ])
         ],
-        every: 80,
+        every: 150,
         timeout: 4_000),
-        attempt([retry_until(any_of(@node_arrival_hooks), [key(:space)], every: 80, timeout: 4_000)], else: [])
+        attempt([retry_until(any_of(@node_arrival_hooks), [key(:space)], every: 150, timeout: 4_000)], else: [])
       ], ctx)
     end
   end
