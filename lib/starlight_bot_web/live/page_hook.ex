@@ -297,7 +297,7 @@ defmodule StarlightBotWeb.Live.PageHook do
     do: {:halt, put_flash(socket, :error, "A Limbus update is pending, let Steam finish it first")}
 
   defp handle_window_event("game_window_launch", _params, socket) do
-    run_window_action(socket, "launching", launch_action(Scheduler.get_settings(), nil))
+    run_window_action(socket, "launching", launch_action(Scheduler.get_settings()))
   end
 
   defp handle_window_event("game_window_close", _params, %{assigns: %{run_live: true}} = socket),
@@ -312,30 +312,23 @@ defmodule StarlightBotWeb.Live.PageHook do
     end)
   end
 
-  defp handle_window_event("run", params, %{assigns: %{page: page}} = socket) when page in @gated_pages do
+  defp handle_window_event("run", _params, %{assigns: %{page: page}} = socket) when page in @gated_pages do
     case WindowGate.gate(socket.assigns) do
       :ready -> {:cont, socket}
-      :launch -> run_window_action(socket, "launching", launch_action(Scheduler.get_settings(), params))
       :update -> {:halt, put_flash(socket, :error, "A Limbus update is pending, let Steam finish it first")}
-      :resize -> {:halt, socket}
+      _ -> {:halt, socket}
     end
   end
 
   defp handle_window_event(_event, _params, socket), do: {:cont, socket}
 
-  defp launch_action(settings, run_params) do
-    lv = self()
-
+  defp launch_action(settings) do
     fn ->
       with :ok <- GameWindow.launch(settings),
            {:ok, {_, _, w, h} = rect} <- GameWindow.await_settled_window(settings.launch_timeout_s * 1000) do
         cond do
           not GameWindow.aspect_ok?(rect) ->
             {:info, "Limbus opened at #{w}x#{h}, resize it to 16:9 to start the run"}
-
-          run_params != nil ->
-            send(lv, {:window_gate_run, run_params})
-            {:info, "Limbus opened (#{w}x#{h}), starting the run"}
 
           true ->
             {:info, "Limbus window appeared (#{w}x#{h})"}

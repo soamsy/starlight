@@ -23,8 +23,8 @@ defmodule StarlightBotWeb.Components.WindowGate do
 
   def gate_button(assigns) do
     ~H"""
-    <button :if={@gate == :launch} type="submit" disabled={@disabled or @busy != nil} class={["btn btn-sm", @class]}>
-      {if @busy, do: String.capitalize(@busy) <> "…", else: "Open Limbus and run"}
+    <button :if={@gate == :launch} type="button" phx-click="game_window_launch" disabled={@disabled or @busy != nil} class={["btn btn-sm", @class]}>
+      {if @busy, do: String.capitalize(@busy) <> "…", else: "Open Limbus"}
     </button>
     <button :if={@gate == :update} type="button" disabled class="btn btn-primary btn-sm">
       Limbus update pending
