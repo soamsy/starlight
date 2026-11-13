@@ -9,8 +9,7 @@
       <div :if={@pane == "stats"} class="card bg-base-100 shadow-lg flex-1 min-h-0 overflow-hidden">
         <div class="card-body p-3 gap-3 flex-col xl:flex-row min-h-0 overflow-y-auto xl:overflow-hidden">
           <% budget = starlight_budget(@gift_plans, @pack_plans, @theme_packs, @selected_ids, @budget_inputs) %>
-          <% rest = effective_rest_bonus(@budget_inputs) %>
-          <% rest_cap = StarlightBudget.rest_bonus(@budget_inputs.free) %>
+          <% rest = rest_total(@budget_inputs) %>
           <div class="w-full max-w-3xl min-w-0 shrink-0 xl:shrink xl:min-h-0 xl:overflow-y-auto flex flex-col gap-3">
           <h3 class="font-medium text-sm">Expected Starlight</h3>
           <form phx-change="budget_change" class="flex flex-col max-w-3xl rounded-xl border border-base-300 bg-base-200 shadow-md divide-y divide-base-300 font-mono">
@@ -57,42 +56,33 @@
                   Rest bonus
                   <span class="ml-0.5 inline-flex h-3 w-3 items-center justify-center rounded-full border border-current align-middle text-[8px] italic leading-none">i</span>
                 </span>
-                <div class="relative mb-3 w-40" title={"Cap #{rest_cap}: #{@budget_inputs.free} free sinners × #{StarlightBudget.rest_per_free_sinner()}"}>
-                  <input type="range" onclick="event.stopPropagation()" name="rest_slider" min="0" max={StarlightBudget.max_rest_bonus()} step="1" value={@budget_inputs.rest_bonus}
-                         class="rest-range"
-                         style={"--fill: #{min(@budget_inputs.rest_bonus, rest_cap) / StarlightBudget.max_rest_bonus()}; --cap: #{rest_cap / StarlightBudget.max_rest_bonus()}; --over: #{max(@budget_inputs.rest_bonus, rest_cap) / StarlightBudget.max_rest_bonus()};" <> if(@budget_inputs.rest_bonus > rest_cap, do: " --thumb-color: color-mix(in oklab, var(--color-base-content) 55%, var(--color-base-100));", else: "")} />
-                  <div :if={rest_cap < StarlightBudget.max_rest_bonus()} class="pointer-events-none absolute top-full flex -translate-x-1/2 flex-col items-center"
-                       style={"left: calc(0.45rem + (100% - 0.9rem) * #{rest_cap / StarlightBudget.max_rest_bonus()})"}>
-                    <span class="-mt-2.5 h-3 w-px bg-base-content/60"></span>
-                    <span class="font-sans text-[10px] leading-none text-base-content/60">max <%= rest_cap %></span>
-                  </div>
-                </div>
-                <label onclick="event.stopPropagation()" class="flex items-center gap-1 font-sans text-xs text-base-content/60 cursor-pointer" title="On: every free sinner (12 minus the assigned ones) is fully rested, worth 5 each. Moving the slider turns this off and saves your value for the team.">
-                  <input type="checkbox" name="estimate" checked={@budget_inputs.estimate?} class="toggle toggle-success toggle-xs" />
-                  Auto
+                <label onclick="event.stopPropagation()" class="flex items-center gap-2 font-sans text-xs text-base-content/60" title="Free sinners are assumed to have enough profiles to be unique in every team, so they rest one point per other team in the cycle, up to 5. Not saved, slide it to see how fewer teams would do.">
+                  <input type="range" name="cycle_runs" min="1" max={StarlightBot.RestCycle.estimate_runs()} step="1" value={@budget_inputs.cycle_runs} class="range range-xs w-32 text-yellow-400 [--range-thumb:var(--color-base-100)]" />
+                  <span class="whitespace-nowrap"><%= @budget_inputs.cycle_runs %> team cycle</span>
                 </label>
               </div>
-              <div class="grid grid-cols-6 gap-2 w-fit" title={"#{rest} of #{StarlightBudget.max_rest_bonus()} rest bonus"}>
-                <div :for={sinner <- StarlightBot.SinnerProfiles.sinners()} class={"flex flex-col items-center " <> if(sinner in @budget_inputs.assigned, do: "opacity-40", else: "")}
-                     title={if sinner in @budget_inputs.assigned, do: "#{StarlightBot.SinnerProfiles.label(sinner)} is assigned identities", else: "#{StarlightBot.SinnerProfiles.label(sinner)} is free"}>
-                  <% charge = if sinner in @budget_inputs.assigned, do: 0, else: free_charge(rest, @budget_inputs.free) %>
+              <div class="grid grid-cols-6 gap-2 w-fit" title={"#{rest} rest bonus"}>
+                <div :for={sinner <- StarlightBot.SinnerProfiles.sinners()} class="flex items-end gap-1"
+                     title={if sinner in @budget_inputs.assigned, do: "#{StarlightBot.SinnerProfiles.label(sinner)} cycles #{length(@budget_inputs.profile_icons[sinner] || [])} assigned profiles, about +#{:erlang.float_to_binary(@budget_inputs.cycle.per_sinner[sinner], decimals: 1)} rest on average", else: "#{StarlightBot.SinnerProfiles.label(sinner)} is free"}>
+                  <% assigned? = sinner in @budget_inputs.assigned %>
+                  <% charge = if assigned?, do: round(@budget_inputs.cycle.per_sinner[sinner]), else: @budget_inputs.cycle.free_charge %>
+                  <div class="flex flex-col items-center">
                   <span class={"font-display text-2xl font-semibold leading-none mb-1 " <> if(charge > 0, do: "text-yellow-400", else: "text-base-content/30")}>
-                    <%= if sinner in @budget_inputs.assigned, do: "?", else: "+#{charge}" %>
+                    +<%= charge %>
                   </span>
                   <span class="h-0.5 w-3 rounded-t-sm bg-base-content/30"></span>
                   <div class="flex flex-col-reverse gap-0.5 rounded border border-base-content/30 p-0.5">
                     <span :for={n <- 1..StarlightBudget.rest_per_free_sinner()}
-                          class={"h-1 w-5 rounded-[1px] " <> if(n <= charge, do: "bg-yellow-400", else: "bg-base-300")}></span>
+                          class={"h-1 w-5 rounded-[1px] " <> if(n <= charge, do: if(assigned?, do: "bg-yellow-400", else: "bg-success"), else: "bg-base-300")}></span>
+                  </div>
+                  </div>
+                  <div :if={assigned?} class="grid grid-cols-3 gap-0.5">
+                      <img :for={icon <- Enum.take(@budget_inputs.profile_icons[sinner] || [], 6)} src={icon.src} alt={icon.name} title={icon.name} class="h-5 w-auto rounded object-contain" />
                   </div>
                 </div>
               </div>
               </div>
-              <div class="flex flex-col items-end gap-0.5">
-                <input type="number" name="rest_bonus" onclick="event.stopPropagation()" min="0" max={StarlightBudget.max_rest_bonus()} step="1" value={@budget_inputs.rest_bonus}
-                       class={"input input-bordered input-xs w-full text-right " <> if(@budget_inputs.rest_bonus > rest, do: "text-base-content/50 line-through", else: "text-success")} />
-                <span :if={@budget_inputs.rest_bonus > rest} class="text-sm font-semibold text-warning cursor-help"
-                      title={"Capped at #{rest_cap}, only #{@budget_inputs.free} free sinners"}><%= rest %></span>
-              </div>
+              <span class="text-sm text-success text-right"><%= rest %></span>
             </div>
             <div id="info-row-encounter" phx-click="show_info" phx-value-pane="encounter" role="button"
                  class={"grid grid-cols-[1.25rem_1fr_5rem] items-center gap-x-3 px-3 py-2 cursor-pointer hover:bg-base-300/60 " <> if(@info_pane == :encounter, do: "bg-base-300/60", else: "")}>
@@ -163,7 +153,7 @@
             <span data-arrow class="hidden xl:block absolute -left-[7px] top-6 h-3.5 w-3.5 -translate-y-1/2 rotate-45 border-b border-l border-base-300 bg-base-200"></span>
             <div class="flex flex-col gap-3 min-h-0 flex-1">
               <div class="overflow-y-auto flex flex-col gap-4 pr-1">
-                <p>How much starlight you get by switching your team up regularly. Assumes you're repeating the same team over and over again, which only gets you rest bonus from sinners not required for the run (if they're cycled).</p>
+                <p>How much starlight you get by switching your team up regularly. Specify the team cycle length to see how much you get from not spamming the same 12 ids repeatedly.</p>
                 <h2>How rest bonus works</h2>
                 <p>For every run an identity is not used, the identity gets <span class="font-semibold text-yellow-400">+1</span> rest bonus, up to <span class="font-semibold text-yellow-400">+5</span>. Then when you use the identity, this bonus not only flat out gives you extra starlight for the number (<span class="font-semibold text-yellow-400">+60</span> if everyone's fully rested) but also pumps up the multiplier for exploration starlight, so the value of being fully rested isn't just <span class="font-semibold text-yellow-400">+5</span>, it's often something like <span class="font-semibold text-yellow-400">+8</span> or <span class="font-semibold text-yellow-400">+9</span> per sinner for a normal run.</p>
                 <p>The idea is it encourages players to use more than one team, and if you really want the full +60, you gotta cycle. The bot accounts for this when you set up multiple teams on the md run page.</p>

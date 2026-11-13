@@ -103,25 +103,7 @@
                       <tr :for={{row, index} <- Enum.with_index(forecast.rows)}>
                         <td class="font-sans"><.link navigate={~p"/teams?team=#{row.team_id}&pane=stats"} class="link link-primary inline-flex items-center gap-1" title="Open this team's starlight formula"><%= row.name %><.icon name="lucide-external-link" class="size-3.5" /></.link> <span class="text-base-content/50"><%= row.hook %></span></td>
                         <td class="text-right text-success"><%= row.lines.base %></td>
-                        <td class="text-right">
-                          <% first = Enum.find_index(forecast.rows, &(&1.team_id == row.team_id)) %>
-                          <% owner = Enum.at(forecast.rows, first) %>
-                          <div class={"flex items-center justify-end gap-2 " <> if(first != index, do: "opacity-40 cursor-not-allowed", else: "")}
-                               title={if first != index, do: "Edit rest bonus in row #{first + 1}: #{owner.name} #{owner.hook}"}>
-                            <label class="flex items-center gap-1 font-sans text-xs text-base-content/60 cursor-pointer" title="On: use the rest cycle estimate from the lineup. Moving the slider or typing a value turns this off and saves it for the team.">
-                              <input type="checkbox" name={"rb_auto_#{row.team_id}"} checked={row.from_lineup?} phx-change="set_rest_bonus" disabled={first != index}
-                                     class="toggle toggle-success toggle-xs" />
-                              <span :if={row.from_lineup?} class="badge badge-success badge-xs">Auto</span>
-                            </label>
-                            <input type="range" name={"rb_slider_#{row.team_id}"} min="0" max={StarlightBudget.max_rest_bonus()} step="1" value={row.set_bonus}
-                                   phx-change="set_rest_bonus" disabled={first != index} class="range range-success range-xs w-44" />
-                            <input type="number" name={"rb_num_#{row.team_id}"} min="0" max={StarlightBudget.max_rest_bonus()} step="1" value={row.set_bonus}
-                                   phx-change="set_rest_bonus" phx-debounce="300" disabled={first != index}
-                                   class={"input input-bordered input-xs w-12 px-1 text-right " <> if(row.cap_note, do: "text-base-content/50 line-through", else: "text-success")} />
-                            <span :if={row.cap_note} class="w-8 text-left font-semibold text-warning cursor-help" title={row.cap_note}><%= row.free_bonus %></span>
-                            <span :if={row.assigned_bonus > 0} class="badge badge-xs badge-outline badge-success font-mono cursor-help" title="Rest from assigned sinners cycling through their profiles">+<%= row.assigned_bonus %></span>
-                          </div>
-                        </td>
+                        <td class="text-right text-success" title={"#{row.free_bonus} from free sinners + #{row.assigned_bonus} from assigned sinners cycling profiles"}><%= row.rest_bonus %></td>
                         <td class="text-right text-success"><%= row.lines.exploration %></td>
                         <td class="text-right text-success"><%= StarlightBudget.format(row.lines.encounters) %></td>
                         <td class="text-right text-error"><%= row.lines.grace %></td>

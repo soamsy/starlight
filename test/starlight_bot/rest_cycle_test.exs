@@ -22,13 +22,9 @@ defmodule StarlightBot.RestCycleTest do
     assert limits(for(hook <- ~w(a b c d e f), do: entry(1, hook))) == List.duplicate(60, 6)
   end
 
-  test "same team and hook twice depletes each other" do
-    assert limits([entry(1, "a"), entry(1, "a")]) == [0, 0]
-  end
-
-  test "team a, team b, team a again only rests what ran between" do
-    [first, second, third] = RestCycle.analyze([entry(1, "a"), entry(2, "a"), entry(1, "a")])
-    assert {first.free_limit, second.free_limit, third.free_limit} == {0, 24, 12}
+  test "free sinners are unique in every run, even for a repeated team and hook" do
+    assert limits([entry(1, "a"), entry(1, "a")]) == [12, 12]
+    assert limits([entry(1, "a"), entry(2, "a"), entry(1, "a")]) == [24, 24, 24]
   end
 
   test "assigned sinners rotate through their profiles per team and hook" do
@@ -42,10 +38,21 @@ defmodule StarlightBot.RestCycleTest do
     assert Enum.map(rows, & &1.free_count) == [11, 12, 11, 11, 11]
   end
 
-  test "free sinners number their profiles per distinct team and hook" do
+  test "free sinners number their profiles per run they are free in" do
     [first, second] = RestCycle.analyze([entry(1, "a", %{"yi_sang" => [1]}), entry(2, "a")])
     assert Enum.map(first.slots, &(&1.kind == :free && &1.number)) |> Enum.reject(&(&1 == false)) == List.duplicate(1, 11)
     assert Enum.map(second.slots, & &1.number) == [1] ++ List.duplicate(2, 11)
+  end
+
+  test "estimate gives free sinners one rest per other team in the cycle" do
+    assert Enum.map(1..6, &RestCycle.estimate(%{}, &1).free_charge) == [0, 1, 2, 3, 4, 5]
+  end
+
+  test "estimate averages assigned sinners over the cycle" do
+    assigned = %{"yi_sang" => [1, 2, 3, 4], "faust" => [5, 6, 7], "ishmael" => [8, 9], "meursault" => [10]}
+    estimate = RestCycle.estimate(assigned, 6)
+    assert estimate.per_sinner == %{"yi_sang" => 3.0, "faust" => 2.0, "ishmael" => 1.0, "meursault" => 0.0}
+    assert estimate.average == 6.0
   end
 
   test "empty cycle" do

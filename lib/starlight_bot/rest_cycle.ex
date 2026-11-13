@@ -9,12 +9,12 @@ defmodule StarlightBot.RestCycle do
     sinners = SinnerProfiles.sinners()
     count = length(entries)
     combos = Enum.map(entries, &{&1.team, &1.hook})
-    free_numbering = free_numbering(entries, combos, sinners)
+    free_numbering = free_numbering(entries, sinners)
     team_numbering = team_numbering(entries, combos)
 
     grid =
-      for {entry, combo} <- Enum.zip(entries, combos) do
-        for sinner <- sinners, do: slot(entry, combo, sinner, free_numbering, team_numbering)
+      for {{entry, combo}, index} <- entries |> Enum.zip(combos) |> Enum.with_index() do
+        for sinner <- sinners, do: slot(entry, combo, index, sinner, free_numbering, team_numbering)
       end
 
     identities = grid |> Enum.map(fn row -> row |> Enum.map(& &1.identity) |> List.to_tuple() end) |> List.to_tuple()
@@ -39,13 +39,32 @@ defmodule StarlightBot.RestCycle do
     end
   end
 
-  defp free_numbering(entries, combos, sinners) do
-    for sinner <- sinners, into: %{} do
-      distinct =
-        for({entry, combo} <- Enum.zip(entries, combos), assigned_ids(entry, sinner) == [], do: combo)
-        |> Enum.uniq()
+  def estimate_runs, do: 6
 
-      {sinner, distinct}
+  def estimate(assigned, runs \\ estimate_runs()) do
+    entries = for hook <- 1..runs, do: %{team: 0, hook: hook, assigned: assigned}
+    cycles = analyze(entries)
+
+    per_sinner =
+      for sinner <- Map.keys(assigned), into: %{} do
+        total = cycles |> Enum.map(fn cycle -> Enum.find(cycle.slots, &(&1.sinner == sinner)).charge end) |> Enum.sum()
+        {sinner, total / runs}
+      end
+
+    %{runs: runs, free_charge: min(runs - 1, @max_charge), per_sinner: per_sinner, average: per_sinner |> Map.values() |> Enum.sum()}
+  end
+
+  defp free_numbering(entries, sinners) do
+    indexed = Enum.with_index(entries)
+
+    for sinner <- sinners, into: %{} do
+      numbers =
+        indexed
+        |> Enum.filter(fn {entry, _index} -> assigned_ids(entry, sinner) == [] end)
+        |> Enum.with_index(1)
+        |> Map.new(fn {{_entry, index}, number} -> {index, number} end)
+
+      {sinner, numbers}
     end
   end
 
@@ -55,11 +74,11 @@ defmodule StarlightBot.RestCycle do
     end
   end
 
-  defp slot(entry, combo, sinner, free_numbering, team_numbering) do
+  defp slot(entry, combo, index, sinner, free_numbering, team_numbering) do
     case assigned_ids(entry, sinner) do
       [] ->
-        number = free_numbering |> Map.fetch!(sinner) |> Enum.find_index(&(&1 == combo)) |> Kernel.+(1)
-        %{sinner: sinner, kind: :free, number: number, identity: {:free, sinner, number}}
+        number = free_numbering |> Map.fetch!(sinner) |> Map.fetch!(index)
+        %{sinner: sinner, kind: :free, number: number, identity: {:free, sinner, index}}
 
       ids ->
         position = team_numbering |> Map.fetch!(entry.team) |> Enum.find_index(&(&1 == combo)) |> rem(length(ids))

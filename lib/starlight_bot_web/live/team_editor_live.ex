@@ -1,7 +1,8 @@
 defmodule StarlightBotWeb.Live.TeamEditorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{EgoGifts, PlanCounts, Plans, StarlightBudget, TeamBudget, Teams, ThemePacks}
+  alias StarlightBot.{EgoGifts, Hooks, PlanCounts, Plans, RestCycle, SinnerProfiles, StarlightBudget, TeamBudget, Teams, ThemePacks}
+  alias StarlightBotWeb.Components.TeamNav
   alias StarlightBot.PackPlans.Odds
   alias StarlightBotWeb.Live.{BattlePlanEditorLive, GiftPlanEditorLive, PackPlanEditorLive}
 
@@ -49,7 +50,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
     case Teams.get_team(socket.assigns.editing_id) do
       nil -> socket
-      team -> socket |> assign(:selected_ids, TeamBudget.selected_ids(team)) |> assign(:budget_inputs, blank_budget_inputs(team))
+      team -> socket |> assign(:selected_ids, TeamBudget.selected_ids(team)) |> assign(:budget_inputs, blank_budget_inputs(team, socket.assigns.budget_inputs.cycle_runs))
     end
   end
 
@@ -61,21 +62,10 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
   @impl true
   def handle_event("budget_change", params, socket) do
-    team_id = socket.assigns.editing_id
     inputs = socket.assigns.budget_inputs
 
-    case params["_target"] do
-      ["estimate"] ->
-        estimate? = params["estimate"] == "on"
-        bonus = if estimate?, do: StarlightBudget.rest_bonus(inputs.free), else: effective_rest_bonus(inputs)
-        Teams.set_rest_bonus(team_id, if(estimate?, do: nil, else: bonus))
-        {:noreply, assign(socket, :budget_inputs, %{inputs | rest_bonus: bonus, estimate?: estimate?})}
-
-      [field] ->
-        bonus = min(parse_id(params[field]) || 0, StarlightBudget.max_rest_bonus())
-        Teams.set_rest_bonus(team_id, bonus)
-        {:noreply, assign(socket, :budget_inputs, %{inputs | rest_bonus: bonus, estimate?: false})}
-    end
+    runs = (parse_id(params["cycle_runs"]) || RestCycle.estimate_runs()) |> max(1) |> min(RestCycle.estimate_runs())
+    {:noreply, assign(socket, :budget_inputs, %{inputs | cycle: RestCycle.estimate(inputs.assigned_ids, runs), cycle_runs: runs})}
   end
 
   @impl true
@@ -130,7 +120,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
         socket
         |> assign(:editing_id, team.id)
         |> assign(:selected_ids, TeamBudget.selected_ids(team))
-        |> assign(:budget_inputs, blank_budget_inputs(team))
+        |> assign(:budget_inputs, blank_budget_inputs(team, socket.assigns.budget_inputs.cycle_runs))
     end
   end
 
@@ -153,23 +143,31 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     %{"gift_plan" => nil, "battle_plan" => nil, "pack_plan" => nil, "gift_override" => nil, "pack_override" => nil}
   end
 
-  defp blank_budget_inputs(team) do
-    assigned = team |> TeamBudget.assigned() |> Map.keys()
-    free = StarlightBudget.max_free_sinners() - length(assigned)
+  defp blank_budget_inputs(team, runs \\ RestCycle.estimate_runs()) do
+    assigned = TeamBudget.assigned(team)
 
-    case team do
-      %{rest_bonus: rest_bonus} when is_integer(rest_bonus) -> %{rest_bonus: rest_bonus, estimate?: false, free: free, assigned: assigned}
-      _ -> %{rest_bonus: StarlightBudget.rest_bonus(free), estimate?: true, free: free, assigned: assigned}
-    end
+    %{
+      free: StarlightBudget.max_free_sinners() - map_size(assigned),
+      assigned: Map.keys(assigned),
+      assigned_ids: assigned,
+      cycle_runs: runs,
+      cycle: RestCycle.estimate(assigned, runs),
+      profile_icons: profile_icons(assigned)
+    }
   end
 
-  def effective_rest_bonus(inputs), do: min(inputs.rest_bonus, StarlightBudget.rest_bonus(inputs.free))
+  defp profile_icons(assigned) when map_size(assigned) == 0, do: %{}
 
-  def free_charge(_rest_bonus, 0), do: 0
-  def free_charge(rest_bonus, free), do: round(rest_bonus / free)
+  defp profile_icons(assigned) do
+    profiles_by_id = Map.new(SinnerProfiles.list(), &{&1.id, &1})
+    thumbs = Hooks.hook_thumbnails("locator")
+    Map.new(assigned, fn {sinner, ids} -> {sinner, TeamNav.profile_icons(ids, profiles_by_id, thumbs)} end)
+  end
+
+  def rest_total(inputs), do: inputs.free * inputs.cycle.free_charge + round(inputs.cycle.average)
 
   def starlight_budget(gift_plans, pack_plans, theme_packs, selected_ids, inputs) do
-    TeamBudget.build(gift_plans, pack_plans, theme_packs, selected_ids, effective_rest_bonus(inputs))
+    TeamBudget.build(gift_plans, pack_plans, theme_packs, selected_ids, rest_total(inputs))
   end
 
   defp publish_net(%{assigns: %{editing_id: id}} = socket) when is_integer(id) do

@@ -28,7 +28,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   @search_poll_every_ms 100
   @search_poll_tries 20
   @search_icon_poll_tries 20
-  @search_scroll_steps 16
+  @search_scroll_steps 20
   @search_row_size 5
   @search_row_clicks 9
   @search_bottom_steps 3
