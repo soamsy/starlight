@@ -95,6 +95,40 @@ select.select {
   filter: drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000);
 }
 
+.rest-range {
+  --thumb: 0.9rem;
+  appearance: none;
+  height: 0.5rem;
+  width: 100%;
+  border-radius: 9999px;
+  cursor: pointer;
+  background:
+    linear-gradient(to right,
+      var(--color-success) 0 calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--fill)),
+      var(--color-base-300) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--fill)) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--cap)),
+      color-mix(in oklab, var(--color-base-content) 45%, transparent) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--cap)) calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--over)),
+      transparent calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--over)) 100%),
+    repeating-linear-gradient(135deg, var(--color-base-300) 0 3px, var(--color-base-100) 3px 6px);
+}
+
+.rest-range::-webkit-slider-thumb {
+  appearance: none;
+  width: var(--thumb);
+  height: var(--thumb);
+  border-radius: 9999px;
+  background: var(--thumb-color, var(--color-success));
+  border: 2px solid var(--color-base-100);
+}
+
+.rest-range::-moz-range-thumb {
+  width: var(--thumb);
+  height: var(--thumb);
+  box-sizing: border-box;
+  border-radius: 9999px;
+  background: var(--thumb-color, var(--color-success));
+  border: 2px solid var(--color-base-100);
+}
+
 h1, h2, h3, h4, .card-title, .btn, .tab, .menu-title {
   font-family: var(--font-display);
   letter-spacing: 0.02em;

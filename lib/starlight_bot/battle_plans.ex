@@ -1482,5 +1482,9 @@ defmodule StarlightBot.BattlePlans do
     end
   end
 
+  def assigned_profiles(data) do
+    data |> profiles() |> Map.take(SinnerProfiles.sinners()) |> Map.reject(fn {_sinner, ids} -> ids == [] end)
+  end
+
   def profile_ids_used(data), do: data |> profiles() |> Map.values() |> List.flatten() |> MapSet.new()
 end

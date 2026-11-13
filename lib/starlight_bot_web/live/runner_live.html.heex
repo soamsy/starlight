@@ -89,21 +89,39 @@
           </div>
           <input type="hidden" name="start_index" value={@start_index} />
           <div :if={@show_forecast_info} class="modal modal-open" phx-window-keydown="toggle_forecast_info" phx-key="Escape">
-            <div class="modal-box max-w-4xl max-h-[85vh] flex flex-col gap-3 text-sm">
+            <div class="modal-box max-w-5xl max-h-[85vh] flex flex-col gap-3 text-sm">
               <div class="overflow-y-auto flex flex-col gap-4 pr-1">
                 <section class="flex flex-col gap-1">
                   <table class="table table-xs font-mono">
                     <thead>
                       <tr>
-                        <th>Team</th><th class="text-right">Base</th><th class="text-right">Rest</th><th class="text-right">Explor.</th><th class="text-right">Enc.</th>
+                        <th>Team</th><th class="text-right">Base</th><th class="text-center border-b-2 border-success/60">Rest bonus</th><th class="text-right">Explor.</th><th class="text-right">Enc.</th>
                         <th class="text-right">Graces</th><th class="text-right">Gift s.</th><th class="text-right">Pack s.</th><th class="text-right">Net</th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr :for={row <- forecast.rows}>
+                      <tr :for={{row, index} <- Enum.with_index(forecast.rows)}>
                         <td class="font-sans"><.link navigate={~p"/teams?team=#{row.team_id}&pane=stats"} class="link link-primary inline-flex items-center gap-1" title="Open this team's starlight formula"><%= row.name %><.icon name="lucide-external-link" class="size-3.5" /></.link> <span class="text-base-content/50"><%= row.hook %></span></td>
                         <td class="text-right text-success"><%= row.lines.base %></td>
-                        <td class="text-right text-success"><%= row.lines.rest %></td>
+                        <td class="text-right">
+                          <% first = Enum.find_index(forecast.rows, &(&1.team_id == row.team_id)) %>
+                          <% owner = Enum.at(forecast.rows, first) %>
+                          <div class={"flex items-center justify-end gap-2 " <> if(first != index, do: "opacity-40 cursor-not-allowed", else: "")}
+                               title={if first != index, do: "Edit rest bonus in row #{first + 1}: #{owner.name} #{owner.hook}"}>
+                            <label class="flex items-center gap-1 font-sans text-xs text-base-content/60 cursor-pointer" title="On: use the rest cycle estimate from the lineup. Moving the slider or typing a value turns this off and saves it for the team.">
+                              <input type="checkbox" name={"rb_auto_#{row.team_id}"} checked={row.from_lineup?} phx-change="set_rest_bonus" disabled={first != index}
+                                     class="toggle toggle-success toggle-xs" />
+                              <span :if={row.from_lineup?} class="badge badge-success badge-xs">Auto</span>
+                            </label>
+                            <input type="range" name={"rb_slider_#{row.team_id}"} min="0" max={StarlightBudget.max_rest_bonus()} step="1" value={row.set_bonus}
+                                   phx-change="set_rest_bonus" disabled={first != index} class="range range-success range-xs w-44" />
+                            <input type="number" name={"rb_num_#{row.team_id}"} min="0" max={StarlightBudget.max_rest_bonus()} step="1" value={row.set_bonus}
+                                   phx-change="set_rest_bonus" phx-debounce="300" disabled={first != index}
+                                   class={"input input-bordered input-xs w-12 px-1 text-right " <> if(row.cap_note, do: "text-base-content/50 line-through", else: "text-success")} />
+                            <span :if={row.cap_note} class="w-8 text-left font-semibold text-warning cursor-help" title={row.cap_note}><%= row.free_bonus %></span>
+                            <span :if={row.assigned_bonus > 0} class="badge badge-xs badge-outline badge-success font-mono cursor-help" title="Rest from assigned sinners cycling through their profiles">+<%= row.assigned_bonus %></span>
+                          </div>
+                        </td>
                         <td class="text-right text-success"><%= row.lines.exploration %></td>
                         <td class="text-right text-success"><%= StarlightBudget.format(row.lines.encounters) %></td>
                         <td class="text-right text-error"><%= row.lines.grace %></td>
@@ -117,6 +135,29 @@
                       </tr>
                     </tbody>
                   </table>
+                </section>
+                <section class="flex flex-col gap-1">
+                  <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lineups</span>
+                  <div :for={{row, index} <- Enum.with_index(forecast.rows)} class="flex items-center gap-2">
+                    <span class="w-44 shrink-0 truncate font-sans text-xs" title={"#{row.name} #{row.hook}"}><%= index + 1 %>. <%= row.name %> <span class="text-base-content/50"><%= row.hook %></span></span>
+                    <div class="flex items-center gap-1.5">
+                      <%= for slot <- row.slots do %>
+                        <span class="relative flex h-11 w-14 shrink-0 items-center justify-center" title={slot_title(slot)}>
+                          <img :if={slot.kind == :assigned} src={slot.icon} alt={slot.profile_name} class="h-11 w-auto rounded object-contain" />
+                          <span :if={slot.kind == :free} class={"badge relative h-11 w-14 overflow-hidden " <> free_badge_class(slot.number)}>
+                            <img src={StarlightBot.SinnerProfiles.icon(slot.sinner)} alt={slot.sinner} class="sinner-icon absolute inset-0 m-auto h-10 w-auto object-contain" />
+                          </span>
+                          <span :if={slot.kind == :free} class="badge badge-xs badge-neutral font-mono absolute -bottom-1 -left-1 px-1"><%= slot.number %></span>
+                          <span class="absolute -top-1 -right-1 flex items-center gap-0.5">
+                            <span class="rounded bg-base-100/80 px-0.5 font-mono text-[10px] font-bold leading-none text-yellow-400">+<%= slot.battery %></span>
+                            <span class="flex flex-col-reverse gap-px rounded-[2px] border border-base-content/60 bg-base-100 p-px">
+                              <span :for={n <- 1..5} class={"h-[3px] w-2 rounded-[1px] " <> if(n <= slot.battery, do: "bg-yellow-400", else: "bg-base-300")}></span>
+                            </span>
+                          </span>
+                        </span>
+                      <% end %>
+                    </div>
+                  </div>
                 </section>
               </div>
               <div class="modal-action mt-0">

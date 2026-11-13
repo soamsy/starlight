@@ -3,7 +3,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1]
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Navigation.{Navigator, RunArchive, ScreenTimes}
-  alias StarlightBot.{AppSettings, EgoGifts, GiftPlans, LuxSchedule, Plans, RestCycle, RunHistory, RunnerForms, StarlightBudget, TeamBudget, Teams}
+  alias StarlightBot.{AppSettings, EgoGifts, GiftPlans, LuxSchedule, Plans, RestCycle, RunHistory, RunnerForms, SinnerProfiles, StarlightBudget, TeamBudget, Teams}
   alias StarlightBot.PackPlans.Resolver
   alias StarlightBotWeb.Live.GiftPlanEditorLive
 
@@ -75,6 +75,20 @@ defmodule StarlightBotWeb.Live.RunnerLive do
 
   @impl true
   def handle_event("toggle_forecast_info", _, socket), do: {:noreply, update(socket, :show_forecast_info, &(!&1))}
+
+  @impl true
+  def handle_event("set_rest_bonus", %{"_target" => [field]} = params, socket) do
+    ["rb", kind, team_id] = String.split(field, "_")
+
+    bonus =
+      case kind do
+        "auto" -> if params[field] == "on", do: nil, else: current_rest_bonus(socket, String.to_integer(team_id))
+        _ -> rest_bonus_value(params[field])
+      end
+
+    Teams.set_rest_bonus(String.to_integer(team_id), bonus)
+    {:noreply, assign(socket, :teams, Teams.list_teams() |> Enum.reject(&(&1.hooks == [])))}
+  end
 
   @impl true
   def handle_event("localize", _, socket) do
@@ -729,8 +743,48 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   def mode_override_label("extreme"), do: "Extreme"
   def mode_override_label("hard_" <> floor), do: "F#{floor} Hard"
 
+  defp current_rest_bonus(socket, team_id) do
+    socket.assigns.picks |> cycle_forecast(socket.assigns.teams) |> Map.fetch!(:rows) |> Enum.find_value(0, &(&1.team_id == team_id && &1.set_bonus))
+  end
+
+  defp rest_bonus_value(text) do
+    case Integer.parse(text) do
+      {value, _} -> value |> max(0) |> min(StarlightBudget.max_rest_bonus())
+      :error -> 0
+    end
+  end
+
+  defp with_icon(%{kind: :assigned} = slot, profiles_by_id, thumbs) do
+    case StarlightBotWeb.Components.TeamNav.profile_icons([slot.profile_id], profiles_by_id, thumbs) do
+      [icon] -> Map.merge(slot, %{icon: icon.src, profile_name: icon.name})
+      [] -> Map.merge(slot, %{icon: SinnerProfiles.icon(slot.sinner), profile_name: SinnerProfiles.label(slot.sinner)})
+    end
+  end
+
+  defp with_icon(slot, _profiles_by_id, _thumbs), do: slot
+
+  defp with_battery(%{kind: :assigned} = slot, _free_bonus, _free_count), do: Map.put(slot, :battery, slot.charge)
+  defp with_battery(slot, free_bonus, free_count), do: Map.put(slot, :battery, round(free_bonus / free_count))
+
+  defp cap_note(set, free_bonus, _team_cap, _cycle) when set <= free_bonus, do: nil
+
+  defp cap_note(_set, _free_bonus, team_cap, %{free_limit: free_limit, free_count: free_count}) when team_cap <= free_limit do
+    "Capped at #{team_cap}, only #{free_count} free #{if free_count == 1, do: "sinner", else: "sinners"}"
+  end
+
+  defp cap_note(_set, _free_bonus, _team_cap, %{free_limit: free_limit, gap: gap}) do
+    "Capped at #{free_limit}, only #{gap} other #{if gap == 1, do: "team runs", else: "teams run"} before this one"
+  end
+
+  @free_badge_classes ~w(badge-primary badge-secondary badge-accent badge-info badge-success badge-warning badge-error)
+
+  def free_badge_class(number), do: Enum.at(@free_badge_classes, rem(number - 1, length(@free_badge_classes)))
+
+  def slot_title(%{kind: :assigned} = slot), do: "#{slot.profile_name}, profile #{slot.number} of #{slot.of}, +#{slot.battery} rest"
+  def slot_title(slot), do: "#{SinnerProfiles.label(slot.sinner)}, free profile #{slot.number}, +#{slot.battery} rest"
+
   def cycle_forecast(picks, teams) do
-    key = {picks, Enum.map(teams, &{&1.id, &1.free_sinners, &1.gift_plan_id, &1.pack_plan_id})}
+    key = {picks, Enum.map(teams, &{&1.id, &1.rest_bonus, &1.assigned, &1.gift_plan_id, &1.pack_plan_id})}
 
     case Process.get(:cycle_forecast) do
       {^key, forecast} ->
@@ -747,11 +801,13 @@ defmodule StarlightBotWeb.Live.RunnerLive do
     sources = TeamBudget.sources()
     entries = for pick <- picks, team = Enum.find(teams, &(&1.id == pick.id)), do: {pick, team}
 
-    bonuses =
+    analysis =
       entries
-      |> Enum.map(fn {pick, team} -> %{team: team.id, hook: pick.hook, free: TeamBudget.free_sinners(team)} end)
-      |> RestCycle.bonuses()
+      |> Enum.map(fn {pick, team} -> %{team: team.id, hook: pick.hook, assigned: team.assigned} end)
+      |> RestCycle.analyze()
 
+    profiles_by_id = Map.new(SinnerProfiles.list(), &{&1.id, &1})
+    thumbs = StarlightBot.Hooks.hook_thumbnails("locator")
     budgets =
       entries
       |> Enum.map(fn {pick, team} -> {team, pick.mode, pick.search} end)
@@ -759,8 +815,12 @@ defmodule StarlightBotWeb.Live.RunnerLive do
       |> Map.new(fn {team, mode, search} -> {{team.id, mode, search}, TeamBudget.for_team(team, 0, [mode: mode, search: search], sources)} end)
 
     rows =
-      for {{pick, team}, bonus} <- Enum.zip(entries, bonuses) do
+      for {{pick, team}, cycle} <- Enum.zip(entries, analysis) do
         budget = Map.fetch!(budgets, {team.id, pick.mode, pick.search})
+        team_cap = StarlightBudget.rest_bonus(cycle.free_count)
+        set = if is_integer(team.rest_bonus), do: team.rest_bonus, else: team_cap
+        free_bonus = Enum.min([set, team_cap, cycle.free_limit])
+        bonus = cycle.assigned_bonus + free_bonus
         exploration = StarlightBudget.exploration_gain(budget.floor_total, budget.railway_packs, bonus)
 
         lines = %{
@@ -773,7 +833,20 @@ defmodule StarlightBotWeb.Live.RunnerLive do
           pack_search: budget.costs.pack_search
         }
 
-        %{team_id: team.id, name: team.name, hook: pick.hook, rest_bonus: bonus, net: TeamBudget.net_at(budget, bonus), lines: lines}
+        %{
+          team_id: team.id,
+          name: team.name,
+          hook: pick.hook,
+          rest_bonus: bonus,
+          set_bonus: set,
+          free_bonus: free_bonus,
+          assigned_bonus: cycle.assigned_bonus,
+          cap_note: cap_note(set, free_bonus, team_cap, cycle),
+          slots: Enum.map(cycle.slots, &(&1 |> with_icon(profiles_by_id, thumbs) |> with_battery(free_bonus, cycle.free_count))),
+          from_lineup?: not is_integer(team.rest_bonus),
+          net: TeamBudget.net_at(budget, bonus),
+          lines: lines
+        }
       end
 
     total = rows |> Enum.map(& &1.net) |> Enum.sum()

@@ -62,19 +62,19 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   @impl true
   def handle_event("budget_change", params, socket) do
     team_id = socket.assigns.editing_id
-    team = Teams.get_team(team_id)
+    inputs = socket.assigns.budget_inputs
 
     case params["_target"] do
       ["estimate"] ->
         estimate? = params["estimate"] == "on"
-        free = if estimate?, do: StarlightBudget.default_free_sinners(TeamBudget.first_lineup_size(team)), else: socket.assigns.budget_inputs.free_sinners
-        Teams.set_free_sinners(team_id, if(estimate?, do: nil, else: free))
-        {:noreply, assign(socket, :budget_inputs, %{free_sinners: free, estimate?: estimate?})}
+        bonus = if estimate?, do: StarlightBudget.rest_bonus(inputs.free), else: effective_rest_bonus(inputs)
+        Teams.set_rest_bonus(team_id, if(estimate?, do: nil, else: bonus))
+        {:noreply, assign(socket, :budget_inputs, %{inputs | rest_bonus: bonus, estimate?: estimate?})}
 
-      _ ->
-        free = min(parse_id(params["free_sinners"]) || 0, StarlightBudget.max_free_sinners())
-        Teams.set_free_sinners(team_id, free)
-        {:noreply, assign(socket, :budget_inputs, %{free_sinners: free, estimate?: false})}
+      [field] ->
+        bonus = min(parse_id(params[field]) || 0, StarlightBudget.max_rest_bonus())
+        Teams.set_rest_bonus(team_id, bonus)
+        {:noreply, assign(socket, :budget_inputs, %{inputs | rest_bonus: bonus, estimate?: false})}
     end
   end
 
@@ -153,14 +153,23 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     %{"gift_plan" => nil, "battle_plan" => nil, "pack_plan" => nil, "gift_override" => nil, "pack_override" => nil}
   end
 
-  defp blank_budget_inputs(%{free_sinners: free_sinners}) when is_integer(free_sinners), do: %{free_sinners: free_sinners, estimate?: false}
-
   defp blank_budget_inputs(team) do
-    %{free_sinners: TeamBudget.free_sinners(team), estimate?: true}
+    assigned = team |> TeamBudget.assigned() |> Map.keys()
+    free = StarlightBudget.max_free_sinners() - length(assigned)
+
+    case team do
+      %{rest_bonus: rest_bonus} when is_integer(rest_bonus) -> %{rest_bonus: rest_bonus, estimate?: false, free: free, assigned: assigned}
+      _ -> %{rest_bonus: StarlightBudget.rest_bonus(free), estimate?: true, free: free, assigned: assigned}
+    end
   end
 
+  def effective_rest_bonus(inputs), do: min(inputs.rest_bonus, StarlightBudget.rest_bonus(inputs.free))
+
+  def free_charge(_rest_bonus, 0), do: 0
+  def free_charge(rest_bonus, free), do: round(rest_bonus / free)
+
   def starlight_budget(gift_plans, pack_plans, theme_packs, selected_ids, inputs) do
-    TeamBudget.build(gift_plans, pack_plans, theme_packs, selected_ids, StarlightBudget.rest_bonus(inputs.free_sinners))
+    TeamBudget.build(gift_plans, pack_plans, theme_packs, selected_ids, effective_rest_bonus(inputs))
   end
 
   defp publish_net(%{assigns: %{editing_id: id}} = socket) when is_integer(id) do

@@ -9,8 +9,19 @@ defmodule StarlightBot.TeamBudget do
     build(sources.gift_plans, sources.pack_plans, sources.theme_packs, selected_ids(team), rest_bonus, opts)
   end
 
-  def free_sinners(%{free_sinners: free_sinners}) when is_integer(free_sinners), do: free_sinners
-  def free_sinners(team), do: StarlightBudget.default_free_sinners(first_lineup_size(team))
+  def assigned(%{assigned: assigned}), do: assigned
+  def assigned(nil), do: %{}
+
+  def assigned(team) do
+    case Plans.for_team(team, :battle_plans) do
+      %{data: data} -> BattlePlans.assigned_profiles(data)
+      _ -> %{}
+    end
+  end
+
+  def free_sinners(team), do: StarlightBudget.max_free_sinners() - map_size(assigned(team))
+
+  def free_rest_cap(team), do: StarlightBudget.rest_bonus(free_sinners(team))
 
   def net_at(budget, rest_bonus) do
     exploration = StarlightBudget.exploration_gain(budget.floor_total, budget.railway_packs, rest_bonus)
@@ -31,15 +42,6 @@ defmodule StarlightBot.TeamBudget do
     case Plans.for_team(team, table) do
       %{template_id: template_id, data: data} when is_integer(template_id) -> data
       _ -> nil
-    end
-  end
-
-  def first_lineup_size(nil), do: 0
-
-  def first_lineup_size(team) do
-    case Plans.for_team(team, :battle_plans) do
-      %{data: data} -> length((data |> BattlePlans.lineups() |> List.first() || %{})["sinners"] || [])
-      _ -> 0
     end
   end
 

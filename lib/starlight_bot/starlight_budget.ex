@@ -5,7 +5,6 @@ defmodule StarlightBot.StarlightBudget do
   @floors 1..5
   @max_free_sinners 12
   @rest_per_free_sinner 5
-  @max_deployed 7
   @rest_mult_per_point_milli 17
   @max_rest_mult_milli 2000
   @railway_bonus 5
@@ -32,7 +31,7 @@ defmodule StarlightBot.StarlightBudget do
   def max_free_sinners, do: @max_free_sinners
   def rest_per_free_sinner, do: @rest_per_free_sinner
   def rest_bonus(free_sinners), do: @rest_per_free_sinner * free_sinners
-  def default_free_sinners(locked_count), do: @max_free_sinners - min(locked_count, @max_deployed)
+  def max_rest_bonus, do: @rest_per_free_sinner * @max_free_sinners
   def railway_bonus, do: @railway_bonus
 
   def floor_reward(floor, "hard"), do: 4 * min(floor, 5)

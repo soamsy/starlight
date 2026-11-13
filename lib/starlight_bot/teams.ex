@@ -46,7 +46,7 @@ defmodule StarlightBot.Teams do
           name: t.name,
           notes: t.notes,
           hooks: t.hooks,
-          free_sinners: t.free_sinners,
+          rest_bonus: t.rest_bonus,
           gift_plan_id: t.gift_plan_id,
           gift_plan_name: g.name,
           battle_plan_id: t.battle_plan_id,
@@ -78,7 +78,7 @@ defmodule StarlightBot.Teams do
           hooks: t.hooks,
           gift_plan_id: t.gift_plan_id,
           gift_plan_data: g.data,
-          free_sinners: t.free_sinners,
+          rest_bonus: t.rest_bonus,
           battle_plan_id: t.battle_plan_id,
           pack_plan_id: t.pack_plan_id,
           gift_template_id: t.gift_template_id,
@@ -229,9 +229,9 @@ defmodule StarlightBot.Teams do
     end)
   end
 
-  def set_free_sinners(team_id, free_sinners) when is_integer(team_id) and (is_integer(free_sinners) or is_nil(free_sinners)) do
+  def set_rest_bonus(team_id, rest_bonus) when is_integer(team_id) and (is_integer(rest_bonus) or is_nil(rest_bonus)) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
-    {n, _} = Repo.update_all(from(t in "teams", where: t.id == ^team_id), set: [free_sinners: free_sinners, updated_at: now])
+    {n, _} = Repo.update_all(from(t in "teams", where: t.id == ^team_id), set: [rest_bonus: rest_bonus, updated_at: now])
     if n > 0, do: {:ok, team_id}, else: {:error, :not_found}
   end
 
@@ -388,6 +388,8 @@ defmodule StarlightBot.Teams do
       ]
       |> Enum.filter(& &1)
 
-    team |> Map.put(:missing, missing) |> Map.put(:profile_ids, profile_ids)
+    assigned = if decoded, do: BattlePlans.assigned_profiles(decoded), else: %{}
+
+    team |> Map.put(:missing, missing) |> Map.put(:profile_ids, profile_ids) |> Map.put(:assigned, assigned)
   end
 end
