@@ -115,7 +115,7 @@ defmodule StarlightBot.GiftPlansTest do
 
   describe "heal costs" do
     test "each heal costs 100, Until healed doubles the top of the range, and Heal Everyone counts its times" do
-      assert GiftPlans.action_cost_range("revive", %{"sinners" => ["a", "b", "c"]}) == {300, 300}
+      assert GiftPlans.action_cost_range("revive", %{"sinners" => ["a", "b", "c"]}) == {0, 300}
       assert GiftPlans.action_cost_range("heal", %{"sinners" => ["a", "b"], "repeat" => "until_full"}) == {200, 400}
       assert GiftPlans.action_cost_range("heal", %{"sinners" => ["a"], "repeat" => "once"}) == {100, 100}
       assert GiftPlans.action_cost_range("heal_all", %{"repeat" => "once"}) == {100, 100}

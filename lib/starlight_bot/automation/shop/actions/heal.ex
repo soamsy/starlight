@@ -14,10 +14,10 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
   def run(%{"kind" => kind, "sinner" => nil}, _definition, state, _ctx) when kind in ["heal", "revive"],
     do: {:failed, "no sinner selected", state}
 
-  def run(%{"kind" => "revive", "sinner" => sinner}, _definition, state, ctx) do
+  def run(%{"kind" => "revive", "sinner" => sinner} = step, _definition, state, ctx) do
     state = close_menu(state, ctx)
 
-    with true <- Ops.sinner_dead?(sinner),
+    with true <- step["known_dead"] == true or Ops.sinner_dead?(sinner),
          {:ok, state} <- open_menu(state, ctx),
          :ok <- Ops.revive(sinner, ctx) do
       spend(ctx)
@@ -74,8 +74,14 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
   defp run_entry(%{subject: %{"action" => "heal_all"}, repeat: "until_full"}, acc, ctx), do: heal_all_until_healed(acc, ctx)
   defp run_entry(%{subject: %{"action" => "heal_all"}, repeat: repeat}, acc, ctx), do: heal_up_to(%{"kind" => "heal_all"}, "all", GiftPlans.heal_all_times(repeat), acc, ctx)
 
-  defp run_entry(%{subject: %{"action" => "revive"}, sinners: sinners}, acc, ctx) do
-    Enum.reduce(sinners, acc, fn sinner, acc -> heal_up_to(%{"kind" => "revive", "sinner" => sinner}, "revive:#{sinner}", 1, acc, ctx) end)
+  defp run_entry(%{subject: %{"action" => "revive"}, sinners: sinners}, {lines, acted?, state}, ctx) do
+    state = close_menu(state, ctx)
+    statuses = Ops.sinner_statuses(sinners)
+    dead = Enum.filter(sinners, &statuses[&1].dead)
+
+    Enum.reduce(dead, {lines, acted?, state}, fn sinner, acc ->
+      heal_up_to(%{"kind" => "revive", "sinner" => sinner, "known_dead" => true}, "revive:#{sinner}", 1, acc, ctx)
+    end)
   end
 
   defp run_entry(%{subject: %{"action" => "heal"}, sinners: sinners, repeat: repeat}, acc, ctx) do

@@ -577,7 +577,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("ms_add_action", %{"action" => action} = params, socket) do
-    {:noreply, update_plan(socket, &GiftPlans.add_action(&1, socket.assigns.selected_milestone_id, action, params["sinner"]))}
+    sinner = if params["sinner"] == "everyone", do: Teams.all_sinners(), else: params["sinner"]
+    {:noreply, update_plan(socket, &GiftPlans.add_action(&1, socket.assigns.selected_milestone_id, action, sinner))}
   end
 
   @impl true

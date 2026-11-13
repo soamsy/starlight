@@ -383,7 +383,7 @@ defmodule StarlightBot.GiftPlans do
   def heal_actions, do: @heal_actions
   def heal_all_max, do: @heal_all_max
 
-  def action_cost_range("revive", segment), do: twice(length(segment["sinners"] || []) * @heal_cost)
+  def action_cost_range("revive", segment), do: {0, length(segment["sinners"] || []) * @heal_cost}
   def action_cost_range("heal", %{"repeat" => "until_full"} = segment), do: {length(segment["sinners"] || []) * @heal_cost, 2 * length(segment["sinners"] || []) * @heal_cost}
   def action_cost_range("heal", segment), do: twice(length(segment["sinners"] || []) * @heal_cost)
   def action_cost_range("heal_all", %{"repeat" => "until_full"}), do: {@heal_cost, @heal_all_max * @heal_cost}
@@ -405,7 +405,7 @@ defmodule StarlightBot.GiftPlans do
 
   def subject_label(%{"gift" => name}), do: name
   def subject_label(%{"action" => "heal"}), do: "Greatly Heal"
-  def subject_label(%{"action" => "revive"}), do: "Revive"
+  def subject_label(%{"action" => "revive"}), do: "Revive (if dead)"
   def subject_label(%{"action" => "heal_all"}), do: "Heal Everyone"
   def subject_label(%{"action" => "skill_replace"}), do: "Skill Replace"
   def subject_label(%{"affinity" => affinity, "tiers" => []}), do: "Any #{affinity}"

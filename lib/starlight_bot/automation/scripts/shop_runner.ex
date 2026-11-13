@@ -102,11 +102,21 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
       dead = for {sinner, %{dead: true}} <- statuses, do: sinner
       hurt = for sinner <- fullness_sinners, not statuses[sinner].dead, not statuses[sinner].full, do: sinner
 
-      entries
-      |> Enum.map(&entry_heal_need(&1, dead, hurt))
-      |> Enum.sum()
+      {needs, _} =
+        Enum.map_reduce(entries, {dead, hurt}, fn entry, {dead, hurt} ->
+          {entry_heal_need(entry, dead, hurt), after_entry(entry, dead, hurt)}
+        end)
+
+      Enum.sum(needs)
     end
   end
+
+  defp after_entry(%{subject: %{"action" => "revive"}, sinners: sinners}, dead, hurt) do
+    revived = Enum.filter(sinners, &(&1 in dead))
+    {dead -- revived, Enum.uniq(hurt ++ revived)}
+  end
+
+  defp after_entry(_entry, dead, hurt), do: {dead, hurt}
 
   defp entry_sinners(%{subject: %{"action" => "heal_all"}}, all), do: all
   defp entry_sinners(%{sinners: sinners}, _all), do: sinners
