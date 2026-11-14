@@ -14,6 +14,8 @@ rustler::atoms! {
     io_error,
     nif_not_initialized,
     cursor_query_failed,
+    input_refused,
+    input_failed,
 }
 
 #[derive(Debug, Error)]
@@ -21,7 +23,7 @@ pub enum NativeError {
     #[error("window not found")]
     WindowNotFound,
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", windows)))]
     #[error("EIS not available (KWin Plasma 6.0+ required)")]
     EisNotAvailable,
 
@@ -40,7 +42,7 @@ pub enum NativeError {
     #[error("capture failed: {0}")]
     CaptureFailed(String),
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     #[error("PNG encode failed: {0}")]
     EncodeFailed(String),
 
@@ -53,13 +55,21 @@ pub enum NativeError {
 
     #[error("cursor position query failed: {0}")]
     CursorQueryFailed(String),
+
+    #[cfg(windows)]
+    #[error("input refused: {0}")]
+    InputRefused(String),
+
+    #[cfg(windows)]
+    #[error("SendInput failed: {0}")]
+    InputFailed(String),
 }
 
 impl NativeError {
     pub fn to_atom(&self, _env: Env<'_>) -> Atom {
         match self {
             Self::WindowNotFound => window_not_found(),
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(not(any(target_os = "linux", windows)))]
             Self::EisNotAvailable => eis_not_available(),
             #[cfg(target_os = "linux")]
             Self::EisConnectFailed(_) => eis_connect_failed(),
@@ -68,12 +78,16 @@ impl NativeError {
             #[cfg(target_os = "linux")]
             Self::EisNoDevice => eis_no_device(),
             Self::CaptureFailed(_) => capture_failed(),
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             Self::EncodeFailed(_) => encode_failed(),
             #[cfg(target_os = "linux")]
             Self::Io(_) => io_error(),
             Self::NotInitialized => nif_not_initialized(),
             Self::CursorQueryFailed(_) => cursor_query_failed(),
+            #[cfg(windows)]
+            Self::InputRefused(_) => input_refused(),
+            #[cfg(windows)]
+            Self::InputFailed(_) => input_failed(),
         }
     }
 }

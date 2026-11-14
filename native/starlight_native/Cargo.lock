@@ -888,6 +888,7 @@ dependencies = [
  "wayland-protocols",
  "wayland-protocols-misc",
  "wayland-protocols-wlr",
+ "windows-sys",
  "xcb",
  "zbus",
 ]

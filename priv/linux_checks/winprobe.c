@@ -32,6 +32,7 @@ static long move_events, dropped_moves;
 static HWND main_window;
 static volatile LONG stop_polling;
 static GetCurrentInputMessageSourceFn get_message_source;
+static int clicked_on;
 
 static long long now_us(void) {
     LARGE_INTEGER n;
@@ -206,11 +207,24 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (wp == FLUSH_TIMER) flush();
         if (wp == DONE_TIMER) DestroyWindow(hwnd);
         return 0;
+    case WM_ERASEBKGND: {
+        RECT area;
+        HBRUSH brush = CreateSolidBrush(clicked_on ? RGB(0, 255, 0) : RGB(255, 0, 0));
+        GetClientRect(hwnd, &area);
+        FillRect((HDC)wp, &area, brush);
+        DeleteObject(brush);
+        return 1;
+    }
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
     default:
+        if (msg == WM_LBUTTONDOWN) {
+            clicked_on = !clicked_on;
+            InvalidateRect(hwnd, NULL, TRUE);
+        }
         handle_window_message(hwnd, msg, wp, lp);
+        if (msg == WM_KEYUP && wp == VK_ESCAPE) PostMessageA(hwnd, WM_CLOSE, 0, 0);
         return DefWindowProcA(hwnd, msg, wp, lp);
     }
 }
@@ -363,10 +377,10 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show) {
     wc.hInstance = inst;
     wc.lpszClassName = CLASS_NAME;
     wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
-    wc.hbrBackground = (HBRUSH)GetStockObject(DKGRAY_BRUSH);
+    wc.hbrBackground = NULL;
     if (!RegisterClassA(&wc)) return 4;
 
-    main_window = CreateWindowExA(0, CLASS_NAME, CLASS_NAME, WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 800, 450, NULL, NULL, inst, NULL);
+    main_window = CreateWindowExA(WS_EX_TOPMOST, CLASS_NAME, CLASS_NAME, WS_OVERLAPPEDWINDOW | WS_VISIBLE, 100, 100, 800, 450, NULL, NULL, inst, NULL);
     if (!main_window) return 5;
     SetForegroundWindow(main_window);
     SetFocus(main_window);

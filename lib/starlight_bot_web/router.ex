@@ -31,6 +31,7 @@ defmodule StarlightBotWeb.Router do
       live "/log", Live.LogLive
       live "/data", Live.DataLive
       live "/linux-checks", Live.LinuxChecksLive
+      live "/windows-checks", Live.LinuxChecksLive, :windows
     end
   end
 

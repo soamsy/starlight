@@ -69,6 +69,8 @@ defmodule StarlightBot.LinuxCheck do
   def passive_ids, do: for(%{active?: false, id: id} <- @checks, do: id)
   def active_ids, do: for(%{active?: true, id: id} = check <- @checks, not Map.get(check, :manual?, false), do: id)
   def target_title, do: @target_title
+  def heading, do: "Linux checks"
+  def log_prefix, do: "linux-check: "
 
   def run(id, log) when is_atom(id) do
     status = check(id, log)

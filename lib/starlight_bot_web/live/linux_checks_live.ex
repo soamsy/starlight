@@ -1,13 +1,17 @@
 defmodule StarlightBotWeb.Live.LinuxChecksLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.{LinuxCheck, LogStore}
+  alias StarlightBot.{LinuxCheck, LogStore, WindowsCheck}
   alias StarlightBotWeb.Live.LogLive
 
   @impl true
   def mount(_params, _session, socket) do
+    {module, page} = if socket.assigns.live_action == :windows, do: {WindowsCheck, :windows_checks}, else: {LinuxCheck, :linux_checks}
+
     {:ok,
      socket
-     |> assign(:checks, LinuxCheck.checks())
+     |> assign(:module, module)
+     |> assign(:page, page)
+     |> assign(:checks, module.checks())
      |> assign(:results, %{})
      |> assign(:running, nil)
      |> assign(:busy, nil)
@@ -24,10 +28,10 @@ defmodule StarlightBotWeb.Live.LinuxChecksLive do
   end
 
   def handle_event("run_passive", _params, %{assigns: %{busy: nil}} = socket),
-    do: {:noreply, start(socket, LinuxCheck.passive_ids())}
+    do: {:noreply, start(socket, socket.assigns.module.passive_ids())}
 
   def handle_event("run_active", _params, %{assigns: %{busy: nil}} = socket),
-    do: {:noreply, start(socket, LinuxCheck.active_ids())}
+    do: {:noreply, start(socket, socket.assigns.module.active_ids())}
 
   def handle_event("clear", _params, socket) do
     {:noreply, socket |> assign(:count, 0) |> assign(:results, %{}) |> stream(:entries, [], reset: true)}
@@ -52,10 +56,11 @@ defmodule StarlightBotWeb.Live.LinuxChecksLive do
 
   defp start(socket, ids) do
     lv = self()
+    module = socket.assigns.module
 
     log = fn kind, text ->
       send(lv, {:lc_log, kind, text})
-      LogStore.append(kind, "linux-check: " <> text)
+      LogStore.append(kind, module.log_prefix() <> text)
       :ok
     end
 
@@ -64,7 +69,7 @@ defmodule StarlightBotWeb.Live.LinuxChecksLive do
         for id <- ids do
           send(lv, {:lc_running, id})
           log.(:step, "running #{id}")
-          send(lv, {:lc_result, id, LinuxCheck.run(id, log)})
+          send(lv, {:lc_result, id, module.run(id, log)})
         end
       end)
 

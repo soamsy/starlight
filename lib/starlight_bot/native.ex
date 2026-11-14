@@ -44,6 +44,8 @@ defmodule StarlightBot.Native do
   """
   def is_window_focused(_class_name), do: nif_err()
 
+  def system_details(), do: nif_err()
+
   # --- Logging ---
 
   def init_logger(_pid), do: nif_err()

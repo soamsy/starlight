@@ -1,6 +1,6 @@
 <div class="flex h-full min-h-0 gap-3 overflow-hidden">
   <div class="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto">
-    <h2 class="text-lg font-semibold">Linux checks</h2>
+    <h2 class="text-lg font-semibold">{@module.heading()}</h2>
 
     <div class="flex flex-col gap-2">
       <button class="btn btn-sm btn-primary" phx-click="run_passive" disabled={@busy != nil}>Run diagnostics</button>

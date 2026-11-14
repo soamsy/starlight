@@ -174,7 +174,7 @@
 
       <div class="dropdown dropdown-end">
         <% profiles_on = on_teams and assigns[:team_nav] != nil and @team_nav.pane == "profiles" %>
-        <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :prepare_lineups, :rewards, :linux_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
+        <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :prepare_lineups, :rewards, :linux_checks, :windows_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
           <.icon name="lucide-layout-grid" class="size-4 lg:size-5" />
         </div>
         <div tabindex="0" class="dropdown-content z-50 mt-2 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
@@ -240,11 +240,19 @@
       <.icon name="lucide-gift" class="size-4 lg:size-5" />
       <span class="text-[10px] font-normal leading-tight text-center">Rewards</span>
     </.link>
+    <%= if match?({:win32, _}, :os.type()) do %>
+    <.link navigate={~p"/windows-checks"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :windows_checks, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-monitor-check" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Windows Checks</span>
+    </.link>
+    <% else %>
     <.link navigate={~p"/linux-checks"}
            class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :linux_checks, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
       <.icon name="lucide-monitor-check" class="size-4 lg:size-5" />
       <span class="text-[10px] font-normal leading-tight text-center">Linux Checks</span>
     </.link>
+    <% end %>
     <% end %>
     <.link navigate={~p"/data"}
            class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :data, do: "btn-primary", else: "btn-ghost text-base-content/50")}>

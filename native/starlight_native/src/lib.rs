@@ -105,6 +105,14 @@ fn is_window_focused<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
     }
 }
 
+#[rustler::nif(schedule = "DirtyIo")]
+fn system_details<'a>(env: Env<'a>) -> Term<'a> {
+    match capture::system_details() {
+        Ok(lines) => (ok(), lines).encode(env),
+        Err(e) => (error(), e.to_atom(env)).encode(env),
+    }
+}
+
 #[rustler::nif]
 fn init_logger(pid: rustler::LocalPid) -> rustler::Atom {
     log::attach(pid);
