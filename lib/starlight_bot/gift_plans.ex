@@ -383,7 +383,8 @@ defmodule StarlightBot.GiftPlans do
   def heal_actions, do: @heal_actions
   def heal_all_max, do: @heal_all_max
 
-  def action_cost_range("revive", segment), do: {0, length(segment["sinners"] || []) * @heal_cost}
+  def action_cost_range("revive", %{"heal_after" => false} = segment), do: {0, length(segment["sinners"] || []) * @heal_cost}
+  def action_cost_range("revive", segment), do: {0, 2 * length(segment["sinners"] || []) * @heal_cost}
   def action_cost_range("heal", %{"repeat" => "until_full"} = segment), do: {length(segment["sinners"] || []) * @heal_cost, 2 * length(segment["sinners"] || []) * @heal_cost}
   def action_cost_range("heal", segment), do: twice(length(segment["sinners"] || []) * @heal_cost)
   def action_cost_range("heal_all", %{"repeat" => "until_full"}), do: {@heal_cost, @heal_all_max * @heal_cost}
@@ -462,6 +463,7 @@ defmodule StarlightBot.GiftPlans do
       abandoned: abandoned?,
       sinners: segment["sinners"] || [],
       repeat: segment["repeat"] || "once",
+      heal_after: segment["heal_after"] != false,
       target: skill_target(segment["target"], segment["lock_s2"] != false),
       lock_s2: segment["lock_s2"] != false
     }

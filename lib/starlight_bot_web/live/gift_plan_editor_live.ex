@@ -609,6 +609,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("ms_toggle_heal_after", %{"entry" => entry_id, "from" => from}, socket) do
+    {:noreply, update_segment(socket, entry_id, from, &Map.put(&1, "heal_after", &1["heal_after"] == false))}
+  end
+
+  @impl true
   def handle_event("ms_set_heal_repeat", %{"entry" => entry_id, "from" => from, "repeat" => repeat}, socket) when repeat in ~w(once 2 3 until_full) do
     {:noreply, update_segment(socket, entry_id, from, &Map.put(&1, "repeat", repeat))}
   end
@@ -1904,6 +1909,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
             </button>
           </span>
         </div>
+        <button :if={@entry["subject"]["action"] == "revive"} type="button" phx-click="ms_toggle_heal_after" phx-value-entry={@entry["id"]} phx-value-from={@from}
+                title="After reviving a dead sinner, greatly heal them too"
+                class={"btn btn-xs " <> if(@segment["heal_after"] != false, do: "btn-success", else: "btn-outline")}>Heal after</button>
         <div :if={action_repeats(@entry["subject"]["action"]) != []} class="join">
           <button :for={{repeat, label} <- action_repeats(@entry["subject"]["action"])} type="button" phx-click="ms_set_heal_repeat"
                   phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-repeat={repeat}

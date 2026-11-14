@@ -74,13 +74,14 @@ defmodule StarlightBot.Automation.Shop.Actions.Heal do
   defp run_entry(%{subject: %{"action" => "heal_all"}, repeat: "until_full"}, acc, ctx), do: heal_all_until_healed(acc, ctx)
   defp run_entry(%{subject: %{"action" => "heal_all"}, repeat: repeat}, acc, ctx), do: heal_up_to(%{"kind" => "heal_all"}, "all", GiftPlans.heal_all_times(repeat), acc, ctx)
 
-  defp run_entry(%{subject: %{"action" => "revive"}, sinners: sinners}, {lines, acted?, state}, ctx) do
+  defp run_entry(%{subject: %{"action" => "revive"}, sinners: sinners, heal_after: heal_after}, {lines, acted?, state}, ctx) do
     state = close_menu(state, ctx)
     statuses = Ops.sinner_statuses(sinners)
     dead = Enum.filter(sinners, &statuses[&1].dead)
 
     Enum.reduce(dead, {lines, acted?, state}, fn sinner, acc ->
-      heal_up_to(%{"kind" => "revive", "sinner" => sinner, "known_dead" => true}, "revive:#{sinner}", 1, acc, ctx)
+      revived = heal_up_to(%{"kind" => "revive", "sinner" => sinner, "known_dead" => true}, "revive:#{sinner}", 1, acc, ctx)
+      if heal_after and healed_count(elem(revived, 2), "revive:#{sinner}") > 0, do: heal_up_to(%{"kind" => "heal", "sinner" => sinner}, "heal:#{sinner}", 1, revived, ctx), else: revived
     end)
   end
 

@@ -111,9 +111,9 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     end
   end
 
-  defp after_entry(%{subject: %{"action" => "revive"}, sinners: sinners}, dead, hurt) do
+  defp after_entry(%{subject: %{"action" => "revive"}, sinners: sinners, heal_after: heal_after}, dead, hurt) do
     revived = Enum.filter(sinners, &(&1 in dead))
-    {dead -- revived, Enum.uniq(hurt ++ revived)}
+    {dead -- revived, if(heal_after, do: hurt, else: Enum.uniq(hurt ++ revived))}
   end
 
   defp after_entry(_entry, dead, hurt), do: {dead, hurt}
@@ -126,7 +126,8 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     if hurt == [], do: 0, else: times * GiftPlans.heal_cost()
   end
 
-  defp entry_heal_need(%{subject: %{"action" => "revive"}, sinners: sinners}, dead, _hurt), do: Enum.count(sinners, &(&1 in dead)) * GiftPlans.heal_cost()
+  defp entry_heal_need(%{subject: %{"action" => "revive"}, sinners: sinners, heal_after: heal_after}, dead, _hurt),
+    do: Enum.count(sinners, &(&1 in dead)) * if(heal_after, do: 2, else: 1) * GiftPlans.heal_cost()
   defp entry_heal_need(%{subject: %{"action" => "heal"}, sinners: sinners}, _dead, hurt), do: Enum.count(sinners, &(&1 in hurt)) * GiftPlans.heal_cost()
 
   def work([], state, mode, _frame, ctx), do: finish(state, mode, ctx)
