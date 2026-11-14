@@ -1,3 +1,9 @@
+precompiled_target_vars = ["TARGET_ARCH", "TARGET_OS", "TARGET_ABI"]
+
+if match?({:win32, _}, :os.type()) and Enum.all?(precompiled_target_vars, &is_nil(System.get_env(&1))) do
+  System.put_env(Enum.zip(precompiled_target_vars, ["x86_64", "windows", "msvc"]))
+end
+
 defmodule StarlightBot.MixProject do
   use Mix.Project
 
@@ -52,7 +58,7 @@ defmodule StarlightBot.MixProject do
   defp releases do
     [
       starlight_bot: [
-        include_executables_for: [:unix],
+        include_executables_for: [:unix, :windows],
         steps: [:assemble, &copy_models/1, &prune_duplicate_libs/1],
       ],
     ]

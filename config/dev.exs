@@ -10,6 +10,8 @@ config :starlight_bot, allow_authoring: true, dev_js_log: true
 
 config :starlight_bot, save_timeout_frames: true
 
+config :starlight_bot, static_from: Path.expand("../priv/static", __DIR__)
+
 config :starlight_bot, StarlightBotWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4000],
   check_origin: false,

@@ -22,7 +22,7 @@ defmodule StarlightBotWeb.Endpoint do
 
   plug Plug.Static,
     at: "/",
-    from: :starlight_bot,
+    from: Application.compile_env(:starlight_bot, :static_from, :starlight_bot),
     gzip: false,
     only: StarlightBotWeb.static_paths()
 

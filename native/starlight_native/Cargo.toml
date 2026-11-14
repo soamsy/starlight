@@ -9,18 +9,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 rustler = "0.38"
-# X11 window discovery, geometry and capture across every Xwayland display (host and nested)
-xcb = { version = "1.7", features = ["shm", "composite"] }
-libc = "0.2"
-# Image resizing and PNG encoding (no system libs required)
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
 # Error types
 thiserror = "2"
-fast_image_resize = "6.1.0"
-serde_json = "1"
 
 # Linux-only: libei EIS protocol (pure Rust, re-exports enumflags2)
 [target.'cfg(target_os = "linux")'.dependencies]
+xcb = { version = "1.7", features = ["shm", "composite"] }
 reis = "0.7"
 ashpd = { version = "0.13", default-features = false, features = ["async-io", "remote_desktop", "screencast"] }
 futures-lite = "2"
@@ -32,6 +26,11 @@ wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 wayland-protocols-misc = { version = "0.3", features = ["client"] }
+libc = "0.2"
+# Image resizing and PNG encoding (no system libs required)
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
+fast_image_resize = "6.1.0"
+serde_json = "1"
 
 [profile.release]
 opt-level = 3

@@ -79,6 +79,7 @@ fn create_window(app_handle: &tauri::AppHandle, port: u16) {
     tauri::WebviewWindowBuilder::new(app_handle, "main", url)
         .title("Starlight")
         .inner_size(1400.0, 900.0)
+        .enable_clipboard_access()
         .build()
         .unwrap();
 }
@@ -92,6 +93,7 @@ fn elixir_command(rel_dir: &Path, port: u16) -> Command {
         let mut command = elixirkit::release(rel_dir, "starlight_bot");
         command.env("PHX_SERVER", "true");
         command.env("PORT", port.to_string());
+        command.env("RELEASE_DISTRIBUTION", "none");
         if std::env::var_os("APPIMAGE").is_some() {
             command.env_remove("LD_LIBRARY_PATH");
             command.env_remove("LD_PRELOAD");

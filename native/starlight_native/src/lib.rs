@@ -2,6 +2,7 @@ mod capture;
 mod error;
 mod input;
 mod log;
+#[cfg(target_os = "linux")]
 mod scale;
 
 use rustler::{Binary, Encoder, Env, OwnedBinary, Term};

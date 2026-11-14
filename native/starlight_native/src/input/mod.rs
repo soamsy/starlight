@@ -63,9 +63,15 @@ pub fn release_all(held_keys: &[u32]) -> Result<(), NativeError> {
     if use_wlr() { wlr::linux::release_all(held_keys) } else { eis::linux::release_all(held_keys) }
 }
 
+#[cfg(target_os = "linux")]
 pub fn get_cursor_pos() -> Result<(i32, i32), NativeError> {
     match crate::capture::nested_display_name() {
         Some(display) => crate::capture::x11::query_pointer(&display),
         None => cursor::linux::get_cursor_pos(),
     }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn get_cursor_pos() -> Result<(i32, i32), NativeError> {
+    cursor::linux::get_cursor_pos()
 }

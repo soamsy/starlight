@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.soamsy.starlight",
   "build": {
-    "beforeBuildCommand": "env MIX_ENV=prod mix do compile + assets.deploy + release --overwrite --path src-tauri/target/rel"
+    "beforeBuildCommand": "env MIX_ENV=prod mix do assets.deploy + compile + release --overwrite --path src-tauri/target/rel"
   },
   "app": {
     "security": {

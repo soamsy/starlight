@@ -10,6 +10,7 @@ rustler::atoms! {
 
 #[derive(Clone, Copy)]
 pub enum Level {
+    #[cfg(target_os = "linux")]
     Debug,
     Warning,
 }
@@ -43,6 +44,7 @@ pub fn attach(pid: LocalPid) {
                     Some(pid) => {
                         let _ = env.send_and_clear(&pid, |env: Env| {
                             let level = match level {
+                                #[cfg(target_os = "linux")]
                                 Level::Debug => debug(),
                                 Level::Warning => warning(),
                             };

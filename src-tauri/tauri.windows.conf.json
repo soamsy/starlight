@@ -1,0 +1,8 @@
+{
+  "build": {
+    "beforeBuildCommand": "set MIX_ENV=prod&& mix do assets.deploy + compile + release --overwrite --path src-tauri/target/rel"
+  },
+  "bundle": {
+    "targets": ["nsis"]
+  }
+}
