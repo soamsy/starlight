@@ -1,4 +1,4 @@
-defmodule StarlightBot.Repo.Migrations.TeamRestBonus do
+defmodule StarlightBot.Repo.Migrations.TeamRestBonusRescale do
   use Ecto.Migration
 
   def up do
