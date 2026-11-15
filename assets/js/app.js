@@ -41,6 +41,27 @@ window.addEventListener("unhandledrejection", (e) => {
   postToServerLog("error", [`Unhandled promise rejection: ${e.reason?.stack || e.reason}`])
 })
 
+function readOnlyBlock(e) {
+  if (!(e.target instanceof Element)) return
+  for (const banner of document.querySelectorAll("[data-read-only-banner]")) {
+    const container = document.getElementById(banner.dataset.readOnlyBanner)
+    if (!container || !container.contains(e.target)) continue
+    if (!e.target.closest(banner.dataset.disabled) || e.target.closest(banner.dataset.enabled)) continue
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    if (e.type === "click") {
+      banner.classList.remove("read-only-pulse")
+      void banner.offsetWidth
+      banner.classList.add("read-only-pulse")
+    }
+    return
+  }
+}
+
+for (const type of ["pointerdown", "mousedown", "click", "dblclick", "contextmenu", "dragstart"]) {
+  window.addEventListener(type, readOnlyBlock, { capture: true })
+}
+
 function rgbToHsvCv(r, g, b) {
   r /= 255; g /= 255; b /= 255
   const max = Math.max(r, g, b), min = Math.min(r, g, b)

@@ -226,3 +226,14 @@ body {
   font-size: 0.625rem;
   line-height: 1;
 }
+
+@keyframes read-only-pulse {
+  0%, 100% { transform: translateX(0); outline: 3px solid transparent; }
+  15%, 55% { transform: translateX(-6px); outline: 3px solid var(--color-warning); }
+  35%, 75% { transform: translateX(6px); outline: 3px solid var(--color-warning); }
+}
+
+.read-only-pulse {
+  animation: read-only-pulse 0.4s ease-in-out;
+  outline-offset: 2px;
+}

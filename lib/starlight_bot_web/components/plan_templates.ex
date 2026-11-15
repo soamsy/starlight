@@ -38,29 +38,41 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
   attr :force, :boolean, default: false
 
   def read_only_banner(assigns) do
-    assigns = assign(assigns, :template, Enum.find(assigns.templates, &(&1.id == assigns.template_id)))
+    {disabled, enabled} = read_only_selectors(assigns.container, assigns.allowed)
+
+    assigns =
+      assigns
+      |> assign(:template, Enum.find(assigns.templates, &(&1.id == assigns.template_id)))
+      |> assign(:disabled, disabled)
+      |> assign(:enabled, enabled)
 
     ~H"""
-    <div :if={@template_id} role="alert" class="alert alert-info alert-soft py-1.5 px-3 text-xs flex items-center gap-2">
-      <span>Using the read-only template <span class="font-semibold"><%= @template && @template.name %></span>.</span>
-      <button type="button" phx-click="template_customize" class="btn btn-xs btn-primary"
+    <div :if={@template_id} data-read-only-banner={@container} data-disabled={@disabled} data-enabled={@enabled} role="alert"
+         class="alert alert-warning sticky top-0 z-20 py-2 px-4 text-sm flex items-center gap-3 shadow-md">
+      <.icon name="lucide-lock" class="size-5 shrink-0" />
+      <span class="flex-1">Read-only template <span class="font-bold"><%= @template && @template.name %></span>. Editing is locked.</span>
+      <button type="button" phx-click="template_customize" class="btn btn-sm btn-neutral"
               title={"Copy this template into a new #{@label} of your own that you can edit"}>Customize a copy</button>
     </div>
     <style :if={@template_id || @force}>
-      <%= Phoenix.HTML.raw(read_only_css(@container, @allowed)) %>
+      <%= Phoenix.HTML.raw(read_only_css(@container, @disabled, @enabled)) %>
     </style>
     """
   end
 
-  defp read_only_css(container, allowed) do
+  defp read_only_selectors(container, allowed) do
     disabled = Enum.map_join(@controls, ",", &"##{container} #{&1}")
 
     enabled =
       for attr <- @selectors, event <- ["lv:clear-flash" | allowed], selector <- ["##{container} [#{attr}=\"#{event}\"]", "##{container} [#{attr}=\"#{event}\"] *"], do: selector
 
-    enabled = enabled ++ ["##{container} [phx-hook=PlanClipboard]", "##{container} [phx-hook=PlanClipboard] *", "##{container} [phx-click^=\"template_\"]", "##{container} [phx-click^=\"template_\"] *"]
+    enabled = enabled ++ ["##{container} [phx-hook=PlanClipboard]", "##{container} [phx-hook=PlanClipboard] *", "##{container} [phx-click^=\"template_\"]", "##{container} [phx-click^=\"template_\"] *", "##{container} [data-boss-popup]", "##{container} [data-boss-popup] *"]
 
-    "#{disabled}{pointer-events:none}\n#{Enum.join(enabled, ",")}{pointer-events:auto}"
+    {disabled, Enum.join(enabled, ",")}
+  end
+
+  defp read_only_css(_container, disabled, enabled) do
+    "#{disabled}{cursor:not-allowed}\n#{enabled}{cursor:pointer}"
   end
 
   attr :id, :string, required: true
