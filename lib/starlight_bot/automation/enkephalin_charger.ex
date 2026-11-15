@@ -38,6 +38,7 @@ defmodule StarlightBot.Automation.EnkephalinCharger do
 
   defp at_entry_empty(0, modules_tab, ctx) do
     Ctx.log(ctx, :info, "nothing to convert and no lunacy conversions allowed, leaving popup")
+    EnkephalinSchedule.mark_converted()
     {:steps, [goto(modules_tab, :home)]}
   end
 
@@ -72,6 +73,7 @@ defmodule StarlightBot.Automation.EnkephalinCharger do
 
       _ ->
         Ctx.log(ctx, :info, "no lunacy spent and nothing to convert, leaving popup")
+        EnkephalinSchedule.mark_converted()
         {:steps, [goto(lunacy_tab, :home)]}
     end
   end
@@ -81,6 +83,7 @@ defmodule StarlightBot.Automation.EnkephalinCharger do
       {:steps, make_modules_from(home)}
     else
       Ctx.log(ctx, :info, "no lunacy conversions and home_enkephalin_spendable is off, skipping enkephalin")
+      EnkephalinSchedule.mark_converted()
       {:steps, [result({:ok, home})]}
     end
   end
