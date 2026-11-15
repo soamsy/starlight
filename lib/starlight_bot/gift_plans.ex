@@ -403,6 +403,7 @@ defmodule StarlightBot.GiftPlans do
 
   defp twice(cost), do: {cost, cost}
   def action_entry?(entry), do: match?(%{"subject" => %{"action" => _}}, entry)
+  def heal_entry?(entry), do: match?(%{"subject" => %{"action" => action}} when action in @heal_actions, entry)
 
   def subject_label(%{"gift" => name}), do: name
   def subject_label(%{"action" => "heal"}), do: "Greatly Heal"
@@ -723,7 +724,7 @@ defmodule StarlightBot.GiftPlans do
   def reorder_entries(data, id, ids) do
     update_milestone(data, id, fn milestone ->
       Map.update(milestone, "entries", [], fn entries ->
-        {actions, gifts} = entries |> reorder_by_keys(expand_entry_ids(entries, ids), & &1["id"]) |> Enum.split_with(&action_entry?/1)
+        {actions, gifts} = entries |> reorder_by_keys(expand_entry_ids(entries, ids), & &1["id"]) |> Enum.split_with(&heal_entry?/1)
         actions ++ gifts
       end)
     end)
@@ -809,7 +810,7 @@ defmodule StarlightBot.GiftPlans do
         Map.update(milestone, "entries", clones, fn entries ->
           index = Enum.find_index(entries, &(&1["id"] == after_id))
           {before, rest} = if index, do: Enum.split(entries, index + 1), else: {entries, []}
-          {actions, gifts} = Enum.split_with(before ++ clones ++ rest, &action_entry?/1)
+          {actions, gifts} = Enum.split_with(before ++ clones ++ rest, &heal_entry?/1)
           actions ++ gifts
         end)
       end)

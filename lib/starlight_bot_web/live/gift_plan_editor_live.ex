@@ -1737,16 +1737,28 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :gifts_by_id, :map, required: true
 
   def milestone_entries(assigns) do
-    {actions, gifts} = Enum.split_with(assigns.milestone["entries"], &GiftPlans.action_entry?/1)
-    assigns = assign(assigns, actions: actions, gifts: gifts)
+    gifts = Enum.reject(assigns.milestone["entries"], &GiftPlans.heal_entry?/1)
+    assigns = assign(assigns, gifts: gifts)
 
     ~H"""
-    <div :if={@actions != []} class="flex flex-col gap-1">
-      <.entry_list id={"milestone-actions-#{@milestone["id"]}"} shared={"ms-#{@milestone["id"]}-actions"} entries={@actions} milestone={@milestone}
-                   entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
-    </div>
     <.entry_list id={"milestone-entries-#{@milestone["id"]}"} shared={"ms-#{@milestone["id"]}"} entries={@gifts} milestone={@milestone}
                  entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+    """
+  end
+
+  attr :milestone, :map, required: true
+  attr :entry_tabs, :map, required: true
+  attr :gifts_by_name, :map, required: true
+  attr :gifts_by_id, :map, required: true
+
+  def heal_entries(assigns) do
+    assigns = assign(assigns, heals: Enum.filter(assigns.milestone["entries"], &GiftPlans.heal_entry?/1))
+
+    ~H"""
+    <div :if={@heals != []} class="flex flex-col gap-1">
+      <.entry_list id={"milestone-actions-#{@milestone["id"]}"} shared={"ms-#{@milestone["id"]}-actions"} entries={@heals} milestone={@milestone}
+                   entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+    </div>
     """
   end
 
