@@ -358,7 +358,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   def path_mode(_plan_data, _floor, view), do: view
 
   def view_warning(plan_data, "hard") do
-    case Enum.find(1..5, &(Resolver.mode_for_floor(plan_data["mode_schedule"], &1) == "hard")) do
+    case Enum.find(1..5, 6, &(Resolver.mode_for_floor(plan_data["mode_schedule"], &1) == "hard")) do
       1 -> nil
       floor -> {"Hiding normal packs on F1#{if floor > 2, do: "-F#{floor-1}", else: ""}", "This plan starts on normal at F1. All hard shows hard picks on every floor, so it won't match what the run does."}
     end
