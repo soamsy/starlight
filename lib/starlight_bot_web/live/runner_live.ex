@@ -377,7 +377,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
     |> assign(:pause_requested, nav.pause_requested)
     |> assign(:run_kind, nav.run_kind)
     |> assign(:run_memory, nav.run_memory)
-    |> assign_milestones()
+    |> assign_sections()
     |> assign_clock(nav.run_clock)
     |> assign(:run_splits, nav.run_splits)
     |> assign(:run_times_kind, nav.run_times_kind)
@@ -632,15 +632,15 @@ defmodule StarlightBotWeb.Live.RunnerLive do
     |> RunArchive.groups()
   end
 
-  defp assign_milestones(socket) do
-    assign(socket, :milestones, milestone_statuses(socket.assigns.run_memory, socket.assigns.gifts_by_name))
+  defp assign_sections(socket) do
+    assign(socket, :sections, section_statuses(socket.assigns.run_memory, socket.assigns.gifts_by_name))
   end
 
-  defp milestone_statuses(run_memory, gifts_by_name) do
+  defp section_statuses(run_memory, gifts_by_name) do
     with %{id: team_id} = team <- Map.get(run_memory, :team),
          %{} = full <- Teams.get_team(team_id),
-         %{data: %{"milestones" => _} = raw} <- Plans.for_team(full, :gift_plans),
-         %{"milestones" => milestones} = data <- GiftPlans.for_run(raw, RunMemory.run_kind(team)) do
+         %{data: %{"sections" => _} = raw} <- Plans.for_team(full, :gift_plans),
+         %{"sections" => sections} = data <- GiftPlans.for_run(raw, RunMemory.run_kind(team)) do
       env = %{
         plan: data,
         floor: current_floor(run_memory),
@@ -649,8 +649,8 @@ defmodule StarlightBotWeb.Live.RunnerLive do
         skill_replaces: Map.get(run_memory, :skill_replaces, %{})
       }
 
-      Enum.map(milestones, fn milestone ->
-        progress = GiftPlans.progress(data, milestone["id"], env)
+      Enum.map(sections, fn section ->
+        progress = GiftPlans.progress(data, section["id"], env)
 
         gifts =
           progress
@@ -659,7 +659,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
           |> Enum.uniq_by(& &1.gift)
           |> Enum.map(&%{name: &1.gift, uptie: &1.uptie, status: GiftPlans.status(progress, &1)})
 
-        %{name: milestone["name"], reached?: GiftPlans.reached?(progress), gifts: gifts}
+        %{name: GiftPlans.section_name(section), reached?: GiftPlans.reached?(progress), gifts: gifts}
       end)
     else
       _ -> []

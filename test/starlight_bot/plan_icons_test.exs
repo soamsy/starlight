@@ -12,10 +12,10 @@ defmodule StarlightBot.PlanIconsTest do
     assert PlanIcons.icons(:battle_plans, Map.put(data, "lineups", []), nil) == []
   end
 
-  test "gift icons are the first three distinct known gifts across milestones" do
+  test "gift icons are the first three distinct known gifts across sections" do
     images = %{"A" => "/a.webp", "B" => "/b.webp", "C" => "/c.webp", "D" => "/d.webp"}
     entry = fn name -> %{"subject" => %{"gift" => name}} end
-    data = %{"milestones" => [%{"entries" => [entry.("A"), %{"subject" => %{}}, entry.("Unknown"), entry.("A")]}, %{"entries" => [entry.("B"), entry.("C"), entry.("D")]}]}
+    data = %{"sections" => [%{"entries" => [entry.("A"), %{"subject" => %{}}, entry.("Unknown"), entry.("A")]}, %{"entries" => [entry.("B"), entry.("C"), entry.("D")]}]}
 
     assert PlanIcons.icons(:gift_plans, data, images) == ["/a.webp", "/b.webp", "/c.webp"]
   end

@@ -140,7 +140,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
   end
 
   defp prefer_no_advantage(gifts, frame, ctx) do
-    if milestones_reached?(ctx) do
+    if sections_reached?(ctx) do
       {advantage, plain} = Enum.split_with(gifts, fn {_rect, {_x, y}} -> advantage_choice?(frame, y) end)
       plain ++ advantage
     else
@@ -148,7 +148,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
     end
   end
 
-  defp milestones_reached?(ctx) do
+  defp sections_reached?(ctx) do
     case RunMemory.gift_plan(ctx) do
       %{} = data ->
         plan = GiftPlans.normalize(data)
@@ -162,7 +162,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
           skill_replaces: RunMemory.skill_replaces(ctx)
         }
 
-        Enum.all?(plan["milestones"], &GiftPlans.milestone_reached?(plan, &1["id"], env))
+        Enum.all?(plan["sections"], &GiftPlans.section_reached?(plan, &1["id"], env))
 
       _ ->
         false

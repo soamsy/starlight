@@ -22,8 +22,8 @@ defmodule StarlightBot.PlanCountsTest do
     assert PlanCounts.count(:pack_plans, data) == 2
   end
 
-  test "gift counts entries across all milestones" do
-    data = %{"milestones" => [%{"entries" => [1, 2]}, %{"entries" => []}, %{"entries" => [3]}, %{}]}
+  test "gift counts entries across all sections" do
+    data = %{"sections" => [%{"entries" => [1, 2]}, %{"entries" => []}, %{"entries" => [3]}, %{}]}
     assert PlanCounts.count(:gift_plans, data) == 3
     assert PlanCounts.count(:gift_plans, GiftPlans.blank()) == 0
   end

@@ -1482,7 +1482,7 @@ const selectedSortIds = (list) => sortRows(list).map(r => r.dataset.sortId).filt
 
 const pasteEntriesAfter = (hook, after) => {
   navigator.clipboard.readText()
-    .then(text => hook.pushEvent(hook.el.dataset.sortPasteEvent || "ms_paste_entries", { text, after, scope: hook.el.dataset.sortScope || "" }))
+    .then(text => hook.pushEvent(hook.el.dataset.sortPasteEvent || "list_paste_entries", { text, after, scope: hook.el.dataset.sortScope || "" }))
     .catch(err => hook.pushEvent("plan_clipboard_failed", { message: `Couldn't read clipboard: ${err.message || err}` }))
 }
 
@@ -1507,7 +1507,7 @@ const bindSortSelectionGlobals = () => {
     if (key === "c") {
       if (!window.getSelection().isCollapsed) return
       e.preventDefault()
-      hook.pushEvent(hook.el.dataset.sortCopyEvent || "ms_copy_entries", { ids, scope: hook.el.dataset.sortScope || "" })
+      hook.pushEvent(hook.el.dataset.sortCopyEvent || "list_copy_entries", { ids, scope: hook.el.dataset.sortScope || "" })
     } else {
       e.preventDefault()
       pasteEntriesAfter(hook, ids[ids.length - 1])
@@ -1552,7 +1552,7 @@ const SortableList = {
           const ids = sortSelection.list === this.el && sortSelection.ids.has(row.dataset.sortId)
             ? selectedSortIds(this.el)
             : [row.dataset.sortId]
-          this.pushEvent(this.el.dataset.sortCopyEvent || "ms_copy_entries", { ids, scope: this.el.dataset.sortScope || "" })
+          this.pushEvent(this.el.dataset.sortCopyEvent || "list_copy_entries", { ids, scope: this.el.dataset.sortScope || "" })
           return
         }
 
@@ -1729,20 +1729,30 @@ const GiftDragSource = {
 const GiftDropZone = {
   mounted() {
     const active = (e) => this.el.dataset.dropEvent && e.dataTransfer.types.includes(GIFT_DRAG_TYPE)
+    const sectionOf = (e) => eventElement(e)?.closest("[data-drop-section]")
+    const highlight = (el) => {
+      if (this.highlighted === el) return
+      this.highlighted?.classList.remove("bg-primary/15")
+      el?.classList.add("bg-primary/15")
+      this.highlighted = el
+    }
     this.el.addEventListener("dragover", (e) => {
       if (!active(e)) return
       e.preventDefault()
       e.dataTransfer.dropEffect = "copy"
-      this.el.classList.add("bg-primary/15")
+      highlight(sectionOf(e) || this.el)
     })
     this.el.addEventListener("dragleave", (e) => {
-      if (!this.el.contains(e.relatedTarget)) this.el.classList.remove("bg-primary/15")
+      if (!this.el.contains(e.relatedTarget)) highlight(null)
     })
     this.el.addEventListener("drop", (e) => {
       if (!active(e)) return
       e.preventDefault()
-      this.el.classList.remove("bg-primary/15")
-      this.pushEvent(this.el.dataset.dropEvent, { gift: e.dataTransfer.getData(GIFT_DRAG_TYPE) })
+      const section = sectionOf(e)
+      highlight(null)
+      const payload = { gift: e.dataTransfer.getData(GIFT_DRAG_TYPE) }
+      if (section) payload.section = section.dataset.dropSection
+      this.pushEvent(this.el.dataset.dropEvent, payload)
     })
   }
 }

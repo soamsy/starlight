@@ -57,42 +57,28 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert StarlightBot.GiftPlans.Routes.reorder(routes, nil, 4, ["c", "a"]) |> Enum.map(& &1["id"]) == ["c", "b", "a"]
   end
 
-  defp milestone(socket), do: hd(saved(socket)["milestones"])
-  defp entry(socket, name), do: Enum.find(milestone(socket)["entries"], &(GiftPlans.subject_gift(&1) == name))
+  defp section(socket), do: hd(saved(socket)["sections"])
+  defp entry(socket, name), do: Enum.find(section(socket)["entries"], &(GiftPlans.subject_gift(&1) == name))
   defp shop(socket), do: event(socket, "set_tab", %{"tab" => "shop"})
 
-  test "a milestone copied to the clipboard pastes back as a separate milestone", %{socket: socket} do
-    socket = event(socket, "ms_add_gift", %{"gift" => "Glimpse of Flames"})
-    source = milestone(socket)
-    text = StarlightBot.PlanClipboard.encode_milestone(source)
-    socket = event(socket, "paste_milestone", %{"text" => text})
-    [original, pasted] = saved(socket)["milestones"]
-    assert original == source
-    assert pasted["name"] == source["name"] <> " copy"
-    assert socket.assigns.selected_milestone_id == pasted["id"]
-    assert Enum.map(pasted["entries"], &GiftPlans.subject_gift/1) == ["Glimpse of Flames"]
-    refute hd(pasted["entries"])["id"] == hd(source["entries"])["id"]
-
-    socket = event(socket, "paste_milestone", %{"text" => "nope"})
-    assert length(saved(socket)["milestones"]) == 2
-    assert socket.assigns.flash["error"] =~ "doesn't hold a Starlight milestone"
-  end
-
-  test "a new plan starts as a valid v5 plan with the shop pane on its milestone", %{socket: socket} do
-    assert saved(socket)["version"] == 5
+  test "a new plan starts as a valid v6 plan with the shop pane on its section", %{socket: socket} do
+    assert saved(socket)["version"] == 6
     assert GiftPlans.issues(saved(socket)) == []
-    assert socket.assigns.selected_milestone_id == milestone(socket)["id"]
+    assert socket.assigns.root_section_id == section(socket)["id"]
     assert render(shop(socket)) =~ "No entries yet"
+    assert render(socket) =~ ~s(id="gift-shop-btn")
+    assert render(socket) =~ ~s(id="gift-loadout-btn")
+    refute render(socket) =~ "End state"
 
     for tab <- ~w(shop loadout) do
       assert is_binary(socket |> event("set_tab", %{"tab" => tab}) |> render())
     end
   end
 
-  test "gifts join the milestone with keep and buy, fixed fusions bring their ingredients, and entry settings save per floor", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Fixed Thing"}) |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"})
+  test "gifts join the section with keep and buy, fixed fusions bring their ingredients, and entry settings save per floor", %{socket: socket} do
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Fixed Thing"}) |> event("list_add_gift", %{"gift" => "Glimpse of Flames"})
 
-    assert Enum.map(milestone(socket)["entries"], &GiftPlans.subject_gift/1) == ["Fixed Thing", "Ing A", "Ing B", "Glimpse of Flames"]
+    assert Enum.map(section(socket)["entries"], &GiftPlans.subject_gift/1) == ["Fixed Thing", "Ing A", "Ing B", "Glimpse of Flames"]
     assert %{"fusion" => %{"type" => "fixed"}, "floors" => [%{"fuse" => true, "buy" => true, "goal" => "required"}]} = entry(socket, "Fixed Thing")
     assert %{"fusion" => %{"type" => "tiered"}, "floors" => [%{"fuse" => false, "goal" => "optional"}]} = entry(socket, "Ing A")
     assert %{"fusion" => nil} = entry(socket, "Ing B")
@@ -100,8 +86,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
     html = render(socket)
     assert html =~ "Made from:" and html =~ "Added"
-    assert html =~ ~s(phx-click="ms_add_gift" phx-value-gift="Fiery Down")
-    refute html =~ ~s(phx-click="ms_add_gift" phx-value-gift="Glimpse of Flames")
+    assert html =~ ~s(phx-click="list_add_gift" phx-value-gift="Fiery Down")
+    refute html =~ ~s(phx-click="list_add_gift" phx-value-gift="Glimpse of Flames")
 
     assert html =~ ~s(data-gift-popup="Glimpse of Flames")
     refute html =~ "No description available."
@@ -117,10 +103,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
     socket =
       socket
-      |> event("ms_set_uptie", %{"entry" => glimpse, "from" => "1", "level" => "2"})
-      |> event("ms_toggle", %{"entry" => glimpse, "from" => "1", "field" => "buy"})
-      |> event("ms_split", %{"entry" => glimpse, "floor" => "5"})
-      |> event("ms_update_segment", %{"entry" => glimpse, "from" => "5", "segment" => %{"disposition" => "sell", "max" => "2"}})
+      |> event("list_set_uptie", %{"entry" => glimpse, "from" => "1", "level" => "2"})
+      |> event("list_toggle", %{"entry" => glimpse, "from" => "1", "field" => "buy"})
+      |> event("list_split", %{"entry" => glimpse, "floor" => "5"})
+      |> event("list_update_segment", %{"entry" => glimpse, "from" => "5", "segment" => %{"disposition" => "sell", "max" => "2"}})
 
     assert [%{"from" => 1, "uptie" => 2, "buy" => false, "disposition" => "keep"}, %{"from" => 5, "disposition" => "sell", "max" => 2, "uptie" => 2}] =
              entry(socket, "Glimpse of Flames")["floors"]
@@ -129,152 +115,138 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     html = render(socket)
     assert html =~ "F1-4" and html =~ "F5+" and html =~ "Max per floor"
 
-    socket = event(socket, "ms_select_tab", %{"entry" => glimpse, "from" => "1"})
+    socket = event(socket, "list_select_tab", %{"entry" => glimpse, "from" => "1"})
     assert socket.assigns.entry_tabs[glimpse] == 1
 
-    socket = event(socket, "ms_remove_segment", %{"entry" => glimpse, "from" => "5"})
+    socket = event(socket, "list_remove_segment", %{"entry" => glimpse, "from" => "5"})
     assert [%{"from" => 1}] = entry(socket, "Glimpse of Flames")["floors"]
 
     ing_b = entry(socket, "Ing B")["id"]
-    socket = event(socket, "ms_remove_entry", %{"entry" => ing_b})
-    assert Enum.any?(GiftPlans.issues(saved(socket), socket.assigns.gifts_by_name), &(&1 =~ "Fixed Thing needs Ing B in the milestone."))
-    assert render(socket) =~ "Fixed Thing needs Ing B in the milestone."
+    socket = event(socket, "list_remove_entry", %{"entry" => ing_b})
+    assert Enum.any?(GiftPlans.issues(saved(socket), socket.assigns.gifts_by_name), &(&1 =~ "Fixed Thing needs Ing B in this stage."))
+    assert render(socket) =~ "Fixed Thing needs Ing B in this stage."
 
-    ids = milestone(socket)["entries"] |> Enum.map(& &1["id"]) |> Enum.reverse()
-    socket = event(socket, "ms_reorder_entries", %{"scope" => milestone(socket)["id"], "ids" => ids})
-    assert Enum.map(milestone(socket)["entries"], & &1["id"]) == ids
+    ids = section(socket)["entries"] |> Enum.map(& &1["id"]) |> Enum.reverse()
+    socket = event(socket, "list_reorder_entries", %{"scope" => section(socket)["id"], "ids" => ids})
+    assert Enum.map(section(socket)["entries"], & &1["id"]) == ids
   end
 
   test "Add Schedule shows floor tabs, new tabs start after the last one, and a tab's start floor can move to any free floor", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"})
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"})
     glimpse = entry(socket, "Glimpse of Flames")["id"]
-    assert render(socket) =~ "ms_add_schedule"
+    assert render(socket) =~ "list_add_schedule"
 
-    socket = event(socket, "ms_add_schedule", %{"entry" => glimpse})
+    socket = event(socket, "list_add_schedule", %{"entry" => glimpse})
     assert entry(socket, "Glimpse of Flames")["scheduled"] == true
     html = render(socket)
-    assert html =~ "F1+" and html =~ "ms_remove_schedule"
-    refute html =~ "ms_add_schedule"
+    assert html =~ "F1+" and html =~ "list_remove_schedule"
+    refute html =~ "list_add_schedule"
 
-    socket = socket |> event("ms_split", %{"entry" => glimpse, "floor" => "2"}) |> event("ms_split", %{"entry" => glimpse, "floor" => "3"})
+    socket = socket |> event("list_split", %{"entry" => glimpse, "floor" => "2"}) |> event("list_split", %{"entry" => glimpse, "floor" => "3"})
     assert Enum.map(entry(socket, "Glimpse of Flames")["floors"], & &1["from"]) == [1, 2, 3]
 
-    socket = event(socket, "ms_move_segment", %{"entry" => glimpse, "from" => "2", "to" => "8"})
+    socket = event(socket, "list_move_segment", %{"entry" => glimpse, "from" => "2", "to" => "8"})
     assert Enum.map(entry(socket, "Glimpse of Flames")["floors"], & &1["from"]) == [1, 3, 8]
     assert socket.assigns.entry_tabs[glimpse] == 8
     html = render(socket)
     assert html =~ "F1-2" and html =~ "F3-7" and html =~ "F8+"
 
-    socket = event(socket, "ms_move_segment", %{"entry" => glimpse, "from" => "8", "to" => "3"})
+    socket = event(socket, "list_move_segment", %{"entry" => glimpse, "from" => "8", "to" => "3"})
     assert Enum.map(entry(socket, "Glimpse of Flames")["floors"], & &1["from"]) == [1, 3, 8]
 
-    socket = socket |> event("ms_remove_segment", %{"entry" => glimpse, "from" => "3"}) |> event("ms_remove_segment", %{"entry" => glimpse, "from" => "8"})
-    assert render(socket) =~ "ms_remove_schedule"
-    socket = event(socket, "ms_remove_schedule", %{"entry" => glimpse})
+    socket = socket |> event("list_remove_segment", %{"entry" => glimpse, "from" => "3"}) |> event("list_remove_segment", %{"entry" => glimpse, "from" => "8"})
+    assert render(socket) =~ "list_remove_schedule"
+    socket = event(socket, "list_remove_schedule", %{"entry" => glimpse})
     assert entry(socket, "Glimpse of Flames")["scheduled"] == false
-    assert render(socket) =~ "ms_add_schedule"
+    assert render(socket) =~ "list_add_schedule"
   end
 
   test "Buy and Sell are exclusive, patterns show a cap for either, and a tab can abandon the gift from its floor", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("ms_add_tier", %{"tier" => "1"})
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("list_add_tier", %{"tier" => "1"})
     glimpse = entry(socket, "Glimpse of Flames")["id"]
-    [_, t1] = milestone(socket)["entries"]
-    seg = fn id -> Enum.find(milestone(socket)["entries"], &(&1["id"] == id))["floors"] end
+    [_, t1] = section(socket)["entries"]
+    seg = fn id -> Enum.find(section(socket)["entries"], &(&1["id"] == id))["floors"] end
 
-    socket = event(socket, "ms_toggle", %{"entry" => glimpse, "from" => "1", "field" => "sell"})
+    socket = event(socket, "list_toggle", %{"entry" => glimpse, "from" => "1", "field" => "sell"})
     assert [%{"disposition" => "sell", "buy" => false}] = seg.(glimpse)
-    socket = event(socket, "ms_toggle", %{"entry" => glimpse, "from" => "1", "field" => "buy"})
+    socket = event(socket, "list_toggle", %{"entry" => glimpse, "from" => "1", "field" => "buy"})
     assert [%{"disposition" => "keep", "buy" => true}] = seg.(glimpse)
-    socket = event(socket, "ms_toggle", %{"entry" => glimpse, "from" => "1", "field" => "buy"})
+    socket = event(socket, "list_toggle", %{"entry" => glimpse, "from" => "1", "field" => "buy"})
     assert [%{"disposition" => "keep", "buy" => false}] = seg.(glimpse)
     assert render(socket) =~ "Max per floor"
 
-    socket = event(socket, "ms_toggle", %{"entry" => t1["id"], "from" => "1", "field" => "buy"})
+    socket = event(socket, "list_toggle", %{"entry" => t1["id"], "from" => "1", "field" => "buy"})
     refute render(socket) =~ "Max per floor"
-    socket = event(socket, "ms_toggle", %{"entry" => t1["id"], "from" => "1", "field" => "sell"})
+    socket = event(socket, "list_toggle", %{"entry" => t1["id"], "from" => "1", "field" => "sell"})
     assert render(socket) =~ "Max per floor"
 
-    socket = socket |> event("ms_split", %{"entry" => glimpse, "floor" => "6"}) |> event("ms_set_segment_mode", %{"entry" => glimpse, "from" => "6", "mode" => "abandon"})
+    socket = socket |> event("list_split", %{"entry" => glimpse, "floor" => "6"}) |> event("list_set_segment_mode", %{"entry" => glimpse, "from" => "6", "mode" => "abandon"})
     assert [%{"from" => 1}, %{"from" => 6, "abandoned" => true}] = seg.(glimpse)
     assert render(socket) =~ "Abandoned"
-    socket = event(socket, "ms_set_segment_mode", %{"entry" => glimpse, "from" => "6", "mode" => "change"})
+    socket = event(socket, "list_set_segment_mode", %{"entry" => glimpse, "from" => "6", "mode" => "change"})
     assert [_, %{"abandoned" => false}] = seg.(glimpse)
     refute render(socket) =~ "Abandoned"
 
-    socket = event(socket, "ms_set_segment_mode", %{"entry" => glimpse, "from" => "1", "mode" => "abandon"})
+    socket = event(socket, "list_set_segment_mode", %{"entry" => glimpse, "from" => "1", "mode" => "abandon"})
     assert [%{"from" => 1, "abandoned" => true}, _] = seg.(glimpse)
     assert render(socket) =~ "Not started"
-    assert %{disposition: "keep"} = GiftPlans.resolve(Enum.find(milestone(socket)["entries"], &(&1["id"] == glimpse)), 6)
+    assert %{disposition: "keep"} = GiftPlans.resolve(Enum.find(section(socket)["entries"], &(&1["id"] == glimpse)), 6)
 
-    socket = socket |> event("ms_remove_segment", %{"entry" => glimpse, "from" => "6"}) |> event("ms_remove_schedule", %{"entry" => glimpse})
+    socket = socket |> event("list_remove_segment", %{"entry" => glimpse, "from" => "6"}) |> event("list_remove_schedule", %{"entry" => glimpse})
     assert [%{"from" => 1, "abandoned" => false, "disposition" => "keep"}] = seg.(glimpse)
     refute render(socket) =~ "Not started"
   end
 
-  test "a new milestone opens its name for editing, and renaming commits a trimmed, non-blank name", %{socket: socket} do
-    socket = socket |> shop() |> event("add_milestone", %{})
-    [_, added] = saved(socket)["milestones"]
-    assert socket.assigns.editing_milestone_id == added["id"]
-    assert render(socket) =~ ~s(phx-hook="FocusSelect")
-
-    socket = event(socket, "rename_milestone", %{"id" => added["id"], "value" => "  Late Shop "})
-    assert socket.assigns.editing_milestone_id == nil
-    assert Enum.at(saved(socket)["milestones"], 1)["name"] == "Late Shop"
-
-    socket = socket |> event("edit_milestone_name", %{"id" => added["id"]}) |> event("rename_milestone", %{"id" => added["id"], "value" => " "})
-    assert Enum.at(saved(socket)["milestones"], 1)["name"] == "Late Shop"
-  end
-
   test "dragging an entry into a schedule groups it, tab edits apply to the group, and dragging it out keeps a copy of the tabs", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("ms_add_gift", %{"gift" => "Fiery Down"}) |> event("ms_add_gift", %{"gift" => "Ing A"})
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("list_add_gift", %{"gift" => "Fiery Down"}) |> event("list_add_gift", %{"gift" => "Ing A"})
     [glimpse, fiery, ing] = Enum.map(["Glimpse of Flames", "Fiery Down", "Ing A"], &entry(socket, &1)["id"])
-    ms_id = milestone(socket)["id"]
-    order = fn socket -> Enum.map(milestone(socket)["entries"], & &1["id"]) end
+    ms_id = section(socket)["id"]
+    order = fn socket -> Enum.map(section(socket)["entries"], & &1["id"]) end
     froms = fn socket, name -> Enum.map(entry(socket, name)["floors"], & &1["from"]) end
 
     socket =
       socket
-      |> event("ms_split", %{"entry" => glimpse, "floor" => "5"})
-      |> event("ms_toggle", %{"entry" => fiery, "from" => "1", "field" => "buy"})
-      |> event("ms_move_entry", %{"scope" => "group:#{glimpse}", "from" => ms_id, "id" => fiery, "ids" => [glimpse, fiery]})
+      |> event("list_split", %{"entry" => glimpse, "floor" => "5"})
+      |> event("list_toggle", %{"entry" => fiery, "from" => "1", "field" => "buy"})
+      |> event("list_move_entry", %{"scope" => "group:#{glimpse}", "from" => ms_id, "id" => fiery, "ids" => [glimpse, fiery]})
 
     group = entry(socket, "Glimpse of Flames")["group"]
     assert "grp_" <> _ = group
     assert %{"group" => ^group, "scheduled" => true, "floors" => [%{"from" => 1, "buy" => false}, %{"from" => 5}]} = entry(socket, "Fiery Down")
-    assert [{:group, ^group, [_, _]}, {:single, _}] = Live.entry_chunks(milestone(socket)["entries"])
+    assert [{:group, ^group, [_, _]}, {:single, _}] = Live.entry_chunks(section(socket)["entries"])
 
-    socket = socket |> event("ms_split", %{"entry" => fiery, "floor" => "8"}) |> event("ms_set_segment_mode", %{"entry" => glimpse, "from" => "5", "mode" => "abandon"})
+    socket = socket |> event("list_split", %{"entry" => fiery, "floor" => "8"}) |> event("list_set_segment_mode", %{"entry" => glimpse, "from" => "5", "mode" => "abandon"})
     assert froms.(socket, "Glimpse of Flames") == [1, 5, 8] and froms.(socket, "Fiery Down") == [1, 5, 8]
-    assert Enum.all?([glimpse, fiery], fn id -> Enum.find(milestone(socket)["entries"], &(&1["id"] == id))["floors"] |> Enum.at(1) |> Map.get("abandoned") end)
+    assert Enum.all?([glimpse, fiery], fn id -> Enum.find(section(socket)["entries"], &(&1["id"] == id))["floors"] |> Enum.at(1) |> Map.get("abandoned") end)
     assert socket.assigns.entry_tabs[group] == 5
 
-    socket = event(socket, "ms_reorder_entries", %{"scope" => "group:#{group}", "ids" => [fiery, glimpse]})
+    socket = event(socket, "list_reorder_entries", %{"scope" => "group:#{group}", "ids" => [fiery, glimpse]})
     assert order.(socket) == [fiery, glimpse, ing]
-    socket = event(socket, "ms_reorder_entries", %{"scope" => ms_id, "ids" => [ing, "group:#{group}"]})
+    socket = event(socket, "list_reorder_entries", %{"scope" => ms_id, "ids" => [ing, "group:#{group}"]})
     assert order.(socket) == [ing, fiery, glimpse]
 
-    socket = event(socket, "ms_move_entry", %{"scope" => ms_id, "from" => "group:#{group}", "id" => glimpse, "ids" => [ing, "group:#{group}", glimpse]})
+    socket = event(socket, "list_move_entry", %{"scope" => ms_id, "from" => "group:#{group}", "id" => glimpse, "ids" => [ing, "group:#{group}", glimpse]})
     assert order.(socket) == [ing, fiery, glimpse]
     refute Map.has_key?(entry(socket, "Glimpse of Flames"), "group")
     assert froms.(socket, "Glimpse of Flames") == [1, 5, 8]
-    assert [{:single, _}, {:group, ^group, [_]}, {:group, ^glimpse, [_]}] = Live.entry_chunks(milestone(socket)["entries"])
+    assert [{:single, _}, {:group, ^group, [_]}, {:group, ^glimpse, [_]}] = Live.entry_chunks(section(socket)["entries"])
 
-    socket = socket |> event("ms_remove_segment", %{"entry" => fiery, "from" => "8"}) |> event("ms_remove_segment", %{"entry" => fiery, "from" => "5"}) |> event("ms_remove_schedule", %{"entry" => fiery})
+    socket = socket |> event("list_remove_segment", %{"entry" => fiery, "from" => "8"}) |> event("list_remove_segment", %{"entry" => fiery, "from" => "5"}) |> event("list_remove_schedule", %{"entry" => fiery})
     refute Map.has_key?(entry(socket, "Fiery Down"), "group")
     assert render(socket) =~ ~s(data-sort-id="group:#{glimpse}")
   end
 
   test "the goal dropdown can abandon an entry, and picking a goal or Change at brings back its last goal", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("ms_add_goal", %{})
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("list_add_goal", %{})
     glimpse = entry(socket, "Glimpse of Flames")["id"]
-    update = fn socket, goal -> event(socket, "ms_update_segment", %{"entry" => glimpse, "from" => "1", "segment" => %{"goal" => goal}}) end
+    update = fn socket, goal -> event(socket, "list_update_segment", %{"entry" => glimpse, "from" => "1", "segment" => %{"goal" => goal}}) end
 
     socket = socket |> update.("A") |> update.("abandon")
     assert [%{"goal" => "A", "abandoned" => true}] = entry(socket, "Glimpse of Flames")["floors"]
     html = render(socket)
     assert html =~ "Not started" and html =~ ~s(<option value="abandon" selected)
 
-    socket = event(socket, "ms_set_segment_mode", %{"entry" => glimpse, "from" => "1", "mode" => "change"})
+    socket = event(socket, "list_set_segment_mode", %{"entry" => glimpse, "from" => "1", "mode" => "change"})
     assert [%{"goal" => "A", "abandoned" => false}] = entry(socket, "Glimpse of Flames")["floors"]
 
     socket = socket |> update.("abandon") |> update.("optional")
@@ -287,25 +259,25 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     socket =
       socket
       |> shop()
-      |> event("ms_add_action", %{"action" => "heal", "sinner" => second})
-      |> event("ms_add_action", %{"action" => "revive", "sinner" => first})
-      |> event("ms_add_action", %{"action" => "heal_all"})
+      |> event("list_add_action", %{"action" => "heal", "sinner" => second})
+      |> event("list_add_action", %{"action" => "revive", "sinner" => first})
+      |> event("list_add_action", %{"action" => "heal_all"})
 
-    [heal, revive, all] = milestone(socket)["entries"]
+    [heal, revive, all] = section(socket)["entries"]
     assert %{"subject" => %{"action" => "heal"}, "floors" => [%{"sinners" => [^second], "repeat" => "once", "buy" => false}]} = heal
     assert %{"floors" => [%{"sinners" => [^first]}]} = revive
     assert %{"floors" => [%{"sinners" => []}]} = all
 
     socket =
       socket
-      |> event("ms_toggle_heal_sinner", %{"entry" => heal["id"], "from" => "1", "sinner" => first})
-      |> event("ms_set_heal_repeat", %{"entry" => heal["id"], "from" => "1", "repeat" => "until_full"})
+      |> event("list_toggle_heal_sinner", %{"entry" => heal["id"], "from" => "1", "sinner" => first})
+      |> event("list_set_heal_repeat", %{"entry" => heal["id"], "from" => "1", "repeat" => "until_full"})
 
-    assert [%{"sinners" => [^first, ^second], "repeat" => "until_full"}] = hd(milestone(socket)["entries"])["floors"]
-    assert %{disposition: "ignore", buy: false, goal: nil, sinners: [^first, ^second], repeat: "until_full"} = GiftPlans.resolve(hd(milestone(socket)["entries"]), 1)
+    assert [%{"sinners" => [^first, ^second], "repeat" => "until_full"}] = hd(section(socket)["entries"])["floors"]
+    assert %{disposition: "ignore", buy: false, goal: nil, sinners: [^first, ^second], repeat: "until_full"} = GiftPlans.resolve(hd(section(socket)["entries"]), 1)
 
-    socket = socket |> event("ms_toggle_heal_sinner", %{"entry" => revive["id"], "from" => "1", "sinner" => second}) |> event("ms_set_heal_repeat", %{"entry" => all["id"], "from" => "1", "repeat" => "3"})
-    assert [%{"repeat" => "3"}] = List.last(milestone(socket)["entries"])["floors"]
+    socket = socket |> event("list_toggle_heal_sinner", %{"entry" => revive["id"], "from" => "1", "sinner" => second}) |> event("list_set_heal_repeat", %{"entry" => all["id"], "from" => "1", "repeat" => "3"})
+    assert [%{"repeat" => "3"}] = List.last(section(socket)["entries"])["floors"]
 
     html = render(socket)
     assert html =~ "Greatly Heal" and html =~ "Heal Everyone" and html =~ "Until healed" and html =~ "Until all healed"
@@ -316,48 +288,48 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
   test "skill replace entries pick sinners, a goal and a wanted skill distribution", %{socket: socket} do
     [first | _] = StarlightBot.Teams.all_sinners()
-    socket = socket |> shop() |> event("ms_add_action", %{"action" => "skill_replace", "sinner" => first})
-    [replace] = milestone(socket)["entries"]
+    socket = socket |> shop() |> event("list_add_action", %{"action" => "skill_replace", "sinner" => first})
+    [replace] = section(socket)["entries"]
     assert [%{"sinners" => [^first], "goal" => "optional", "target" => %{"s1" => 1, "s2" => 2, "s3" => 3}}] = replace["floors"]
     assert render(socket) =~ "Skill Replace" and render(socket) =~ "Cost 240"
 
-    socket = event(socket, "ms_update_segment", %{"entry" => replace["id"], "from" => "1", "segment" => %{"goal" => "optional"}})
+    socket = event(socket, "list_update_segment", %{"entry" => replace["id"], "from" => "1", "segment" => %{"goal" => "optional"}})
     id = replace["id"]
-    socket = socket |> event("ms_step_skill_target", %{"entry" => id, "from" => "1", "key" => "s1", "delta" => "-1"}) |> event("ms_step_skill_target", %{"entry" => id, "from" => "1", "key" => "s2", "delta" => "5"}) |> event("ms_toggle_skill_lock", %{"entry" => id, "from" => "1"})
-    assert [%{"goal" => "optional", "lock_s2" => false, "target" => %{"s1" => 0, "s2" => 5, "s3" => 1}}] = hd(milestone(socket)["entries"])["floors"]
-    socket = event(socket, "ms_step_skill_target", %{"entry" => id, "from" => "1", "key" => "s1", "delta" => "3"})
-    assert [%{"target" => %{"s1" => 3, "s2" => 2, "s3" => 1}}] = hd(milestone(socket)["entries"])["floors"]
-    assert GiftPlans.heal_entries(GiftPlans.resolved_entries(milestone(socket), 1)) == []
-    assert [%{goal: "optional", lock_s2: false, target: %{"s1" => 3, "s2" => 2, "s3" => 1}}] = GiftPlans.skill_replace_entries(GiftPlans.resolved_entries(milestone(socket), 1))
+    socket = socket |> event("list_step_skill_target", %{"entry" => id, "from" => "1", "key" => "s1", "delta" => "-1"}) |> event("list_step_skill_target", %{"entry" => id, "from" => "1", "key" => "s2", "delta" => "5"}) |> event("list_toggle_skill_lock", %{"entry" => id, "from" => "1"})
+    assert [%{"goal" => "optional", "lock_s2" => false, "target" => %{"s1" => 0, "s2" => 5, "s3" => 1}}] = hd(section(socket)["entries"])["floors"]
+    socket = event(socket, "list_step_skill_target", %{"entry" => id, "from" => "1", "key" => "s1", "delta" => "3"})
+    assert [%{"target" => %{"s1" => 3, "s2" => 2, "s3" => 1}}] = hd(section(socket)["entries"])["floors"]
+    assert GiftPlans.heal_entries(GiftPlans.resolved_entries(section(socket), 1)) == []
+    assert [%{goal: "optional", lock_s2: false, target: %{"s1" => 3, "s2" => 2, "s3" => 1}}] = GiftPlans.skill_replace_entries(GiftPlans.resolved_entries(section(socket), 1))
   end
 
   test "locking S2 keeps its target at or above the starting 2", %{socket: socket} do
     [first | _] = StarlightBot.Teams.all_sinners()
-    socket = socket |> shop() |> event("ms_add_action", %{"action" => "skill_replace", "sinner" => first})
-    [%{"id" => id}] = milestone(socket)["entries"]
-    step = fn socket, key, delta -> event(socket, "ms_step_skill_target", %{"entry" => id, "from" => "1", "key" => key, "delta" => delta}) end
+    socket = socket |> shop() |> event("list_add_action", %{"action" => "skill_replace", "sinner" => first})
+    [%{"id" => id}] = section(socket)["entries"]
+    step = fn socket, key, delta -> event(socket, "list_step_skill_target", %{"entry" => id, "from" => "1", "key" => key, "delta" => delta}) end
 
     socket = step.(socket, "s2", "-5")
-    assert %{"s2" => 2} = hd(hd(milestone(socket)["entries"])["floors"])["target"]
+    assert %{"s2" => 2} = hd(hd(section(socket)["entries"])["floors"])["target"]
 
-    socket = socket |> event("ms_toggle_skill_lock", %{"entry" => id, "from" => "1"}) |> step.("s2", "-5")
-    assert %{"s2" => 0, "s3" => 5} = hd(hd(milestone(socket)["entries"])["floors"])["target"]
+    socket = socket |> event("list_toggle_skill_lock", %{"entry" => id, "from" => "1"}) |> step.("s2", "-5")
+    assert %{"s2" => 0, "s3" => 5} = hd(hd(section(socket)["entries"])["floors"])["target"]
 
-    socket = event(socket, "ms_toggle_skill_lock", %{"entry" => id, "from" => "1"})
-    assert %{"s2" => 2} = hd(hd(milestone(socket)["entries"])["floors"])["target"]
+    socket = event(socket, "list_toggle_skill_lock", %{"entry" => id, "from" => "1"})
+    assert %{"s2" => 2} = hd(hd(section(socket)["entries"])["floors"])["target"]
   end
 
   test "refresh cost grid follows the cases and lets the path branch", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_refresh_case", %{}) |> event("ms_add_refresh_case", %{})
-    [first, second] = milestone(socket)["refresh"]
+    socket = socket |> shop() |> event("list_add_refresh_case", %{}) |> event("list_add_refresh_case", %{})
+    [first, second] = section(socket)["refresh"]
     path_total = fn socket ->
       ~r/<td class="text-center font-semibold"><span[^>]*>\s*(\d*)\s*<img/ |> Regex.scan(render(socket), capture: :all_but_first) |> List.flatten() |> Enum.reject(&(&1 == "")) |> List.last() |> String.to_integer()
     end
 
     socket =
       socket
-      |> event("ms_update_refresh_case", %{"case_id" => first["id"], "action" => "refresh", "max" => "2"})
-      |> event("ms_update_refresh_case", %{"case_id" => second["id"], "action" => "affinity_refresh", "affinity" => "", "max" => "1"})
+      |> event("list_update_refresh_case", %{"case_id" => first["id"], "action" => "refresh", "max" => "2"})
+      |> event("list_update_refresh_case", %{"case_id" => second["id"], "action" => "affinity_refresh", "affinity" => "", "max" => "1"})
 
     assert path_total.(socket) == 150
 
@@ -372,126 +344,202 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
   end
 
   test "refresh cases read like a case statement: each gets a condition and an action, and they reorder and delete", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_refresh_case", %{}) |> event("ms_add_refresh_case", %{})
-    [first, second] = milestone(socket)["refresh"]
+    socket = socket |> shop() |> event("list_add_refresh_case", %{}) |> event("list_add_refresh_case", %{})
+    [first, second] = section(socket)["refresh"]
     assert %{"condition" => nil, "action" => "refresh"} = first
 
     socket =
       socket
       |> event("cond_add", %{"case_id" => first["id"], "path" => "", "node" => "leaf"})
       |> event("cond_update", %{"case_id" => first["id"], "path" => "", "op" => "refreshes", "cmp" => "lte", "value" => "3", "not" => "true"})
-      |> event("ms_update_refresh_case", %{"case_id" => first["id"], "action" => "affinity_refresh", "affinity" => "burn"})
-      |> event("ms_update_refresh_case", %{"case_id" => second["id"], "action" => "leave"})
+      |> event("list_update_refresh_case", %{"case_id" => first["id"], "action" => "affinity_refresh", "affinity" => "burn"})
+      |> event("list_update_refresh_case", %{"case_id" => second["id"], "action" => "leave"})
 
     assert [%{"condition" => %{"op" => "refreshes", "cmp" => "lte", "value" => 3, "not" => true}, "action" => "affinity_refresh", "affinity" => "burn"}, %{"action" => "leave", "condition" => nil}] =
-             milestone(socket)["refresh"]
+             section(socket)["refresh"]
 
     html = render(socket)
-    assert html =~ "else if" and html =~ "stop working on this milestone" and html =~ ~s(<option value="leave" selected)
+    assert html =~ "else if" and html =~ "leave the shop" and html =~ ~s(<option value="leave" selected)
 
-    socket = event(socket, "ms_reorder_refresh", %{"scope" => milestone(socket)["id"], "ids" => [second["id"], first["id"]]})
-    assert Enum.map(milestone(socket)["refresh"], & &1["id"]) == [second["id"], first["id"]]
+    socket = event(socket, "list_reorder_refresh", %{"scope" => section(socket)["id"], "ids" => [second["id"], first["id"]]})
+    assert Enum.map(section(socket)["refresh"], & &1["id"]) == [second["id"], first["id"]]
 
-    socket = event(socket, "ms_remove_refresh_case", %{"case_id" => second["id"]})
-    assert [%{"id" => id}] = milestone(socket)["refresh"]
+    socket = event(socket, "list_remove_refresh_case", %{"case_id" => second["id"]})
+    assert [%{"id" => id}] = section(socket)["refresh"]
     assert id == first["id"]
   end
 
   test "a refresh case with a max stops matching once it has run that many times", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_refresh_case", %{})
-    [refresh_case] = milestone(socket)["refresh"]
+    socket = socket |> shop() |> event("list_add_refresh_case", %{})
+    [refresh_case] = section(socket)["refresh"]
     assert refresh_case["max"] == nil
 
-    socket = event(socket, "ms_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => "2"})
-    assert [%{"max" => 2}] = milestone(socket)["refresh"]
+    socket = event(socket, "list_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => "2"})
+    assert [%{"max" => 2}] = section(socket)["refresh"]
 
-    assert GiftPlans.matching_refresh_case(milestone(socket), %{case_runs: %{refresh_case["id"] => 1}})
-    refute GiftPlans.matching_refresh_case(milestone(socket), %{case_runs: %{refresh_case["id"] => 2}})
+    assert GiftPlans.matching_refresh_case(section(socket), %{case_runs: %{refresh_case["id"] => 1}})
+    refute GiftPlans.matching_refresh_case(section(socket), %{case_runs: %{refresh_case["id"] => 2}})
 
-    socket = event(socket, "ms_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => ""})
-    assert [%{"max" => nil}] = milestone(socket)["refresh"]
-    assert GiftPlans.matching_refresh_case(milestone(socket), %{case_runs: %{refresh_case["id"] => 99}})
+    socket = event(socket, "list_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => ""})
+    assert [%{"max" => nil}] = section(socket)["refresh"]
+    assert GiftPlans.matching_refresh_case(section(socket), %{case_runs: %{refresh_case["id"] => 99}})
   end
 
   test "refresh cases can be scheduled by floor and the matching case follows the shop floor", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_refresh_case", %{}) |> event("ms_refresh_add_schedule", %{})
-    [base] = milestone(socket)["refresh"]
-    assert milestone(socket)["refresh_scheduled"]
+    socket = socket |> shop() |> event("list_add_refresh_case", %{}) |> event("list_refresh_add_schedule", %{})
+    [base] = section(socket)["refresh"]
+    assert section(socket)["refresh_scheduled"]
 
-    socket = socket |> event("ms_refresh_split", %{"floor" => "5"}) |> event("ms_add_refresh_case", %{})
-    [%{"from" => 5, "cases" => [copied, added]}] = milestone(socket)["refresh_floors"]
+    socket = socket |> event("list_refresh_split", %{"floor" => "5"}) |> event("list_add_refresh_case", %{})
+    [%{"from" => 5, "cases" => [copied, added]}] = section(socket)["refresh_floors"]
     assert copied["id"] != base["id"]
-    assert [^base] = milestone(socket)["refresh"]
+    assert [^base] = section(socket)["refresh"]
 
-    socket = event(socket, "ms_update_refresh_case", %{"case_id" => added["id"], "action" => "leave"})
+    socket = event(socket, "list_update_refresh_case", %{"case_id" => added["id"], "action" => "leave"})
     assert render(socket) =~ "F1-4" and render(socket) =~ "F5+"
 
-    assert %{"action" => "refresh"} = GiftPlans.matching_refresh_case(milestone(socket), %{floor: 4})
-    assert %{"id" => id} = GiftPlans.matching_refresh_case(milestone(socket), %{floor: 5})
+    assert %{"action" => "refresh"} = GiftPlans.matching_refresh_case(section(socket), %{floor: 4})
+    assert %{"id" => id} = GiftPlans.matching_refresh_case(section(socket), %{floor: 5})
     assert id == copied["id"]
 
-    socket = event(socket, "ms_refresh_move_segment", %{"from" => "5", "to" => "7"})
-    assert [%{"from" => 7}] = milestone(socket)["refresh_floors"]
+    socket = event(socket, "list_refresh_move_segment", %{"from" => "5", "to" => "7"})
+    assert [%{"from" => 7}] = section(socket)["refresh_floors"]
 
-    socket = event(socket, "ms_refresh_remove_segment", %{"from" => "7"})
-    assert milestone(socket)["refresh_floors"] == []
+    socket = event(socket, "list_refresh_remove_segment", %{"from" => "7"})
+    assert section(socket)["refresh_floors"] == []
 
-    socket = event(socket, "ms_refresh_remove_schedule", %{})
-    refute milestone(socket)["refresh_scheduled"]
+    socket = event(socket, "list_refresh_remove_schedule", %{})
+    refute section(socket)["refresh_scheduled"]
   end
 
   test "turning Fuse on for an entry without a fusion gives it the default one, and unfusable gifts can't", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Fixed Thing"})
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Fixed Thing"})
     ing_a = entry(socket, "Ing A")["id"]
-    socket = event(socket, "ms_update_segment", %{"entry" => ing_a, "from" => "1", "segment" => %{"disposition" => "keep", "goal" => "required"}})
-    socket = event(socket, "ms_add_gift", %{"gift" => "Fiery Down"})
+    socket = event(socket, "list_update_segment", %{"entry" => ing_a, "from" => "1", "segment" => %{"disposition" => "keep", "goal" => "required"}})
+    socket = event(socket, "list_add_gift", %{"gift" => "Fiery Down"})
     fiery = entry(socket, "Fiery Down")["id"]
-    socket = update_in(socket.assigns.plan_data["milestones"], fn [m] -> [Map.update!(m, "entries", &Enum.map(&1, fn e -> if e["id"] == fiery, do: %{e | "fusion" => nil}, else: e end))] end)
+    socket = update_in(socket.assigns.plan_data["sections"], fn [m] -> [Map.update!(m, "entries", &Enum.map(&1, fn e -> if e["id"] == fiery, do: %{e | "fusion" => nil}, else: e end))] end)
 
-    socket = event(socket, "ms_toggle", %{"entry" => fiery, "from" => "1", "field" => "fuse"})
+    socket = event(socket, "list_toggle", %{"entry" => fiery, "from" => "1", "field" => "fuse"})
     assert %{"fusion" => %{"type" => "tiered", "routes" => [_, _]}, "floors" => [%{"fuse" => true}]} = entry(socket, "Fiery Down")
 
     html = render(socket)
     assert html =~ "This gift can&#39;t be fused"
   end
 
-  test "goals live at the top of the milestone and entries pick one", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("ms_add_goal", %{}) |> event("ms_set_goal_min", %{"letter" => "A", "min" => "2"})
+  test "goals live at the top of the section and entries pick one", %{socket: socket} do
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("list_add_goal", %{}) |> event("list_set_goal_min", %{"letter" => "A", "min" => "2"})
     glimpse = entry(socket, "Glimpse of Flames")["id"]
-    socket = event(socket, "ms_update_segment", %{"entry" => glimpse, "from" => "1", "segment" => %{"disposition" => "keep", "goal" => "A"}})
+    socket = event(socket, "list_update_segment", %{"entry" => glimpse, "from" => "1", "segment" => %{"disposition" => "keep", "goal" => "A"}})
 
-    assert milestone(socket)["goals"] == [%{"letter" => "A", "min" => 2}]
+    assert section(socket)["goals"] == [%{"letter" => "A", "min" => 2}]
     assert [%{"goal" => "A"}] = entry(socket, "Glimpse of Flames")["floors"]
     assert render(socket) =~ "at least"
 
-    socket = event(socket, "ms_remove_goal", %{"letter" => "A"})
-    assert milestone(socket)["goals"] == []
+    socket = event(socket, "list_remove_goal", %{"letter" => "A"})
+    assert section(socket)["goals"] == []
     assert [%{"goal" => "required"}] = entry(socket, "Glimpse of Flames")["floors"]
+  end
+
+  test "a stage takes its own goals and entries, new gifts go to the picked section, and entry edits follow the entry", %{socket: socket} do
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("list_add_stage", %{})
+    [_, stage] = GiftPlans.sections(socket.assigns.plan_data, socket.assigns.root_section_id)
+    assert render(socket) =~ ~s(value="Stage 2")
+    socket = event(socket, "rename_stage", %{"id" => stage["id"], "value" => " Late game "})
+    assert GiftPlans.find_section(socket.assigns.plan_data, stage["id"])["name"] == "Late game"
+    socket = event(socket, "rename_stage", %{"id" => stage["id"], "value" => " "})
+    assert GiftPlans.find_section(socket.assigns.plan_data, stage["id"])["name"] == "Late game"
+    assert [%{"id" => root_only}] = GiftPlans.roots(socket.assigns.plan_data)
+    assert root_only == socket.assigns.root_section_id
+
+    socket = socket |> event("list_add_gift", %{"gift" => "Fiery Down"}) |> event("list_add_goal", %{"section" => stage["id"]}) |> event("list_set_goal_min", %{"letter" => "A", "min" => "2", "section" => stage["id"]})
+    [root, stage] = GiftPlans.sections(socket.assigns.plan_data, socket.assigns.root_section_id)
+    assert Enum.map(root["entries"], &GiftPlans.subject_gift/1) == ["Glimpse of Flames"]
+    assert Enum.map(stage["entries"], &GiftPlans.subject_gift/1) == ["Fiery Down"]
+    assert root["goals"] == []
+    assert stage["goals"] == [%{"letter" => "A", "min" => 2}]
+
+    fiery = hd(stage["entries"])["id"]
+    socket = event(socket, "list_update_segment", %{"entry" => fiery, "from" => "1", "segment" => %{"disposition" => "keep", "goal" => "A"}})
+    [_, stage] = GiftPlans.sections(socket.assigns.plan_data, socket.assigns.root_section_id)
+    assert [%{"goal" => "A"}] = hd(stage["entries"])["floors"]
+
+    socket = event(socket, "list_set_applies", %{"applies" => "extreme", "section" => stage["id"]})
+    [root, stage] = GiftPlans.sections(socket.assigns.plan_data, socket.assigns.root_section_id)
+    assert {root["applies"], stage["applies"]} == {"always", "extreme"}
+
+    socket = event(socket, "list_remove_stage", %{"id" => stage["id"]})
+    assert [_] = GiftPlans.sections(socket.assigns.plan_data, socket.assigns.root_section_id)
+  end
+
+  test "dragging an entry between a section and its stages moves it, resets goals the target lacks and keeps the dropped order", %{socket: socket} do
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("list_add_stage", %{}) |> event("list_add_gift", %{"gift" => "Fiery Down"})
+    root_id = socket.assigns.root_section_id
+    [_, stage] = GiftPlans.sections(socket.assigns.plan_data, root_id)
+    socket = event(socket, "list_add_goal", %{"section" => stage["id"]})
+    fiery = hd(GiftPlans.find_section(socket.assigns.plan_data, stage["id"])["entries"])["id"]
+    glimpse = entry(socket, "Glimpse of Flames")["id"]
+    socket = event(socket, "list_update_segment", %{"entry" => fiery, "from" => "1", "segment" => %{"disposition" => "keep", "goal" => "A"}})
+
+    socket = event(socket, "list_move_entry", %{"scope" => root_id, "from" => stage["id"], "id" => fiery, "ids" => [fiery, glimpse]})
+    [root, stage_after] = GiftPlans.sections(socket.assigns.plan_data, root_id)
+    assert Enum.map(root["entries"], & &1["id"]) == [fiery, glimpse]
+    assert stage_after["entries"] == []
+    assert [%{"goal" => "required"}] = hd(root["entries"])["floors"]
+
+    socket = event(socket, "list_move_entry", %{"scope" => stage["id"], "from" => root_id, "id" => glimpse, "ids" => [glimpse]})
+    [root, stage_after] = GiftPlans.sections(socket.assigns.plan_data, root_id)
+    assert Enum.map(root["entries"], & &1["id"]) == [fiery]
+    assert Enum.map(stage_after["entries"], & &1["id"]) == [glimpse]
+  end
+
+  test "the Add button goes to the last stage, a drop can target any stage, and the same gift can sit in several stages", %{socket: socket} do
+    socket = socket |> shop() |> event("list_add_stage", %{}) |> event("list_add_stage", %{}) |> event("list_add_gift", %{"gift" => "Glimpse of Flames"})
+    root_id = socket.assigns.root_section_id
+    [root, second, third] = GiftPlans.sections(socket.assigns.plan_data, root_id)
+    assert {root["entries"], second["entries"]} == {[], []}
+    assert [%{"subject" => %{"gift" => "Glimpse of Flames"}}] = third["entries"]
+
+    html = render(socket)
+    assert html =~ ~s(phx-click="list_add_gift" phx-value-gift="Fiery Down")
+    refute html =~ ~s(phx-click="list_add_gift" phx-value-gift="Glimpse of Flames")
+
+    socket = socket |> event("list_add_gift", %{"gift" => "Glimpse of Flames", "section" => root_id}) |> event("list_add_gift", %{"gift" => "Glimpse of Flames", "section" => root_id})
+    [root, _second, third] = GiftPlans.sections(socket.assigns.plan_data, root_id)
+    assert length(root["entries"]) == 1
+    assert length(third["entries"]) == 1
+  end
+
+  test "heal entries always join the section itself, even with a stage picked", %{socket: socket} do
+    socket = socket |> shop() |> event("list_add_stage", %{}) |> event("list_add_action", %{"action" => "heal_all", "sinner" => ""})
+    [root, stage] = GiftPlans.sections(socket.assigns.plan_data, socket.assigns.root_section_id)
+    assert Enum.count(root["entries"], &GiftPlans.heal_entry?/1) == 1
+    assert stage["entries"] == []
   end
 
   test "any-tier and any-affinity entries can only ignore or sell", %{socket: socket} do
     socket =
       socket
       |> shop()
-      |> event("ms_add_tier", %{"tier" => "1"})
-      |> event("ms_add_affinity", %{"affinity" => "burn", "tier" => "3"})
-      |> event("ms_add_affinity", %{"affinity" => "burn", "tier" => "3"})
+      |> event("list_add_tier", %{"tier" => "1"})
+      |> event("list_add_affinity", %{"affinity" => "burn", "tier" => "3"})
+      |> event("list_add_affinity", %{"affinity" => "burn", "tier" => "3"})
 
-    assert Enum.map(milestone(socket)["entries"], & &1["subject"]) == [%{"tiers" => [1]}, %{"affinity" => "burn", "tiers" => [3]}]
+    assert Enum.map(section(socket)["entries"], & &1["subject"]) == [%{"tiers" => [1]}, %{"affinity" => "burn", "tiers" => [3]}]
     html = render(socket)
     assert html =~ "Any T1" and html =~ "Any burn T3"
     refute html =~ ~s(<option value="keep")
   end
 
   test "the fusion popup edits an entry's routes, which copy, paste and become tier defaults", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("ms_add_gift", %{"gift" => "Ing A"})
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("list_add_gift", %{"gift" => "Ing A"})
     glimpse = entry(socket, "Glimpse of Flames")["id"]
     ing_a = entry(socket, "Ing A")["id"]
     [top_332, top_422] = entry(socket, "Glimpse of Flames")["fusion"]["routes"]
 
     socket =
       socket
-      |> event("ms_open_fusion", %{"entry" => glimpse})
+      |> event("list_open_fusion", %{"entry" => glimpse})
       |> event("rt_add", %{"def_id" => glimpse, "parent" => "", "tier" => "4", "combo" => "4-4"})
       |> event("rt_update", %{"def_id" => glimpse, "route_id" => top_422["id"], "buy_up_to" => "2", "leftover" => %{"1" => "0", "2" => "1"}})
       |> event("rt_add", %{"def_id" => glimpse, "parent" => top_422["id"], "tier" => "2", "combo" => "2-2"})
@@ -517,34 +565,20 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     socket = event(socket, "rt_apply_template", %{"def_id" => glimpse, "ref" => ref})
     assert Enum.map(entry(socket, "Glimpse of Flames")["fusion"]["routes"], & &1["combo"]) == [[4, 4], [4, 2, 2], [3, 3, 2]]
 
-    socket = socket |> event("ms_close_fusion", %{}) |> event("ms_open_fusion", %{"entry" => ing_a})
+    socket = socket |> event("list_close_fusion", %{}) |> event("list_open_fusion", %{"entry" => ing_a})
     assert [%{"combo" => [2, 1, 1], "buy_up_to" => 1}, %{"combo" => [1, 1, 1, 1]}] = entry(socket, "Ing A")["fusion"]["routes"]
     socket = event(socket, "rt_add", %{"def_id" => ing_a, "parent" => "", "tier" => "2", "combo" => "2-2"})
     assert [_, _, %{"combo" => [2, 2]}] = entry(socket, "Ing A")["fusion"]["routes"]
-    refute render(event(socket, "ms_close_fusion", %{})) =~ "Fuse (tiered)"
+    refute render(event(socket, "list_close_fusion", %{})) =~ "Fuse (tiered)"
   end
 
-  test "a fixed fusion's popup shows its recipe and which ingredients the milestone lacks", %{socket: socket} do
-    socket = socket |> shop() |> event("ms_add_gift", %{"gift" => "Fixed Thing"})
-    socket = event(socket, "ms_remove_entry", %{"entry" => entry(socket, "Ing A")["id"]})
-    html = render(event(socket, "ms_open_fusion", %{"entry" => entry(socket, "Fixed Thing")["id"]}))
+  test "a fixed fusion's popup shows its recipe and which ingredients the section lacks", %{socket: socket} do
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Fixed Thing"})
+    socket = event(socket, "list_remove_entry", %{"entry" => entry(socket, "Ing A")["id"]})
+    html = render(event(socket, "list_open_fusion", %{"entry" => entry(socket, "Fixed Thing")["id"]}))
 
     assert html =~ "Fixed recipe."
-    assert html =~ "(not in this milestone)"
-  end
-
-  test "milestones can be added, renamed, ordered and deleted", %{socket: socket} do
-    %{"id" => shop_id} = milestone(socket)
-    socket = socket |> event("add_milestone", %{}) |> event("move_milestone", %{"id" => shop_id, "dir" => "down"})
-    [%{"id" => top_id}, %{"id" => ^shop_id}] = saved(socket)["milestones"]
-    assert socket.assigns.selected_milestone_id == top_id
-
-    socket = event(socket, "rename_milestone", %{"id" => top_id, "value" => " Early "})
-    assert hd(saved(socket)["milestones"])["name"] == "Early"
-
-    socket = event(socket, "delete_milestone", %{"id" => top_id})
-    assert [%{"id" => ^shop_id}] = saved(socket)["milestones"]
-    assert socket.assigns.selected_milestone_id == shop_id
+    assert html =~ "(not in this stage)"
   end
 
   test "gift search holds up to 3 gifts of tier 3 or under", %{socket: socket} do
@@ -563,24 +597,20 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert saved(socket)["gift_search"] == ["Fiery Down", "Ing B"]
   end
 
-  test "the end state tab renders a read-only milestone built from heals and the endless milestone's refresh and buys", %{socket: socket} do
-    socket =
-      socket
-      |> event("ms_add_action", %{"action" => "heal_all"})
-      |> event("ms_set_endless", %{"endless" => "true"})
-      |> event("ms_add_refresh_case", %{})
-      |> event("set_tab", %{"tab" => "end_state"})
+  test "keep shopping adds a section and removing it turns the flag off", %{socket: socket} do
+    flag = fn socket -> hd(saved(socket)["sections"])["pursue_optional"] end
+    socket = shop(socket)
+    refute flag.(socket)
+    assert render(socket) =~ "+ Keep shopping"
+    refute render(socket) =~ "Keep shopping</span>"
 
-    html = render(socket)
+    socket = event(socket, "list_set_pursue_optional", %{"value" => "true"})
+    assert flag.(socket)
+    assert render(socket) =~ "Keep shopping</span>"
+    refute render(socket) =~ "+ Keep shopping"
 
-    assert socket.assigns.active_tab == :end_state
-    assert html =~ "End state for"
-    assert html =~ "Heal Everyone"
-    assert html =~ "Refresh"
-    assert html =~ "from #{milestone(socket)["name"]}"
-    refute html =~ "+ Endless"
-    refute html =~ "+ Greatly heal"
-
-    assert socket |> event("set_end_state_kind", %{"kind" => "extreme"}) |> Map.fetch!(:assigns) |> Map.fetch!(:end_state_kind) == "extreme"
+    socket = event(socket, "list_set_pursue_optional", %{"value" => "false"})
+    refute flag.(socket)
+    refute render(socket) =~ "Keep shopping</span>"
   end
 end

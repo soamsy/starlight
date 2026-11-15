@@ -44,12 +44,12 @@ defmodule StarlightBot.GiftPlansTest do
 
   defp with_gifts(names) do
     data = GiftPlans.blank()
-    id = hd(data["milestones"])["id"]
+    id = hd(data["sections"])["id"]
     data = Enum.reduce(names, data, &GiftPlans.add_gift(&2, id, &1, by_name(), fn tier -> routes_for(tier) end))
     {data, id}
   end
 
-  defp entry_for(data, id, name), do: Enum.find(GiftPlans.find_milestone(data, id)["entries"], &(GiftPlans.subject_gift(&1) == name))
+  defp entry_for(data, id, name), do: Enum.find(GiftPlans.find_section(data, id)["entries"], &(GiftPlans.subject_gift(&1) == name))
 
   defp env(data, owned, floor \\ 1) do
     inventory = Map.new(owned, fn {name, uptie} -> {by_name()[name].id, %{name: name, uptie: uptie, count: 1}} end)
@@ -60,7 +60,7 @@ defmodule StarlightBot.GiftPlansTest do
     GiftPlans.update_segment(data, id, entry_for(data, id, name)["id"], from, &Map.merge(&1, changes))
   end
 
-  describe "adding gifts to a milestone" do
+  describe "adding gifts to a section" do
     test "a new entry keeps and buys it, and fuses a tier fusable T4 by default" do
       {data, id} = with_gifts(["Glimpse", "Drumstick", "Event Only"])
 
@@ -74,7 +74,7 @@ defmodule StarlightBot.GiftPlansTest do
 
     test "a fixed fusion brings its ingredients along, nested fixed ones fused whatever their tier, without duplicates" do
       {data, id} = with_gifts(["Ing A", "Soothe"])
-      names = Enum.map(GiftPlans.find_milestone(data, id)["entries"], &GiftPlans.subject_gift/1)
+      names = Enum.map(GiftPlans.find_section(data, id)["entries"], &GiftPlans.subject_gift/1)
 
       assert names == ["Ing A", "Soothe", "Ing B", "Cookbook", "Ing C", "Ing D"]
       assert %{"fusion" => %{"type" => "fixed"}, "floors" => [%{"fuse" => true, "goal" => "required"}]} = entry_for(data, id, "Soothe")
@@ -83,28 +83,28 @@ defmodule StarlightBot.GiftPlansTest do
       assert %{"floors" => [%{"goal" => "required"}]} = entry_for(data, id, "Ing A")
     end
 
-    test "Lunar Memory adds its three memories and needs two Sin Fragments from the milestone" do
+    test "Lunar Memory adds its three memories and needs two Sin Fragments from the section" do
       {data, id} = with_gifts(["Lunar Memory"])
-      milestone = GiftPlans.find_milestone(data, id)
+      section = GiftPlans.find_section(data, id)
       lunar = entry_for(data, id, "Lunar Memory")
 
-      assert Enum.map(milestone["entries"], &GiftPlans.subject_gift/1) == ["Lunar Memory", "Sundered Memory", "Punctured Memory", "Crushed Memory"]
-      assert GiftPlans.missing_ingredients(milestone, lunar, by_name()) == {[], 2}
+      assert Enum.map(section["entries"], &GiftPlans.subject_gift/1) == ["Lunar Memory", "Sundered Memory", "Punctured Memory", "Crushed Memory"]
+      assert GiftPlans.missing_ingredients(section, lunar, by_name()) == {[], 2}
 
       data = GiftPlans.add_gift(data, id, "Fragment of Conceit", by_name(), &routes_for/1)
-      assert GiftPlans.missing_ingredients(GiftPlans.find_milestone(data, id), lunar, by_name()) == {[], 1}
+      assert GiftPlans.missing_ingredients(GiftPlans.find_section(data, id), lunar, by_name()) == {[], 1}
       assert Enum.any?(GiftPlans.issues(data, by_name()), &(&1 =~ "Lunar Memory needs 1 more Sin Fragment(s)"))
 
       data = GiftPlans.add_gift(data, id, "Fragment of Decay", by_name(), &routes_for/1)
-      assert GiftPlans.missing_ingredients(GiftPlans.find_milestone(data, id), lunar, by_name()) == {[], 0}
+      assert GiftPlans.missing_ingredients(GiftPlans.find_section(data, id), lunar, by_name()) == {[], 0}
     end
 
     test "tier and affinity entries are added once and can't keep" do
       data = GiftPlans.blank()
-      id = hd(data["milestones"])["id"]
+      id = hd(data["sections"])["id"]
       data = data |> GiftPlans.add_pattern(id, GiftPlans.tier_subject([2])) |> GiftPlans.add_pattern(id, GiftPlans.tier_subject([2]))
       data = GiftPlans.add_pattern(data, id, GiftPlans.affinity_subject("burn", [3, 2, 3]))
-      [tier, affinity] = GiftPlans.find_milestone(data, id)["entries"]
+      [tier, affinity] = GiftPlans.find_section(data, id)["entries"]
 
       assert GiftPlans.subject_label(tier["subject"]) == "Any T2"
       assert GiftPlans.subject_label(affinity["subject"]) == "Any burn T2, T3"
@@ -174,12 +174,12 @@ defmodule StarlightBot.GiftPlansTest do
 
     test "kept anywhere wins over a sell somewhere else, and issues say so" do
       {data, _id} = with_gifts(["Glimpse"])
-      other = GiftPlans.new_milestone("Other")
-      data = Map.update!(data, "milestones", &(&1 ++ [other]))
+      other = GiftPlans.new_section()
+      data = Map.update!(data, "sections", &(&1 ++ [other]))
       data = data |> GiftPlans.add_gift(other["id"], "Glimpse", by_name(), &routes_for/1) |> set_segment(other["id"], "Glimpse", %{"disposition" => "sell"})
 
       assert GiftPlans.keep_set(data, 1) == MapSet.new(["Glimpse"])
-      assert Enum.any?(GiftPlans.issues(data, by_name()), &(&1 =~ "Milestone Other: sells Glimpse from F1, but another milestone keeps it"))
+      assert Enum.any?(GiftPlans.issues(data, by_name()), &(&1 =~ "Shopping list: sells Glimpse from F1, but another stage keeps it"))
     end
 
     test "the most specific matching entry rules a gift" do
@@ -197,24 +197,24 @@ defmodule StarlightBot.GiftPlansTest do
     end
   end
 
-  describe "milestone goals" do
+  describe "section goals" do
     test "required entries must be owned at their uptie level, optional ones never hold it back" do
       {data, id} = with_gifts(["Glimpse", "Drumstick"])
       data = data |> set_segment(id, "Glimpse", %{"uptie" => 2}) |> set_segment(id, "Drumstick", %{"goal" => "optional"})
 
-      refute GiftPlans.milestone_reached?(data, id, env(data, %{}))
-      refute GiftPlans.milestone_reached?(data, id, env(data, %{"Glimpse" => 1}))
-      assert GiftPlans.milestone_reached?(data, id, env(data, %{"Glimpse" => 2}))
+      refute GiftPlans.section_reached?(data, id, env(data, %{}))
+      refute GiftPlans.section_reached?(data, id, env(data, %{"Glimpse" => 1}))
+      assert GiftPlans.section_reached?(data, id, env(data, %{"Glimpse" => 2}))
     end
 
-    test "an endless milestone is never reached, even with nothing left to own" do
+    test "a section that pursues optional gifts is never reached, even with nothing left to own" do
       {data, id} = with_gifts(["Glimpse"])
       owned = env(data, %{"Glimpse" => 0})
-      assert GiftPlans.milestone_reached?(data, id, owned)
+      assert GiftPlans.section_reached?(data, id, owned)
 
-      endless = GiftPlans.update_milestone(data, id, &Map.put(&1, "endless", true))
-      refute GiftPlans.milestone_reached?(endless, id, owned)
-      assert GiftPlans.normalize(endless) |> GiftPlans.find_milestone(id) |> Map.fetch!("endless")
+      pursuing = GiftPlans.update_section(data, id, &Map.put(&1, "pursue_optional", true))
+      refute GiftPlans.section_reached?(pursuing, id, owned)
+      assert GiftPlans.normalize(pursuing) |> GiftPlans.find_section(id) |> Map.fetch!("pursue_optional")
     end
 
     test "a goal needs its minimum, clamped to its members on that floor, and a partway member holds it" do
@@ -224,17 +224,17 @@ defmodule StarlightBot.GiftPlansTest do
       data = Enum.reduce(["Glimpse", "Drumstick", "Event Only"], data, &set_segment(&2, id, &1, %{"goal" => "A"}))
       data = set_segment(data, id, "Drumstick", %{"uptie" => 1})
 
-      refute GiftPlans.milestone_reached?(data, id, env(data, %{"Glimpse" => 0}))
-      refute GiftPlans.milestone_reached?(data, id, env(data, %{"Glimpse" => 0, "Drumstick" => 0}))
-      assert GiftPlans.milestone_reached?(data, id, env(data, %{"Glimpse" => 0, "Event Only" => 0}))
+      refute GiftPlans.section_reached?(data, id, env(data, %{"Glimpse" => 0}))
+      refute GiftPlans.section_reached?(data, id, env(data, %{"Glimpse" => 0, "Drumstick" => 0}))
+      assert GiftPlans.section_reached?(data, id, env(data, %{"Glimpse" => 0, "Event Only" => 0}))
 
       entry_id = entry_for(data, id, "Event Only")["id"]
       data = data |> GiftPlans.split_entry(id, entry_id, 5) |> set_segment(id, "Event Only", 5, %{"goal" => "optional"})
       entry_id = entry_for(data, id, "Drumstick")["id"]
       data = data |> GiftPlans.split_entry(id, entry_id, 5) |> set_segment(id, "Drumstick", 5, %{"disposition" => "ignore"})
 
-      refute GiftPlans.milestone_reached?(data, id, env(data, %{"Glimpse" => 0}, 4))
-      assert GiftPlans.milestone_reached?(data, id, env(data, %{"Glimpse" => 0}, 5))
+      refute GiftPlans.section_reached?(data, id, env(data, %{"Glimpse" => 0}, 4))
+      assert GiftPlans.section_reached?(data, id, env(data, %{"Glimpse" => 0}, 5))
     end
 
     test "needed? drops a goal's open members once enough are committed" do
@@ -253,7 +253,7 @@ defmodule StarlightBot.GiftPlansTest do
       {data, id} = with_gifts(["Glimpse"])
       data = data |> GiftPlans.add_goal(id) |> set_segment(id, "Glimpse", %{"goal" => "A"}) |> GiftPlans.remove_goal(id, "A")
 
-      assert GiftPlans.find_milestone(data, id)["goals"] == []
+      assert GiftPlans.find_section(data, id)["goals"] == []
       assert %{"floors" => [%{"goal" => "required"}]} = entry_for(data, id, "Glimpse")
     end
 
@@ -261,8 +261,8 @@ defmodule StarlightBot.GiftPlansTest do
       {data, id} = with_gifts(["Soothe"])
       data = Enum.reduce(["Ing B", "Cookbook", "Ing C"], data, &set_segment(&2, id, &1, %{"goal" => "required"}))
 
-      refute GiftPlans.milestone_reached?(data, id, env(data, %{"Ing A" => 0}))
-      assert GiftPlans.milestone_reached?(data, id, env(data, %{"Soothe" => 0}))
+      refute GiftPlans.section_reached?(data, id, env(data, %{"Ing A" => 0}))
+      assert GiftPlans.section_reached?(data, id, env(data, %{"Soothe" => 0}))
 
       progress = GiftPlans.progress(data, id, env(data, %{"Ing C" => 0}))
       soothe = Enum.find(progress.entries, &(&1.gift == "Soothe"))
@@ -270,7 +270,7 @@ defmodule StarlightBot.GiftPlansTest do
       assert MapSet.member?(progress.pending, "Ing C")
 
       data = set_segment(data, id, "Soothe", %{"fuse" => false})
-      refute GiftPlans.milestone_reached?(data, id, env(data, %{"Soothe" => 0}))
+      refute GiftPlans.section_reached?(data, id, env(data, %{"Soothe" => 0}))
     end
 
     test "issues flag missing ingredients, upties on fused ingredients, shared ingredients and empty goals" do
@@ -278,10 +278,10 @@ defmodule StarlightBot.GiftPlansTest do
       data = data |> GiftPlans.remove_entry(id, entry_for(data, id, "Ing D")["id"]) |> set_segment(id, "Ing B", %{"uptie" => 2}) |> GiftPlans.add_goal(id)
       issues = GiftPlans.issues(data, by_name())
 
-      assert "Milestone Shop Done: Cookbook needs Ing D in the milestone." in issues
-      assert "Milestone Shop Done: Ing B is upgraded to +2 but gets fused into Soothe." in issues
-      assert "Milestone Shop Done: Soothe and Twin both use Ing A; fusing one leaves the other without it." in issues
-      assert "Milestone Shop Done: goal A has no entries." in issues
+      assert "Shopping list: Cookbook needs Ing D in this stage." in issues
+      assert "Shopping list: Ing B is upgraded to +2 but gets fused into Soothe." in issues
+      assert "Shopping list: Soothe and Twin both use Ing A; fusing one leaves the other without it." in issues
+      assert "Shopping list: goal A has no entries." in issues
     end
   end
 
@@ -322,22 +322,22 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.condition_label(%{"op" => "cost", "cmp" => "eq", "value" => 250, "not" => true}) == "not cost = 250"
     end
 
-    test "milestone leaves check the milestone on the env's floor" do
+    test "section leaves check the section on the env's floor" do
       {data, id} = with_gifts(["Glimpse"])
-      leaf = %{"op" => "milestone", "milestone" => id}
+      leaf = %{"op" => "stage", "stage" => id}
 
       refute GiftPlans.eval_condition(leaf, env(data, %{}))
       assert GiftPlans.eval_condition(leaf, env(data, %{"Glimpse" => 0}))
-      assert GiftPlans.eval_condition(%{"op" => "milestone", "milestone" => id, "not" => true}, env(data, %{}))
-      assert GiftPlans.condition_label(leaf, data) == "milestone Shop Done done"
-      assert GiftPlans.condition_label(%{"op" => "milestone", "milestone" => "ms_gone"}, data) == "milestone (deleted) done"
+      assert GiftPlans.eval_condition(%{"op" => "stage", "stage" => id, "not" => true}, env(data, %{}))
+      assert GiftPlans.condition_label(leaf, data) == "Shopping list done"
+      assert GiftPlans.condition_label(%{"op" => "stage", "stage" => "ms_gone"}, data) == "(deleted) done"
     end
 
-    test "goal leaves check one goal of the milestone" do
+    test "goal leaves check one goal of the section" do
       {data, id} = with_gifts(["Glimpse", "Fiery Down"])
       data = data |> GiftPlans.add_goal(id) |> set_segment(id, "Glimpse", %{"goal" => "A"})
       leaf = %{"op" => "goal", "goal" => "A"}
-      goal_env = fn owned -> Map.put(env(data, owned), :current_milestone, id) end
+      goal_env = fn owned -> Map.put(env(data, owned), :current_section, id) end
       not_leaf = %{"op" => "goal", "goal" => "A", "not" => true}
 
       refute GiftPlans.eval_condition(leaf, goal_env.(%{}))
@@ -395,15 +395,15 @@ defmodule StarlightBot.GiftPlansTest do
     assert GiftPlans.condition_label(tree) == "cost >= 200 AND (missing A OR owns B)"
   end
 
-  test "a fused fixed fusion counts as having its ingredients for every milestone, not just its own" do
+  test "a fused fixed fusion counts as having its ingredients for every section, not just its own" do
     {data, first} = with_gifts(["Ing A"])
-    second = GiftPlans.new_milestone("Second")
-    data = Map.update!(data, "milestones", &(&1 ++ [second]))
+    second = GiftPlans.new_section()
+    data = Map.update!(data, "sections", &(&1 ++ [second]))
     data = GiftPlans.add_gift(data, second["id"], "Soothe", by_name(), fn tier -> routes_for(tier) end)
 
-    refute GiftPlans.milestone_reached?(data, first, env(data, %{}))
-    assert GiftPlans.milestone_reached?(data, first, env(data, %{"Ing A" => 0}))
-    assert GiftPlans.milestone_reached?(data, first, env(data, %{"Soothe" => 0}))
+    refute GiftPlans.section_reached?(data, first, env(data, %{}))
+    assert GiftPlans.section_reached?(data, first, env(data, %{"Ing A" => 0}))
+    assert GiftPlans.section_reached?(data, first, env(data, %{"Soothe" => 0}))
   end
 
   test "cabinet_pick_count/1 is one pick plus one per starting-choice grace, up to three" do
@@ -421,8 +421,8 @@ defmodule StarlightBot.GiftPlansTest do
     data = GiftPlans.add_loadout_keep(data, id, "Ing A", by_name())
     data = GiftPlans.add_loadout_keep(data, id, "No Such Gift", by_name())
 
-    milestone = GiftPlans.find_milestone(data, id)
-    assert length(milestone["entries"]) == 2
+    section = GiftPlans.find_section(data, id)
+    assert length(section["entries"]) == 2
     assert %{"floors" => [%{"disposition" => "keep", "goal" => "optional", "buy" => false, "fuse" => false}]} = entry_for(data, id, "Event Only")
     assert %{"floors" => [%{"goal" => "required", "buy" => true}]} = entry_for(data, id, "Ing A")
   end
@@ -521,31 +521,17 @@ defmodule StarlightBot.GiftPlansTest do
     end
   end
 
-  test "blank/1 starts with one empty milestone" do
+  test "blank/1 starts with one empty section" do
     data = GiftPlans.blank("burn")
 
-    assert data["version"] == 5
+    assert data["version"] == 6
     assert data["affinity"] == "burn"
-    assert [%{"name" => "Shop Done", "goals" => [], "entries" => []}] = data["milestones"]
+    assert [%{"goals" => [], "entries" => []}] = data["sections"]
     assert GiftPlans.issues(data) == []
   end
 
-  test "normalize/1 turns a v4 plan into a v5 plan whose first milestone is the one its first workflow runs" do
-    data = %{
-      "version" => 4,
-      "milestones" => [GiftPlans.new_milestone("A"), %{GiftPlans.new_milestone("B") | "id" => "ms_b"}],
-      "workflows" => [%{"id" => "wf_1", "name" => "Standard", "steps" => [%{"kind" => "if", "then" => [%{"kind" => "milestone", "milestone" => "ms_b"}], "else" => []}]}],
-      "floor_schedule" => [%{"from_floor" => 1, "workflow" => "wf_1"}]
-    }
-
-    normalized = GiftPlans.normalize(data)
-    assert normalized["version"] == 5
-    assert Enum.map(normalized["milestones"], & &1["id"]) |> hd() == "ms_b"
-    refute Map.has_key?(normalized, "workflows")
-  end
-
   test "normalize/1 resets anything that isn't a v4 plan" do
-    assert GiftPlans.normalize(%{"version" => 3, "library" => %{}})["milestones"] |> hd() |> Map.get("entries") == []
+    assert GiftPlans.normalize(%{"version" => 3, "library" => %{}})["sections"] |> hd() |> Map.get("entries") == []
   end
 
   describe "mounting trials schedule" do
@@ -592,10 +578,10 @@ defmodule StarlightBot.GiftPlansTest do
         entry("g2", %{"group" => "grp", "scheduled" => true, "floors" => floors})
       ]
 
-      %{"milestones" => [%{"id" => "ms", "name" => "Shop", "entries" => entries}]}
+      %{"sections" => [%{"id" => "ms", "name" => "Shop", "entries" => entries}]}
     end
 
-    defp entries_of(data), do: hd(data["milestones"])["entries"]
+    defp entries_of(data), do: hd(data["sections"])["entries"]
     defp ids_of(data), do: data |> entries_of() |> Enum.map(& &1["id"])
 
     test "moves several entries into a group in the given order" do
@@ -635,65 +621,15 @@ defmodule StarlightBot.GiftPlansTest do
     end
   end
 
-  describe "import_milestone/2" do
-    defp source do
-      leaf = fn id -> %{"op" => "milestone", "milestone" => id} end
-      refresh_case = fn id, condition -> %{"id" => id, "condition" => condition, "action" => "refresh", "affinity" => nil, "max" => nil} end
-
-      %{
-        "id" => "ms_src",
-        "name" => "Shop",
-        "goals" => [],
-        "entries" => [
-          %{"id" => "me_1", "subject" => %{"gift" => "Glimpse"}, "group" => "grp_x", "floors" => []},
-          %{"id" => "me_2", "subject" => %{"gift" => "Drumstick"}, "group" => "grp_x", "floors" => []},
-          %{"id" => "me_3", "subject" => %{"gift" => "Soothe"}, "floors" => []}
-        ],
-        "refresh" => [refresh_case.("rc_1", %{"op" => "and", "children" => [leaf.("ms_src"), leaf.("ms_here"), leaf.("ms_gone")]})],
-        "refresh_floors" => [%{"from" => 3, "cases" => [refresh_case.("rc_2", leaf.("ms_src"))]}]
-      }
-    end
-
-    defp target, do: %{"milestones" => [%{"id" => "ms_here", "name" => "Shop"}]}
-
-    test "gives the copy fresh ids and keeps groups together" do
-      {data, milestone, _dropped} = GiftPlans.import_milestone(target(), source())
-      assert [_, ^milestone] = data["milestones"]
-      refute milestone["id"] == "ms_src"
-      [first, second, third] = milestone["entries"]
-      assert first["group"] == second["group"]
-      refute first["group"] == "grp_x"
-      refute Map.has_key?(third, "group")
-      ids = [first["id"], second["id"], third["id"], hd(milestone["refresh"])["id"], hd(hd(milestone["refresh_floors"])["cases"])["id"]]
-      assert length(Enum.uniq(ids)) == 5
-      assert Enum.all?(ids, &(&1 not in ~w(me_1 me_2 me_3 rc_1 rc_2)))
-    end
-
-    test "renames a clashing name" do
-      {_data, milestone, _dropped} = GiftPlans.import_milestone(target(), source())
-      assert milestone["name"] == "Shop copy"
-    end
-
-    test "points self references at the copy, keeps known ones and drops unknown ones" do
-      {_data, milestone, dropped} = GiftPlans.import_milestone(target(), source())
-      %{"children" => [own, known, unknown]} = hd(milestone["refresh"])["condition"]
-      assert own["milestone"] == milestone["id"]
-      assert known["milestone"] == "ms_here"
-      assert unknown["milestone"] == nil
-      assert hd(hd(milestone["refresh_floors"])["cases"])["condition"]["milestone"] == milestone["id"]
-      assert dropped == 1
-    end
-  end
-
-  describe "milestone applies" do
+  describe "section applies" do
     defp plan_with(applies) do
-      milestones = for {kind, id} <- Enum.with_index(applies), do: %{GiftPlans.new_milestone("M#{id}") | "id" => "ms_#{id}", "applies" => kind}
-      %{"milestones" => milestones}
+      sections = for {kind, id} <- Enum.with_index(applies), do: %{GiftPlans.new_section() | "id" => "ms_#{id}", "applies" => kind}
+      %{"sections" => sections}
     end
 
-    test "filters milestones by run kind" do
+    test "filters sections by run kind" do
       plan = plan_with(["always", "all_normal", "becomes_hard", "all_hard", "extreme"])
-      names = fn kind -> plan |> GiftPlans.for_run(kind) |> Map.fetch!("milestones") |> Enum.map(& &1["applies"]) end
+      names = fn kind -> plan |> GiftPlans.for_run(kind) |> Map.fetch!("sections") |> Enum.map(& &1["applies"]) end
 
       assert names.("all_normal") == ["always", "all_normal"]
       assert names.("becomes_hard") == ["always", "becomes_hard"]
@@ -701,67 +637,176 @@ defmodule StarlightBot.GiftPlansTest do
       assert names.("extreme") == ["always", "all_hard", "extreme"]
     end
 
-    test "milestones without the key apply always" do
-      plan = %{"milestones" => [%{"id" => "ms_a"}]}
-      assert GiftPlans.for_run(plan, "extreme") == plan
+    test "sections without the key apply always" do
+      plan = %{"sections" => [%{"id" => "ms_a"}]}
+      assert Enum.map(GiftPlans.for_run(plan, "extreme")["sections"], & &1["id"]) == ["ms_a"]
     end
   end
 
-  describe "end_state_milestone" do
+  describe "stages" do
     defp end_entry(id, subject, segment) do
       %{"id" => id, "subject" => subject, "fusion" => nil, "floors" => [Map.merge(GiftPlans.default_segment(), segment)]}
     end
 
-    defp end_plan(milestones) do
-      defaults = %{"applies" => "always", "goals" => [], "refresh" => []}
-      GiftPlans.normalize(%{"version" => GiftPlans.version(), "milestones" => Enum.map(milestones, &Map.merge(defaults, &1))})
-    end
-
     defp heal_segment, do: %{"disposition" => "ignore", "goal" => nil, "buy" => false, "sinners" => ["yi_sang"], "repeat" => "once"}
 
-    defp end_entries(data, kind), do: GiftPlans.end_state_milestone(data, kind)["entries"] |> Enum.map(&{&1["id"], &1["source"]})
-
-    test "collects heals from every applicable milestone with the milestone they come from" do
-      data = end_plan([
-        %{"id" => "a", "name" => "A", "entries" => [end_entry("h1", %{"action" => "heal"}, heal_segment())]},
-        %{"id" => "b", "name" => "B", "entries" => [end_entry("h2", %{"action" => "heal_all"}, heal_segment())]}
-      ])
-
-      assert end_entries(data, "all_normal") == [{"h1", "A"}, {"h2", "B"}]
+    defp staged do
+      data = %{"sections" => [%{GiftPlans.new_section() | "id" => "ms_a"}, %{GiftPlans.new_section() | "id" => "ms_b"}]}
+      {data, stage} = GiftPlans.add_stage(data, "ms_a")
+      {data, stage}
     end
 
-    test "only takes what an endless milestone still buys once its required and goals are done" do
-      required = end_entry("g1", %{"gift" => "One"}, %{})
-      grouped = end_entry("g3", %{"gift" => "Three"}, %{"goal" => "A"})
-      optional = end_entry("g4", %{"gift" => "Four"}, %{"goal" => "optional"})
-      capped = end_entry("g2", %{"tiers" => [2]}, %{"disposition" => "ignore", "goal" => nil, "max" => 4})
-      plain = %{"id" => "a", "name" => "A", "entries" => [optional]}
-      endless = %{"id" => "b", "name" => "B", "endless" => true, "entries" => [required, grouped, optional, capped]}
-
-      assert end_entries(end_plan([plain, endless]), "all_normal") == [{"g4", "B"}, {"g2", "B"}]
+    test "a stage lands right after its section and copies its applies" do
+      data = %{"sections" => [%{GiftPlans.new_section() | "id" => "ms_a", "applies" => "extreme"}, %{GiftPlans.new_section() | "id" => "ms_b"}]}
+      {data, stage} = GiftPlans.add_stage(data, "ms_a")
+      {data, second} = GiftPlans.add_stage(data, "ms_a")
+      assert Enum.map(data["sections"], & &1["id"]) == ["ms_a", stage["id"], second["id"], "ms_b"]
+      assert stage["stage_of"] == "ms_a"
+      assert stage["applies"] == "extreme"
+      assert stage["name"] == "Stage 2"
+      assert second["name"] == "Stage 3"
     end
 
-    test "ignores milestones after the first endless one" do
-      first = %{"id" => "a", "name" => "A", "endless" => true, "entries" => [end_entry("h1", %{"action" => "heal_all"}, heal_segment())]}
-      second = %{"id" => "b", "name" => "B", "endless" => true, "entries" => [end_entry("h2", %{"action" => "heal_all"}, heal_segment())]}
-
-      assert end_entries(end_plan([first, second]), "all_normal") == [{"h1", "A"}]
+    test "moving a stage swaps it with its sibling and keeps its name" do
+      {data, first} = staged()
+      {data, second} = GiftPlans.add_stage(data, "ms_a")
+      moved = GiftPlans.move_stage(data, second["id"], -1)
+      assert Enum.map(moved["sections"], & &1["id"]) == ["ms_a", second["id"], first["id"], "ms_b"]
+      assert Enum.map(GiftPlans.stages(moved, "ms_a"), & &1["name"]) == ["Stage 3", "Stage 2"]
+      assert GiftPlans.move_stage(moved, second["id"], -1) == moved
+      assert GiftPlans.move_stage(moved, "ms_a", 1) == moved
     end
 
-    test "copies the refresh cases of the endless milestone" do
-      refresh = [%{"id" => "rc", "action" => "refresh"}]
-      endless = %{"id" => "a", "name" => "A", "endless" => true, "refresh" => refresh, "entries" => []}
-
-      assert GiftPlans.end_state_milestone(end_plan([endless]), "all_normal")["refresh"] == refresh
-      assert GiftPlans.end_state_milestone(end_plan([%{"id" => "b", "name" => "B", "entries" => []}]), "all_normal")["endless"] == false
+    test "the first stage swaps content with the section, heals stay put" do
+      {data, stage} = staged()
+      heal = end_entry("h1", %{"action" => "heal"}, heal_segment())
+      gift = %{"id" => "g1", "subject" => %{"gift" => "Gift"}}
+      data = data |> GiftPlans.update_section("ms_a", &%{&1 | "goals" => [%{"letter" => "A"}], "entries" => [heal, gift]}) |> GiftPlans.set_applies(stage["id"], "extreme")
+      swapped = GiftPlans.move_stage(data, stage["id"], -1)
+      root = GiftPlans.find_section(swapped, "ms_a")
+      assert root["applies"] == "extreme"
+      assert root["goals"] == []
+      assert root["entries"] == [heal]
+      first = GiftPlans.find_section(swapped, stage["id"])
+      assert first["goals"] == [%{"letter" => "A"}]
+      assert first["entries"] == [gift]
+      assert GiftPlans.swap_first_stage(swapped, "ms_a") == data
     end
 
-    test "only includes milestones that apply to the run kind" do
-      heal = end_entry("h1", %{"action" => "heal_all"}, heal_segment())
-      data = end_plan([%{"id" => "a", "name" => "A", "applies" => "all_hard", "entries" => [heal]}])
+    test "a stage uses its section's refresh cases and counts goals on its own" do
+      {data, stage} = staged()
+      refresh_case = %{"id" => "rc_1", "condition" => nil, "action" => "refresh", "affinity" => nil, "max" => 2}
+      data = GiftPlans.update_section(data, "ms_a", &Map.put(&1, "refresh", [refresh_case]))
+      stage = GiftPlans.find_section(data, stage["id"])
+      assert GiftPlans.matching_refresh_case(stage, %{plan: data}) == refresh_case
+      assert GiftPlans.matching_refresh_case(stage, %{plan: data, case_runs: %{"rc_1" => 2}}) == nil
+      assert stage["refresh"] == []
+    end
 
-      assert end_entries(data, "all_normal") == []
-      assert end_entries(data, "extreme") == [{"h1", "A"}]
+    test "goal letters are unique across a section and its stages, and conditions find them by letter" do
+      {data, stage} = staged()
+      data = data |> GiftPlans.add_goal("ms_a") |> GiftPlans.add_goal(stage["id"]) |> GiftPlans.add_goal("ms_a")
+      assert GiftPlans.goal_letters(GiftPlans.find_section(data, "ms_a")) == ["A", "C"]
+      assert GiftPlans.goal_letters(GiftPlans.find_section(data, stage["id"])) == ["B"]
+      assert GiftPlans.all_goal_letters(data, stage["id"]) == ["A", "C", "B"]
+      entry = %{"id" => "me_s", "subject" => %{"gift" => "Glimpse"}, "fusion" => nil, "floors" => [%{GiftPlans.default_segment() | "goal" => "B"}]}
+      data = GiftPlans.update_section(data, stage["id"], &Map.put(&1, "entries", [entry]))
+      refute GiftPlans.goal_reached?(data, "ms_a", "B", %{plan: data})
+      owned = %{plan: data, inventory: %{"g_glimpse" => %{name: "Glimpse", uptie: 0}}}
+      assert GiftPlans.goal_reached?(data, "ms_a", "B", owned)
+      assert GiftPlans.goal_reached?(data, stage["id"], "B", owned)
+    end
+
+    test "while working a stage its definition of a gift beats the earlier stage's for protection" do
+      {data, stage} = staged()
+      keep = %{GiftPlans.default_segment() | "disposition" => "keep"}
+      sell = %{GiftPlans.default_segment() | "disposition" => "sell", "buy" => false, "goal" => nil}
+      mine = fn id, segment -> %{"id" => id, "subject" => %{"gift" => "Glimpse"}, "fusion" => nil, "floors" => [segment]} end
+      data = data |> GiftPlans.update_section("ms_a", &Map.put(&1, "entries", [mine.("me_1", keep)])) |> GiftPlans.update_section(stage["id"], &Map.put(&1, "entries", [mine.("me_2", sell)]))
+      assert MapSet.member?(GiftPlans.keep_set(data, 1), "Glimpse")
+      assert MapSet.member?(GiftPlans.keep_set(data, 1, "ms_a"), "Glimpse")
+      refute MapSet.member?(GiftPlans.keep_set(data, 1, stage["id"]), "Glimpse")
+    end
+
+    test "conditions can name a stage's required entries or goals and the run type" do
+      {data, stage} = staged()
+      entry = %{"id" => "me_s", "subject" => %{"gift" => "Glimpse"}, "fusion" => nil, "floors" => [GiftPlans.default_segment()]}
+      data = GiftPlans.update_section(data, stage["id"], &Map.put(&1, "entries", [entry]))
+      data = GiftPlans.for_run(data, "extreme")
+      owned = %{plan: data, inventory: %{"g_glimpse" => %{name: "Glimpse", uptie: 0}}, current_section: "ms_a"}
+      empty = %{owned | inventory: %{}}
+
+      leaf = GiftPlans.condition_leaf(%{"op" => "goal", "goal" => "required:" <> stage["id"]})
+      assert leaf == %{"op" => "goal", "goal" => "required", "stage" => stage["id"]}
+      assert GiftPlans.eval_condition(leaf, owned)
+      refute GiftPlans.eval_condition(leaf, empty)
+      assert GiftPlans.condition_label(leaf, data) == "Required of Stage 2 done"
+
+      stage_leaf = %{"op" => "stage", "stage" => stage["id"]}
+      assert GiftPlans.eval_condition(stage_leaf, owned)
+      refute GiftPlans.eval_condition(stage_leaf, empty)
+
+      extreme = GiftPlans.condition_leaf(%{"op" => "run_kind", "kind" => "extreme"})
+      hard = GiftPlans.condition_leaf(%{"op" => "run_kind", "kind" => "all_hard"})
+      normal = GiftPlans.condition_leaf(%{"op" => "run_kind", "kind" => "all_normal"})
+      assert GiftPlans.eval_condition(extreme, owned)
+      assert GiftPlans.eval_condition(hard, owned)
+      refute GiftPlans.eval_condition(normal, owned)
+      refute GiftPlans.eval_condition(extreme, %{plan: %{}})
+      assert GiftPlans.condition_label(Map.put(normal, "not", true), data) == "run is not Normal F1-F5"
+      assert GiftPlans.condition_leaf(%{"op" => "run_kind", "kind" => "bogus"})["kind"] == "all_normal"
+    end
+
+    test "for_run drops stages whose section is dropped and the run type survives normalize" do
+      {data, stage} = staged()
+      data = GiftPlans.set_applies(data, "ms_a", "extreme")
+      assert Enum.map(GiftPlans.for_run(data, "all_normal")["sections"], & &1["id"]) == ["ms_b"]
+      assert Enum.map(GiftPlans.for_run(data, "extreme")["sections"], & &1["id"]) == ["ms_a", stage["id"], "ms_b"]
+      kept = data |> GiftPlans.for_run("extreme") |> Map.put("version", GiftPlans.version()) |> GiftPlans.normalize()
+      assert kept["run_kind"] == "extreme"
+    end
+
+    test "sections lists the section then its stages" do
+      {data, stage} = staged()
+      assert Enum.map(GiftPlans.sections(data, "ms_a"), & &1["id"]) == ["ms_a", stage["id"]]
+      assert Enum.map(GiftPlans.sections(data, "ms_b"), & &1["id"]) == ["ms_b"]
+    end
+
+    test "for_run puts pursue_optional on the last section that applies" do
+      {data, stage} = staged()
+      data = GiftPlans.update_section(data, "ms_a", &Map.put(&1, "pursue_optional", true))
+      flags = fn data, kind -> for m <- GiftPlans.for_run(data, kind)["sections"], m["id"] in ["ms_a", stage["id"]], do: {m["id"], m["pursue_optional"]} end
+      assert flags.(data, "extreme") == [{"ms_a", false}, {stage["id"], true}]
+
+      only_root = GiftPlans.set_applies(data, stage["id"], "all_normal")
+      assert flags.(only_root, "extreme") == [{"ms_a", true}]
+      assert flags.(GiftPlans.update_section(data, "ms_a", &Map.put(&1, "pursue_optional", false)), "extreme") == [{"ms_a", false}, {stage["id"], false}]
+    end
+
+    test "a later stage carries earlier optional gifts, not patterns or required ones, and its own definition wins" do
+      {data, stage} = staged()
+      gift = fn id, name, segment -> end_entry(id, %{"gift" => name}, segment) end
+      keep_optional = %{"disposition" => "keep", "goal" => "optional", "buy" => true}
+      ignore_buy = %{"disposition" => "ignore", "goal" => nil, "buy" => true}
+      required = %{"disposition" => "keep", "goal" => "required", "buy" => true}
+
+      root_entries = [gift.("e_opt", "Opt", keep_optional), end_entry("e_ign", %{"tiers" => [1]}, ignore_buy), end_entry("e_pat", %{"tiers" => [2]}, keep_optional), gift.("e_req", "Req", required), gift.("e_dup", "Dup", keep_optional)]
+      data = GiftPlans.update_section(data, "ms_a", &Map.put(&1, "entries", root_entries))
+      data = GiftPlans.update_section(data, stage["id"], &Map.put(&1, "entries", [gift.("s_dup", "Dup", required), gift.("s_own", "Own", required)]))
+
+      carried = GiftPlans.carried_entries(data, GiftPlans.find_section(data, stage["id"]), 1)
+      assert Enum.map(carried, & &1.id) == ["e_opt"]
+      assert GiftPlans.carried_entries(data, GiftPlans.find_section(data, "ms_a"), 1) == []
+
+      env = %{plan: data, floor: 1, inventory: %{}}
+      assert Enum.map(GiftPlans.working_progress(data, stage["id"], env).entries, & &1.id) == ["s_dup", "s_own", "e_opt"]
+      assert Enum.map(GiftPlans.progress(data, stage["id"], env).entries, & &1.id) == ["s_dup", "s_own"]
+    end
+
+    test "normalize keeps stage_of" do
+      {data, stage} = staged()
+      normalized = GiftPlans.normalize(Map.put(data, "version", GiftPlans.version()))
+      assert GiftPlans.find_section(normalized, stage["id"])["stage_of"] == "ms_a"
     end
   end
 end

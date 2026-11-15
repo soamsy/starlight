@@ -21,7 +21,7 @@ defmodule StarlightBot.PlanTemplatesTest do
   test "listed templates carry the same rough count as the tabs" do
     {:ok, _} = PlanTemplates.create(:battle_plans, StarlightBot.BattlePlans.blank())
     {:ok, _} = PlanTemplates.create(:pack_plans, %{"packs" => %{"thm_1" => %{"normal" => %{"1" => "hunt"}}}})
-    {:ok, _} = PlanTemplates.create(:gift_plans, %{"milestones" => [%{"entries" => [1, 2, 3]}]})
+    {:ok, _} = PlanTemplates.create(:gift_plans, %{"sections" => [%{"entries" => [1, 2, 3]}]})
 
     assert [%{count: 3}] = PlanTemplates.list(:battle_plans)
     assert [%{count: 1}] = PlanTemplates.list(:pack_plans)
@@ -141,7 +141,7 @@ defmodule StarlightBot.PlanTemplatesTest do
   test "a template of another kind or a deleted one falls back to the team's own plan" do
     {:ok, team} = Teams.create_default_team()
     own = Plans.get(:pack_plans, Teams.get_team(team).pack_plan_id).data
-    {:ok, gift_template} = PlanTemplates.create(:gift_plans, %{"milestones" => []})
+    {:ok, gift_template} = PlanTemplates.create(:gift_plans, %{"sections" => []})
     {:ok, pack_template} = PlanTemplates.create(:pack_plans, %{"search_floors" => [3]})
 
     {:ok, _} = Teams.set_template(team, :pack_plan_id, gift_template)

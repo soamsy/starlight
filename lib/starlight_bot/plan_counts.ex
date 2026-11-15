@@ -45,8 +45,8 @@ defmodule StarlightBot.PlanCounts do
     Enum.sum(for {_pack, modes} <- packs, is_map(modes), {_mode, floors} <- modes, is_map(floors), Enum.any?(floors, fn {_floor, status} -> status in ~w(hunt favorite) end), do: 1)
   end
 
-  def count(:gift_plans, %{"milestones" => milestones}) when is_list(milestones) do
-    milestones |> Enum.map(&length(&1["entries"] || [])) |> Enum.sum()
+  def count(:gift_plans, %{"sections" => sections}) when is_list(sections) do
+    sections |> Enum.map(&length(&1["entries"] || [])) |> Enum.sum()
   end
 
   def count(_table, _data), do: 0

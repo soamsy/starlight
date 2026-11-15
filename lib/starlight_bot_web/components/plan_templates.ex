@@ -10,11 +10,10 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
   @controls ~w(button input select textarea [phx-click] [phx-change] [draggable=true] [phx-hook=SortableList]>* [phx-hook=PriorityRightClick] [phx-hook=DblClickEvent] [phx-hook=RightClickEvent] [phx-hook=GiftDragSource] [phx-hook=GiftDropZone])
 
   def blocked?(socket, event, allowed) do
-    (is_integer(socket.assigns[:template_id]) or socket.assigns[:active_tab] == :end_state) and event not in allowed and not String.starts_with?(event, "template_")
+    is_integer(socket.assigns[:template_id]) and event not in allowed and not String.starts_with?(event, "template_")
   end
 
-  defp read_only_message(%{assigns: %{template_id: id}}) when is_integer(id), do: "This team is using a template, which is read-only. Pick your own plan in the Plans menu to edit."
-  defp read_only_message(_socket), do: "The end state is read-only. Edit the milestones it comes from to change it."
+  defp read_only_message(_socket), do: "This team is using a template, which is read-only. Pick your own plan in the Plans menu to edit."
 
   def read_only_guard(socket, allowed) do
     if Phoenix.LiveView.connected?(socket) do
@@ -35,7 +34,6 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
   attr :template_id, :integer, default: nil
   attr :templates, :list, required: true
   attr :label, :string, required: true
-  attr :force, :boolean, default: false
 
   def read_only_banner(assigns) do
     {disabled, enabled} = read_only_selectors(assigns.container, assigns.allowed)
@@ -54,7 +52,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
       <button type="button" phx-click="template_customize" class="btn btn-sm btn-neutral"
               title={"Copy this template into a new #{@label} of your own that you can edit"}>Customize a copy</button>
     </div>
-    <style :if={@template_id || @force}>
+    <style :if={@template_id}>
       <%= Phoenix.HTML.raw(read_only_css(@container, @disabled, @enabled)) %>
     </style>
     """

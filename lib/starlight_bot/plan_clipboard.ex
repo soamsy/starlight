@@ -24,17 +24,6 @@ defmodule StarlightBot.PlanClipboard do
     end
   end
 
-  def encode_milestone(milestone), do: Jason.encode!(%{"v" => @format_version, "starlight_milestone" => milestone})
-
-  def decode_milestone(text) do
-    case Jason.decode(text) do
-      {:ok, %{"v" => v}} when is_integer(v) and v > @format_version -> {:error, @newer}
-      {:ok, %{"starlight_milestone" => %{"id" => id, "name" => name} = milestone}} when is_binary(id) and is_binary(name) -> validate_milestone(milestone)
-      {:ok, %{"starlight_plan" => kind}} when is_binary(kind) -> {:error, "That clipboard holds a whole #{kind} plan, not a milestone."}
-      _ -> {:error, "The clipboard doesn't hold a Starlight milestone."}
-    end
-  end
-
   def encode_cells(status, cells), do: Jason.encode!(%{"v" => @format_version, "starlight_pack_cells" => %{"status" => status, "cells" => cells}})
 
   def decode_cells(text, status) do
@@ -140,15 +129,6 @@ defmodule StarlightBot.PlanClipboard do
       nil -> []
       pack -> Resolver.eligible_floors(pack, mode)
     end
-  end
-
-  defp validate_milestone(milestone) do
-    lists = for key <- ["goals", "entries", "refresh", "refresh_floors"], value = milestone[key], do: is_list(value)
-    entries = milestone["entries"] || []
-
-    if Enum.all?(lists) and Enum.all?(entries, &(is_map(&1) and is_list(&1["floors"]))),
-      do: {:ok, milestone},
-      else: {:error, "That milestone is malformed and can't be pasted."}
   end
 
   defp valid_actions?(actions) when is_list(actions), do: Enum.all?(actions, &valid_action?/1)

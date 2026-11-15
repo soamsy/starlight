@@ -2,7 +2,7 @@ defmodule StarlightBot.GiftPlans do
   alias StarlightBot.{Conditions, EgoGifts, ThemePacks}
   alias StarlightBot.GiftPlans.Routes
 
-  @version 5
+  @version 6
   @dispositions ~w(keep ignore sell)
   @skill_options ~w(s1_s3 s2_s3 s1_s2)
   @heal_cost 100
@@ -243,7 +243,7 @@ defmodule StarlightBot.GiftPlans do
   def version, do: @version
 
   def blank(affinity \\ nil) do
-    milestone = new_milestone("Shop Done")
+    section = new_section()
 
     %{
       "version" => @version,
@@ -253,7 +253,7 @@ defmodule StarlightBot.GiftPlans do
       "gift_search" => [],
       "mounting_trials" => default_mounting_trials(),
       "encounter_rewards" => default_encounter_rewards(),
-      "milestones" => [milestone]
+      "sections" => [section]
     }
   end
 
@@ -266,55 +266,36 @@ defmodule StarlightBot.GiftPlans do
       "gift_search" => data["gift_search"] || [],
       "mounting_trials" => data["mounting_trials"] || default_mounting_trials(),
       "encounter_rewards" => data["encounter_rewards"] || default_encounter_rewards(),
-      "milestones" => Enum.map(data["milestones"] || [new_milestone("Shop Done")], &normalize_milestone/1)
+      "sections" => Enum.map(data["sections"] || [new_section()], &normalize_section/1)
     }
-  end
-
-  def normalize(%{"version" => 4} = data) do
-    first = legacy_first_milestone(data)
-    {leading, rest} = Enum.split_with(data["milestones"] || [], &(&1["id"] == first))
-    data |> Map.put("version", @version) |> Map.put("milestones", leading ++ rest) |> normalize()
+    |> then(&if(is_binary(data["run_kind"]), do: Map.put(&1, "run_kind", data["run_kind"]), else: &1))
   end
 
   def normalize(_data), do: blank()
 
-  defp legacy_first_milestone(data) do
-    first_workflow =
-      (data["floor_schedule"] || [])
-      |> Enum.min_by(& &1["from_floor"], fn -> nil end)
-      |> case do
-        nil -> nil
-        row -> Enum.find(data["workflows"] || [], &(&1["id"] == row["workflow"]))
-      end
-
-    first_workflow && legacy_milestone_step(first_workflow["steps"] || [])
-  end
-
-  defp legacy_milestone_step(steps) do
-    Enum.find_value(steps, fn
-      %{"kind" => "milestone", "milestone" => id} when is_binary(id) -> id
-      %{"kind" => "if"} = step -> legacy_milestone_step((step["then"] || []) ++ (step["else"] || []))
-      _ -> nil
-    end)
-  end
-
-  defp normalize_milestone(milestone) do
-    %{"id" => milestone["id"], "name" => milestone["name"], "applies" => milestone["applies"] || "always", "goals" => milestone["goals"] || [], "entries" => milestone["entries"] || [], "refresh" => milestone["refresh"] || [],
-      "refresh_floors" => milestone["refresh_floors"] || [], "refresh_scheduled" => milestone["refresh_scheduled"] == true, "endless" => milestone["endless"] == true}
+  defp normalize_section(section) do
+    %{"id" => section["id"], "applies" => section["applies"] || "always", "goals" => section["goals"] || [], "entries" => section["entries"] || [], "refresh" => section["refresh"] || [],
+      "refresh_floors" => section["refresh_floors"] || [], "refresh_scheduled" => section["refresh_scheduled"] == true, "pursue_optional" => section["pursue_optional"] == true}
+    |> then(&if(is_binary(section["stage_of"]), do: Map.merge(&1, %{"stage_of" => section["stage_of"], "name" => section["name"]}), else: &1))
   end
 
   def new_id(prefix) do
     prefix <> "_" <> Base.encode32(:crypto.strong_rand_bytes(4), case: :lower, padding: false)
   end
 
-  def new_milestone(name), do: %{"id" => new_id("ms"), "name" => name, "applies" => "always", "goals" => [], "entries" => [], "refresh" => []}
+  def new_section, do: %{"id" => new_id("ms"), "applies" => "always", "goals" => [], "entries" => [], "refresh" => []}
 
-  @milestone_applies ~w(always all_normal becomes_hard all_hard extreme)
+  @section_applies ~w(always all_normal becomes_hard all_hard extreme)
+  @condition_run_kinds ~w(all_normal becomes_hard all_hard extreme)
+  @run_kind_labels %{"all_normal" => "Normal F1-F5", "becomes_hard" => "Hard starts F2-F5", "all_hard" => "Hard from F1", "extreme" => "Extreme planned"}
 
-  def milestone_applies_options, do: @milestone_applies
+  def condition_run_kinds, do: @condition_run_kinds
+  def run_kind_label(kind), do: Map.get(@run_kind_labels, kind, "(unknown)")
 
-  def milestone_applies?(milestone, run_kind) do
-    case Map.get(milestone, "applies", "always") do
+  def section_applies_options, do: @section_applies
+
+  def section_applies?(section, run_kind) do
+    case Map.get(section, "applies", "always") do
       "all_normal" -> run_kind == "all_normal"
       "becomes_hard" -> run_kind == "becomes_hard"
       "all_hard" -> run_kind in ["all_hard", "extreme"]
@@ -323,53 +304,123 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
-  def for_run(%{"milestones" => milestones} = data, run_kind) when is_list(milestones) do
-    %{data | "milestones" => Enum.filter(milestones, &milestone_applies?(&1, run_kind))}
+  def for_run(%{"sections" => sections} = data, run_kind) when is_list(sections) do
+    applying = Enum.filter(sections, &section_applies?(&1, run_kind))
+    root_ids = for section <- applying, not stage?(section), into: MapSet.new(), do: section["id"]
+    kept = Enum.filter(applying, &(not stage?(&1) or MapSet.member?(root_ids, &1["stage_of"])))
+    Map.put(%{data | "sections" => stamp_pursue_optional(kept)}, "run_kind", run_kind)
   end
 
   def for_run(data, _run_kind), do: data
 
-  def find_milestone(data, id), do: Enum.find(data["milestones"] || [], &(&1["id"] == id))
+  defp stamp_pursue_optional(sections) do
+    root_of = &(&1["stage_of"] || &1["id"])
+    wanted = for section <- sections, not stage?(section), section["pursue_optional"] == true, into: MapSet.new(), do: section["id"]
+    last = Map.new(sections, &{root_of.(&1), &1["id"]})
 
-  def update_milestone(data, id, fun) do
-    Map.update!(data, "milestones", fn milestones -> Enum.map(milestones, &if(&1["id"] == id, do: fun.(&1), else: &1)) end)
+    Enum.map(sections, fn section ->
+      root = root_of.(section)
+      Map.put(section, "pursue_optional", MapSet.member?(wanted, root) and last[root] == section["id"])
+    end)
   end
 
-  def remove_milestone(data, id), do: Map.update!(data, "milestones", fn milestones -> Enum.reject(milestones, &(&1["id"] == id)) end)
+  def find_section(data, id), do: Enum.find(data["sections"] || [], &(&1["id"] == id))
 
-  def import_milestone(data, source) do
-    source = normalize_milestone(source)
-    new_ms = new_id("ms")
-    known = MapSet.new([source["id"] | Enum.map(data["milestones"], & &1["id"])])
-    groups = for %{"group" => group} <- source["entries"], uniq: true, into: %{}, do: {group, new_id("grp")}
-    remap = fn id -> if id == source["id"], do: new_ms, else: id end
-    fresh_case = fn refresh_case -> %{refresh_case | "id" => new_id("rc")} |> Map.update("condition", nil, &remap_condition(&1, known, remap)) end
-
-    entries =
-      Enum.map(source["entries"], fn entry ->
-        entry |> Map.put("id", new_id("me")) |> then(&if(&1["group"], do: Map.update!(&1, "group", fn group -> groups[group] end), else: &1))
-      end)
-
-    floors = Enum.map(source["refresh_floors"], &Map.update(&1, "cases", [], fn cases -> Enum.map(cases, fresh_case) end))
-    milestone = %{source | "id" => new_ms, "name" => unused_name(data, source["name"]), "entries" => entries, "refresh" => Enum.map(source["refresh"], fresh_case), "refresh_floors" => floors}
-    dropped = Enum.count(foreign_condition_leaves(source), &(not MapSet.member?(known, &1["milestone"])))
-    {Map.update!(data, "milestones", &(&1 ++ [milestone])), milestone, dropped}
+  def update_section(data, id, fun) do
+    Map.update!(data, "sections", fn sections -> Enum.map(sections, &if(&1["id"] == id, do: fun.(&1), else: &1)) end)
   end
 
-  defp unused_name(data, name) do
-    taken = MapSet.new(data["milestones"], & &1["name"])
-    Stream.iterate(name, &(&1 <> " copy")) |> Enum.find(&(not MapSet.member?(taken, &1)))
+  def stage?(section), do: is_binary(section["stage_of"])
+
+  def roots(data), do: Enum.reject(data["sections"] || [], &stage?/1)
+
+  def find_root(data, id), do: Enum.find(roots(data), &(&1["id"] == id))
+
+  def stages(data, root_id), do: Enum.filter(data["sections"] || [], &(&1["stage_of"] == root_id))
+
+  def sections(data, root_id), do: Enum.filter([find_section(data, root_id) | stages(data, root_id)], & &1)
+
+  def root_section(%{"sections" => _} = data, %{"stage_of" => root_id} = section) when is_binary(root_id), do: find_section(data, root_id) || section
+  def root_section(_data, section), do: section
+
+  def section_name(%{"stage_of" => root_id} = section) when is_binary(root_id), do: section["name"] || "Stage"
+  def section_name(_section), do: "Shopping list"
+
+  def rename_stage(data, id, name) do
+    update_section(data, id, &if(stage?(&1), do: Map.put(&1, "name", name), else: &1))
   end
 
-  defp milestone_cases(milestone), do: (milestone["refresh"] || []) ++ Enum.flat_map(milestone["refresh_floors"] || [], &(&1["cases"] || []))
+  def add_stage(data, root_id) do
+    case find_section(data, root_id) do
+      nil ->
+        {data, nil}
 
-  defp foreign_condition_leaves(milestone) do
-    for refresh_case <- milestone_cases(milestone), leaf <- Conditions.leaves(refresh_case["condition"]), is_binary(leaf["milestone"]), do: leaf
+      root ->
+        stage = Map.merge(new_section(), %{"name" => "Stage #{length(stages(data, root_id)) + 2}", "applies" => root["applies"], "stage_of" => root_id})
+
+        last =
+          data["sections"]
+          |> Enum.with_index()
+          |> Enum.filter(fn {section, _index} -> section["id"] == root_id or section["stage_of"] == root_id end)
+          |> List.last()
+          |> elem(1)
+
+        {Map.update!(data, "sections", &List.insert_at(&1, last + 1, stage)), stage}
+    end
   end
 
-  defp remap_condition(%{"children" => children} = node, known, remap), do: %{node | "children" => Enum.map(children, &remap_condition(&1, known, remap))}
-  defp remap_condition(%{"milestone" => id} = leaf, known, remap), do: %{leaf | "milestone" => if(MapSet.member?(known, id), do: remap.(id), else: nil)}
-  defp remap_condition(leaf, _known, _remap), do: leaf
+  def remove_stage(data, id), do: Map.update!(data, "sections", fn sections -> Enum.reject(sections, &(&1["id"] == id and stage?(&1))) end)
+
+  def swap_first_stage(data, root_id) do
+    with root when is_map(root) <- find_section(data, root_id),
+         false <- stage?(root),
+         [first | _] <- stages(data, root_id) do
+      {root_heals, root_entries} = Enum.split_with(root["entries"], &heal_entry?/1)
+
+      data
+      |> update_section(root_id, &Map.merge(&1, %{"goals" => first["goals"], "applies" => first["applies"], "entries" => root_heals ++ first["entries"]}))
+      |> update_section(first["id"], &Map.merge(&1, %{"goals" => root["goals"], "applies" => root["applies"], "entries" => root_entries}))
+    else
+      _ -> data
+    end
+  end
+
+  def move_stage(data, id, -1) do
+    case stages(data, root_id(data, id)) do
+      [%{"id" => ^id} | _] -> swap_first_stage(data, root_id(data, id))
+      _ -> move_stage_sibling(data, id, -1)
+    end
+  end
+
+  def move_stage(data, id, offset), do: move_stage_sibling(data, id, offset)
+
+  defp move_stage_sibling(data, id, offset) do
+    case find_section(data, id) do
+      %{"stage_of" => root_id} = stage when is_binary(root_id) ->
+        siblings = stages(data, root_id)
+        index = Enum.find_index(siblings, &(&1["id"] == id))
+        target = index + offset
+
+        if target < 0 or target >= length(siblings) do
+          data
+        else
+          {_stage, rest} = List.pop_at(siblings, index)
+          reordered = List.insert_at(rest, target, stage)
+          {sections, _pending} =
+            Enum.map_reduce(data["sections"], reordered, fn
+              %{"stage_of" => ^root_id}, [next | pending] -> {next, pending}
+              section, pending -> {section, pending}
+            end)
+
+          %{data | "sections" => sections}
+        end
+
+      _ ->
+        data
+    end
+  end
+
+  def set_applies(data, id, applies), do: update_section(data, id, &Map.put(&1, "applies", applies))
 
   def gift_subject(name), do: %{"gift" => name}
   def tier_subject(tiers), do: %{"tiers" => tiers |> Enum.uniq() |> Enum.sort()}
@@ -474,10 +525,25 @@ defmodule StarlightBot.GiftPlans do
   defp skill_replace_subject?(_subject), do: false
 
   def resolved_entries(nil, _floor), do: []
-  def resolved_entries(milestone, floor), do: Enum.map(milestone["entries"] || [], &resolve(&1, floor))
+  def resolved_entries(section, floor), do: Enum.map(section["entries"] || [], &resolve(&1, floor))
 
-  def keep_set(data, floor) do
-    for milestone <- data["milestones"] || [], entry <- resolved_entries(milestone, floor), entry.disposition == "keep", entry.gift, into: MapSet.new(), do: entry.gift
+  def keep_set(data, floor, current_id \\ nil) do
+    sections = data["sections"] || []
+    current_root = current_id && root_id(data, current_id)
+    limit = current_id && Enum.find_index(sections, &(&1["id"] == current_id))
+
+    {decided, others} =
+      sections
+      |> Enum.with_index()
+      |> Enum.split_with(fn {section, index} -> not is_nil(current_root) and root_id(data, section["id"]) == current_root and index <= limit end)
+
+    latest =
+      for {section, _index} <- decided, entry <- resolved_entries(section, floor), entry.gift, reduce: %{} do
+        acc -> Map.put(acc, entry.gift, entry.disposition == "keep")
+      end
+
+    additive = for {section, _index} <- others, entry <- resolved_entries(section, floor), entry.disposition == "keep", entry.gift, into: MapSet.new(), do: entry.gift
+    for {gift, true} <- latest, into: additive, do: gift
   end
 
   def protected?(keep, gift), do: MapSet.member?(keep, gift.name)
@@ -547,43 +613,43 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
-  def has_gift?(milestone, name), do: Enum.any?(milestone["entries"] || [], &(subject_gift(&1) == name))
+  def has_gift?(section, name), do: Enum.any?(section["entries"] || [], &(subject_gift(&1) == name))
 
   def add_gift(data, id, name, gifts_by_name, routes_for) do
     by_id = Map.new(gifts_by_name, fn {_name, gift} -> {gift.id, gift} end)
-    update_milestone(data, id, &add_gift_entry(&1, name, :top, gifts_by_name, by_id, routes_for))
+    update_section(data, id, &add_gift_entry(&1, name, :top, gifts_by_name, by_id, routes_for))
   end
 
-  defp add_gift_entry(milestone, name, role, by_name, by_id, routes_for) do
+  defp add_gift_entry(section, name, role, by_name, by_id, routes_for) do
     gift = by_name[name]
 
-    if is_nil(gift) or has_gift?(milestone, name) do
-      milestone
+    if is_nil(gift) or has_gift?(section, name) do
+      section
     else
-      milestone = Map.update(milestone, "entries", [], &(&1 ++ [new_gift_entry(gift, role, routes_for)]))
-      Enum.reduce(recipe_names(gift, by_id), milestone, &add_gift_entry(&2, &1, :ingredient, by_name, by_id, routes_for))
+      section = Map.update(section, "entries", [], &(&1 ++ [new_gift_entry(gift, role, routes_for)]))
+      Enum.reduce(recipe_names(gift, by_id), section, &add_gift_entry(&2, &1, :ingredient, by_name, by_id, routes_for))
     end
   end
 
   def add_loadout_keep(data, id, name, gifts_by_name) do
-    update_milestone(data, id, fn milestone ->
-      if is_nil(gifts_by_name[name]) or has_gift?(milestone, name) do
-        milestone
+    update_section(data, id, fn section ->
+      if is_nil(gifts_by_name[name]) or has_gift?(section, name) do
+        section
       else
         segment = %{default_segment() | "goal" => "optional", "buy" => false, "fuse" => false}
         entry = %{"id" => new_id("me"), "subject" => gift_subject(name), "fusion" => nil, "floors" => [segment]}
-        Map.update(milestone, "entries", [], &(&1 ++ [entry]))
+        Map.update(section, "entries", [], &(&1 ++ [entry]))
       end
     end)
   end
 
   def add_pattern(data, id, subject) do
-    update_milestone(data, id, fn milestone ->
-      if Enum.any?(milestone["entries"] || [], &(&1["subject"] == subject)) do
-        milestone
+    update_section(data, id, fn section ->
+      if Enum.any?(section["entries"] || [], &(&1["subject"] == subject)) do
+        section
       else
         entry = %{"id" => new_id("me"), "subject" => subject, "fusion" => nil, "floors" => [%{default_segment() | "disposition" => "ignore", "goal" => nil}]}
-        Map.update(milestone, "entries", [], &(&1 ++ [entry]))
+        Map.update(section, "entries", [], &(&1 ++ [entry]))
       end
     end)
   end
@@ -592,7 +658,7 @@ defmodule StarlightBot.GiftPlans do
     segment = Map.merge(default_segment(), %{"disposition" => "ignore", "goal" => nil, "buy" => false, "sinners" => List.wrap(sinner), "repeat" => "once"})
     segment = if action == "skill_replace", do: Map.merge(segment, %{"goal" => "optional", "target" => @skill_default_target}), else: segment
     entry = %{"id" => new_id("me"), "subject" => %{"action" => action}, "fusion" => nil, "floors" => [segment]}
-    update_milestone(data, id, fn milestone -> Map.update(milestone, "entries", [], &(&1 ++ [entry])) end)
+    update_section(data, id, fn section -> Map.update(section, "entries", [], &(&1 ++ [entry])) end)
   end
 
   def heal_entries(entries), do: Enum.filter(entries, &(match?(%{subject: %{"action" => action}} when action in @heal_actions, &1) and not &1.abandoned))
@@ -606,55 +672,55 @@ defmodule StarlightBot.GiftPlans do
 
   def add_refresh_case(data, id, from \\ 1) do
     refresh_case = %{"id" => new_id("rc"), "condition" => nil, "action" => "refresh", "affinity" => nil, "max" => nil}
-    update_milestone(data, id, &update_refresh_cases(&1, from, fn cases -> cases ++ [refresh_case] end))
+    update_section(data, id, &update_refresh_cases(&1, from, fn cases -> cases ++ [refresh_case] end))
   end
 
   def update_refresh_case(data, id, case_id, fun) do
-    update_milestone(data, id, fn milestone ->
-      update_all_refresh_cases(milestone, fn cases -> Enum.map(cases, &if(&1["id"] == case_id, do: fun.(&1), else: &1)) end)
+    update_section(data, id, fn section ->
+      update_all_refresh_cases(section, fn cases -> Enum.map(cases, &if(&1["id"] == case_id, do: fun.(&1), else: &1)) end)
     end)
   end
 
   def remove_refresh_case(data, id, case_id) do
-    update_milestone(data, id, fn milestone ->
-      update_all_refresh_cases(milestone, fn cases -> Enum.reject(cases, fn refresh_case -> refresh_case["id"] == case_id end) end)
+    update_section(data, id, fn section ->
+      update_all_refresh_cases(section, fn cases -> Enum.reject(cases, fn refresh_case -> refresh_case["id"] == case_id end) end)
     end)
   end
 
   def reorder_refresh_cases(data, id, ids, from \\ 1) do
-    update_milestone(data, id, &update_refresh_cases(&1, from, fn cases -> reorder_by_keys(cases, ids, fn refresh_case -> refresh_case["id"] end) end))
+    update_section(data, id, &update_refresh_cases(&1, from, fn cases -> reorder_by_keys(cases, ids, fn refresh_case -> refresh_case["id"] end) end))
   end
 
-  def refresh_froms(milestone), do: [1 | Enum.map(milestone["refresh_floors"] || [], & &1["from"])]
+  def refresh_froms(section), do: [1 | Enum.map(section["refresh_floors"] || [], & &1["from"])]
 
-  def refresh_cases(milestone, 1), do: milestone["refresh"] || []
+  def refresh_cases(section, 1), do: section["refresh"] || []
 
-  def refresh_cases(milestone, from) do
-    case Enum.find(milestone["refresh_floors"] || [], &(&1["from"] == from)) do
+  def refresh_cases(section, from) do
+    case Enum.find(section["refresh_floors"] || [], &(&1["from"] == from)) do
       nil -> []
       segment -> segment["cases"]
     end
   end
 
-  def refresh_cases_at(milestone, floor) do
-    from = milestone |> refresh_froms() |> Enum.filter(&(&1 <= floor)) |> Enum.max()
-    refresh_cases(milestone, from)
+  def refresh_cases_at(section, floor) do
+    from = section |> refresh_froms() |> Enum.filter(&(&1 <= floor)) |> Enum.max()
+    refresh_cases(section, from)
   end
 
-  def any_refresh_cases?(milestone), do: Enum.any?(refresh_froms(milestone), &(refresh_cases(milestone, &1) != []))
+  def any_refresh_cases?(section), do: Enum.any?(refresh_froms(section), &(refresh_cases(section, &1) != []))
 
-  def add_refresh_schedule(data, id), do: update_milestone(data, id, &Map.put(&1, "refresh_scheduled", true))
+  def add_refresh_schedule(data, id), do: update_section(data, id, &Map.put(&1, "refresh_scheduled", true))
 
-  def remove_refresh_schedule(data, id), do: update_milestone(data, id, &Map.merge(&1, %{"refresh_scheduled" => false, "refresh_floors" => []}))
+  def remove_refresh_schedule(data, id), do: update_section(data, id, &Map.merge(&1, %{"refresh_scheduled" => false, "refresh_floors" => []}))
 
   def split_refresh(data, id, floor) when floor in 2..@max_floor do
-    update_milestone(data, id, fn milestone ->
-      if floor in refresh_froms(milestone) do
-        milestone
+    update_section(data, id, fn section ->
+      if floor in refresh_froms(section) do
+        section
       else
-        copied = milestone |> refresh_cases_at(floor) |> Enum.map(&Map.put(&1, "id", new_id("rc")))
+        copied = section |> refresh_cases_at(floor) |> Enum.map(&Map.put(&1, "id", new_id("rc")))
         segment = %{"from" => floor, "cases" => copied}
-        milestone |> Map.put("refresh_scheduled", true) |> Map.update("refresh_floors", [segment], &Enum.sort_by(&1 ++ [segment], fn s -> s["from"] end))
+        section |> Map.put("refresh_scheduled", true) |> Map.update("refresh_floors", [segment], &Enum.sort_by(&1 ++ [segment], fn s -> s["from"] end))
       end
     end)
   end
@@ -662,11 +728,11 @@ defmodule StarlightBot.GiftPlans do
   def split_refresh(data, _id, _floor), do: data
 
   def move_refresh_segment(data, id, from, to) when from != 1 and to in 2..@max_floor do
-    update_milestone(data, id, fn milestone ->
-      if to in refresh_froms(milestone) do
-        milestone
+    update_section(data, id, fn section ->
+      if to in refresh_froms(section) do
+        section
       else
-        Map.update(milestone, "refresh_floors", [], fn segments ->
+        Map.update(section, "refresh_floors", [], fn segments ->
           segments |> Enum.map(&if(&1["from"] == from, do: %{&1 | "from" => to}, else: &1)) |> Enum.sort_by(& &1["from"])
         end)
       end
@@ -678,24 +744,25 @@ defmodule StarlightBot.GiftPlans do
   def remove_refresh_segment(data, _id, 1), do: data
 
   def remove_refresh_segment(data, id, from) do
-    update_milestone(data, id, fn milestone -> Map.update(milestone, "refresh_floors", [], &Enum.reject(&1, fn segment -> segment["from"] == from end)) end)
+    update_section(data, id, fn section -> Map.update(section, "refresh_floors", [], &Enum.reject(&1, fn segment -> segment["from"] == from end)) end)
   end
 
-  defp update_refresh_cases(milestone, 1, fun), do: Map.update(milestone, "refresh", [], fun)
+  defp update_refresh_cases(section, 1, fun), do: Map.update(section, "refresh", [], fun)
 
-  defp update_refresh_cases(milestone, from, fun) do
-    Map.update(milestone, "refresh_floors", [], fn segments -> Enum.map(segments, &if(&1["from"] == from, do: Map.update!(&1, "cases", fun), else: &1)) end)
+  defp update_refresh_cases(section, from, fun) do
+    Map.update(section, "refresh_floors", [], fn segments -> Enum.map(segments, &if(&1["from"] == from, do: Map.update!(&1, "cases", fun), else: &1)) end)
   end
 
-  defp update_all_refresh_cases(milestone, fun) do
-    Enum.reduce(refresh_froms(milestone), milestone, &update_refresh_cases(&2, &1, fun))
+  defp update_all_refresh_cases(section, fun) do
+    Enum.reduce(refresh_froms(section), section, &update_refresh_cases(&2, &1, fun))
   end
 
-  def matching_refresh_case(milestone, env) do
+  def matching_refresh_case(section, env) do
     runs = Map.get(env, :case_runs, %{})
-    env = Map.put(env, :current_milestone, milestone["id"])
+    source = root_section(Map.get(env, :plan), section)
+    env = Map.put(env, :current_section, section["id"])
 
-    Enum.find(refresh_cases_at(milestone, Map.get(env, :floor) || 1), fn refresh_case ->
+    Enum.find(refresh_cases_at(source, Map.get(env, :floor) || 1), fn refresh_case ->
       under_cap?(refresh_case, runs) and eval_condition(refresh_case["condition"], Map.put(env, :case_action, refresh_case["action"]))
     end)
   end
@@ -703,11 +770,11 @@ defmodule StarlightBot.GiftPlans do
   defp under_cap?(%{"max" => max, "id" => id}, runs) when is_integer(max), do: Map.get(runs, id, 0) < max
   defp under_cap?(_refresh_case, _runs), do: true
 
-  def find_entry(milestone, entry_id), do: Enum.find(milestone["entries"] || [], &(&1["id"] == entry_id))
+  def find_entry(section, entry_id), do: Enum.find(section["entries"] || [], &(&1["id"] == entry_id))
 
   def update_entry(data, id, entry_id, fun) do
-    update_milestone(data, id, fn milestone ->
-      Map.update(milestone, "entries", [], fn entries -> Enum.map(entries, &if(&1["id"] == entry_id, do: fun.(&1), else: &1)) end)
+    update_section(data, id, fn section ->
+      Map.update(section, "entries", [], fn entries -> Enum.map(entries, &if(&1["id"] == entry_id, do: fun.(&1), else: &1)) end)
     end)
   end
 
@@ -718,12 +785,12 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def remove_entry(data, id, entry_id) do
-    update_milestone(data, id, fn milestone -> Map.update(milestone, "entries", [], &Enum.reject(&1, fn entry -> entry["id"] == entry_id end)) end)
+    update_section(data, id, fn section -> Map.update(section, "entries", [], &Enum.reject(&1, fn entry -> entry["id"] == entry_id end)) end)
   end
 
   def reorder_entries(data, id, ids) do
-    update_milestone(data, id, fn milestone ->
-      Map.update(milestone, "entries", [], fn entries ->
+    update_section(data, id, fn section ->
+      Map.update(section, "entries", [], fn entries ->
         {actions, gifts} = entries |> reorder_by_keys(expand_entry_ids(entries, ids), & &1["id"]) |> Enum.split_with(&heal_entry?/1)
         actions ++ gifts
       end)
@@ -732,10 +799,10 @@ defmodule StarlightBot.GiftPlans do
 
   def group_key(entry), do: entry["group"] || entry["id"]
 
-  def group_members(milestone, entry_id) do
-    case find_entry(milestone, entry_id) do
+  def group_members(section, entry_id) do
+    case find_entry(section, entry_id) do
       nil -> []
-      entry -> Enum.filter(milestone["entries"] || [], &(group_key(&1) == group_key(entry)))
+      entry -> Enum.filter(section["entries"] || [], &(group_key(&1) == group_key(entry)))
     end
   end
 
@@ -749,8 +816,8 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def reorder_group(data, id, key, ids) do
-    update_milestone(data, id, fn milestone ->
-      Map.update(milestone, "entries", [], fn entries ->
+    update_section(data, id, fn section ->
+      Map.update(section, "entries", [], fn entries ->
         members = Enum.filter(entries, &(group_key(&1) == key))
         place_block(entries, &(group_key(&1) == key), reorder_by_keys(members, ids, & &1["id"]))
       end)
@@ -758,20 +825,20 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def join_group(data, id, entry_id, key, ids) do
-    update_milestone(data, id, fn milestone ->
-      entries = milestone["entries"] || []
+    update_section(data, id, fn section ->
+      entries = section["entries"] || []
       template = Enum.find(entries, &(group_key(&1) == key and &1["id"] != entry_id))
       moving = Enum.find(entries, &(&1["id"] == entry_id))
 
       if is_nil(template) or is_nil(moving) do
-        milestone
+        section
       else
         group = template["group"] || new_id("grp")
         joined = moving |> adopt_schedule(template) |> Map.merge(%{"group" => group, "scheduled" => true})
         rest = entries |> Enum.reject(&(&1["id"] == entry_id)) |> Enum.map(&if(group_key(&1) == key, do: Map.put(&1, "group", group), else: &1))
         member? = &(&1["group"] == group)
         members = Enum.filter(rest, member?) ++ [joined]
-        Map.put(milestone, "entries", place_block(rest, member?, reorder_by_keys(members, ids, & &1["id"])))
+        Map.put(section, "entries", place_block(rest, member?, reorder_by_keys(members, ids, & &1["id"])))
       end
     end)
   end
@@ -782,6 +849,34 @@ defmodule StarlightBot.GiftPlans do
     |> reorder_entries(id, ids)
   end
 
+  def transfer_entries(data, from_id, to_id, entry_ids) when from_id != to_id do
+    with %{} = from <- find_section(data, from_id), %{} = to <- find_section(data, to_id) do
+      letters = goal_letters(to)
+      keep_goal? = fn goal -> goal in [nil, "required", "optional"] or goal in letters end
+
+      moving =
+        from["entries"]
+        |> Enum.filter(&(&1["id"] in entry_ids))
+        |> Enum.map(fn entry ->
+          entry
+          |> Map.delete("group")
+          |> Map.update!("floors", fn floors -> Enum.map(floors, &if(keep_goal?.(&1["goal"]), do: &1, else: Map.put(&1, "goal", "required"))) end)
+        end)
+
+      data
+      |> update_section(from_id, fn section -> Map.update!(section, "entries", &Enum.reject(&1, fn entry -> entry["id"] in entry_ids end)) end)
+      |> update_section(to_id, fn section -> Map.update(section, "entries", moving, &(&1 ++ moving)) end)
+    else
+      _ -> data
+    end
+  end
+
+  def transfer_entries(data, _from_id, _to_id, _entry_ids), do: data
+
+  def group_section_id(data, root_id, key) do
+    data |> sections(root_id) |> Enum.find_value(fn section -> Enum.any?(section["entries"] || [], &(group_key(&1) == key)) && section["id"] end)
+  end
+
   def move_entries(data, id, moved, nil, ids) do
     Enum.reduce(moved, data, &leave_group(&2, id, &1, ids))
   end
@@ -790,7 +885,7 @@ defmodule StarlightBot.GiftPlans do
     {data, _key} =
       Enum.reduce(moved, {data, key}, fn entry_id, {acc, key} ->
         acc = join_group(acc, id, entry_id, key, ids)
-        entry = acc |> find_milestone(id) |> find_entry(entry_id)
+        entry = acc |> find_section(id) |> find_entry(entry_id)
         {acc, (entry && entry["group"]) || key}
       end)
 
@@ -806,8 +901,8 @@ defmodule StarlightBot.GiftPlans do
       end)
 
     data =
-      update_milestone(data, id, fn milestone ->
-        Map.update(milestone, "entries", clones, fn entries ->
+      update_section(data, id, fn section ->
+        Map.update(section, "entries", clones, fn entries ->
           index = Enum.find_index(entries, &(&1["id"] == after_id))
           {before, rest} = if index, do: Enum.split(entries, index + 1), else: {entries, []}
           {actions, gifts} = Enum.split_with(before ++ clones ++ rest, &heal_entry?/1)
@@ -815,11 +910,11 @@ defmodule StarlightBot.GiftPlans do
         end)
       end)
 
-    target = data |> find_milestone(id) |> find_entry(after_id)
+    target = data |> find_section(id) |> find_entry(after_id)
 
     if target && (target["group"] || scheduled_alone?(target)) do
       key = group_key(target)
-      members = data |> find_milestone(id) |> Map.fetch!("entries") |> Enum.filter(&(group_key(&1) == key)) |> Enum.map(& &1["id"])
+      members = data |> find_section(id) |> Map.fetch!("entries") |> Enum.filter(&(group_key(&1) == key)) |> Enum.map(& &1["id"])
       ids = Enum.flat_map(members, fn member -> if member == after_id, do: [member | Enum.map(clones, & &1["id"])], else: [member] end)
       move_entries(data, id, Enum.map(clones, & &1["id"]), key, ids)
     else
@@ -883,49 +978,92 @@ defmodule StarlightBot.GiftPlans do
     update_entry(data, id, entry_id, fn entry -> Map.update!(entry, "floors", &Enum.reject(&1, fn segment -> segment["from"] == from end)) end)
   end
 
-  def goal_letters(milestone), do: Enum.map(milestone["goals"] || [], & &1["letter"])
+  def goal_letters(section), do: Enum.map(section["goals"] || [], & &1["letter"])
+
+  def root_id(data, id) do
+    case find_section(data, id) do
+      %{"stage_of" => root} when is_binary(root) -> root
+      _ -> id
+    end
+  end
+
+  def all_goal_letters(data, id), do: data |> sections(root_id(data, id)) |> Enum.flat_map(&goal_letters/1)
 
   def add_goal(data, id) do
-    update_milestone(data, id, fn milestone ->
-      used = goal_letters(milestone)
+    used = all_goal_letters(data, id)
 
+    update_section(data, id, fn section ->
       case Enum.find(Enum.map(?A..?Z, &<<&1>>), &(&1 not in used)) do
-        nil -> milestone
-        letter -> Map.update(milestone, "goals", [], &(&1 ++ [%{"letter" => letter, "min" => 1}]))
+        nil -> section
+        letter -> Map.update(section, "goals", [], &(&1 ++ [%{"letter" => letter, "min" => 1}]))
       end
     end)
   end
 
   def set_goal_min(data, id, letter, min) do
-    update_milestone(data, id, fn milestone ->
-      Map.update(milestone, "goals", [], fn goals -> Enum.map(goals, &if(&1["letter"] == letter, do: Map.put(&1, "min", max(min, 1)), else: &1)) end)
+    update_section(data, id, fn section ->
+      Map.update(section, "goals", [], fn goals -> Enum.map(goals, &if(&1["letter"] == letter, do: Map.put(&1, "min", max(min, 1)), else: &1)) end)
     end)
   end
 
   def remove_goal(data, id, letter) do
-    update_milestone(data, id, fn milestone ->
+    update_section(data, id, fn section ->
       entries =
-        Enum.map(milestone["entries"] || [], fn entry ->
+        Enum.map(section["entries"] || [], fn entry ->
           Map.update!(entry, "floors", fn floors -> Enum.map(floors, &if(&1["goal"] == letter, do: Map.put(&1, "goal", "required"), else: &1)) end)
         end)
 
-      %{milestone | "goals" => Enum.reject(milestone["goals"] || [], &(&1["letter"] == letter)), "entries" => entries}
+      %{section | "goals" => Enum.reject(section["goals"] || [], &(&1["letter"] == letter)), "entries" => entries}
     end)
   end
 
-  def goal_min(milestone, letter) do
-    case Enum.find(milestone["goals"] || [], &(&1["letter"] == letter)) do
+  defp goal_owner(data, section_id, letter) do
+    sections = sections(data, root_id(data, section_id))
+    Enum.find_value(sections, section_id, &(letter in goal_letters(&1) && &1["id"]))
+  end
+
+  def goal_min(section, letter) do
+    case Enum.find(section["goals"] || [], &(&1["letter"] == letter)) do
       %{"min" => min} when is_integer(min) -> min
       _ -> 1
     end
   end
 
   def progress(data, id, env) do
-    milestone = find_milestone(data, id)
-    entries = resolved_entries(milestone, env_floor(env))
-    covered = data["milestones"] |> Enum.flat_map(&resolved_entries(&1, env_floor(env))) |> covered(env)
+    section = find_section(data, id)
+    build_progress(data, section, resolved_entries(section, env_floor(env)), env)
+  end
+
+  def working_progress(data, id, env) do
+    section = find_section(data, id)
+    floor = env_floor(env)
+    build_progress(data, section, resolved_entries(section, floor) ++ carried_entries(data, section, floor), env)
+  end
+
+  def working_entries(data, section, floor), do: resolved_entries(section, floor) ++ carried_entries(data, section, floor)
+
+  def carried_entries(_data, nil, _floor), do: []
+
+  def carried_entries(data, section, floor) do
+    own = MapSet.new(section["entries"] || [], & &1["subject"])
+
+    data
+    |> sections(root_id(data, section["id"]))
+    |> Enum.take_while(&(&1["id"] != section["id"]))
+    |> Enum.reverse()
+    |> Enum.flat_map(&resolved_entries(&1, floor))
+    |> Enum.uniq_by(& &1.subject)
+    |> Enum.reject(&MapSet.member?(own, &1.subject))
+    |> Enum.filter(&carried?/1)
+  end
+
+  defp carried?(%{subject: %{"gift" => _}, disposition: "keep", goal: "optional"}), do: true
+  defp carried?(_entry), do: false
+
+  defp build_progress(data, section, entries, env) do
+    covered = data["sections"] |> Enum.flat_map(&resolved_entries(&1, env_floor(env))) |> covered(env)
     statuses = Map.new(entries, &{&1.id, entry_status(&1, env, covered)})
-    %{milestone: milestone, entries: entries, statuses: statuses, pending: pending_ingredients(entries, env)}
+    %{section: section, entries: entries, statuses: statuses, pending: pending_ingredients(entries, env)}
   end
 
   defp env_floor(env), do: Map.get(env, :floor) || 1
@@ -994,15 +1132,15 @@ defmodule StarlightBot.GiftPlans do
 
   def goal_members(progress, letter), do: Enum.filter(goal_entries(progress), &(&1.goal == letter))
 
-  def goal_need(progress, letter), do: min(goal_min(progress.milestone, letter), length(goal_members(progress, letter)))
+  def goal_need(progress, letter), do: min(goal_min(progress.section, letter), length(goal_members(progress, letter)))
 
   def goal_committed(progress, letter), do: progress |> goal_members(letter) |> Enum.count(&(status(progress, &1) != :open))
 
   def goal_done(progress, letter), do: progress |> goal_members(letter) |> Enum.count(&(status(progress, &1) == :done))
 
-  def reached?(%{milestone: nil}), do: false
+  def reached?(%{section: nil}), do: false
 
-  def reached?(%{milestone: %{"endless" => true}}), do: false
+  def reached?(%{section: %{"pursue_optional" => true}}), do: false
 
   def reached?(progress) do
     entries = goal_entries(progress)
@@ -1030,47 +1168,22 @@ defmodule StarlightBot.GiftPlans do
 
   def needed?(_progress, _entry), do: false
 
-  def milestone_reached?(data, id, env), do: data |> progress(id, env) |> reached?()
+  def section_reached?(data, id, env), do: data |> progress(id, env) |> reached?()
 
-  def end_state_milestone(data, run_kind) do
-    milestones = for_run(data, run_kind)["milestones"] || []
-    {before, rest} = Enum.split_while(milestones, &(&1["endless"] != true))
-    endless = List.first(rest)
-    reachable = if endless, do: before ++ [endless], else: before
-
-    heals = for milestone <- reachable, entry <- milestone["entries"] || [], applies_at_some_floor?(milestone, entry, &heal_resolved?/1), do: Map.put(entry, "source", milestone["name"])
-    buys = for milestone <- List.wrap(endless), entry <- milestone["entries"] || [], applies_at_some_floor?(milestone, entry, &post_goal_buy?/1), do: Map.put(entry, "source", milestone["name"])
-
-    base = %{"id" => "end_state", "name" => "End state", "applies" => run_kind, "goals" => [], "entries" => heals ++ buys, "refresh" => [], "refresh_floors" => [], "refresh_scheduled" => false, "endless" => false}
-
-    case endless do
-      nil -> base
-      milestone -> Map.merge(base, %{"endless" => true, "refresh_source" => milestone["name"], "refresh" => milestone["refresh"] || [], "refresh_floors" => milestone["refresh_floors"] || [], "refresh_scheduled" => milestone["refresh_scheduled"] == true})
-    end
-  end
-
-  defp applies_at_some_floor?(milestone, entry, predicate), do: Enum.any?(segment_floors(milestone), &predicate.(resolve(entry, &1)))
-
-  defp heal_resolved?(resolved), do: heal_entries([resolved]) != []
-
-  defp post_goal_buy?(%{subject: %{"action" => _}}), do: false
-  defp post_goal_buy?(%{buy: true, disposition: "ignore"}), do: true
-  defp post_goal_buy?(%{buy: true, goal: "optional"}), do: true
-  defp post_goal_buy?(_resolved), do: false
-
-  def milestone_effectively_reached?(data, id, env) do
+  def section_effectively_reached?(data, id, env) do
     case progress(data, id, env) do
-      %{milestone: nil} -> false
-      %{milestone: milestone} = progress -> reached?(%{progress | milestone: Map.put(milestone, "endless", false)})
+      %{section: nil} -> false
+      %{section: section} = progress -> reached?(%{progress | section: Map.put(section, "pursue_optional", false)})
     end
   end
 
-  def goal_reached?(data, milestone_id, letter, env) do
-    progress = progress(data, milestone_id, env)
+  def goal_reached?(data, section_id, letter, env) do
     letter = letter || "required"
+    section_id = if letter == "required", do: section_id, else: goal_owner(data, section_id, letter)
+    progress = progress(data, section_id, env)
 
     cond do
-      progress.milestone == nil -> false
+      progress.section == nil -> false
       letter == "required" -> progress |> goal_members("required") |> Enum.all?(&(status(progress, &1) == :done))
       is_binary(letter) -> goal_members(progress, letter) != [] and goal_done(progress, letter) >= goal_need(progress, letter)
       true -> false
@@ -1167,8 +1280,10 @@ defmodule StarlightBot.GiftPlans do
   defp eval_base(%{"op" => "cost"}, _env), do: false
   defp eval_base(%{"op" => "refreshes"} = leaf, env), do: compare(Map.get(env, :refreshes, 0), leaf["cmp"], leaf["value"])
   defp eval_base(%{"op" => "owns", "gift" => gift}, %{owned: owned}), do: MapSet.member?(owned, gift)
-  defp eval_base(%{"op" => "milestone"} = leaf, %{plan: plan} = env), do: milestone_reached?(plan, leaf["milestone"], env)
-  defp eval_base(%{"op" => "goal"} = leaf, %{plan: plan} = env), do: goal_reached?(plan, env[:current_milestone], leaf["goal"], env)
+  defp eval_base(%{"op" => "stage"} = leaf, %{plan: plan} = env), do: section_reached?(plan, leaf["stage"], env)
+  defp eval_base(%{"op" => "goal"} = leaf, %{plan: plan} = env), do: goal_reached?(plan, leaf["stage"] || env[:current_section], leaf["goal"], env)
+  defp eval_base(%{"op" => "run_kind"} = leaf, %{plan: %{"run_kind" => run_kind}}), do: section_applies?(%{"applies" => leaf["kind"]}, run_kind)
+  defp eval_base(%{"op" => "run_kind"}, _env), do: false
 
   defp refresh_spend(%{"when" => "after"}, %{case_action: action, refresh_costs: costs}), do: Map.get(costs, action, 0)
   defp refresh_spend(_leaf, _env), do: 0
@@ -1190,9 +1305,16 @@ defmodule StarlightBot.GiftPlans do
     %{"op" => "refreshes", "cmp" => if(params["cmp"] in @cmps, do: params["cmp"], else: "gte"), "value" => max(parse_count(params["value"]), 0)}
   end
 
-  defp build_leaf(%{"op" => "milestone"} = params), do: %{"op" => "milestone", "milestone" => blank_to_nil(params["milestone"])}
+  defp build_leaf(%{"op" => "stage"} = params), do: %{"op" => "stage", "stage" => blank_to_nil(params["stage"])}
 
-  defp build_leaf(%{"op" => "goal"} = params), do: %{"op" => "goal", "goal" => blank_to_nil(params["goal"]) || "required"}
+  defp build_leaf(%{"op" => "goal"} = params) do
+    case String.split(blank_to_nil(params["goal"]) || "required", ":", parts: 2) do
+      ["required", id] when id != "" -> %{"op" => "goal", "goal" => "required", "stage" => id}
+      [goal | _] -> %{"op" => "goal", "goal" => goal}
+    end
+  end
+
+  defp build_leaf(%{"op" => "run_kind"} = params), do: %{"op" => "run_kind", "kind" => if(params["kind"] in @condition_run_kinds, do: params["kind"], else: hd(@condition_run_kinds))}
 
   defp build_leaf(params), do: %{"op" => "owns", "gift" => String.trim(params["gift"] || "")}
 
@@ -1224,24 +1346,26 @@ defmodule StarlightBot.GiftPlans do
   end
 
   defp leaf_label(%{"op" => "owns"} = leaf, _data), do: "#{if leaf["not"], do: "missing", else: "owns"} #{leaf["gift"]}"
-  defp leaf_label(%{"op" => "milestone"} = leaf, data), do: "milestone #{milestone_name(data, leaf["milestone"])} #{if leaf["not"], do: "not "}done"
+  defp leaf_label(%{"op" => "stage"} = leaf, data), do: "#{section_title(data, leaf["stage"])} #{if leaf["not"], do: "not "}done"
+  defp leaf_label(%{"op" => "goal", "stage" => id} = leaf, data) when is_binary(id), do: "#{goal_display(leaf["goal"])} of #{section_title(data, id)} #{if leaf["not"], do: "not "}done"
   defp leaf_label(%{"op" => "goal"} = leaf, _data), do: "goal #{goal_display(leaf["goal"])} #{if leaf["not"], do: "not "}done"
+  defp leaf_label(%{"op" => "run_kind"} = leaf, _data), do: "run #{if leaf["not"], do: "is not", else: "is"} #{run_kind_label(leaf["kind"])}"
 
   defp goal_display("required"), do: "Required"
   defp goal_display(nil), do: "Required"
   defp goal_display(letter), do: letter
 
-  defp milestone_name(_data, nil), do: "(none picked)"
-  defp milestone_name(nil, id), do: id
+  defp section_title(_data, nil), do: "(none picked)"
+  defp section_title(nil, id), do: id
 
-  defp milestone_name(data, id) do
-    case find_milestone(data, id) do
+  defp section_title(data, id) do
+    case find_section(data, id) do
       nil -> "(deleted)"
-      milestone -> milestone["name"]
+      section -> section_name(section)
     end
   end
 
-  def missing_ingredients(milestone, entry, gifts_by_name) do
+  def missing_ingredients(section, entry, gifts_by_name) do
     by_id = Map.new(gifts_by_name, fn {_name, gift} -> {gift.id, gift} end)
 
     case gifts_by_name[subject_gift(entry)] do
@@ -1249,34 +1373,34 @@ defmodule StarlightBot.GiftPlans do
         {[], 0}
 
       gift ->
-        names = Enum.reject(recipe_names(gift, by_id), &has_gift?(milestone, &1))
-        fragments = Enum.count(milestone["entries"] || [], &(subject_gift(&1) in @sin_fragments))
+        names = Enum.reject(recipe_names(gift, by_id), &has_gift?(section, &1))
+        fragments = Enum.count(section["entries"] || [], &(subject_gift(&1) in @sin_fragments))
         {names, max(fragment_slots(gift) - fragments, 0)}
     end
   end
 
   def issues(data, gifts_by_name \\ %{}) do
     (gift_search_issues(data, gifts_by_name) ++
-       Enum.flat_map(data["milestones"] || [], &milestone_issues(&1, gifts_by_name)) ++
+       Enum.flat_map(data["sections"] || [], &section_issues(&1, gifts_by_name)) ++
        keep_sell_issues(data))
     |> Enum.uniq()
   end
 
-  defp milestone_issues(milestone, gifts_by_name) do
+  defp section_issues(section, gifts_by_name) do
     by_id = Map.new(gifts_by_name, fn {_name, gift} -> {gift.id, gift} end)
-    prefix = "Milestone #{milestone["name"]}"
-    floors = segment_floors(milestone)
+    prefix = section_name(section)
+    floors = segment_floors(section)
 
     Enum.flat_map(floors, fn floor ->
-      entries = resolved_entries(milestone, floor)
+      entries = resolved_entries(section, floor)
       fixed = Enum.filter(entries, &(&1.fuse and fixed_fusion?(&1)))
       at = if length(floors) > 1, do: " (F#{floor}+)", else: ""
 
       missing =
         Enum.flat_map(fixed, fn entry ->
-          case missing_ingredients(milestone, %{"subject" => entry.subject}, gifts_by_name) do
+          case missing_ingredients(section, %{"subject" => entry.subject}, gifts_by_name) do
             {[], 0} -> []
-            {names, fragments} -> ["#{prefix}: #{entry.gift} needs #{missing_label(names, fragments)} in the milestone."]
+            {names, fragments} -> ["#{prefix}: #{entry.gift} needs #{missing_label(names, fragments)} in this stage."]
           end
         end)
 
@@ -1302,7 +1426,7 @@ defmodule StarlightBot.GiftPlans do
         end
 
       missing ++ upties ++ shared ++ routes
-    end) ++ goal_issues(milestone, prefix)
+    end) ++ goal_issues(section, prefix)
   end
 
   defp missing_label(names, 0), do: Enum.join(names, ", ")
@@ -1311,27 +1435,27 @@ defmodule StarlightBot.GiftPlans do
 
   defp pairs(list), do: for({a, i} <- Enum.with_index(list), {b, j} <- Enum.with_index(list), i < j, do: [a, b])
 
-  defp goal_issues(milestone, prefix) do
-    used = for entry <- milestone["entries"] || [], segment <- entry["floors"], into: MapSet.new(), do: segment["goal"]
-    empty = for letter <- goal_letters(milestone), not MapSet.member?(used, letter), do: "#{prefix}: goal #{letter} has no entries."
-    unknown = for letter <- used, letter not in [nil, "required", "optional"], letter not in goal_letters(milestone), do: "#{prefix}: entries use goal #{letter}, which was removed."
+  defp goal_issues(section, prefix) do
+    used = for entry <- section["entries"] || [], segment <- entry["floors"], into: MapSet.new(), do: segment["goal"]
+    empty = for letter <- goal_letters(section), not MapSet.member?(used, letter), do: "#{prefix}: goal #{letter} has no entries."
+    unknown = for letter <- used, letter not in [nil, "required", "optional"], letter not in goal_letters(section), do: "#{prefix}: entries use goal #{letter}, which was removed."
     empty ++ unknown
   end
 
-  defp segment_floors(milestone) do
-    (milestone["entries"] || []) |> Enum.flat_map(fn entry -> Enum.map(entry["floors"], & &1["from"]) end) |> Enum.concat([1]) |> Enum.uniq() |> Enum.sort()
+  defp segment_floors(section) do
+    (section["entries"] || []) |> Enum.flat_map(fn entry -> Enum.map(entry["floors"], & &1["from"]) end) |> Enum.concat([1]) |> Enum.uniq() |> Enum.sort()
   end
 
   defp keep_sell_issues(data) do
-    floors = (data["milestones"] || []) |> Enum.flat_map(&segment_floors/1) |> Enum.uniq() |> Enum.sort()
+    floors = (data["sections"] || []) |> Enum.flat_map(&segment_floors/1) |> Enum.uniq() |> Enum.sort()
 
     for floor <- floors,
         keep = keep_set(data, floor),
-        milestone <- data["milestones"] || [],
-        entry <- resolved_entries(milestone, floor),
+        section <- data["sections"] || [],
+        entry <- resolved_entries(section, floor),
         entry.disposition == "sell",
         MapSet.member?(keep, entry.gift) do
-      "Milestone #{milestone["name"]}: sells #{entry.gift} from F#{floor}, but another milestone keeps it, so it won't be sold."
+      "#{section_name(section)}: sells #{entry.gift} from F#{floor}, but another stage keeps it, so it won't be sold."
     end
   end
 

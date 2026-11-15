@@ -17,7 +17,7 @@ defmodule StarlightBot.PlanIcons do
   end
 
   def icons(:gift_plans, data, images) do
-    (data["milestones"] || [])
+    (data["sections"] || [])
     |> Enum.flat_map(&(&1["entries"] || []))
     |> Enum.map(&GiftPlans.subject_gift/1)
     |> Enum.uniq()

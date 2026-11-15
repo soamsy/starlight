@@ -107,7 +107,7 @@ defmodule StarlightBot.Automation.Shop.Actions.FixedFusion do
     for name <- GiftPlans.sin_fragments(), gift = state.gifts_by_name[name], not owned?(gift.id, ctx), sub = sibling(name, state), wanted?.(sub), do: gift.id
   end
 
-  defp sibling(name, state), do: Enum.find(Map.get(state, :milestone_entries, []), &(&1.gift == name))
+  defp sibling(name, state), do: Enum.find(Map.get(state, :section_entries, []), &(&1.gift == name))
 
   defp gift_name(id, state), do: (state.gifts_by_id[id] && state.gifts_by_id[id].name) || id
 

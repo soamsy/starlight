@@ -1,4 +1,4 @@
-<div id="gift-view-memory" phx-hook="ViewMemory" data-restore={to_string(not @view_from_url)} data-key={@editing_id && "starlight-gift-view-#{@editing_id}"} data-view={Jason.encode!(%{tab: @active_tab, milestone: @selected_milestone_id})} class="flex flex-col h-full gap-3 overflow-hidden">
+<div id="gift-view-memory" phx-hook="ViewMemory" data-restore={to_string(not @view_from_url)} data-key={@editing_id && "starlight-gift-view-#{@editing_id}"} data-view={Jason.encode!(%{tab: @active_tab, section: @root_section_id})} class="flex flex-col h-full gap-3 overflow-hidden">
   <datalist id="gift-name-options">
     <option :for={gift <- @gifts} value={gift.name} />
   </datalist>
@@ -45,53 +45,15 @@
 
           <div class="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
 
-              <% milestone = selected_milestone(assigns) %>
+              <% section = selected_section(assigns) %>
+              <% add_target = target_section(assigns) || section %>
               <div class="grid grid-cols-1 grid-rows-[minmax(16rem,2fr)_minmax(0,3fr)] lg:grid-cols-[17rem_1fr] lg:grid-rows-1 gap-3 flex-1 min-h-0">
                 <div class="flex flex-col gap-3 min-h-0 pr-1 max-lg:overflow-y-auto">
-                  <div id="milestone-clipboard" phx-hook="ItemClipboard" class="flex flex-col gap-1 shrink-0 max-h-48 overflow-y-auto p-0.5">
-                    <div class="flex items-center gap-2">
-                      <span class="text-xs font-semibold text-base-content/70">Milestones</span>
-                      <button type="button" data-paste-event="paste_milestone" title="Paste a milestone from the clipboard" class="btn btn-ghost btn-xs ml-auto">Paste</button>
-                      <button phx-click="add_milestone" class="btn btn-primary btn-xs">+ New</button>
-                    </div>
-                    <div id="gift-loadout-btn" phx-click="set_tab" phx-value-tab="loadout"
-                         class={"flex items-center gap-1 rounded px-2 py-1 cursor-pointer text-xs " <> if(@active_tab == :loadout, do: "border-l-2 border-primary ring-1 ring-primary/40", else: "hover:bg-base-200")}>
-                      <span class="text-[10px] text-base-content/40 w-4 text-right shrink-0">0</span>
-                      <span class="flex-1 truncate select-none">Loadout</span>
-                      <img :if={@plan_data["affinity"] not in [nil, ""]} src={gift_affinity_icon(@plan_data["affinity"])} title={@plan_data["affinity"]} class="w-4 h-4 object-contain shrink-0" />
-                      <img :for={name <- GiftPlans.cabinet_order(@plan_data)} :if={@gifts_by_name[name]} src={@gifts_by_name[name].image_path} title={name} class="w-4 h-4 rounded object-cover shrink-0 bg-slate-500/40 ring-1 ring-slate-400/40" />
-                    </div>
-                    <div :for={{m, number} <- Enum.with_index(@plan_data["milestones"], 1)}
-                         phx-click="select_milestone" phx-value-id={m["id"]}
-                         class={"flex items-center gap-1 rounded px-2 py-1 cursor-pointer text-xs " <>
-                           applies_row_color(m["applies"]) <> " " <> if(m["id"] == @selected_milestone_id and @active_tab == :shop, do: "border-l-2 border-primary ring-1 ring-primary/40", else: "hover:bg-base-200")}>
-                      <span class="text-[10px] text-base-content/40 w-4 text-right shrink-0"><%= number %></span>
-                      <%= if m["id"] == @editing_milestone_id do %>
-                        <input id={"milestone-name-input-#{m["id"]}"} type="text" value={m["name"]} phx-hook="FocusSelect"
-                               phx-blur="rename_milestone" phx-value-id={m["id"]} class="input input-bordered input-xs flex-1 min-w-0" />
-                      <% else %>
-                        <span id={"milestone-name-#{m["id"]}"} phx-hook="DblClickEvent" data-event="edit_milestone_name" data-id={m["id"]}
-                              class="flex-1 truncate select-none"><%= m["name"] %></span>
-                      <% end %>
-                      <span :if={m["endless"] == true} class="rounded border border-warning bg-warning/20 px-1 text-[11px] font-bold leading-4 text-warning shrink-0">∞</span>
-                      <button phx-click="copy_milestone" phx-value-id={m["id"]} title="Copy this milestone to the clipboard as JSON" class="btn btn-ghost btn-xs px-1">Copy</button>
-                      <button phx-click="move_milestone" phx-value-id={m["id"]} phx-value-dir="up" class="btn btn-ghost btn-xs px-1">↑</button>
-                      <button phx-click="move_milestone" phx-value-id={m["id"]} phx-value-dir="down" class="btn btn-ghost btn-xs px-1">↓</button>
-                      <button phx-click="delete_milestone" phx-value-id={m["id"]} data-confirm={"Delete milestone '#{m["name"]}'?"}
-                              class="btn btn-ghost btn-xs text-error"><.icon name="lucide-x" class="size-3.5" /></button>
-                    </div>
-                    <div :if={@plan_data["milestones"] == []} class="text-[11px] text-base-content/40 italic">None yet.</div>
-                    <div id="gift-end-state-btn" phx-click="set_tab" phx-value-tab="end_state"
-                         class={"flex items-center gap-1 rounded px-2 py-1 cursor-pointer text-xs " <> if(@active_tab == :end_state, do: "border-l-2 border-primary ring-1 ring-primary/40", else: "hover:bg-base-200")}>
-                      <.icon name="lucide-flag" class="size-3.5 w-4 shrink-0 text-base-content/50" />
-                      <span class="flex-1 truncate select-none">End state</span>
-                    </div>
-                  </div>
                   <div :if={issues != []} class="flex flex-col gap-1 text-[11px] text-warning shrink-0 max-h-24 overflow-y-auto">
                     <span :for={issue <- issues}><%= issue %></span>
                   </div>
 
-                  <%= if @active_tab != :end_state and (@active_tab == :loadout or milestone) do %>
+                  <%= if @active_tab == :loadout or section do %>
                     <div class="flex items-center gap-1 shrink-0">
                       <label class="input input-bordered input-xs flex flex-1 min-w-0 items-center gap-1.5">
                         <.icon name="lucide-search" class="size-3.5 shrink-0 text-base-content/50" />
@@ -159,7 +121,7 @@
                     <% picks = @plan_data["gift_search"] %>
                     <% shown = filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_fixed_filter, @gift_no_pack_filter, @theme_packs_by_gift_id, @gift_sort) %>
                     <div id="gift-drag-source" phx-hook="GiftDragSource" class="flex flex-col flex-1 min-h-0 max-lg:min-h-28 overflow-y-auto">
-                      <% added? = fn gift -> if(@active_tab == :loadout, do: gift.name in picks, else: GiftPlans.has_gift?(milestone, gift.name)) end %>
+                      <% added? = fn gift -> if(@active_tab == :loadout, do: gift.name in picks, else: GiftPlans.has_gift?(add_target, gift.name)) end %>
                       <div :for={gift <- shown} data-gift-row={gift.name} data-drag-gift={if not added?.(gift), do: gift.name} class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-base-200">
                         <div data-gift-popup={gift.name} class="relative w-7 h-7 shrink-0 rounded overflow-hidden bg-base-200 ring-1 ring-base-300 cursor-pointer">
                           <img src={gift.image_path} class="w-full h-full object-cover" draggable="false" />
@@ -176,10 +138,10 @@
                                     class="btn btn-xs btn-outline" title="Add to gift search">Add</button>
                           <% end %>
                         <% else %>
-                        <%= if GiftPlans.has_gift?(milestone, gift.name) do %>
+                        <%= if GiftPlans.has_gift?(add_target, gift.name) do %>
                           <button class="btn btn-xs btn-primary" disabled>Added</button>
                         <% else %>
-                          <button data-gift-add phx-click="ms_add_gift" phx-value-gift={gift.name} class="btn btn-xs btn-outline"
+                          <button data-gift-add phx-click="list_add_gift" phx-value-gift={gift.name} class="btn btn-xs btn-outline"
                                   title={if GiftPlans.fixed_recipe?(gift), do: "Also adds its ingredients"}>Add</button>
                         <% end %>
                         <% end %>
@@ -190,6 +152,14 @@
                 </div>
                 <div class="flex flex-col gap-3 min-h-0 min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
+                <div class="join">
+                  <button id="gift-shop-btn" type="button" phx-click="set_tab" phx-value-tab="shop" class={"btn btn-sm join-item " <> if(@active_tab == :shop, do: "btn-primary", else: "btn-outline")}>Shopping list</button>
+                  <button id="gift-loadout-btn" type="button" phx-click="set_tab" phx-value-tab="loadout" class={"btn btn-sm join-item gap-1 " <> if(@active_tab == :loadout, do: "btn-primary", else: "btn-outline")}>
+                    Loadout
+                    <img :if={@plan_data["affinity"] not in [nil, ""]} src={gift_affinity_icon(@plan_data["affinity"])} title={@plan_data["affinity"]} class="w-4 h-4 object-contain shrink-0" />
+                    <img :for={name <- GiftPlans.cabinet_order(@plan_data)} :if={@gifts_by_name[name]} src={@gifts_by_name[name].image_path} title={name} class="w-4 h-4 rounded object-cover shrink-0 bg-slate-500/40 ring-1 ring-slate-400/40" />
+                  </button>
+                </div>
                 <div class="ml-auto flex items-center gap-3">
                   <span :if={issues != []} class="badge badge-warning badge-sm" title={Enum.join(issues, "\n")}>
                     <%= length(issues) %> issue(s)
@@ -204,9 +174,9 @@
                 </div>
               </div>
 
-              <.read_only_banner container="gift-view-memory" allowed={read_only_events()} template_id={@template_id} templates={@templates} label="gift plan" force={@active_tab == :end_state} />
+              <.read_only_banner container="gift-view-memory" allowed={read_only_events()} template_id={@template_id} templates={@templates} label="gift plan" />
                 <div id="gift-drop-zone" phx-hook="GiftDropZone"
-                     data-drop-event={if @active_tab == :loadout, do: "toggle_search_gift", else: milestone && "ms_add_gift"}
+                     data-drop-event={if @active_tab == :loadout, do: "toggle_search_gift", else: section && "list_add_gift"}
                      class="flex flex-col gap-3 overflow-y-auto flex-1 min-h-0 pr-1 rounded-lg transition-colors">
                   <%= if @active_tab == :loadout do %>
               <div class="flex items-start gap-3 flex-wrap">
@@ -444,81 +414,45 @@
                 </div>
               </div>
                   <% else %>
-                  <%= if milestone do %>
-                    <.heal_entries milestone={milestone} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+                  <%= if section do %>
+                    <.heal_entries section={section} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
                     <div class="flex items-start gap-2">
-                      <div :if={@active_tab == :end_state} class="flex items-center gap-1 flex-wrap flex-1 min-w-0">
-                        <span class="text-xs font-semibold text-base-content/70">End state for</span>
-                        <button :for={kind <- ~w(all_normal becomes_hard all_hard extreme)} type="button" phx-click="set_end_state_kind" phx-value-kind={kind} title={applies_hint(kind)}
-                                class={"btn btn-xs " <> if(kind == @end_state_kind, do: "btn-primary", else: "btn-ghost border-base-300")}><%= applies_label(kind) %></button>
+                      <div class={"flex items-stretch gap-2 flex-wrap flex-1 min-w-0 rounded-xl border " <> applies_group_color(section["applies"])}>
+                        <.applies_picker section={section} />
+                        <.goal_chips section={section} />
                       </div>
-                      <div :if={@active_tab != :end_state} class={"flex items-stretch gap-2 flex-wrap flex-1 min-w-0 rounded-xl border " <> applies_group_color(milestone["applies"])}>
-                        <div class="dropdown">
-                          <div tabindex="0" role="button" title={applies_hint(milestone["applies"] || "always")}
-                               class={"h-full rounded-lg border px-2 py-1 flex items-center text-[11px] font-semibold cursor-pointer " <> applies_badge_color(milestone["applies"])}>
-                            <%= if milestone["applies"] not in [nil, "always"], do: "When: " %><%= applies_label(milestone["applies"] || "always") %><%= if milestone["applies"] not in [nil, "always"], do: " do →" %>
-                          </div>
-                          <div tabindex="0" class="dropdown-content z-30 mt-1 w-40 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
-                            <button :for={option <- GiftPlans.milestone_applies_options()} type="button" phx-click="ms_set_applies" phx-value-applies={option} title={applies_hint(option)}
-                                    class="btn btn-ghost btn-xs w-full justify-start"><%= applies_label(option) %></button>
-                          </div>
-                        </div>
-                        <div class={"rounded-lg border px-2 py-1 flex flex-col justify-center " <> goal_color("required")}>
-                          <span class="text-[11px] font-semibold">Required</span>
-                          <span class="text-[10px] text-base-content/50">all of <%= goal_member_count(milestone, "required") %></span>
-                        </div>
-                        <form :for={goal <- milestone["goals"]} phx-change="ms_set_goal_min"
-                              class={"rounded-lg border px-2 py-1 flex items-center gap-1 " <> goal_color(goal["letter"])}>
-                          <input type="hidden" name="letter" value={goal["letter"]} />
-                          <span class="text-[11px] font-semibold"><%= goal["letter"] %>:</span>
-                          <span class="text-[11px]">at least</span>
-                          <input type="number" min="1" name="min" value={goal["min"]} phx-debounce="400" class="input input-bordered input-xs w-12" />
-                          <span class="text-[11px]">of <%= goal_member_count(milestone, goal["letter"]) %></span>
-                          <button type="button" phx-click="ms_remove_goal" phx-value-letter={goal["letter"]} class="btn btn-ghost btn-2xs px-1 text-error"
-                                  title="Remove this goal; its entries become required"><.icon name="lucide-x" class="size-3.5" /></button>
-                        </form>
-                        <button phx-click="ms_add_goal" class="rounded-lg border border-dashed border-base-content/30 px-3 text-[11px] text-base-content/60 hover:bg-base-200">+ Goal</button>
-                        <div :if={milestone["endless"] == true} class="rounded-lg border border-warning bg-warning/20 px-2 py-1 flex items-center gap-1 text-warning"
-                             title="This milestone is never reached. It keeps buying and refreshing until a refresh case leaves the shop, and later milestones are not run.">
-                          <span class="text-[11px] font-semibold">∞ Never done</span>
-                          <button type="button" phx-click="ms_set_endless" phx-value-endless="false" class="btn btn-ghost btn-2xs px-1 text-error" title="Make this milestone finishable again"><.icon name="lucide-x" class="size-3.5" /></button>
-                        </div>
-                        <button :if={milestone["endless"] != true} type="button" phx-click="ms_set_endless" phx-value-endless="true"
-                                title="Never count this milestone as reached, so it keeps going until a refresh case leaves the shop"
-                                class="rounded-lg border border-dashed border-base-content/30 px-3 text-[11px] text-base-content/60 hover:bg-base-200">+ Endless</button>
-                      </div>
-                      <div :if={@active_tab != :end_state} class="flex flex-col items-end gap-1 shrink-0 ml-auto">
+                      <div class="flex flex-col items-end gap-1 shrink-0 ml-auto">
                       <div class="flex items-center gap-1">
                         <div :for={{action, label} <- [{"heal", "+ Greatly heal"}, {"revive", "+ Revive"}]} class="dropdown dropdown-end">
                           <div tabindex="0" role="button" class="btn btn-xs btn-outline"><%= label %></div>
                           <div tabindex="0" class="dropdown-content z-30 mt-1 w-80 max-w-[90vw] rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg"><div class="grid grid-cols-3 gap-1">
-                            <button :if={action == "revive"} type="button" phx-click="ms_add_action" phx-value-action="revive" phx-value-sinner="everyone"
+                            <button :if={action == "revive"} type="button" phx-click="list_add_action" phx-value-action="revive" phx-value-sinner="everyone"
                                     class="btn btn-ghost btn-xs col-span-3 justify-start gap-1 px-1"><.icon name="lucide-users" class="size-4" />Everyone</button>
-                            <button :for={sinner <- @sinners} type="button" phx-click="ms_add_action" phx-value-action={action} phx-value-sinner={sinner}
+                            <button :for={sinner <- @sinners} type="button" phx-click="list_add_action" phx-value-action={action} phx-value-sinner={sinner}
                                     title={sinner_label(sinner)} class="btn btn-ghost btn-xs min-w-0 flex-nowrap justify-start gap-1 px-1">
                               <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-4 w-4 shrink-0 object-contain" /><span class="truncate"><%= sinner_label(sinner) %></span>
                             </button>
                           </div>
                           </div>
                         </div>
-                        <button type="button" phx-click="ms_add_action" phx-value-action="heal_all" class="btn btn-xs btn-outline">+ Heal all</button>
+                        <button type="button" phx-click="list_add_action" phx-value-action="heal_all" class="btn btn-xs btn-outline">+ Heal all</button>
                       </div>
-                      <% offers = loadout_offers(@plan_data, milestone) %>
+                      <% offers = loadout_offers(@plan_data, section) %>
                       <div class="flex items-center gap-1 flex-wrap justify-end">
-                        <div :if={offers != []} class="flex items-center gap-1 flex-wrap justify-end" title="Gifts you start with that this milestone doesn't list. Adds them as optional keeps.">
+                        <div :if={offers != []} class="flex items-center gap-1 flex-wrap justify-end" title="Gifts you start with that the shopping list doesn't have. Adds them as optional keeps.">
                           <span class="text-[11px] text-base-content/60">Loadout</span>
-                          <button :for={{name, source} <- offers} type="button" phx-click="ms_add_loadout_gift" phx-value-gift={name}
+                          <button :for={{name, source} <- offers} type="button" phx-click="list_add_loadout_gift" phx-value-gift={name}
                                   title={source} class="btn btn-xs btn-outline gap-1 px-1">
                             <img :if={@gifts_by_name[name]} src={@gifts_by_name[name].image_path} class="w-4 h-4 rounded object-cover bg-slate-500/40" />
                             + <%= name %>
                           </button>
                         </div>
                         <div class="flex items-center gap-1"
-                             title="Any-tier and any-affinity entries never count toward goals and never keep anything. Buy buys matches when nothing wanted is on the shelf; Sell sells matches at the start of Work on Milestone. A specific gift entry overrides them.">
+                             title="Any-tier and any-affinity entries never count toward goals and never keep anything. Buy buys matches when nothing wanted is on the shelf; Sell sells matches at the start of each stage. A specific gift entry overrides them.">
                           <div class="dropdown dropdown-end">
                             <div tabindex="0" role="button" class="btn btn-xs btn-outline">+Any tier</div>
                             <div tabindex="0" class="dropdown-content z-30 mt-1 w-36 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
-                              <button :for={affinity <- affinities()} type="button" phx-click="ms_add_affinity_any" phx-value-affinity={affinity}
+                              <button :for={affinity <- affinities()} type="button" phx-click="list_add_affinity_any" phx-value-affinity={affinity}
                                       class="btn btn-ghost btn-xs w-full justify-start capitalize">
                                 <img src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
                               </button>
@@ -527,8 +461,8 @@
                           <div :for={tier <- GiftPlans.shop_tiers()} class="dropdown dropdown-end">
                             <div tabindex="0" role="button" class="btn btn-xs btn-outline">+T<%= tier %></div>
                             <div tabindex="0" class="dropdown-content z-30 mt-1 w-36 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
-                              <button type="button" phx-click="ms_add_tier" phx-value-tier={tier} class="btn btn-ghost btn-xs w-full justify-start">Any</button>
-                              <button :for={affinity <- affinities()} type="button" phx-click="ms_add_affinity" phx-value-affinity={affinity} phx-value-tier={tier}
+                              <button type="button" phx-click="list_add_tier" phx-value-tier={tier} class="btn btn-ghost btn-xs w-full justify-start">Any</button>
+                              <button :for={affinity <- affinities()} type="button" phx-click="list_add_affinity" phx-value-affinity={affinity} phx-value-tier={tier}
                                       class="btn btn-ghost btn-xs w-full justify-start capitalize">
                                 <img src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
                               </button>
@@ -538,7 +472,7 @@
                         <div class="dropdown dropdown-end">
                           <div tabindex="0" role="button" class="btn btn-xs btn-outline">+ Skill replace</div>
                           <div tabindex="0" class="dropdown-content z-30 mt-1 w-80 max-w-[90vw] rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg"><div class="grid grid-cols-3 gap-1">
-                            <button :for={sinner <- @sinners} type="button" phx-click="ms_add_action" phx-value-action="skill_replace" phx-value-sinner={sinner}
+                            <button :for={sinner <- @sinners} type="button" phx-click="list_add_action" phx-value-action="skill_replace" phx-value-sinner={sinner}
                                     title={sinner_label(sinner)} class="btn btn-ghost btn-xs min-w-0 flex-nowrap justify-start gap-1 px-1">
                               <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-4 w-4 shrink-0 object-contain" /><span class="truncate"><%= sinner_label(sinner) %></span>
                             </button>
@@ -549,24 +483,56 @@
                       </div>
                     </div>
 
-                    <.milestone_entries milestone={milestone} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
-                    <div :if={@active_tab != :end_state and Enum.all?(milestone["entries"], &GiftPlans.heal_entry?/1)} class="text-xs text-base-content/40 italic">No entries yet. Add gifts from the search on the left.</div>
+                    <div data-drop-section={section["id"]} class="flex flex-col gap-1 rounded-lg shrink-0">
+                      <.section_entries section={section} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+                      <div :if={Enum.all?(section["entries"], &GiftPlans.heal_entry?/1)} class="text-xs text-base-content/40 italic">No entries yet. Add gifts from the search on the left.</div>
+                    </div>
 
-                    <% refresh_from = active_refresh_from(@refresh_tabs, milestone) %>
-                    <% refresh_scheduled = milestone["refresh_scheduled"] == true %>
-                    <div :if={@active_tab != :end_state or milestone["endless"] == true} class="flex flex-col">
+                      <div :for={{stage, number} <- Enum.with_index(GiftPlans.stages(@plan_data, section["id"]), 2)} data-drop-section={stage["id"]} class="flex flex-col gap-2 rounded-xl border border-dashed border-base-content/30 p-2 shrink-0">
+                        <div class={"flex items-stretch gap-2 flex-wrap rounded-xl border " <> applies_group_color(stage["applies"])}>
+                          <input id={"stage-name-#{stage["id"]}"} type="text" value={stage["name"]} phx-blur="rename_stage" phx-value-id={stage["id"]} maxlength="40"
+                                 title="Worked on once everything above is done. Refreshes are shared with the shop, and everything above stays kept."
+                                 class="input input-ghost input-xs w-32 self-center font-semibold" />
+                          <.applies_picker section={stage} />
+                          <.goal_chips section={stage} />
+                          <span class="ml-auto flex items-center">
+                            <button type="button" phx-click="list_move_stage" phx-value-id={stage["id"]} phx-value-dir="up" class="btn btn-ghost btn-xs px-1" title={if number == 2, do: "Swap with the first section (heal entries stay there)", else: "Move this stage earlier"}><.icon name="lucide-arrow-up" class="size-3.5" /></button>
+                            <button type="button" phx-click="list_move_stage" phx-value-id={stage["id"]} phx-value-dir="down" disabled={number == length(GiftPlans.stages(@plan_data, section["id"])) + 1} class="btn btn-ghost btn-xs px-1" title="Move this stage later"><.icon name="lucide-arrow-down" class="size-3.5" /></button>
+                          </span>
+                          <button type="button" phx-click="list_remove_stage" phx-value-id={stage["id"]} data-confirm={"Remove stage #{number} and its entries?"}
+                                  class="btn btn-ghost btn-xs px-1 text-error" title="Remove this stage and its entries"><.icon name="lucide-x" class="size-3.5" /></button>
+                        </div>
+                        <.section_entries section={stage} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+                        <div :if={Enum.all?(stage["entries"], &GiftPlans.heal_entry?/1)} class="text-xs text-base-content/40 italic">No entries yet. Drag gifts here from the search on the left.</div>
+                      </div>
+                      <div :if={section["pursue_optional"] == true} class="flex flex-col gap-1 rounded-xl border border-dashed border-base-content/30 p-2 shrink-0">
+                        <div class="flex items-center gap-2">
+                          <span class="px-2 text-xs font-semibold">Keep shopping</span>
+                          <button type="button" phx-click="list_set_pursue_optional" value="false" class="btn btn-ghost btn-xs px-1 ml-auto text-error" title="Stop keeping shopping after the last stage"><.icon name="lucide-x" class="size-3.5" /></button>
+                        </div>
+                        <div class="px-2 text-xs text-base-content/60">After the last stage is done, the bot keeps buying and refreshing until a refresh case leaves the shop. It buys optional gifts from every stage, plus anything the last stage's Ignore + Buy entries (any tier, any affinity) match, up to their caps.</div>
+                      </div>
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <button type="button" phx-click="list_add_stage" class="btn btn-xs btn-outline"
+                                title="Add another set of required entries and goals, worked on after everything above is done">+ Add stage</button>
+                        <button :if={section["pursue_optional"] != true} type="button" phx-click="list_set_pursue_optional" value="true" class="btn btn-xs btn-outline"
+                                title="After the last stage is done, keep buying optional gifts and the last stage's Ignore + Buy matches, and keep refreshing, instead of finishing the shop">+ Keep shopping</button>
+                      </div>
+
+                    <% refresh_from = active_refresh_from(@refresh_tabs, section) %>
+                    <% refresh_scheduled = section["refresh_scheduled"] == true %>
+                    <div class="flex flex-col">
                       <div class="flex items-center gap-2 pb-1">
                         <span class="text-xs font-semibold text-base-content/70">Refresh</span>
-                        <span :if={milestone["refresh_source"]} class="text-[11px] text-base-content/60">from <%= milestone["refresh_source"] %></span>
-                        <button phx-click="ms_add_refresh_case" class="btn btn-xs btn-outline">+ Case</button>
-                        <.refresh_costs milestone={milestone} from={refresh_from} path={refresh_path(assigns, milestone, refresh_from)} plan_data={@plan_data} />
-                        <button :if={not refresh_scheduled} type="button" phx-click="ms_refresh_add_schedule" class="btn btn-ghost btn-xs ml-auto">Add Schedule</button>
+                        <button phx-click="list_add_refresh_case" class="btn btn-xs btn-outline">+ Case</button>
+                        <.refresh_costs section={section} from={refresh_from} path={refresh_path(assigns, section, refresh_from)} plan_data={@plan_data} />
+                        <button :if={not refresh_scheduled} type="button" phx-click="list_refresh_add_schedule" class="btn btn-ghost btn-xs ml-auto">Add Schedule</button>
                       </div>
-                      <.refresh_tabs :if={refresh_scheduled} milestone={milestone} from={refresh_from} />
+                      <.refresh_tabs :if={refresh_scheduled} section={section} from={refresh_from} />
                       <div class={"flex flex-col gap-1 " <> if(refresh_scheduled, do: "p-1 border-2 border-primary rounded-b-lg rounded-tr-lg", else: "")}>
-                        <div id={"refresh-cases-#{milestone["id"]}-#{refresh_from}"} phx-hook="SortableList" data-sort-event="ms_reorder_refresh" data-sort-scope={milestone["id"]}
+                        <div id={"refresh-cases-#{section["id"]}-#{refresh_from}"} phx-hook="SortableList" data-sort-event="list_reorder_refresh" data-sort-scope={section["id"]}
                              class="flex flex-col gap-1">
-                          <div :for={{refresh_case, index} <- Enum.with_index(GiftPlans.refresh_cases(milestone, refresh_from))} data-sort-id={refresh_case["id"]}
+                          <div :for={{refresh_case, index} <- Enum.with_index(GiftPlans.refresh_cases(section, refresh_from))} data-sort-id={refresh_case["id"]}
                                class="rounded border border-base-300 bg-base-200 px-1 py-1 flex items-start gap-2">
                             <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1 leading-6">⠿</span>
                             <span class="text-[11px] font-semibold text-base-content/70 w-12 shrink-0 leading-6"><%= if index == 0, do: "if", else: "else if" %></span>
@@ -577,7 +543,7 @@
                                     <button type="button" phx-click="close_case_condition" title="Close the condition editor" class="btn btn-ghost btn-xs h-6 min-h-6 px-1">▾</button>
                                     <div class="flex-1 min-w-0">
                                       <.condition_node node={refresh_case["condition"]} path="" values={%{"case_id" => refresh_case["id"]}} removable={false}
-                                                       leaf={&gift_leaf(Map.merge(&1, %{plan_data: @plan_data, milestone: milestone}))} />
+                                                       leaf={&gift_leaf(Map.merge(&1, %{plan_data: @plan_data, section: section}))} />
                                     </div>
                                   </div>
                                 <% else %>
@@ -595,7 +561,7 @@
                               <% end %>
                             </div>
                             <span class="text-[11px] font-semibold text-base-content/70 leading-6">then</span>
-                            <form phx-change="ms_update_refresh_case" class="flex items-center gap-1 shrink-0">
+                            <form phx-change="list_update_refresh_case" class="flex items-center gap-1 shrink-0">
                               <input type="hidden" name="case_id" value={refresh_case["id"]} />
                               <select name="action" class="select select-bordered select-xs">
                                 <option :for={action <- GiftPlans.refresh_actions()} value={action} selected={refresh_case["action"] == action}><%= GiftPlans.refresh_action_label(action) %></option>
@@ -624,18 +590,19 @@
                               <input :if={refresh_case["action"] != "leave"} type="number" name="max" min="0" value={refresh_case["max"]} placeholder="∞"
                                      phx-debounce="300" class="input input-bordered input-xs w-14" />
                             </form>
-                            <button type="button" phx-click="ms_remove_refresh_case" phx-value-case_id={refresh_case["id"]} class="btn btn-ghost btn-xs px-1 text-error"><.icon name="lucide-x" class="size-3.5" /></button>
+                            <button type="button" phx-click="list_remove_refresh_case" phx-value-case_id={refresh_case["id"]} class="btn btn-ghost btn-xs px-1 text-error"><.icon name="lucide-x" class="size-3.5" /></button>
                           </div>
                         </div>
                         <div class="rounded border border-dashed border-base-300 px-1 py-1 flex items-center gap-2">
                           <span class="px-1 invisible">⠿</span>
-                          <span class="text-[11px] font-semibold text-base-content/70 w-12 shrink-0"><%= if GiftPlans.refresh_cases(milestone, refresh_from) == [], do: "always", else: "else" %></span>
-                          <span class="text-[11px] text-base-content/60">stop working on this milestone</span>
+                          <span class="text-[11px] font-semibold text-base-content/70 w-12 shrink-0"><%= if GiftPlans.refresh_cases(section, refresh_from) == [], do: "always", else: "else" %></span>
+                          <span class="text-[11px] text-base-content/60">leave the shop</span>
                         </div>
                       </div>
                     </div>
 
-                    <% fusion_entry = @fusion_entry_id && GiftPlans.find_entry(milestone, @fusion_entry_id) %>
+                    <% fusion_section = @fusion_entry_id && Enum.find(GiftPlans.sections(@plan_data, section["id"]), &GiftPlans.find_entry(&1, @fusion_entry_id)) %>
+                    <% fusion_entry = fusion_section && GiftPlans.find_entry(fusion_section, @fusion_entry_id) %>
                     <% target = fusion_entry && @gifts_by_name[GiftPlans.subject_gift(fusion_entry)] %>
                     <div :if={fusion_entry && target && fusion_entry["fusion"]} class="modal modal-open">
                       <div class="modal-box w-11/12 max-w-4xl h-[85vh] flex flex-col gap-2">
@@ -645,14 +612,14 @@
                             <span class="text-sm font-semibold"><%= target.name %></span>
                             <span class="text-[11px] text-base-content/60">Tier <%= target.tier %> · <%= target.affinity %> · <%= fusion_entry["fusion"]["type"] %> fusion</span>
                           </div>
-                          <button phx-click="ms_close_fusion" class="btn btn-sm btn-ghost ml-auto">Close</button>
+                          <button phx-click="list_close_fusion" class="btn btn-sm btn-ghost ml-auto">Close</button>
                         </div>
                         <%= if GiftPlans.fixed_fusion?(fusion_entry) do %>
                           <span class="text-[11px] text-base-content/60">
-                            Fixed recipe. Each ingredient is its own entry in this milestone: a missing one is bought if its entry has Buy on,
-                            otherwise fused if its entry has Fuse on. Red ingredients aren't in the milestone, so they're never bought or fused for this.
+                            Fixed recipe. Each ingredient is its own entry in this stage: a missing one is bought if its entry has Buy on,
+                            otherwise fused if its entry has Fuse on. Red ingredients aren't in this stage, so they're never bought or fused for this.
                           </span>
-                          <.recipe_tree gift={target} milestone={milestone} gifts_by_id={@gifts_by_id} gifts_by_name={@gifts_by_name} />
+                          <.recipe_tree gift={target} section={fusion_section} gifts_by_id={@gifts_by_id} gifts_by_name={@gifts_by_name} />
                         <% else %>
                           <span class="text-[11px] text-base-content/60">
                             Routes, tried in order. Each picks a combo from the valid pool and can buy missing ingredients up to a tier,
@@ -697,10 +664,10 @@
                           <.route_list def_id={fusion_entry["id"]} routes={fusion_entry["fusion"]["routes"] || []} tier={target.tier} shop={@route_shop} />
                         <% end %>
                       </div>
-                      <div class="modal-backdrop" phx-click="ms_close_fusion"></div>
+                      <div class="modal-backdrop" phx-click="list_close_fusion"></div>
                     </div>
                   <% else %>
-                    <div class="text-xs text-base-content/40 italic">Create a milestone to edit it here.</div>
+                    <div class="text-xs text-base-content/40 italic">This plan has no shopping list to edit.</div>
                   <% end %>
                   <% end %>
                 </div>
@@ -725,23 +692,24 @@
         <div class="overflow-y-auto flex flex-col gap-3 pr-1">
           <section>
             <h4 class="font-semibold mb-1">Two parts</h4>
-            <p><span class="font-medium">Loadout</span> is everything set up before the first shop: the starting gift, gift search, graces and mounting trials. It applies to every run. <span class="font-medium">Milestones</span> drive what the bot buys, keeps, fuses and refreshes in each shop. Switch between them with the button at the top.</p>
+            <p><span class="font-medium">Loadout</span> is everything set up before the first shop: the starting gift, gift search, graces and mounting trials. It applies to every run. <span class="font-medium">Shopping list</span> drives what the bot buys, keeps, fuses and refreshes in each shop. Switch between them with the buttons at the top.</p>
           </section>
           <section>
-            <h4 class="font-semibold mb-1">Milestones</h4>
-            <p>Milestones run top to bottom. The bot works on one in each shop until its goals are met, then moves to the next. Drag gifts from the search on the left into the milestone, or use Add.</p>
+            <h4 class="font-semibold mb-1">Shopping list</h4>
+            <p>The bot works on the shopping list until its goals are met. Drag gifts from the search on the left into it, or use Add.</p>
             <ul class="mt-1 list-disc pl-5 flex flex-col gap-1">
-              <li><span class="font-medium">When</span> limits a milestone to certain runs: every run, normal F1-F5, hard starting F2-F5, hard from F1, or extreme planned. It follows the run's theme pack plan. Rows are tinted to match.</li>
+              <li><span class="font-medium">When</span> limits a section to certain runs: every run, normal F1-F5, hard starting F2-F5, hard from F1, or extreme planned. It follows the run's theme pack plan. Rows are tinted to match.</li>
               <li><span class="font-medium">Required</span> entries must all be owned. Extra goals ("at least N of") let a group of entries count as one requirement.</li>
-              <li><span class="font-medium">Any-tier and any-affinity</span> entries never count toward goals and never keep anything. Buy buys matches when no wanted gift is on the shelf, and Sell sells matches at the start of the milestone. A specific gift entry overrides them.</li>
+              <li><span class="font-medium">+ Add stage</span> adds another Required and goals stage below the entries. The bot finishes everything above it first, then works on the stage, with the same refresh cases. Earlier gifts stay kept. The Add button on the search adds to the last stage; drag a gift onto any stage to add it there. A gift can be in several stages, and the later stage's definition applies once the earlier one is done. Optional gifts from earlier stages stay in the pool while working later stages, since the pool only grows. Any tier and any affinity entries and required entries do not carry over; if one goes missing, the bot goes back to its stage.</li>
+              <li><span class="font-medium">Any-tier and any-affinity</span> entries never count toward goals and never keep anything. Buy buys matches when no wanted gift is on the shelf, and Sell sells matches at the start of the shop. A specific gift entry overrides them.</li>
               <li><span class="font-medium">Fixed fusions</span> add their ingredients too. Open a fusion entry to choose its routes. See <span class="font-mono text-xs">docs/fusion.md</span> for the fusion rules.</li>
-              <li><span class="font-medium">Greatly heal</span> and <span class="font-medium">Revive</span> pick sinners to restore while working on the milestone.</li>
-              <li><span class="font-medium">&infin; Endless</span> means the milestone is never reached. It keeps buying and refreshing until a refresh case leaves the shop, and later milestones never run.</li>
+              <li><span class="font-medium">Greatly heal</span> and <span class="font-medium">Revive</span> pick sinners to restore while working on the shop.</li>
+              <li><span class="font-medium">+ Keep shopping</span> adds a section at the end. With it, the bot keeps buying and refreshing after the last stage is done, until a refresh case leaves the shop. It buys optional gifts from every stage plus whatever the last stage's Ignore + Buy entries match, up to their caps. Remove it with the X to turn that off.</li>
             </ul>
           </section>
           <section>
             <h4 class="font-semibold mb-1">Refresh</h4>
-            <p>Cases are checked top to bottom, like if / else if. The first case whose condition is true runs its action: Refresh, Keyword Refresh or Leave Shop, optionally up to a maximum count. If no case matches, the bot stops working on the milestone.</p>
+            <p>Cases are checked top to bottom, like if / else if. The first case whose condition is true runs its action: Refresh, Keyword Refresh or Leave Shop, optionally up to a maximum count. If no case matches, the bot stops working on the shop.</p>
           </section>
           <section>
             <h4 class="font-semibold mb-1">Loadout</h4>

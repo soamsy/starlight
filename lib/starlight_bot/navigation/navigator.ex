@@ -384,7 +384,7 @@ defmodule StarlightBot.Navigation.Navigator do
     state =
       case result do
         {:ok, %{steps: steps}} -> add_log(state, :ok, "Dry run complete: #{Enum.count(steps, &(&1.outcome == :would_run))} step(s) would run")
-        {:ok, _} -> add_log(state, :ok, "Dry run complete: no milestones to run")
+        {:ok, _} -> add_log(state, :ok, "Dry run complete: no shopping list to run")
         {:error, reason} -> add_log(state, :error, "Dry run failed: #{inspect(reason)}")
       end
       |> Map.put(:phase, :idle)
@@ -398,8 +398,8 @@ defmodule StarlightBot.Navigation.Navigator do
   def handle_info({:nav_result, :shop_runner, result}, state) do
     state =
       case result do
-        {:ok, %{steps: steps}} -> add_log(state, :ok, "Shop runner finished: #{length(steps)} milestone(s) handled")
-        {:ok, _} -> add_log(state, :ok, "Shop runner finished: no milestones to run")
+        {:ok, %{steps: steps}} -> add_log(state, :ok, "Shop runner finished: #{length(steps)} stage(s) handled")
+        {:ok, _} -> add_log(state, :ok, "Shop runner finished: no shopping list to run")
         {:error, reason} -> add_log(state, :error, "Shop runner failed: #{inspect(reason)}")
       end
       |> Map.put(:phase, :idle)

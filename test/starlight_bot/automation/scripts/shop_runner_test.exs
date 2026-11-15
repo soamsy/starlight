@@ -5,17 +5,17 @@ defmodule StarlightBot.Automation.Scripts.ShopRunnerTest do
   alias StarlightBot.Automation.Scripts.ShopRunner
   alias StarlightBot.{Ctx, GiftPlans}
 
-  defp milestone(id, gift, extra \\ %{}) do
+  defp section(id, gift, extra \\ %{}) do
     segment = GiftPlans.default_segment()
     entry = %{"id" => "me_" <> id, "subject" => %{"gift" => gift}, "fusion" => nil, "floors" => [segment]}
     Map.merge(%{"id" => id, "name" => id, "applies" => "always", "goals" => [], "entries" => [entry], "refresh" => []}, extra)
   end
 
-  defp state(milestones) do
+  defp state(sections) do
     gifts = [%{id: "g_one", name: "One", tier: 2, selling_cost: 30}, %{id: "g_two", name: "Two", tier: 2, selling_cost: 30}]
 
     %{
-      plan: %{"milestones" => milestones},
+      plan: %{"sections" => sections},
       floor: 1,
       shop_type: :normal,
       reserve: 0,
@@ -42,80 +42,80 @@ defmodule StarlightBot.Automation.Scripts.ShopRunnerTest do
     %{ctx: ctx}
   end
 
-  defp next_milestone_ids({:steps, [{:call, {ShopRunner, :work, [rest, _state, :dry_run]}}]}), do: Enum.map(rest, & &1["id"])
+  defp next_section_ids({:steps, [{:call, {ShopRunner, :work, [rest, _state, :dry_run]}}]}), do: Enum.map(rest, & &1["id"])
 
-  test "an unreached milestone hands the remaining milestones to the next step", %{ctx: ctx} do
-    milestones = [milestone("first", "One"), milestone("second", "Two")]
+  test "an unreached section hands the remaining sections to the next step", %{ctx: ctx} do
+    sections = [section("first", "One"), section("second", "Two")]
 
-    result = ShopRunner.work(milestones, state(milestones), :dry_run, nil, ctx)
+    result = ShopRunner.work(sections, state(sections), :dry_run, nil, ctx)
 
-    assert next_milestone_ids(result) == ["second"]
+    assert next_section_ids(result) == ["second"]
   end
 
-  test "an endless milestone drops everything after it", %{ctx: ctx} do
-    milestones = [milestone("first", "One", %{"endless" => true}), milestone("second", "Two")]
+  test "a pursue-optional section drops everything after it", %{ctx: ctx} do
+    sections = [section("first", "One", %{"pursue_optional" => true}), section("second", "Two")]
 
-    result = ShopRunner.work(milestones, state(milestones), :dry_run, nil, ctx)
+    result = ShopRunner.work(sections, state(sections), :dry_run, nil, ctx)
 
-    assert next_milestone_ids(result) == []
+    assert next_section_ids(result) == []
   end
 
-  test "an endless milestone with nothing left to own still runs instead of being skipped", %{ctx: ctx} do
-    milestones = [milestone("first", "One", %{"endless" => true}), milestone("second", "Two")]
+  test "a pursue-optional section with nothing left to own still runs instead of being skipped", %{ctx: ctx} do
+    sections = [section("first", "One", %{"pursue_optional" => true}), section("second", "Two")]
     RunMemory.add_ego_gift(ctx, "g_one", "One")
 
-    {:steps, [{:call, {ShopRunner, :work, [[], final, :dry_run]}}]} = ShopRunner.work(milestones, state(milestones), :dry_run, nil, ctx)
+    {:steps, [{:call, {ShopRunner, :work, [[], final, :dry_run]}}]} = ShopRunner.work(sections, state(sections), :dry_run, nil, ctx)
 
     assert [%{id: "first", outcome: outcome}] = final.steps
     assert outcome != :skipped
   end
 
-  defp with_heal(milestone) do
+  defp with_heal(section) do
     segment = Map.merge(GiftPlans.default_segment(), %{"disposition" => "ignore", "goal" => nil, "buy" => false, "sinners" => [], "repeat" => "once"})
-    heal = %{"id" => "me_heal_" <> milestone["id"], "subject" => %{"action" => "heal_all"}, "fusion" => nil, "floors" => [segment]}
-    Map.update!(milestone, "entries", &(&1 ++ [heal]))
+    heal = %{"id" => "me_heal_" <> section["id"], "subject" => %{"action" => "heal_all"}, "fusion" => nil, "floors" => [segment]}
+    Map.update!(section, "entries", &(&1 ++ [heal]))
   end
 
   defp recorded({:steps, [{:call, {ShopRunner, :work, [_rest, state, :dry_run]}}]}), do: Map.new(state.steps, &{&1.id, &1})
 
-  describe "healing for milestones that are already reached" do
-    test "is skipped while a later milestone is still unreached", %{ctx: ctx} do
-      milestones = [with_heal(milestone("first", "One")), milestone("second", "Two")]
+  describe "healing for sections that are already reached" do
+    test "is skipped while a later section is still unreached", %{ctx: ctx} do
+      sections = [with_heal(section("first", "One")), section("second", "Two")]
       RunMemory.add_ego_gift(ctx, "g_one", "One")
 
-      steps = milestones |> then(&ShopRunner.work(&1, state(&1), :dry_run, nil, ctx)) |> recorded()
+      steps = sections |> then(&ShopRunner.work(&1, state(&1), :dry_run, nil, ctx)) |> recorded()
 
       assert steps["first"].outcome == :skipped
       refute steps["first"].detail =~ "only healing"
     end
 
-    test "runs heal-only once every later milestone is reached too", %{ctx: ctx} do
-      milestones = [with_heal(milestone("first", "One")), milestone("second", "Two")]
+    test "runs heal-only once every later section is reached too", %{ctx: ctx} do
+      sections = [with_heal(section("first", "One")), section("second", "Two")]
       RunMemory.add_ego_gift(ctx, "g_one", "One")
       RunMemory.add_ego_gift(ctx, "g_two", "Two")
 
-      steps = milestones |> then(&ShopRunner.work(&1, state(&1), :dry_run, nil, ctx)) |> recorded()
+      steps = sections |> then(&ShopRunner.work(&1, state(&1), :dry_run, nil, ctx)) |> recorded()
 
       assert steps["first"].outcome == :would_run
       assert steps["first"].detail =~ "only healing"
     end
 
-    test "runs heal-only when the later milestone is endless and its goals are met", %{ctx: ctx} do
-      milestones = [with_heal(milestone("first", "One")), milestone("second", "Two", %{"endless" => true})]
+    test "runs heal-only when the later section pursues optional gifts and its goals are met", %{ctx: ctx} do
+      sections = [with_heal(section("first", "One")), section("second", "Two", %{"pursue_optional" => true})]
       RunMemory.add_ego_gift(ctx, "g_one", "One")
       RunMemory.add_ego_gift(ctx, "g_two", "Two")
 
-      steps = milestones |> then(&ShopRunner.work(&1, state(&1), :dry_run, nil, ctx)) |> recorded()
+      steps = sections |> then(&ShopRunner.work(&1, state(&1), :dry_run, nil, ctx)) |> recorded()
 
       assert steps["first"].outcome == :would_run
       assert steps["first"].detail =~ "only healing"
     end
 
-    test "is skipped when the later milestone is endless and its goals are not met", %{ctx: ctx} do
-      milestones = [with_heal(milestone("first", "One")), milestone("second", "Two", %{"endless" => true})]
+    test "is skipped when the later section pursues optional gifts and its goals are not met", %{ctx: ctx} do
+      sections = [with_heal(section("first", "One")), section("second", "Two", %{"pursue_optional" => true})]
       RunMemory.add_ego_gift(ctx, "g_one", "One")
 
-      steps = milestones |> then(&ShopRunner.work(&1, state(&1), :dry_run, nil, ctx)) |> recorded()
+      steps = sections |> then(&ShopRunner.work(&1, state(&1), :dry_run, nil, ctx)) |> recorded()
 
       assert steps["first"].outcome == :skipped
     end

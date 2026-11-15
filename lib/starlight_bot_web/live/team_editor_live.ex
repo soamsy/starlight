@@ -21,7 +21,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:selected_ids, blank_selected_ids())
      |> assign(:budget_inputs, blank_budget_inputs(nil))
      |> assign(:info_pane, nil)
-     |> assign(:gift_view, %{tab: nil, milestone: nil})
+     |> assign(:gift_view, %{tab: nil, section: nil})
      |> assign(:pane, "battle")}
   end
 
@@ -32,7 +32,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     socket =
       socket
       |> assign(:pane, if(Map.has_key?(@panes, params["pane"]) or params["pane"] in ["profiles", "stats"], do: params["pane"], else: socket.assigns.pane))
-      |> assign(:gift_view, %{tab: params["tab"], milestone: params["milestone"]})
+      |> assign(:gift_view, %{tab: params["tab"], section: params["section"]})
 
     cond do
       team_id && team_id != socket.assigns.editing_id -> {:noreply, load_team(socket, team_id)}
@@ -90,13 +90,13 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   def handle_info({:plan_count, _team_id, _table, _count}, socket), do: {:noreply, socket}
 
   @impl true
-  def handle_info({:gift_view, team_id, tab, milestone}, %{assigns: %{editing_id: team_id}} = socket) do
-    view = %{tab: tab, milestone: milestone}
+  def handle_info({:gift_view, team_id, tab, section}, %{assigns: %{editing_id: team_id}} = socket) do
+    view = %{tab: tab, section: section}
 
     if view == socket.assigns.gift_view do
       {:noreply, socket}
     else
-      query = [team: team_id, pane: socket.assigns.pane] ++ for({key, value} <- [tab: tab, milestone: milestone], value, do: {key, value})
+      query = [team: team_id, pane: socket.assigns.pane] ++ for({key, value} <- [tab: tab, section: section], value, do: {key, value})
       {:noreply, socket |> assign(:gift_view, view) |> push_patch(to: ~p"/teams?#{query}", replace: true)}
     end
   end

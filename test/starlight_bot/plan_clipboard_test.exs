@@ -21,15 +21,6 @@ defmodule StarlightBot.PlanClipboardTest do
     assert {:error, _} = :battle_plans |> PlanClipboard.encode("T", Map.put(BattlePlans.blank(), "profiles", [])) |> PlanClipboard.decode(:battle_plans)
   end
 
-  test "round trips a milestone and rejects other clipboards" do
-    milestone = %{"id" => "ms_a", "name" => "Shop", "entries" => [], "goals" => []}
-    assert {:ok, ^milestone} = milestone |> PlanClipboard.encode_milestone() |> PlanClipboard.decode_milestone()
-    assert {:error, "That clipboard holds a whole gift plan, not a milestone."} = :gift_plans |> PlanClipboard.encode("T", %{}) |> PlanClipboard.decode_milestone()
-    assert {:error, _} = PlanClipboard.decode_milestone("hello")
-    assert {:error, _} = PlanClipboard.decode_milestone(~s({"starlight_milestone": {"id": "a", "name": "b", "entries": "x"}}))
-    assert {:error, _} = PlanClipboard.decode_milestone(~s({"starlight_milestone": {"id": "a", "name": "b", "entries": [{"id": "e"}]}}))
-  end
-
   test "round trips a playbook of the matching kind and rejects the rest" do
     playbook = BattlePlans.new_playbook("chain", "Chain fast")
     text = PlanClipboard.encode_playbook(playbook)
@@ -48,14 +39,11 @@ defmodule StarlightBot.PlanClipboardTest do
     assert {:error, _} = PlanClipboard.decode_entries("hello")
     assert {:error, _} = PlanClipboard.decode_entries(~s({"starlight_entries": []}))
     assert {:error, _} = PlanClipboard.decode_entries(~s({"starlight_entries": [{"id": "e"}]}))
-    assert {:error, _} = PlanClipboard.decode_entries(PlanClipboard.encode_milestone(%{"id" => "a", "name" => "b"}))
   end
   test "clipboard text carries a format version and rejects newer ones" do
     assert %{"v" => 1} = :gift_plans |> PlanClipboard.encode("T", %{}) |> Jason.decode!()
-    assert %{"v" => 1} = %{"id" => "a", "name" => "b"} |> PlanClipboard.encode_milestone() |> Jason.decode!()
-    newer = ~s({"v": 2, "starlight_milestone": {"id": "a", "name": "b"}})
-    assert {:error, "That clipboard was made by a newer version" <> _} = PlanClipboard.decode_milestone(newer)
-    assert {:ok, _} = PlanClipboard.decode_milestone(~s({"starlight_milestone": {"id": "a", "name": "b"}}))
+    newer = ~s({"v": 2, "starlight_entries": [{"id": "e", "floors": []}]})
+    assert {:error, "That clipboard was made by a newer version" <> _} = PlanClipboard.decode_entries(newer)
   end
 
   test "plan data from a newer version is rejected" do
