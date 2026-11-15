@@ -17,7 +17,7 @@ defmodule StarlightBot.Automation.DungeonPathPlanner do
     :event, :shop, :shop_super, :ego_gift_get, :team_selector, :team_selector_tall, :team_selector_gone, :loading_stage_1, :loading_stage_2
   ]
 
-  @node_cost %{event: 10, battle: 15, hard_battle: 18, risky_battle: 25, shop: 10, boss: 50}
+  @node_cost %{event: 10, battle: 15, hard_battle: 18, risky_battle: 27, shop: 10, boss: 50}
 
   @spec navigate_to_next_node(term, Ctx.t()) :: {:ok, term} | {:error, term}
   def navigate_to_next_node(_last_frame, ctx) do
