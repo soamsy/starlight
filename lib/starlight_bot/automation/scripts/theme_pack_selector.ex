@@ -17,8 +17,8 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   @refresh_ready_poll_tries 20
   @max_refresh_attempts 10
   @drag_x_offsets [20, 60, 100]
-  @pull_y 540
-  @drag_distance 450
+  @pull_y 480
+  @drag_distance 520
   @drop_radius_px 20
   @drag_confirm_poll_tries 15
   @drag_confirm_poll_every_ms 100
