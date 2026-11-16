@@ -617,7 +617,7 @@ defmodule StarlightBot.GiftPlans do
 
   def new_gift_entry(gift, role, routes_for) do
     fusion = default_fusion(gift, routes_for)
-    fuse = fusion != nil and ((gift.tier || 0) >= 4 or (role == :ingredient and fixed_recipe?(gift)))
+    fuse = fusion != nil and ((gift.tier || 0) >= 4 or fixed_recipe?(gift))
     goal = if role == :ingredient, do: "optional", else: "required"
     %{"id" => new_id("me"), "subject" => gift_subject(gift.name), "fusion" => fusion, "floors" => [%{default_segment() | "goal" => goal, "fuse" => fuse}]}
   end
@@ -1660,6 +1660,51 @@ defmodule StarlightBot.GiftPlans do
   def prune_condition(node), do: Conditions.prune(node)
 
   def condition_label(node, data \\ nil), do: Conditions.label(node, &leaf_label(&1, data))
+
+  def condition_warnings(nil, _data, _section), do: []
+
+  def condition_warnings(condition, data, section) do
+    condition
+    |> Conditions.leaves()
+    |> Enum.flat_map(&leaf_warning(&1, data, section))
+    |> Enum.uniq()
+  end
+
+  defp leaf_warning(%{"op" => "goal"} = leaf, data, section) do
+    letter = leaf["goal"] || "required"
+    target = if is_binary(leaf["stage"]), do: find_section(data, leaf["stage"]), else: section
+    negated = leaf["not"] == true
+
+    cond do
+      is_nil(target) ->
+        ["Stage no longer exists, so this condition is always #{negated}."]
+
+      letter == "required" and not goal_has_members?(target, "required") ->
+        ["No required gifts in this stage, so this condition is always #{not negated}."]
+
+      letter != "required" and letter not in ["optional" | all_goal_letters(data, target["id"])] ->
+        ["Goal #{letter} no longer exists, so this condition is always #{negated}."]
+
+      letter != "required" and not goal_has_members?(goal_owner_section(data, target, letter), letter) ->
+        ["No gifts are in goal #{letter}, so this condition is always #{negated}."]
+
+      true ->
+        []
+    end
+  end
+
+  defp leaf_warning(_leaf, _data, _section), do: []
+
+  defp goal_owner_section(data, section, letter) do
+    find_section(data, goal_owner(data, section["id"], letter)) || section
+  end
+
+  defp goal_has_members?(section, letter) do
+    Enum.any?(section["entries"] || [], fn entry ->
+      skill? = skill_replace_subject?(entry["subject"])
+      Enum.any?(all_floors(entry), &((&1["goal"] || "required") == letter and (skill? or &1["disposition"] == "keep")))
+    end)
+  end
 
   @cmp_symbols %{"eq" => "=", "gte" => ">=", "lte" => "<="}
 

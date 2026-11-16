@@ -651,6 +651,9 @@
                                           class="btn btn-ghost btn-xs">+ Condition</button>
                                 </div>
                               <% end %>
+                              <p :for={warning <- GiftPlans.condition_warnings(refresh_case["condition"], @plan_data, section)} class="mt-1 flex items-center gap-1 text-[11px] text-warning">
+                                <.icon name="lucide-triangle-exclamation-point" class="size-3.5 shrink-0" /><%= warning %>
+                              </p>
                             </div>
                             <span class="text-[11px] font-semibold text-base-content/70 leading-6">then</span>
                             <form phx-change="list_update_refresh_case" class="flex items-center gap-1 shrink-0">
