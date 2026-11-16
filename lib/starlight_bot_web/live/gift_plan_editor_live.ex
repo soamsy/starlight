@@ -4,7 +4,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   import StarlightBotWeb.Components.PlanPicker
   import StarlightBotWeb.Components.PlanTemplates
 
-  alias StarlightBot.{PlanClipboard, PlanCounts, Conditions, EgoGifts, GiftPlans, Plans, Teams, ThemePacks}
+  alias StarlightBot.{PlanClipboard, PlanCounts, Conditions, EgoGifts, GiftPlans, GiftStarterPacks, Plans, Teams, ThemePacks}
   alias StarlightBot.GiftPlans.{Routes, FusionRouteTemplates, Combos, RefreshCosts}
   alias StarlightBotWeb.Components.PlanHistory
 
@@ -78,7 +78,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
-  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_copy_entries list_select_tab list_refresh_select_tab rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed)
+  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_copy_entries list_select_tab list_refresh_select_tab rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_select pack_new pack_edit pack_close)
 
   def read_only_events, do: @read_only_events
 
@@ -94,7 +94,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:team_id, team && team.id)
       |> assign(:paste_status, :unknown)
       |> assign(:template_id, nil)
-      |> read_only_guard(@read_only_events)
+      |> read_only_guard(@read_only_events, &plan_locked?/1)
+      |> pack_entry_guard()
       |> PlanHistory.attach(:plan_data, persist: &persist_plan/1, reconcile: &reconcile_selection/1)
       |> assign_templates(:gift_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
@@ -109,6 +110,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:gift_popup, nil)
       |> assign(:show_help, false)
       |> assign(:view_from_url, false)
+      |> assign(:selected_pack, nil)
+      |> assign(:starter_packs, GiftStarterPacks.list())
       |> reset_editor()
 
     socket = if team && team.gift_plan_id, do: socket |> load_plan(team.gift_plan_id, team.gift_template_id) |> apply_url_view(session), else: socket
@@ -125,6 +128,22 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       true -> socket
     end
   end
+
+  def plan_locked?(%{assigns: %{pack_edit: %{}}} = socket), do: socket.assigns.pack_locked
+  def plan_locked?(socket), do: StarlightBotWeb.Components.PlanTemplates.template_locked?(socket)
+
+  defp pack_entry_guard(socket) do
+    if connected?(socket) do
+      attach_hook(socket, :pack_entry_guard, :handle_event, fn
+        _event, %{"entry" => id}, socket when is_binary(id) -> if String.contains?(id, "~"), do: {:halt, socket}, else: {:cont, socket}
+        _event, _params, socket -> {:cont, socket}
+      end)
+    else
+      socket
+    end
+  end
+
+  defp publish_view(%{assigns: %{pack_edit: %{}}} = socket), do: socket
 
   defp publish_view(%{parent_pid: parent, assigns: %{editing_id: id, team_id: team_id}} = socket) when is_pid(parent) and id != nil do
     view = {socket.assigns.active_tab, socket.assigns.root_section_id}
@@ -234,6 +253,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def handle_event("reorder_cabinet_gifts", %{"ids" => ids}, socket) do
     {:noreply, update_plan(socket, &Map.put(&1, "cabinet_gifts", ids))}
   end
+
+  @impl true
+  def handle_event("restore_view", _params, %{assigns: %{pack_edit: %{}}} = socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("restore_view", params, %{assigns: %{editing_id: id}} = socket) when id != nil do
@@ -463,6 +485,60 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("cond_update", %{"path" => path} = params, socket) do
     {:noreply, update_condition(socket, params, &Conditions.put_leaf(&1, path, GiftPlans.condition_leaf(params)))}
+  end
+
+  @impl true
+  def handle_event("pack_select", %{"ref" => ref}, socket), do: {:noreply, assign(socket, :selected_pack, ref)}
+
+  @impl true
+  def handle_event("pack_new", _params, socket) do
+    case GiftStarterPacks.create(GiftStarterPacks.default_name(), "any") do
+      {:ok, ref} -> {:noreply, socket |> refresh_packs() |> assign(:selected_pack, ref) |> open_pack(ref)}
+      {:error, reason} -> {:noreply, put_flash(socket, :error, "Couldn't create the starter pack: #{inspect(reason)}")}
+    end
+  end
+
+  @impl true
+  def handle_event("pack_edit", %{"ref" => ref}, socket), do: {:noreply, open_pack(socket, ref)}
+  def handle_event("pack_edit", _params, %{assigns: %{selected_pack: ref}} = socket) when is_binary(ref), do: {:noreply, open_pack(socket, ref)}
+  def handle_event("pack_edit", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("pack_close", _params, socket), do: {:noreply, close_pack(socket)}
+
+  @impl true
+  def handle_event("pack_add", _params, %{assigns: %{selected_pack: ref}} = socket) when is_binary(ref) do
+    {:noreply, update_plan(socket, &GiftPlans.add_pack(&1, target_section_id(socket), ref))}
+  end
+
+  def handle_event("pack_add", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("pack_unpack", %{"pack" => pack_id, "section" => section_id}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.unpack(&1, section_id, pack_id))}
+  end
+
+  @impl true
+  def handle_event("pack_remove", %{"pack" => pack_id, "section" => section_id}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.remove_pack(&1, section_id, pack_id))}
+  end
+
+  @impl true
+  def handle_event("pack_rename", %{"value" => name}, %{assigns: %{pack_edit: %{ref: ref}}} = socket) do
+    {:noreply, save_pack_fields(socket, ref, %{name: name}, :name, String.trim(name))}
+  end
+
+  @impl true
+  def handle_event("pack_set_affinity", %{"affinity" => affinity}, %{assigns: %{pack_edit: %{ref: ref}}} = socket) do
+    {:noreply, save_pack_fields(socket, ref, %{affinity: affinity}, :affinity, affinity)}
+  end
+
+  @impl true
+  def handle_event("pack_delete", _params, %{assigns: %{pack_edit: %{ref: ref}}} = socket) do
+    case GiftStarterPacks.delete(ref) do
+      :ok -> {:noreply, socket |> close_pack() |> assign(:selected_pack, nil) |> refresh_packs()}
+      {:error, _} -> {:noreply, put_flash(socket, :error, "This starter pack can't be deleted.")}
+    end
   end
 
   @impl true
@@ -1142,8 +1218,25 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     "Goal #{letter}: the stage needs at least #{min || "N"} of the entries in this group, not all of them."
   end
 
-  def goal_member_count(section, letter) do
-    Enum.count(section["entries"] || [], fn entry -> Enum.any?(GiftPlans.all_floors(entry), &(&1["goal"] == letter and &1["disposition"] == "keep")) end)
+  def goal_member_count(section, letter, views \\ []) do
+    own = Enum.count(section["entries"] || [], &goal_member?(&1, letter))
+    packed = for view <- views, item <- view.entries, not item.shadowed, goal_member?(item.entry, letter), reduce: 0, do: (count -> count + 1)
+    own + packed
+  end
+
+  defp goal_member?(entry, letter), do: Enum.any?(GiftPlans.all_floors(entry), &(&1["goal"] == letter and &1["disposition"] == "keep"))
+
+  def pack_rows(view) do
+    for item <- view.entries,
+        timeline <- [nil | Enum.map(GiftPlans.timelines(item.entry), & &1["id"])],
+        from <- Enum.map(GiftPlans.timeline_view(item.entry, timeline)["floors"], & &1["from"]),
+        do: {item, timeline, from}
+  end
+
+  def pack_row_label(entry, timeline, from) do
+    kinds = timeline && GiftPlans.find_timeline(entry, timeline)["kinds"]
+    scope = if kinds, do: " · " <> Enum.map_join(kinds, ", ", &applies_label/1), else: ""
+    segment_label(GiftPlans.timeline_view(entry, timeline), from) <> scope
   end
 
   def uptie_title(nil, _level), do: nil
@@ -1299,6 +1392,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> assign(:refresh_paths, %{})
     |> assign(:fusion_entry_id, nil)
     |> assign(:editing_condition_case_id, nil)
+    |> assign(:pack_edit, nil)
+    |> assign(:pack_locked, false)
     |> reset_browser()
   end
 
@@ -1337,6 +1432,17 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     end
   end
 
+  defp persist_plan(%{assigns: %{pack_edit: %{editable: true} = edit}} = socket) do
+    socket = PlanHistory.record(socket)
+
+    case GiftStarterPacks.save(edit.ref, %{data: socket.assigns.plan_data}) do
+      {:ok, _ref} -> socket
+      {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
+    end
+  end
+
+  defp persist_plan(%{assigns: %{pack_edit: %{}}} = socket), do: socket
+
   defp persist_plan(%{assigns: %{template_id: template_id}} = socket) when is_integer(template_id), do: socket
 
   defp persist_plan(socket) do
@@ -1345,6 +1451,61 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
     case Plans.save(:gift_plans, attrs) do
       {:ok, _id} -> broadcast_count(socket, :gift_plans, socket.assigns.plan_data)
+      {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
+    end
+  end
+
+  defp refresh_packs(socket), do: assign(socket, :starter_packs, GiftStarterPacks.list())
+
+  defp open_pack(socket, ref) do
+    case GiftStarterPacks.get(ref) do
+      nil ->
+        socket |> refresh_packs() |> put_flash(:error, "Starter pack not found.")
+
+      pack ->
+        parent = Map.take(socket.assigns, [:plan_data, :root_section_id, :active_tab])
+
+        socket
+        |> assign(:pack_edit, %{ref: ref, name: pack.name, affinity: pack.affinity, editable: pack.editable, source: pack.source, parent: parent})
+        |> assign(:pack_locked, not pack.editable)
+        |> assign(:plan_data, pack.data)
+        |> assign(:root_section_id, GiftStarterPacks.section(pack)["id"])
+        |> assign(:active_tab, :shop)
+        |> assign(:entry_tabs, %{})
+        |> assign(:refresh_tabs, %{})
+        |> assign(:refresh_paths, %{})
+        |> assign(:fusion_entry_id, nil)
+        |> assign(:editing_condition_case_id, nil)
+        |> assign(:gift_popup, nil)
+        |> reset_browser()
+        |> PlanHistory.reset()
+    end
+  end
+
+  defp close_pack(%{assigns: %{pack_edit: %{parent: parent}}} = socket) do
+    socket
+    |> assign(:pack_edit, nil)
+    |> assign(:pack_locked, false)
+    |> assign(:plan_data, parent.plan_data)
+    |> assign(:root_section_id, parent.root_section_id)
+    |> assign(:active_tab, parent.active_tab)
+    |> assign(:entry_tabs, %{})
+    |> assign(:refresh_tabs, %{})
+    |> assign(:refresh_paths, %{})
+    |> assign(:fusion_entry_id, nil)
+    |> assign(:gift_popup, nil)
+    |> reset_browser()
+    |> refresh_packs()
+    |> PlanHistory.reset()
+  end
+
+  defp close_pack(socket), do: socket
+
+  defp save_pack_fields(socket, ref, attrs, key, value) do
+    case GiftStarterPacks.save(ref, attrs) do
+      {:ok, _ref} -> socket |> update(:pack_edit, &Map.put(&1, key, value)) |> refresh_packs()
+      {:error, :name_taken} -> put_flash(socket, :error, "Another starter pack already has that name.")
+      {:error, :blank_name} -> put_flash(socket, :error, "A starter pack needs a name.")
       {:error, reason} -> put_flash(socket, :error, "Save failed: #{inspect(reason)}")
     end
   end
@@ -1798,13 +1959,22 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   attr :section, :map, required: true
+  attr :views, :list, default: []
 
   def goal_chips(assigns) do
     ~H"""
     <div class={"rounded-lg border px-2 py-1 flex flex-col justify-center " <> goal_color("required")}>
       <span class="text-[11px] font-semibold">Required</span>
-      <span class="text-[10px] text-base-content/50">all of <%= goal_member_count(@section, "required") %></span>
+      <span class="text-[10px] text-base-content/50">all of <%= goal_member_count(@section, "required", @views) %></span>
     </div>
+    <%= for view <- @views, goal <- view.goals do %>
+      <div class={"rounded-lg border px-2 py-1 flex items-center gap-1 " <> goal_color(goal["letter"])}
+           title={"Goal from the starter pack #{view.pack.name}. Only the pack's own entries count toward it; unpack the pack to edit it."}>
+        <.icon name="lucide-lock" class="size-3 shrink-0 text-base-content/60" />
+        <span class="text-[11px] font-semibold"><%= goal["letter"] %>:</span>
+        <span class="text-[11px]">at least <%= goal["min"] %> of <%= goal_member_count(%{"entries" => []}, goal["letter"], [view]) %></span>
+      </div>
+    <% end %>
     <form :for={goal <- @section["goals"]} phx-change="list_set_goal_min" class={"rounded-lg border px-2 py-1 flex items-center gap-1 " <> goal_color(goal["letter"])}>
       <input type="hidden" name="letter" value={goal["letter"]} />
       <input type="hidden" name="section" value={@section["id"]} />
@@ -1823,14 +1993,61 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :entry_tabs, :map, required: true
   attr :gifts_by_name, :map, required: true
   attr :gifts_by_id, :map, required: true
+  attr :views, :list, default: []
 
   def section_entries(assigns) do
     gifts = Enum.reject(assigns.section["entries"], &GiftPlans.heal_entry?/1)
     assigns = assign(assigns, gifts: gifts)
 
     ~H"""
+    <.starter_packs section={@section} views={@views} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
     <.entry_list id={"section-entries-#{@section["id"]}"} shared={"list-#{@section["stage_of"] || @section["id"]}"} entries={@gifts} section={@section}
                  entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+    """
+  end
+
+  attr :section, :map, required: true
+  attr :views, :list, required: true
+  attr :gifts_by_name, :map, required: true
+  attr :gifts_by_id, :map, required: true
+
+  def starter_packs(assigns) do
+    ~H"""
+    <div :for={view <- @views} class="flex flex-col shrink-0">
+      <%= if view.pack do %>
+        <% pack_section = %{@section | "entries" => Enum.map(view.entries, & &1.entry), "goals" => view.goals} %>
+        <div class="flex items-end gap-0.5 flex-wrap">
+          <div class="flex items-center gap-1.5 rounded-t-lg border-2 border-b-0 border-primary bg-primary/10 px-2 py-0.5 text-[11px] font-semibold">
+            <.icon name="lucide-package" class="size-3.5" />
+            <span>Starter pack</span>
+            <span class="font-normal"><%= view.pack.name %></span>
+            <img :if={view.pack.affinity != "any"} src={gift_affinity_icon(view.pack.affinity)} title={view.pack.affinity} class="w-3.5 h-3.5 object-contain" />
+            <span :if={view.pack.affinity == "any"} class="badge badge-ghost badge-xs">any</span>
+          </div>
+          <span class="ml-auto flex items-center gap-1 pb-0.5">
+            <button type="button" phx-click="pack_edit" phx-value-ref={view.ref} class="btn btn-ghost btn-xs gap-1 px-1"
+                    title="Open this starter pack. Changes apply to every plan that uses it."><.icon name="lucide-pencil" class="size-3.5" />Edit</button>
+            <button type="button" phx-click="pack_unpack" phx-value-pack={view.id} phx-value-section={@section["id"]} class="btn btn-ghost btn-xs gap-1 px-1"
+                    title="Copy every entry into this stage as normal entries and stop following the starter pack"><.icon name="lucide-package-open" class="size-3.5" />Unpack</button>
+            <button type="button" phx-click="pack_remove" phx-value-pack={view.id} phx-value-section={@section["id"]} class="btn btn-ghost btn-xs px-1 text-error"
+                    title="Remove this starter pack from the stage"><.icon name="lucide-x" class="size-3.5" /></button>
+          </span>
+        </div>
+        <div class="flex flex-col gap-1 p-1 border-2 border-primary rounded-b-lg rounded-tr-lg">
+          <.section_entry_row :for={{item, timeline, from} <- pack_rows(view)} entry={item.entry} section={pack_section} from={from} timeline={timeline} in_group={false}
+                              readonly={true} shadowed={item.shadowed} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+          <div :if={view.entries == []} class="text-xs text-base-content/40 italic px-1">This starter pack has no entries yet.</div>
+        </div>
+      <% else %>
+        <div class="flex items-center gap-2 rounded-lg border-2 border-warning bg-warning/10 px-2 py-1 text-xs">
+          <.icon name="lucide-triangle-exclamation-point" class="size-4 shrink-0 text-warning" />
+          <span class="flex-1">This starter pack no longer exists, so it adds nothing to the plan.</span>
+          <button type="button" phx-click="pack_remove" phx-value-pack={view.id} phx-value-section={@section["id"]} class="btn btn-ghost btn-xs px-1 text-error" title="Remove it from this stage">
+            <.icon name="lucide-x" class="size-3.5" />
+          </button>
+        </div>
+      <% end %>
+    </div>
     """
   end
 
@@ -1893,6 +2110,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :section, :map, required: true
   attr :from, :integer, required: true
   attr :in_group, :boolean, required: true
+  attr :readonly, :boolean, default: false
+  attr :shadowed, :boolean, default: false
   attr :timeline, :string, default: nil
   attr :gifts_by_name, :map, required: true
   attr :gifts_by_id, :map, required: true
@@ -1921,6 +2140,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         buy?: buy?,
         abandoned?: abandoned?,
         made_from: made_from || nil,
+        goal_slot?: keep? or (action? and entry["subject"]["action"] == "skill_replace") or (abandoned? and not pattern?),
         fusable?: entry["fusion"] != nil or (gift != nil and GiftPlans.fusable?(gift)),
         uptie?: gift != nil and String.trim(gift.uptie2 || "") != "",
         surface:
@@ -1936,20 +2156,26 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       )
 
     ~H"""
-    <form data-sort-id={@entry["id"]} data-sort-handle phx-change="list_update_segment"
-          class={"border px-1 py-1 flex items-center gap-2 flex-wrap " <> @surface <> " rounded"}
+    <form data-sort-id={not @readonly && @entry["id"]} data-sort-handle={not @readonly} phx-change={not @readonly && "list_update_segment"}
+          class={"border px-1 py-1 flex items-center gap-2 flex-wrap " <> @surface <> " rounded" <> if(@readonly, do: " pointer-events-none", else: "") <> if(@shadowed, do: " opacity-60", else: "")}
           style={
             cond do
-              @abandoned? -> StarlightBotWeb.Live.PackPlanEditorLive.disabled_stripes_style()
+              @abandoned? or @shadowed -> StarlightBotWeb.Live.PackPlanEditorLive.disabled_stripes_style()
               @keep? and @segment["goal"] == "optional" -> "background-image: radial-gradient(color-mix(in oklab, var(--color-base-content) 16%, transparent) 0.9px, transparent 1.2px), radial-gradient(color-mix(in oklab, var(--color-base-content) 16%, transparent) 0.9px, transparent 1.2px); background-size: 8px 8px; background-position: -2px -2px, 2px 2px; background-clip: padding-box"
               true -> nil
             end
           }>
       <input type="hidden" name="entry" value={@entry["id"]} />
       <input type="hidden" name="from" value={@from} />
-      <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
+      <span :if={not @readonly} data-sort-handle class="cursor-grab text-base-content/40 select-none px-1">⠿</span>
       <div class="w-24 shrink-0">
-        <select :if={@keep? or @skill? or (@abandoned? and not @pattern?)} name="segment[goal]"
+        <span :if={@shadowed} class="badge badge-warning badge-sm whitespace-nowrap"
+              title={if @pattern?, do: "This stage has the same entry, so the starter pack's version has no effect on the plan.", else: "This stage lists this gift itself, so the starter pack's version has no effect on the plan."}>Overridden</span>
+        <span :if={@readonly and not @shadowed and @goal_slot?}
+              class={"badge badge-sm border whitespace-nowrap " <> if(@abandoned? or (@segment["goal"] || "required") == "optional", do: "", else: goal_select_color(@segment["goal"] || "required"))}>
+          <%= goal_label(if(@abandoned?, do: "abandon", else: @segment["goal"] || "required")) %>
+        </span>
+        <select :if={not @readonly and @goal_slot?} name="segment[goal]"
                 title={goal_hint(if(@abandoned?, do: "abandon", else: @segment["goal"] || "required"), @section)}
                 class={"select select-bordered select-xs w-full " <> if(@abandoned?, do: "", else: goal_select_color(@segment["goal"] || "required"))}>
           <option :for={goal <- ["required", "optional" | GiftPlans.goal_letters(@section)] ++ ["abandon"]} value={goal}
@@ -1958,7 +2184,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       </div>
       <div class="flex items-center gap-1.5 w-52 min-w-0 shrink-0">
         <div :if={@gift} class="relative w-6 h-6 shrink-0">
-          <img src={@gift.image_path} data-gift-popup={@gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class="w-6 h-6 rounded object-cover cursor-pointer" />
+          <img src={@gift.image_path} data-gift-popup={@gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class="w-6 h-6 rounded object-cover cursor-pointer pointer-events-auto" />
           <span :if={@gift.tier} class="absolute top-0 left-0 px-0.5 text-[9px] leading-tight font-bold bg-base-100/80 rounded-br pointer-events-none"><%= gift_tier_roman(@gift.tier) %></span>
           <img :if={@gift.affinity not in [nil, "none"]} src={gift_affinity_icon(@gift.affinity)} title={@gift.affinity} draggable="false"
                class="absolute bottom-0 right-0 w-3 h-3 object-contain drop-shadow pointer-events-none" />
@@ -1967,7 +2193,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         <span :if={@action?} class={"badge badge-xs " <> if(@entry["subject"]["action"] == "skill_replace", do: "badge-info text-black", else: "badge-success")}>
           <%= if @entry["subject"]["action"] == "skill_replace", do: "skill", else: "heal" %>
         </span>
-        <span data-sort-handle data-gift-popup={@gift && @gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class={"text-xs font-medium truncate select-none " <> if(@gift, do: "cursor-pointer", else: "cursor-grab")} title={GiftPlans.subject_label(@entry["subject"])}><%= GiftPlans.subject_label(@entry["subject"]) %></span>
+        <span data-sort-handle data-gift-popup={@gift && @gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class={"text-xs font-medium truncate select-none " <> if(@gift, do: "cursor-pointer pointer-events-auto", else: "cursor-grab")} title={GiftPlans.subject_label(@entry["subject"])}><%= GiftPlans.subject_label(@entry["subject"]) %></span>
         <span :if={@action? and not @abandoned?} class="ml-auto pr-1 text-[11px] text-base-content/60 whitespace-nowrap">
           Cost <%= case GiftPlans.action_cost_range(@entry["subject"]["action"], @segment) do
             {same, same} -> same
@@ -2068,7 +2294,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           <span :if={!ingredient} class={"whitespace-nowrap " <> if(present?, do: "", else: "text-error font-semibold")}><%= name %></span>
         <% end %>
       </span>
-      <span class="hidden in-[.ring-primary]:flex items-center shrink-0 ml-auto">
+      <span :if={not @readonly} class="hidden in-[.ring-primary]:flex items-center shrink-0 ml-auto">
         <button type="button" data-copy-entry title="Copy this entry or every selected entry (Ctrl+C)" class="btn btn-ghost btn-xs px-0.5 min-h-0 h-5 opacity-60 hover:opacity-100">
           <.icon name="lucide-copy" class="size-3.5 pointer-events-none" />
         </button>
@@ -2076,8 +2302,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           <.icon name="lucide-clipboard-paste" class="size-3.5 pointer-events-none" />
         </button>
       </span>
-      <button :if={not @in_group} type="button" phx-click="list_add_schedule" phx-value-entry={@entry["id"]} class="btn btn-ghost btn-xs ml-auto in-[.ring-primary]:ml-0">Add Schedule</button>
-      <button type="button" phx-click="list_remove_entry" phx-value-entry={@entry["id"]}
+      <span :if={@readonly and GiftPlans.scheduled?(@entry)} class="badge badge-outline badge-xs ml-auto whitespace-nowrap"><%= pack_row_label(@entry, @timeline, @from) %></span>
+      <button :if={not @in_group and not @readonly} type="button" phx-click="list_add_schedule" phx-value-entry={@entry["id"]} class="btn btn-ghost btn-xs ml-auto in-[.ring-primary]:ml-0">Add Schedule</button>
+      <button :if={not @readonly} type="button" phx-click="list_remove_entry" phx-value-entry={@entry["id"]}
               class={"btn btn-ghost btn-xs px-1 text-error " <> if(@in_group, do: "ml-auto in-[.ring-primary]:ml-0", else: "")} title="Remove from this stage"><.icon name="lucide-x" class="size-3.5" /></button>
     </form>
     """

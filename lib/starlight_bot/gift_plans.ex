@@ -277,6 +277,7 @@ defmodule StarlightBot.GiftPlans do
   defp normalize_section(section) do
     %{"id" => section["id"], "goals" => section["goals"] || [], "entries" => section["entries"] || [], "refresh" => section["refresh"] || [],
       "refresh_floors" => section["refresh_floors"] || [], "refresh_scheduled" => section["refresh_scheduled"] == true, "pursue_optional" => section["pursue_optional"] == true}
+    |> then(&if(packs(section) != [], do: Map.put(&1, "packs", packs(section)), else: &1))
     |> then(&if(is_binary(section["stage_of"]), do: Map.merge(&1, %{"stage_of" => section["stage_of"], "name" => section["name"]}), else: &1))
   end
 
@@ -296,6 +297,7 @@ defmodule StarlightBot.GiftPlans do
   defp run_kind_matches?(kind, run_kind), do: kind == run_kind
 
   def for_run(%{"sections" => sections} = data, run_kind) when is_list(sections) do
+    %{"sections" => sections} = data = expand_packs(data)
     timelined = for section <- sections, Enum.any?(section["entries"] || [], &(timelines(&1) != [])), into: MapSet.new(), do: section["id"]
     resolved = resolve_timelines(data, run_kind)
     kept = Enum.reject(resolved["sections"], &(MapSet.member?(timelined, &1["id"]) and inert?(&1)))
@@ -661,6 +663,151 @@ defmodule StarlightBot.GiftPlans do
     segment = if action == "skill_replace", do: Map.merge(segment, %{"goal" => "optional", "target" => @skill_default_target}), else: segment
     entry = %{"id" => new_id("me"), "subject" => %{"action" => action}, "fusion" => nil, "floors" => [segment]}
     update_section(data, id, fn section -> Map.update(section, "entries", [], &(&1 ++ [entry])) end)
+  end
+
+  def packs(section), do: section["packs"] || []
+
+  def add_pack(data, id, ref) do
+    update_section(data, id, fn section ->
+      if Enum.any?(packs(section), &(&1["ref"] == ref)),
+        do: section,
+        else: Map.put(section, "packs", packs(section) ++ [%{"id" => new_id("sp"), "ref" => ref}])
+    end)
+  end
+
+  def remove_pack(data, id, pack_id) do
+    update_section(data, id, fn section ->
+      case Enum.reject(packs(section), &(&1["id"] == pack_id)) do
+        [] -> Map.delete(section, "packs")
+        remaining -> Map.put(section, "packs", remaining)
+      end
+    end)
+  end
+
+  def pack_views(data, resolver \\ &StarlightBot.GiftStarterPacks.get/1)
+
+  def pack_views(%{"sections" => sections} = data, resolver) when is_list(sections) do
+    if Enum.any?(sections, &(packs(&1) != [])) do
+      {views, _used} =
+        Enum.reduce(sections, {%{}, %{}}, fn section, {views, used_by_root} ->
+          root = root_id(data, section["id"])
+          used = Map.get_lazy(used_by_root, root, fn -> all_goal_letters(data, root) end)
+          {section_views, used} = section_pack_views(section, resolver, used)
+          {Map.put(views, section["id"], section_views), Map.put(used_by_root, root, used)}
+        end)
+
+      views
+    else
+      %{}
+    end
+  end
+
+  def pack_views(_data, _resolver), do: %{}
+
+  defp section_pack_views(section, resolver, used) do
+    own = Enum.map(section["entries"] || [], & &1["subject"])
+
+    {views, {_taken, used}} =
+      section
+      |> packs()
+      |> Enum.map_reduce({own, used}, fn ref, {taken, used} ->
+        case resolver.(ref["ref"]) do
+          nil ->
+            {%{id: ref["id"], ref: ref["ref"], pack: nil, goals: [], entries: []}, {taken, used}}
+
+          pack ->
+            source = hd(pack.data["sections"])
+            {allocated, used} = allocate_goals(source["goals"] || [], used)
+            mapping = Map.new(allocated, &{&1.from, &1.letter})
+
+            entries =
+              for entry <- source["entries"] || [] do
+                %{entry: remap_pack_entry(entry, mapping, "#{section["id"]}~#{ref["id"]}~"), source_id: entry["id"], shadowed: entry["subject"] in taken}
+              end
+
+            goals =
+              for %{letter: letter, min: wanted} <- allocated,
+                  members = Enum.count(entries, &(not &1.shadowed and goal_member?(&1.entry, letter))),
+                  members > 0,
+                  do: %{"letter" => letter, "min" => min(wanted, members)}
+
+            {%{id: ref["id"], ref: ref["ref"], pack: pack, goals: goals, entries: entries}, {taken ++ Enum.map(source["entries"] || [], & &1["subject"]), used}}
+        end
+      end)
+
+    {views, used}
+  end
+
+  defp allocate_goals(goals, used) do
+    letters = Enum.map(?A..?Z, &<<&1>>)
+
+    Enum.map_reduce(goals, used, fn goal, used ->
+      case Enum.find(letters, &(&1 not in used)) do
+        nil -> {%{from: goal["letter"], letter: nil, min: goal["min"] || 1}, used}
+        letter -> {%{from: goal["letter"], letter: letter, min: goal["min"] || 1}, [letter | used]}
+      end
+    end)
+    |> then(fn {allocated, used} -> {Enum.reject(allocated, &is_nil(&1.letter)), used} end)
+  end
+
+  defp goal_member?(entry, letter), do: Enum.any?(all_floors(entry), &(&1["goal"] == letter and &1["disposition"] == "keep"))
+
+  defp remap_pack_entry(entry, mapping, prefix) do
+    entry
+    |> Map.put("id", prefix <> entry["id"])
+    |> then(&if(&1["group"], do: Map.update!(&1, "group", fn group -> prefix <> group end), else: &1))
+    |> map_all_floors(fn floors -> Enum.map(floors, &remap_goal(&1, mapping)) end)
+  end
+
+  defp remap_goal(%{"goal" => goal} = segment, _mapping) when goal in [nil, "required", "optional"], do: segment
+  defp remap_goal(%{"goal" => goal} = segment, mapping), do: %{segment | "goal" => Map.get(mapping, goal, "required")}
+  defp remap_goal(segment, _mapping), do: segment
+
+  def pack_goal_letters(data, id) do
+    views = pack_views(data)
+    root_sections = sections(data, root_id(data, id))
+    for section <- root_sections, view <- Map.get(views, section["id"], []), goal <- view.goals, do: goal["letter"]
+  end
+
+  def expand_packs(data, resolver \\ &StarlightBot.GiftStarterPacks.get/1)
+
+  def expand_packs(%{"sections" => sections} = data, resolver) when is_list(sections) do
+    case pack_views(data, resolver) do
+      views when map_size(views) == 0 ->
+        data
+
+      views ->
+        expanded =
+          Enum.map(sections, fn section ->
+            section_views = Map.get(views, section["id"], [])
+            extra = for view <- section_views, item <- view.entries, not item.shadowed, do: item.entry
+            goals = for view <- section_views, goal <- view.goals, do: goal
+            %{section | "entries" => (section["entries"] || []) ++ extra, "goals" => (section["goals"] || []) ++ goals}
+          end)
+
+        %{data | "sections" => expanded}
+    end
+  end
+
+  def expand_packs(data, _resolver), do: data
+
+  def unpack(data, id, pack_id, resolver \\ &StarlightBot.GiftStarterPacks.get/1) do
+    case Enum.find(Map.get(pack_views(data, resolver), id, []), &(&1.id == pack_id)) do
+      %{pack: pack} = view when not is_nil(pack) ->
+        groups = for %{entry: %{"group" => group}} <- view.entries, uniq: true, into: %{}, do: {group, new_id("grp")}
+
+        entries =
+          for %{shadowed: false, entry: entry} <- view.entries do
+            entry |> Map.put("id", new_id("me")) |> then(&if(&1["group"], do: Map.update!(&1, "group", fn group -> groups[group] end), else: &1))
+          end
+
+        data
+        |> update_section(id, fn section -> %{section | "entries" => (section["entries"] || []) ++ entries, "goals" => (section["goals"] || []) ++ view.goals} end)
+        |> remove_pack(id, pack_id)
+
+      _ ->
+        data
+    end
   end
 
   def heal_entries(entries), do: Enum.filter(entries, &(match?(%{subject: %{"action" => action}} when action in @heal_actions, &1) and not &1.abandoned))
@@ -1131,7 +1278,7 @@ defmodule StarlightBot.GiftPlans do
   def all_goal_letters(data, id), do: data |> sections(root_id(data, id)) |> Enum.flat_map(&goal_letters/1)
 
   def add_goal(data, id) do
-    used = all_goal_letters(data, id)
+    used = all_goal_letters(data, id) ++ pack_goal_letters(data, id)
 
     update_section(data, id, fn section ->
       case Enum.find(Enum.map(?A..?Z, &<<&1>>), &(&1 not in used)) do
@@ -1521,6 +1668,14 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def issues(data, gifts_by_name \\ %{}) do
+    missing_pack_issues(data) ++ expanded_issues(expand_packs(data), gifts_by_name)
+  end
+
+  defp missing_pack_issues(data) do
+    for section <- data["sections"] || [], pack <- packs(section), is_nil(StarlightBot.GiftStarterPacks.get(pack["ref"])), do: "#{section_name(section)}: a starter pack no longer exists."
+  end
+
+  defp expanded_issues(data, gifts_by_name) do
     if Enum.any?(data["sections"] || [], fn section -> Enum.any?(section["entries"] || [], &(timelines(&1) != [])) end),
       do: @condition_run_kinds |> Enum.flat_map(&plan_issues(resolve_timelines(data, &1), gifts_by_name)) |> Enum.uniq(),
       else: plan_issues(data, gifts_by_name)

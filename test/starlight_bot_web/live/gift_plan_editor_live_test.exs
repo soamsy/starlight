@@ -655,4 +655,82 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     refute flag.(socket)
     refute render(socket) =~ "Keep shopping</span>"
   end
+
+  describe "starter packs" do
+    setup %{socket: socket} do
+      BaseRepo.query!("DELETE FROM gift_starter_packs")
+      Repo.query!("DELETE FROM gift_starter_packs")
+      socket = socket |> shop() |> event("pack_new", %{})
+      socket = socket |> event("list_add_gift", %{"gift" => "Fiery Down"}) |> event("list_add_gift", %{"gift" => "Glimpse of Flames"})
+      ref = socket.assigns.pack_edit.ref
+      socket = event(socket, "pack_close", %{})
+      %{socket: socket, ref: ref}
+    end
+
+    test "creating a pack opens it for editing and closing restores the plan", %{socket: socket, ref: ref} do
+      assert socket.assigns.pack_edit == nil
+      assert socket.assigns.plan_data["sections"] |> hd() |> Map.fetch!("entries") == []
+      assert StarlightBot.GiftStarterPacks.get(ref).data["sections"] |> hd() |> Map.fetch!("entries") |> length() == 2
+      assert saved(socket)["sections"] |> hd() |> Map.fetch!("entries") == []
+    end
+
+    test "adding a pack stores only a reference and shows its entries read-only", %{socket: socket, ref: ref} do
+      socket = socket |> event("pack_select", %{"ref" => ref}) |> event("pack_add", %{})
+
+      assert [%{"ref" => ^ref}] = section(socket)["packs"]
+      assert section(socket)["entries"] == []
+      html = render(socket)
+      assert html =~ "Starter pack"
+      assert html =~ "Fiery Down"
+      assert html =~ "Unpack"
+    end
+
+    test "a stage entry overrides the pack's entry and the pack row says so", %{socket: socket, ref: ref} do
+      socket = socket |> event("pack_select", %{"ref" => ref}) |> event("pack_add", %{}) |> event("list_add_gift", %{"gift" => "Fiery Down"})
+
+      assert render(socket) =~ "Overridden"
+      assert length(GiftPlans.for_run(saved(socket), "all_normal")["sections"] |> hd() |> Map.fetch!("entries")) == 2
+    end
+
+    test "unpacking copies the entries into the stage and drops the reference", %{socket: socket, ref: ref} do
+      socket = socket |> event("pack_select", %{"ref" => ref}) |> event("pack_add", %{})
+      [%{"id" => pack_id}] = section(socket)["packs"]
+      socket = event(socket, "pack_unpack", %{"pack" => pack_id, "section" => section(socket)["id"]})
+
+      refute Map.has_key?(section(socket), "packs")
+      assert section(socket)["entries"] |> Enum.map(& &1["subject"]["gift"]) |> Enum.sort() == ["Fiery Down", "Glimpse of Flames"]
+    end
+
+    test "editing the pack changes every plan that uses it", %{socket: socket, ref: ref} do
+      socket = socket |> event("pack_select", %{"ref" => ref}) |> event("pack_add", %{}) |> event("pack_edit", %{"ref" => ref})
+      entry_id = socket.assigns.plan_data["sections"] |> hd() |> Map.fetch!("entries") |> hd() |> Map.fetch!("id")
+      socket = socket |> event("list_remove_entry", %{"entry" => entry_id}) |> event("pack_close", %{})
+
+      assert GiftPlans.for_run(saved(socket), "all_normal")["sections"] |> hd() |> Map.fetch!("entries") |> length() == 1
+    end
+
+    test "shipped packs are read-only for users and events against them are blocked", %{socket: socket, ref: ref} do
+      original = Application.get_env(:starlight_bot, :data_paths)
+      Application.put_env(:starlight_bot, :data_paths, %{original | mode: :user})
+      StarlightBot.Data.reset_cache()
+      on_exit(fn -> Application.put_env(:starlight_bot, :data_paths, original); StarlightBot.Data.reset_cache() end)
+
+      socket = event(socket, "pack_edit", %{"ref" => ref})
+      assert socket.assigns.pack_locked
+      assert Live.plan_locked?(socket)
+      assert render(socket) =~ "Read-only starter pack"
+
+      socket = event(socket, "pack_close", %{})
+      refute Live.plan_locked?(socket)
+    end
+
+    test "renaming a pack rejects a taken name", %{socket: socket, ref: ref} do
+      {:ok, _other} = StarlightBot.GiftStarterPacks.create("Other", "any")
+      socket = event(socket, "pack_edit", %{"ref" => ref})
+      socket = event(socket, "pack_rename", %{"value" => "Other"})
+
+      assert socket.assigns.flash["error"] =~ "already has that name"
+      assert socket.assigns.pack_edit.name == "New starter pack"
+    end
+  end
 end

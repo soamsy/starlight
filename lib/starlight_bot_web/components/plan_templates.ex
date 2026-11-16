@@ -9,16 +9,18 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
   @selectors ~w(phx-click phx-change phx-submit phx-keyup phx-keydown phx-blur)
   @controls ~w(button input select textarea [phx-click] [phx-change] [draggable=true] [phx-hook=SortableList]>* [phx-hook=PriorityRightClick] [phx-hook=DblClickEvent] [phx-hook=RightClickEvent] [phx-hook=GiftDragSource] [phx-hook=GiftDropZone])
 
-  def blocked?(socket, event, allowed) do
-    is_integer(socket.assigns[:template_id]) and event not in allowed and not String.starts_with?(event, "template_")
+  def template_locked?(socket), do: is_integer(socket.assigns[:template_id])
+
+  def blocked?(socket, event, allowed, locked? \\ &template_locked?/1) do
+    locked?.(socket) and event not in allowed and not String.starts_with?(event, "template_")
   end
 
   defp read_only_message(_socket), do: "This team is using a template, which is read-only. Pick your own plan in the Plans menu to edit."
 
-  def read_only_guard(socket, allowed) do
+  def read_only_guard(socket, allowed, locked? \\ &template_locked?/1) do
     if Phoenix.LiveView.connected?(socket) do
       Phoenix.LiveView.attach_hook(socket, :read_only, :handle_event, fn event, _params, socket ->
-        if blocked?(socket, event, allowed) do
+        if blocked?(socket, event, allowed, locked?) do
           {:halt, Phoenix.LiveView.put_flash(socket, :error, read_only_message(socket))}
         else
           {:cont, socket}
@@ -34,6 +36,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
   attr :template_id, :integer, default: nil
   attr :templates, :list, required: true
   attr :label, :string, required: true
+  attr :locked_label, :string, default: nil
 
   def read_only_banner(assigns) do
     {disabled, enabled} = read_only_selectors(assigns.container, assigns.allowed)
@@ -43,16 +46,18 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
       |> assign(:template, Enum.find(assigns.templates, &(&1.id == assigns.template_id)))
       |> assign(:disabled, disabled)
       |> assign(:enabled, enabled)
+      |> assign(:active, not is_nil(assigns.template_id) or not is_nil(assigns.locked_label))
 
     ~H"""
-    <div :if={@template_id} data-read-only-banner={@container} data-disabled={@disabled} data-enabled={@enabled} role="alert"
+    <div :if={@active} data-read-only-banner={@container} data-disabled={@disabled} data-enabled={@enabled} role="alert"
          class="alert alert-warning sticky top-0 z-20 py-2 px-4 text-sm flex items-center gap-3 shadow-md">
       <.icon name="lucide-lock" class="size-5 shrink-0" />
-      <span class="flex-1">Read-only template <span class="font-bold"><%= @template && @template.name %></span>. Editing is locked.</span>
-      <button type="button" phx-click="template_customize" class="btn btn-sm btn-neutral"
+      <span :if={@locked_label} class="flex-1"><%= @locked_label %></span>
+      <span :if={@template_id} class="flex-1">Read-only template <span class="font-bold"><%= @template && @template.name %></span>. Editing is locked.</span>
+      <button :if={@template_id} type="button" phx-click="template_customize" class="btn btn-sm btn-neutral"
               title={"Copy this template into a new #{@label} of your own that you can edit"}>Customize a copy</button>
     </div>
-    <style :if={@template_id}>
+    <style :if={@active}>
       <%= Phoenix.HTML.raw(read_only_css(@container, @disabled, @enabled)) %>
     </style>
     """
