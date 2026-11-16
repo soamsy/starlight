@@ -9,8 +9,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
   alias StarlightBot.Teams
   alias StarlightBot.Vision.{Capture, EgoGiftDetector, Frame, HookRegistry, Matcher, NumberScanner}
 
-  @min_item_area_px 1000
-  @min_classifier_conf 0.95
+  @min_item_area_px 700
+  @min_classifier_conf 0.93
   @cost_read_tries 12
   @cost_read_every_ms 50
   @uptie_extend_px 50
@@ -478,16 +478,36 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp detect_inventory_gifts(frame, region, ctx) do
+    frame |> inventory_detections(region, ctx) |> Enum.filter(&accepted_detection?/1)
+  end
+
+  defp inventory_detections(frame, region, ctx) do
     case EgoGiftDetector.detect(frame.mat, region, classifier_conf: @min_classifier_conf) do
       {:ok, results} ->
         results
-        |> Enum.filter(&item_large_enough?/1)
-        |> Enum.reject(&(&1.gift_id == nil))
 
       {:error, reason} ->
         Ctx.log(ctx, :error, "shop sell inventory scan: classify failed: #{inspect(reason)}")
         []
     end
+  end
+
+  defp accepted_detection?(detection), do: item_large_enough?(detection) and detection.gift_id != nil
+
+  defp describe_excluded(%{w: w, h: h, topk: topk} = detection) do
+    reason =
+      cond do
+        not item_large_enough?(detection) -> "too small, needs #{@min_item_area_px} px"
+        detection.gift_id == nil -> "below #{round(@min_classifier_conf * 100)}% confidence"
+      end
+
+    best =
+      case topk do
+        [%{name: name, confidence: conf} | _] -> "#{name} #{round(conf * 100)}%"
+        _ -> "no classification"
+      end
+
+    "#{best} (#{w}x#{h} = #{w * h} px, #{reason})"
   end
 
   defp record_inventory_item(%{gift_id: gift_id, gift_name: gift_name}, ctx) do
@@ -948,7 +968,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
 
     with {:ok, hook} <- find_hook(@fuse_merge_area_hook, ctx, "shop fuse merge area scan"),
          {:ok, frame} <- Capture.grab_frame() do
-      found = frame |> detect_inventory_gifts(hook.scan_region || hook.region, ctx) |> Enum.frequencies_by(& &1.gift_id)
+      detections = inventory_detections(frame, hook.scan_region || hook.region, ctx)
+      found = detections |> Enum.filter(&accepted_detection?/1) |> Enum.frequencies_by(& &1.gift_id)
       missing = for {id, n} <- needed, Map.get(found, id, 0) < n, into: %{}, do: {id, n - Map.get(found, id, 0)}
       extras = for {id, n} <- found, n > Map.get(needed, id, 0), do: id
 
@@ -956,8 +977,17 @@ defmodule StarlightBot.Automation.Shop.Ops do
         map_size(missing) == 0 -> :ok
         extras != [] -> {:extras, extras}
         System.monotonic_time(:millisecond) < deadline -> poll_merge_area(needed, ctx, deadline)
-        true -> {:missing, missing}
+        true ->
+          log_excluded_candidates(detections, ctx)
+          {:missing, missing}
       end
+    end
+  end
+
+  defp log_excluded_candidates(detections, ctx) do
+    case Enum.reject(detections, &accepted_detection?/1) do
+      [] -> Ctx.log(ctx, :info, "shop fuse: merge area scan found no excluded candidates")
+      excluded -> Ctx.log(ctx, :info, "shop fuse: merge area excluded candidates: " <> Enum.map_join(excluded, "; ", &describe_excluded/1))
     end
   end
 
