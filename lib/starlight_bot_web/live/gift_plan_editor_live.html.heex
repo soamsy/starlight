@@ -166,6 +166,8 @@
                       <option :for={affinity <- GiftStarterPacks.affinities()} value={affinity} selected={@pack_edit.affinity == affinity}><%= affinity %></option>
                     </select>
                   </form>
+                  <textarea id={"pack-notes-#{@pack_edit.ref}"} rows="1" phx-blur="pack_set_notes" disabled={@pack_locked} placeholder="Notes"
+                            class="textarea textarea-bordered textarea-sm flex-1 min-w-48 max-w-xl min-h-0 h-8 resize-y leading-tight"><%= @pack_edit.notes %></textarea>
                   <span :if={@pack_edit.source == :base} class="badge badge-ghost badge-sm" title="Ships with the app">shipped</span>
                   <div class="ml-auto flex items-center gap-1">
                     <PlanHistory.buttons can_undo={@can_undo} can_redo={@can_redo} locked={@pack_locked} />
@@ -193,16 +195,24 @@
                       </span>
                       <.icon name="lucide-chevron-down" class="size-3.5 shrink-0" />
                     </summary>
-                    <div popover="manual" class="dropdown-content z-30 w-64 max-h-96 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-1 shadow">
+                    <div popover="manual" class="dropdown-content z-30 w-96 max-w-[90vw] max-h-96 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-1 shadow">
                       <ul class="menu w-full p-0">
                         <%= for {affinity, packs} <- GiftStarterPacks.grouped(@starter_packs, @plan_data["affinity"]) do %>
                           <li class="menu-title flex-row items-center gap-1.5 text-[11px] capitalize">
                             <img :if={affinity != "any"} src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
                           </li>
                           <li :for={pack <- packs}>
-                            <button type="button" phx-click="pack_select" phx-value-ref={pack.ref} class={if pack.ref == @selected_pack, do: "menu-active", else: ""}>
-                              <span class="truncate"><%= pack.name %></span>
-                              <span :if={pack.source == :base} class="badge badge-ghost badge-xs ml-auto">shipped</span>
+                            <button type="button" phx-click="pack_select" phx-value-ref={pack.ref} class={"items-start " <> if(pack.ref == @selected_pack, do: "menu-active", else: "")}>
+                              <span class="flex flex-col gap-0.5 min-w-0 flex-1 text-left">
+                                <span class="flex items-center gap-1.5 min-w-0">
+                                  <span class="truncate"><%= pack.name %></span>
+                                  <span class="flex items-center gap-0.5 shrink-0">
+                                    <img :for={gift <- pack_gifts(pack, @gifts_by_name)} src={gift.image_path} title={gift.name} class="w-5 h-5 rounded object-cover bg-slate-500/40" />
+                                  </span>
+                                  <span :if={pack.source == :base} class="badge badge-ghost badge-xs ml-auto shrink-0">shipped</span>
+                                </span>
+                                <span :if={pack.notes != ""} class="text-[11px] text-base-content/60 line-clamp-2 whitespace-pre-line"><%= pack.notes %></span>
+                              </span>
                             </button>
                           </li>
                         <% end %>

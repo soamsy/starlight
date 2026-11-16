@@ -529,6 +529,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("pack_set_notes", %{"value" => notes}, %{assigns: %{pack_edit: %{ref: ref}}} = socket) do
+    {:noreply, save_pack_fields(socket, ref, %{notes: notes}, :notes, notes)}
+  end
+
+  @impl true
   def handle_event("pack_set_affinity", %{"affinity" => affinity}, %{assigns: %{pack_edit: %{ref: ref}}} = socket) do
     {:noreply, save_pack_fields(socket, ref, %{affinity: affinity}, :affinity, affinity)}
   end
@@ -1226,6 +1231,14 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp goal_member?(entry, letter), do: Enum.any?(GiftPlans.all_floors(entry), &(&1["goal"] == letter and &1["disposition"] == "keep"))
 
+  def pack_gifts(pack, gifts_by_name) do
+    pack.data["sections"]
+    |> hd()
+    |> Map.fetch!("entries")
+    |> Enum.flat_map(&List.wrap(gifts_by_name[GiftPlans.subject_gift(&1)]))
+    |> Enum.take(3)
+  end
+
   def pack_rows(view) do
     for item <- view.entries,
         timeline <- [nil | Enum.map(GiftPlans.timelines(item.entry), & &1["id"])],
@@ -1466,7 +1479,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         parent = Map.take(socket.assigns, [:plan_data, :root_section_id, :active_tab])
 
         socket
-        |> assign(:pack_edit, %{ref: ref, name: pack.name, affinity: pack.affinity, editable: pack.editable, source: pack.source, parent: parent})
+        |> assign(:pack_edit, %{ref: ref, name: pack.name, affinity: pack.affinity, notes: pack.notes, editable: pack.editable, source: pack.source, parent: parent})
         |> assign(:pack_locked, not pack.editable)
         |> assign(:plan_data, pack.data)
         |> assign(:root_section_id, GiftStarterPacks.section(pack)["id"])

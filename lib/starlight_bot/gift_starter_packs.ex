@@ -13,9 +13,9 @@ defmodule StarlightBot.GiftStarterPacks do
   def get(ref) when is_binary(ref) do
     with {source, id} <- parse_ref(ref),
          {repo, _table} <- repo_for(source),
-         {:ok, %{rows: [[name, affinity, json]]}} <- repo.query("SELECT name, affinity, data FROM gift_starter_packs WHERE id = ?", [id]),
+         {:ok, %{rows: [[name, affinity, json, notes]]}} <- repo.query("SELECT name, affinity, data, notes FROM gift_starter_packs WHERE id = ?", [id]),
          {:ok, data} <- Jason.decode(json) do
-      pack(source, id, name, affinity, data)
+      pack(source, id, name, affinity, data, notes)
     else
       _ -> nil
     end
@@ -50,10 +50,11 @@ defmodule StarlightBot.GiftStarterPacks do
          name = clean_name(Map.get(attrs, :name, current.name)),
          affinity = Map.get(attrs, :affinity, current.affinity),
          data = Map.get(attrs, :data, current.data),
+         notes = Map.get(attrs, :notes, current.notes),
          :ok <- validate(name, affinity, ref) do
       {repo, _table} = repo_for(source)
 
-      case repo.query("UPDATE gift_starter_packs SET name = ?, affinity = ?, data = ?, updated_at = ? WHERE id = ?", [name, affinity, Jason.encode!(data), now(), id]) do
+      case repo.query("UPDATE gift_starter_packs SET name = ?, affinity = ?, data = ?, notes = ?, updated_at = ? WHERE id = ?", [name, affinity, Jason.encode!(data), notes, now(), id]) do
         {:ok, %{num_rows: 1}} -> {:ok, ref}
         {:error, reason} = err ->
           Logger.error("gift starter packs: couldn't save #{ref}: #{inspect(reason)}", module: __MODULE__)
@@ -122,22 +123,23 @@ defmodule StarlightBot.GiftStarterPacks do
   defp repo_for(:user), do: {Repo, "gift_starter_packs"}
 
   defp rows(repo, source) do
-    case repo.query("SELECT id, name, affinity, data FROM gift_starter_packs ORDER BY name COLLATE NOCASE", []) do
+    case repo.query("SELECT id, name, affinity, data, notes FROM gift_starter_packs ORDER BY name COLLATE NOCASE", []) do
       {:ok, %{rows: rows}} ->
-        for [id, name, affinity, json] <- rows, {:ok, data} <- [Jason.decode(json)], do: pack(source, id, name, affinity, data)
+        for [id, name, affinity, json, notes] <- rows, {:ok, data} <- [Jason.decode(json)], do: pack(source, id, name, affinity, data, notes)
 
       {:error, _} ->
         []
     end
   end
 
-  defp pack(source, id, name, affinity, data) do
+  defp pack(source, id, name, affinity, data, notes) do
     %{
       ref: ref(source, id),
       id: id,
       source: source,
       name: name,
       affinity: affinity,
+      notes: notes || "",
       editable: source == :user or Data.base_writable?(),
       data: GiftPlans.normalize(data)
     }

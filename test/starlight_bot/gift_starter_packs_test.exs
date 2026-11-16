@@ -41,6 +41,15 @@ defmodule StarlightBot.GiftStarterPacksTest do
     assert GiftStarterPacks.get(mine) == nil
   end
 
+  test "notes default to empty and round trip" do
+    {:ok, ref} = GiftStarterPacks.create("Noted", "any")
+    assert GiftStarterPacks.get(ref).notes == ""
+    assert {:ok, ^ref} = GiftStarterPacks.save(ref, %{notes: "Good for F1"})
+    assert GiftStarterPacks.get(ref).notes == "Good for F1"
+    assert {:ok, ^ref} = GiftStarterPacks.save(ref, %{name: "Renamed"})
+    assert GiftStarterPacks.get(ref).notes == "Good for F1"
+  end
+
   test "names must be unique across both layers and affinities must be valid" do
     {:ok, _} = GiftStarterPacks.create("Same", "any")
     assert {:error, :name_taken} = GiftStarterPacks.create("Same", "burn")
