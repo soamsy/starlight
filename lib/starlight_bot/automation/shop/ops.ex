@@ -94,6 +94,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @fuse_dismiss_info_hook :shop_fuse_popup_dismiss_gift_info_popup
   @fuse_merge_retries 3
   @fuse_merge_settle_ms 200
+  @fuse_merge_settle_timeout_ms 1_000
   @fuse_confirm_confirm_hooks [:shop_fuse_popup_confirm_confirm, :shop_fuse_popup_confirm_confirm_2]
   @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
@@ -939,6 +940,10 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp merge_area_status(needed, ctx) do
+    poll_merge_area(needed, ctx, System.monotonic_time(:millisecond) + @fuse_merge_settle_timeout_ms)
+  end
+
+  defp poll_merge_area(needed, ctx, deadline) do
     Engine.act([sleep(@fuse_merge_settle_ms)], ctx)
 
     with {:ok, hook} <- find_hook(@fuse_merge_area_hook, ctx, "shop fuse merge area scan"),
@@ -950,6 +955,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
       cond do
         map_size(missing) == 0 -> :ok
         extras != [] -> {:extras, extras}
+        System.monotonic_time(:millisecond) < deadline -> poll_merge_area(needed, ctx, deadline)
         true -> {:missing, missing}
       end
     end
