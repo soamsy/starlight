@@ -44,7 +44,7 @@ defmodule StarlightBot.Input.MouseProfile do
     %{
       tempo: between(0.85, 1.2),
       hesitation_ms: between(30.0, 70.0),
-      click_hold_ms: between(35.0, 45.0),
+      click_hold_ms: between(30.0, 40.0),
       trailing_ms: between(20, 30),
       double_click_gap_ms: between(75, 90.0),
       rest: {between(0.5, 0.85), between(0.45, 0.8)},

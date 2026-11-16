@@ -12,7 +12,7 @@ defmodule StarlightBot.Automation.BattleChain do
 
   @diagonal_x_bias 0.7
   @diagonal_y_lead_pct 0.2
-  @chain_duration_mult 0.7
+  @chain_duration_mult 0.5
 
   @spec preview_drag() ::
           {:ok, %{frame: term, tray: SkillTray.t(), picks: [{:top | :bottom, number, number}], path: [{number, number}]}}
