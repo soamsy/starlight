@@ -673,7 +673,7 @@ defmodule StarlightBot.GiftPlans do
   def refresh_action_label("leave"), do: "Leave Shop"
 
   def add_refresh_case(data, id, from \\ 1) do
-    refresh_case = %{"id" => new_id("rc"), "condition" => nil, "action" => "refresh", "affinity" => nil, "max" => nil, "min_cost" => @default_min_cost}
+    refresh_case = %{"id" => new_id("rc"), "condition" => nil, "action" => "refresh", "affinity" => nil, "max" => 4, "min_cost" => @default_min_cost}
     update_section(data, id, &update_refresh_cases(&1, from, fn cases -> cases ++ [refresh_case] end))
   end
 
@@ -1433,7 +1433,7 @@ defmodule StarlightBot.GiftPlans do
   defp compare(left, "lte", right), do: left <= right
   defp compare(left, _cmp, right), do: left >= right
 
-  def default_leaf, do: %{"op" => "cost", "cmp" => "gte", "value" => 250, "when" => "after"}
+  def default_leaf, do: %{"op" => "goal", "goal" => "required", "not" => true}
 
   def condition_leaf(params), do: params |> build_leaf() |> put_not(params)
 

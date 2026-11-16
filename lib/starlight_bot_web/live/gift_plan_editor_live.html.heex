@@ -588,7 +588,7 @@
                                 </label>
                                 <details id={"refresh-aff-#{refresh_case["id"]}"} phx-hook="FloatingDropdown" data-close-on-click class="dropdown join-item border-0">
                                   <summary class={"btn btn-xs rounded-[inherit] gap-1 flex-nowrap whitespace-nowrap " <> if(refresh_case["action"] == "affinity_refresh", do: "btn-primary", else: "")}>
-                                    <img :if={(refresh_case["affinity"] || @plan_data["affinity"]) not in [nil, ""]} src={gift_affinity_icon(refresh_case["affinity"] || @plan_data["affinity"])} class="w-3 h-3 object-contain shrink-0" />
+                                    <img :if={(refresh_case["affinity"] || @plan_data["affinity"]) not in [nil, ""]} src={gift_affinity_icon(refresh_case["affinity"] || @plan_data["affinity"])} class="sinner-icon w-3 h-3 object-contain shrink-0" />
                                     <%= refresh_case["affinity"] || "plan" %>
                                   </summary>
                                   <div popover="manual" class="dropdown-content z-30 w-max rounded-box border border-base-300 bg-base-100 p-1 shadow">

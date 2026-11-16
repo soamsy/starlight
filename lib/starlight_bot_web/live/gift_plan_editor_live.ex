@@ -446,7 +446,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("cond_add", %{"path" => path, "node" => node} = params, socket) do
     child = if node == "group", do: Conditions.group(GiftPlans.default_leaf()), else: GiftPlans.default_leaf()
-    {:noreply, update_condition(socket, params, &Conditions.add(&1, path, child))}
+    socket = update_condition(socket, params, &Conditions.add(&1, path, child))
+    {:noreply, assign(socket, :editing_condition_case_id, params["case_id"])}
   end
 
   @impl true
