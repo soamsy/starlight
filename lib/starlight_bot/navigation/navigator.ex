@@ -599,6 +599,7 @@ defmodule StarlightBot.Navigation.Navigator do
 
   defp cancel_running(%{task_pid: pid} = state) do
     DynamicSupervisor.terminate_child(StarlightBot.MachineSupervisor, pid)
+    StarlightBot.Input.Mouse.release_all()
     state = state |> release_run() |> persist_last_run("interrupted")
     update_clock(%{state | task_pid: nil, phase: :idle, run_kind: nil, origin: :manual, last_run: nil, pause_flag: nil, next_run: nil}, &RunClock.stop/2)
   end
