@@ -120,7 +120,7 @@
                     </div>
 
                     <% picks = @plan_data["gift_search"] %>
-                    <% shown = filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_fixed_filter, @gift_no_pack_filter, @theme_packs_by_gift_id, @gift_sort) %>
+                    <% shown = filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_fixed_filter, @gift_no_pack_filter, @theme_packs_by_gift_id, @gifts_by_id, @gift_sort) %>
                     <div id="gift-drag-source" phx-hook="GiftDragSource" class="flex flex-col flex-1 min-h-0 max-lg:min-h-28 overflow-y-auto">
                       <% added? = fn gift -> if(@active_tab == :loadout, do: gift.name in picks, else: GiftPlans.has_gift?(add_target, gift.name)) end %>
                       <div :for={gift <- shown} data-gift-row={gift.name} data-drag-gift={if not added?.(gift), do: gift.name} class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-base-200">

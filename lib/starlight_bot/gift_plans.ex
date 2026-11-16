@@ -575,6 +575,19 @@ defmodule StarlightBot.GiftPlans do
   def ingredient_ids(_gift), do: []
 
   def fixed_recipe?(gift), do: ingredient_ids(gift) != []
+
+  def theme_pack_agnostic?(gift, gifts_by_id, theme_packs_by_gift_id) do
+    not is_map_key(theme_packs_by_gift_id, gift.id) and
+      gift
+      |> recipe_ids()
+      |> Enum.all?(fn id ->
+        case gifts_by_id[id] do
+          nil -> true
+          ingredient -> theme_pack_agnostic?(ingredient, gifts_by_id, theme_packs_by_gift_id)
+        end
+      end)
+  end
+
   def recipe_ids(gift), do: gift |> ingredient_ids() |> Enum.reject(&(&1 == @fragment_slot))
   def fragment_slots(gift), do: gift |> ingredient_ids() |> Enum.count(&(&1 == @fragment_slot))
   def recipe_names(gift, by_id), do: for(id <- recipe_ids(gift), by_id[id], do: by_id[id].name)

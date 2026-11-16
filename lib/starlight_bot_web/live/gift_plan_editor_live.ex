@@ -1307,13 +1307,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def combo_meta(combo), do: "#{Combos.points(combo)} pts · #{Combos.keyword_odds(combo)}% keyword"
 
-  def filtered_gifts(gifts, filter, tier_filter, affinity_filter, fixed_filter, no_pack_filter, theme_packs_by_gift_id, sort_by) do
+  def filtered_gifts(gifts, filter, tier_filter, affinity_filter, fixed_filter, no_pack_filter, theme_packs_by_gift_id, gifts_by_id, sort_by) do
     gifts
     |> Enum.filter(&matches_text_filter?(&1, filter))
     |> Enum.filter(&(tier_filter == [] or &1.tier in tier_filter))
     |> Enum.filter(&(affinity_filter == [] or &1.affinity in affinity_filter))
     |> Enum.filter(&(not fixed_filter or GiftPlans.fixed_recipe?(&1)))
-    |> Enum.filter(&(not no_pack_filter or not is_map_key(theme_packs_by_gift_id, &1.id)))
+    |> Enum.filter(&(not no_pack_filter or GiftPlans.theme_pack_agnostic?(&1, gifts_by_id, theme_packs_by_gift_id)))
     |> sort_gifts(sort_by)
   end
 
