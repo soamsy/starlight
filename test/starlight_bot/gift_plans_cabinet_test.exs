@@ -45,7 +45,8 @@ defmodule StarlightBot.GiftPlansCabinetTest do
       %{id: "1", name: "A", tier: 3, affinity: "burn"},
       %{id: "2", name: "B", tier: 3, affinity: "burn"},
       %{id: "3", name: "C", tier: 2, affinity: "burn"},
-      %{id: "4", name: "D", tier: 3, affinity: "slash"}
+      %{id: "4", name: "D", tier: 3, affinity: "slash"},
+      %{id: "5", name: "E", tier: 3, affinity: "burn", ingredients: "1,3"}
     ]
 
     assert GiftPlans.perfected_target_options(gifts, %{"2" => ["Pack"]}, "burn") == ["A"]

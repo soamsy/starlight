@@ -181,7 +181,7 @@
                   <button id="gift-shop-btn" type="button" phx-click="set_tab" phx-value-tab="shop" class={"btn btn-sm join-item " <> if(@active_tab == :shop, do: "btn-primary", else: "btn-outline")}>Shopping list</button>
                   <button id="gift-loadout-btn" type="button" phx-click="set_tab" phx-value-tab="loadout" class={"btn btn-sm join-item gap-1 " <> if(@active_tab == :loadout, do: "btn-primary", else: "btn-outline")}>
                     Loadout
-                    <img :if={@plan_data["affinity"] not in [nil, ""]} src={gift_affinity_icon(@plan_data["affinity"])} title={@plan_data["affinity"]} class="w-4 h-4 object-contain shrink-0" />
+                    <img :if={@plan_data["affinity"] not in [nil, ""]} src={gift_affinity_icon(@plan_data["affinity"])} title={@plan_data["affinity"]} class="sinner-icon w-4 h-4 object-contain shrink-0" />
                     <img :for={name <- GiftPlans.cabinet_order(@plan_data)} :if={@gifts_by_name[name]} src={@gifts_by_name[name].image_path} title={name} class="w-4 h-4 rounded object-cover shrink-0 bg-slate-500/40 ring-1 ring-slate-400/40" />
                   </button>
                 </div>

@@ -91,7 +91,7 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def perfected_target_options(gifts, theme_packs_by_gift_id, affinity) do
-    for gift <- gifts, gift.tier == 3, gift.affinity == affinity, not is_map_key(theme_packs_by_gift_id, gift.id), do: gift.name
+    for gift <- gifts, gift.tier == 3, gift.affinity == affinity, not is_map_key(theme_packs_by_gift_id, gift.id), not fixed_recipe?(gift), do: gift.name
   end
 
   def perfected_priority(data, options) do
