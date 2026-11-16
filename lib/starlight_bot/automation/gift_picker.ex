@@ -8,13 +8,13 @@ defmodule StarlightBot.Automation.GiftPicker do
   @same_slot_fraction 0.8
   @min_item_area_px 550
   @selected_radius_px 170
-  @anchor_leniency_px 20
+  @anchor_leniency_px 60
   @unknown_hp 100
 
   def pick(scan_hook, count, tier_hooks, fallback_hook, ctx, pick_delay_ms \\ 0, opts \\ []) do
     gifts_by_id = Map.new(EgoGifts.list_gifts(), &{&1.id, &1})
     {frame, detections} = scan(scan_hook, ctx)
-    named = detections |> anchored(frame, opts[:anchor_hook]) |> slots()
+    named = detections |> anchored(frame, opts[:anchor_hook], ctx) |> slots()
     badge_slots = badge_slots(named, tier_badges(frame, tier_hooks))
     slots = assign_hp(named ++ badge_slots, hp_badges(frame, opts[:hp_hooks]), hp_gates(frame, opts[:hp_gate_hook]))
     {selected, available} = split_selected(slots, frame, opts[:selected_hook])
@@ -78,16 +78,27 @@ defmodule StarlightBot.Automation.GiftPicker do
   defp hp_gates(_frame, nil), do: []
   defp hp_gates(frame, gate_hook), do: Matcher.find_all(frame, gate_hook)
 
-  defp anchored(detections, nil, _anchor_hook), do: detections
-  defp anchored(detections, _frame, nil), do: detections
+  defp anchored(detections, nil, _anchor_hook, _ctx), do: detections
+  defp anchored(detections, _frame, nil, _ctx), do: detections
 
-  defp anchored(detections, frame, anchor_hook) do
+  defp anchored(detections, frame, anchor_hook, ctx) do
     lefts = frame |> Matcher.find_all(anchor_hook) |> Enum.map(&elem(&1, 0))
+    Ctx.log(ctx, :info, "gift picker: #{length(lefts)} #{anchor_hook} anchor(s) at x=#{inspect(Enum.map(lefts, &round/1))}")
 
-    Enum.filter(detections, fn %{x: x, w: w} ->
-      Enum.any?(lefts, &(&1 >= x - @anchor_leniency_px and &1 <= x + w + @anchor_leniency_px))
+    {kept, dropped} =
+      Enum.split_with(detections, fn %{x: x, w: w} ->
+        Enum.any?(lefts, &(&1 >= x - @anchor_leniency_px and &1 <= x + w + @anchor_leniency_px))
+      end)
+
+    Enum.each(dropped, fn %{x: x, w: w} = item ->
+      nearest = lefts |> Enum.map(&anchor_gap(&1, x, w)) |> Enum.min(fn -> nil end)
+      Ctx.log(ctx, :info, "gift picker: dropped #{item.gift_name} at x=#{round(x)}, no #{anchor_hook} anchor within #{@anchor_leniency_px}px (nearest gap #{inspect(nearest)}px)")
     end)
+
+    kept
   end
+
+  defp anchor_gap(left, x, w), do: round(max(x - left, left - (x + w)))
 
   defp split_selected(slots, nil, _selected_hook), do: {[], slots}
   defp split_selected(slots, _frame, nil), do: {[], slots}
