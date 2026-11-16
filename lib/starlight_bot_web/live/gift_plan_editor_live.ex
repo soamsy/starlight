@@ -704,8 +704,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
-  def handle_event("list_set_segment_mode", %{"entry" => entry_id, "from" => from, "mode" => mode}, socket) when mode in ~w(abandon change) do
-    key = tab_key(socket, entry_id)
+  def handle_event("list_set_segment_mode", %{"entry" => entry_id, "from" => from, "mode" => mode} = params, socket) when mode in ~w(abandon change) do
+    timeline = timeline_param(socket, entry_id, params)
 
     {:noreply,
      socket
@@ -713,9 +713,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
        update_segment(socket, id, from, fn segment ->
          segment = Map.put(segment, "abandoned", mode == "abandon")
          if mode == "change" and segment["disposition"] == "ignore", do: Map.put(segment, "disposition", "keep"), else: segment
-       end)
+       end, params)
      end)
-     |> assign(:entry_tabs, Map.put(socket.assigns.entry_tabs, key, String.to_integer(from)))}
+     |> put_tab(entry_id, timeline, String.to_integer(from))}
   end
 
   @impl true
@@ -725,18 +725,18 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
-  def handle_event("list_split", %{"entry" => entry_id, "floor" => floor}, socket) when floor != "" do
+  def handle_event("list_split", %{"entry" => entry_id, "floor" => floor} = params, socket) when floor != "" do
     floor = String.to_integer(floor)
-    key = tab_key(socket, entry_id)
+    timeline = timeline_param(socket, entry_id, params)
 
     {:noreply,
      socket
      |> for_group(entry_id, fn socket, id ->
        socket
-       |> update_plan(&GiftPlans.split_entry(&1, entry_section_id(socket, id), id, floor))
+       |> update_plan(&GiftPlans.split_entry(&1, entry_section_id(socket, id), id, floor, timeline))
        |> set_scheduled(id)
      end)
-     |> assign(:entry_tabs, Map.put(socket.assigns.entry_tabs, key, floor))}
+     |> put_tab(entry_id, timeline, floor)}
   end
 
   @impl true
@@ -756,39 +756,64 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
          segment = Map.put(segment, "abandoned", false)
          if segment["disposition"] == "ignore", do: Map.put(segment, "disposition", "keep"), else: segment
        end)
-       |> update_plan(&GiftPlans.update_entry(&1, entry_section_id(socket, id), id, fn entry -> entry |> Map.put("scheduled", false) |> Map.delete("group") end))
+       |> update_plan(&GiftPlans.update_entry(&1, entry_section_id(socket, id), id, fn entry -> entry |> Map.put("scheduled", false) |> Map.delete("group") |> Map.delete("timelines") end))
      end)}
   end
 
   @impl true
-  def handle_event("list_move_segment", %{"entry" => entry_id, "from" => from, "to" => to}, socket) do
+  def handle_event("list_move_segment", %{"entry" => entry_id, "from" => from, "to" => to} = params, socket) do
     to = String.to_integer(to)
-    key = tab_key(socket, entry_id)
+    timeline = timeline_param(socket, entry_id, params)
 
     {:noreply,
      socket
-     |> for_group(entry_id, fn socket, id -> update_plan(socket, &GiftPlans.move_segment(&1, entry_section_id(socket, id), id, String.to_integer(from), to)) end)
-     |> assign(:entry_tabs, Map.put(socket.assigns.entry_tabs, key, to))}
+     |> for_group(entry_id, fn socket, id -> update_plan(socket, &GiftPlans.move_segment(&1, entry_section_id(socket, id), id, String.to_integer(from), to, timeline)) end)
+     |> put_tab(entry_id, timeline, to)}
   end
 
   @impl true
-  def handle_event("list_remove_segment", %{"entry" => entry_id, "from" => from}, socket) do
-    key = tab_key(socket, entry_id)
+  def handle_event("list_remove_segment", %{"entry" => entry_id, "from" => from} = params, socket) do
+    timeline = timeline_param(socket, entry_id, params)
 
     {:noreply,
      socket
-     |> for_group(entry_id, fn socket, id -> update_plan(socket, &GiftPlans.remove_segment(&1, entry_section_id(socket, id), id, String.to_integer(from))) end)
-     |> assign(:entry_tabs, Map.delete(socket.assigns.entry_tabs, key))}
+     |> for_group(entry_id, fn socket, id -> update_plan(socket, &GiftPlans.remove_segment(&1, entry_section_id(socket, id), id, String.to_integer(from), timeline)) end)
+     |> put_tab(entry_id, timeline, 1)}
   end
 
   @impl true
-  def handle_event("list_select_tab", %{"entry" => entry_id, "from" => from}, socket) do
-    {:noreply, assign(socket, :entry_tabs, Map.put(socket.assigns.entry_tabs, tab_key(socket, entry_id), String.to_integer(from)))}
+  def handle_event("list_select_tab", %{"entry" => entry_id, "from" => from} = params, socket) do
+    {:noreply, put_tab(socket, entry_id, timeline_param(socket, entry_id, params), String.to_integer(from))}
   end
 
   @impl true
-  def handle_event("list_set_applies", %{"applies" => applies} = params, socket) when applies in ~w(always all_normal becomes_hard all_hard extreme) do
-    {:noreply, update_plan(socket, &GiftPlans.set_applies(&1, section_param(socket, params), applies))}
+  def handle_event("list_add_timeline", %{"entry" => entry_id, "kinds" => kinds}, socket) when is_list(kinds) do
+    timeline_id = GiftPlans.new_id("tl")
+
+    {:noreply,
+     socket
+     |> for_group(entry_id, fn socket, id ->
+       socket
+       |> update_plan(&GiftPlans.add_timeline(&1, entry_section_id(socket, id), id, timeline_id, kinds))
+       |> set_scheduled(id)
+     end)
+     |> put_tab(entry_id, timeline_id, 1)}
+  end
+
+  @impl true
+  def handle_event("list_add_timeline", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("list_toggle_timeline_kind", %{"entry" => entry_id, "timeline" => timeline_id, "kind" => kind}, socket) do
+    {:noreply, for_group(socket, entry_id, fn socket, id -> update_plan(socket, &GiftPlans.toggle_timeline_kind(&1, entry_section_id(socket, id), id, timeline_id, kind)) end)}
+  end
+
+  @impl true
+  def handle_event("list_remove_timeline", %{"entry" => entry_id, "timeline" => timeline_id}, socket) do
+    {:noreply,
+     socket
+     |> for_group(entry_id, fn socket, id -> update_plan(socket, &GiftPlans.remove_timeline(&1, entry_section_id(socket, id), id, timeline_id)) end)
+     |> put_tab(entry_id, nil, 1)}
   end
 
   @impl true
@@ -983,11 +1008,18 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def selected_section(assigns), do: GiftPlans.find_section(assigns.plan_data, assigns.root_section_id)
 
+  def active_timeline(entry_tabs, entry) do
+    case entry_tabs[GiftPlans.group_key(entry)] do
+      {timeline, _from} when is_binary(timeline) -> if GiftPlans.find_timeline(entry, timeline), do: timeline
+      _ -> nil
+    end
+  end
+
   def active_from(entry_tabs, entry) do
-    froms = Enum.map(entry["floors"], & &1["from"])
+    froms = entry |> GiftPlans.timeline_view(active_timeline(entry_tabs, entry)) |> Map.fetch!("floors") |> Enum.map(& &1["from"])
 
     case entry_tabs[GiftPlans.group_key(entry)] do
-      from when is_integer(from) -> if from in froms, do: from, else: hd(froms)
+      {_timeline, from} when is_integer(from) -> if from in froms, do: from, else: hd(froms)
       _ -> hd(froms)
     end
   end
@@ -1047,18 +1079,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def applies_hint("all_hard"), do: "Will work on this stage if the run starts F1 hard"
   def applies_hint("extreme"), do: "Will work on this stage if the run expects F6+"
 
-  def applies_row_color("all_normal"), do: "bg-sky-500/15"
-  def applies_row_color("becomes_hard"), do: "bg-amber-500/15"
-  def applies_row_color("all_hard"), do: "bg-orange-500/15"
-  def applies_row_color("extreme"), do: "bg-fuchsia-500/15"
-  def applies_row_color(_applies), do: ""
-
-  def applies_group_color("all_normal"), do: "border-sky-500/50 bg-sky-500/10 p-1"
-  def applies_group_color("becomes_hard"), do: "border-amber-500/50 bg-amber-500/10 p-1"
-  def applies_group_color("all_hard"), do: "border-orange-500/50 bg-orange-500/10 p-1"
-  def applies_group_color("extreme"), do: "border-fuchsia-500/50 bg-fuchsia-500/10 p-1"
-  def applies_group_color(_applies), do: "border-base-300 bg-base-200/60 p-1"
-
   def applies_badge_color("all_normal"), do: "bg-sky-600 border-sky-700 text-white"
   def applies_badge_color("becomes_hard"), do: "bg-amber-600 border-amber-700 text-white"
   def applies_badge_color("all_hard"), do: "bg-orange-600 border-orange-700 text-white"
@@ -1087,7 +1107,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   def goal_member_count(section, letter) do
-    Enum.count(section["entries"] || [], fn entry -> Enum.any?(entry["floors"], &(&1["goal"] == letter and &1["disposition"] == "keep")) end)
+    Enum.count(section["entries"] || [], fn entry -> Enum.any?(GiftPlans.all_floors(entry), &(&1["goal"] == letter and &1["disposition"] == "keep")) end)
   end
 
   def uptie_title(nil, _level), do: nil
@@ -1384,9 +1404,16 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> Enum.reduce(socket, &fun.(&2, &1["id"]))
   end
 
-  defp update_segment(socket, entry_id, from, fun) do
-    update_plan(socket, &GiftPlans.update_segment(&1, entry_section_id(socket, entry_id), entry_id, String.to_integer(from), fun))
+  defp update_segment(socket, entry_id, from, fun, params \\ %{}) do
+    timeline = timeline_param(socket, entry_id, params)
+    update_plan(socket, &GiftPlans.update_segment(&1, entry_section_id(socket, entry_id), entry_id, String.to_integer(from), fun, timeline))
   end
+
+  defp timeline_param(_socket, _entry_id, %{"timeline" => ""}), do: nil
+  defp timeline_param(_socket, _entry_id, %{"timeline" => timeline}), do: timeline
+  defp timeline_param(socket, entry_id, _params), do: active_timeline(socket.assigns.entry_tabs, GiftPlans.find_entry(entry_section(socket, entry_id), entry_id))
+
+  defp put_tab(socket, entry_id, timeline, from), do: assign(socket, :entry_tabs, Map.put(socket.assigns.entry_tabs, tab_key(socket, entry_id), {timeline, from}))
 
   defp ensure_fusion(socket, entry_id) do
     case fusion_entry(socket, entry_id) do
@@ -1531,62 +1558,104 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :entry, :map, required: true
   attr :members, :list, required: true
   attr :from, :integer, required: true
+  attr :timeline, :string, default: nil
 
   def schedule_tabs(assigns) do
-    froms = Enum.map(assigns.entry["floors"], & &1["from"])
+    strips =
+      for timeline_id <- [nil | Enum.map(GiftPlans.timelines(assigns.entry), & &1["id"])] do
+        lead = GiftPlans.timeline_view(assigns.entry, timeline_id)
+        froms = Enum.map(lead["floors"], & &1["from"])
 
-    abandoned_by_from =
-      Map.new(froms, fn from ->
-        {from,
-         Enum.map(assigns.members, fn member ->
-           segment = Enum.find(member["floors"], &(&1["from"] == from))
-           segment != nil and GiftPlans.abandoned?(member, segment)
-         end)}
-      end)
+        flags =
+          Map.new(froms, fn from ->
+            {from,
+             Enum.map(assigns.members, fn member ->
+               segment = Enum.find(GiftPlans.timeline_view(member, timeline_id)["floors"], &(&1["from"] == from))
+               segment != nil and GiftPlans.abandoned?(member, segment)
+             end)}
+          end)
 
-    assigns =
-      assign(assigns,
-        froms: froms,
-        abandoned_froms: for({from, flags} <- abandoned_by_from, Enum.all?(flags), do: from),
-        kept_froms: for({from, flags} <- abandoned_by_from, not Enum.any?(flags), do: from)
-      )
+        %{
+          id: timeline_id,
+          entry: lead,
+          kinds: timeline_id && GiftPlans.find_timeline(assigns.entry, timeline_id)["kinds"],
+          froms: froms,
+          abandoned_froms: for({from, list} <- flags, Enum.all?(list), do: from),
+          kept_froms: for({from, list} <- flags, not Enum.any?(list), do: from)
+        }
+      end
+
+    assigns = assign(assigns, strips: strips, used_kinds: GiftPlans.timeline_kinds(assigns.entry))
 
     ~H"""
-      <div class="flex items-end gap-0.5">
+      <div class="flex items-end gap-0.5 flex-wrap">
         <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1 pb-0.5" title="Drag this schedule and its entries">⠿</span>
-        <div :for={from <- @froms}
-             class={"flex items-center gap-0.5 rounded-t-lg border border-b-0 px-2 py-0.5 text-[11px] " <>
-               if(from == @from, do: "border-primary bg-primary text-primary-content font-semibold", else: "border-primary/40 bg-primary/25 hover:bg-primary/40")}
-             style={if from in @abandoned_froms, do: StarlightBotWeb.Live.PackPlanEditorLive.disabled_stripes_style()}>
-          <button type="button" phx-click="list_select_tab" phx-value-entry={@entry["id"]} phx-value-from={from}><%= segment_label(@entry, from) %></button>
-          <div class="dropdown">
-            <div tabindex="0" role="button" class="cursor-pointer opacity-60 hover:opacity-100" title={if from == 1, do: "Start later", else: "Change or abandon from a floor"}>
-              <.icon name="lucide-chevron-down" class="size-3" />
+        <%= for strip <- @strips do %>
+          <div :if={strip.id} class="dropdown self-end pb-0.5 pl-1.5">
+            <div tabindex="0" role="button" title="Run types this timeline applies to"
+                 class={"flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold cursor-pointer " <> applies_badge_color(hd(strip.kinds))}>
+              <.icon name="lucide-swords" class="size-3" /><%= Enum.map_join(strip.kinds, " + ", &applies_label/1) %><.icon name="lucide-chevron-down" class="size-3" />
             </div>
-            <div tabindex="0" class={"dropdown-content z-30 mt-1 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg space-y-1 " <> if(from == 1, do: "w-max", else: "w-56")}>
-              <button :if={from == 1} type="button" phx-click="list_set_segment_mode" phx-value-entry={@entry["id"]} phx-value-from={from}
-                      phx-value-mode={if from in @abandoned_froms, do: "change", else: "abandon"}
-                      class={"btn btn-xs " <> if(from in @abandoned_froms, do: "btn-primary", else: "btn-outline")}>Start later</button>
-              <div :if={from != 1} class="join w-full">
-                <button :for={{mode, label} <- [{"change", "Change at"}, {"abandon", "Abandon at"}]} type="button" phx-click="list_set_segment_mode"
-                        phx-value-entry={@entry["id"]} phx-value-from={from} phx-value-mode={mode}
-                        class={"btn btn-xs join-item flex-1 whitespace-nowrap " <> if(from in if(mode == "abandon", do: @abandoned_froms, else: @kept_froms), do: "btn-primary", else: "btn-outline")}><%= label %></button>
-              </div>
-              <div :if={from != 1} class="grid grid-cols-5 gap-0.5">
-                <button :for={floor <- 2..GiftPlans.max_floor()} type="button" phx-click="list_move_segment" phx-value-entry={@entry["id"]}
-                        phx-value-from={from} phx-value-to={floor} disabled={floor != from and floor in @froms}
-                        class={"btn btn-xs " <> if(floor == from, do: "btn-primary", else: "btn-ghost")}>F<%= floor %></button>
-              </div>
+            <div tabindex="0" class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg space-y-1">
+              <button :for={kind <- GiftPlans.condition_run_kinds()} type="button" phx-click="list_toggle_timeline_kind" phx-value-entry={@entry["id"]}
+                      phx-value-timeline={strip.id} phx-value-kind={kind} disabled={(kind in @used_kinds and kind not in strip.kinds) or strip.kinds == [kind]}
+                      title={applies_hint(kind)} class={"btn btn-xs w-full justify-start " <> if(kind in strip.kinds, do: "btn-primary", else: "btn-ghost")}>
+                <.icon name={if kind in strip.kinds, do: "lucide-check", else: "lucide-minus"} class="size-3" /><%= applies_label(kind) %>
+              </button>
+              <button type="button" phx-click="list_remove_timeline" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id}
+                      class="btn btn-xs btn-outline btn-error w-full">Remove timeline</button>
             </div>
           </div>
-          <button :if={from != 1} type="button" phx-click="list_remove_segment" phx-value-entry={@entry["id"]} phx-value-from={from}
-                  class="opacity-60 hover:opacity-100" title={"Close this tab; #{segment_label(@entry, from)} use the earlier tab's settings"}><.icon name="lucide-x" class="size-3.5" /></button>
-          <button :if={from == 1 and length(@froms) == 1} type="button" phx-click="list_remove_schedule" phx-value-entry={@entry["id"]}
-                  class="opacity-60 hover:opacity-100" title="Remove the schedule"><.icon name="lucide-x" class="size-3.5" /></button>
+          <div :for={from <- strip.froms}
+               class={"flex items-center gap-0.5 rounded-t-lg border border-b-0 px-2 py-0.5 text-[11px] " <>
+                 if(strip.id == @timeline and from == @from, do: "border-primary bg-primary text-primary-content font-semibold", else: "border-primary/40 bg-primary/25 hover:bg-primary/40")}
+               style={if from in strip.abandoned_froms, do: StarlightBotWeb.Live.PackPlanEditorLive.disabled_stripes_style()}>
+            <button type="button" phx-click="list_select_tab" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from}><%= segment_label(strip.entry, from) %></button>
+            <div class="dropdown">
+              <div tabindex="0" role="button" class="cursor-pointer opacity-60 hover:opacity-100" title={if from == 1, do: "Start later", else: "Change or abandon from a floor"}>
+                <.icon name="lucide-chevron-down" class="size-3" />
+              </div>
+              <div tabindex="0" class={"dropdown-content z-30 mt-1 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg space-y-1 " <> if(from == 1, do: "w-max", else: "w-56")}>
+                <button :if={from == 1} type="button" phx-click="list_set_segment_mode" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from}
+                        phx-value-mode={if from in strip.abandoned_froms, do: "change", else: "abandon"}
+                        class={"btn btn-xs " <> if(from in strip.abandoned_froms, do: "btn-primary", else: "btn-outline")}>Start later</button>
+                <div :if={from != 1} class="join w-full">
+                  <button :for={{mode, label} <- [{"change", "Change at"}, {"abandon", "Abandon at"}]} type="button" phx-click="list_set_segment_mode"
+                          phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from} phx-value-mode={mode}
+                          class={"btn btn-xs join-item flex-1 whitespace-nowrap " <> if(from in if(mode == "abandon", do: strip.abandoned_froms, else: strip.kept_froms), do: "btn-primary", else: "btn-outline")}><%= label %></button>
+                </div>
+                <div :if={from != 1} class="grid grid-cols-5 gap-0.5">
+                  <button :for={floor <- 2..GiftPlans.max_floor()} type="button" phx-click="list_move_segment" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""}
+                          phx-value-from={from} phx-value-to={floor} disabled={floor != from and floor in strip.froms}
+                          class={"btn btn-xs " <> if(floor == from, do: "btn-primary", else: "btn-ghost")}>F<%= floor %></button>
+                </div>
+              </div>
+            </div>
+            <button :if={from != 1} type="button" phx-click="list_remove_segment" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from}
+                    class="opacity-60 hover:opacity-100" title={"Close this tab; #{segment_label(strip.entry, from)} use the earlier tab's settings"}><.icon name="lucide-x" class="size-3.5" /></button>
+            <button :if={from == 1 and length(strip.froms) == 1 and is_nil(strip.id) and @used_kinds == []} type="button" phx-click="list_remove_schedule" phx-value-entry={@entry["id"]}
+                    class="opacity-60 hover:opacity-100" title="Remove the schedule"><.icon name="lucide-x" class="size-3.5" /></button>
+          </div>
+          <button type="button" phx-click="list_split" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-floor={Enum.max(strip.froms) + 1}
+                  disabled={Enum.max(strip.froms) >= GiftPlans.max_floor()} title="New tab"
+                  class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/20 disabled:opacity-30">+</button>
+        <% end %>
+        <div :if={length(@used_kinds) < length(GiftPlans.condition_run_kinds())} class="dropdown">
+          <div tabindex="0" role="button" title="New timeline for specific run types"
+               class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-primary hover:bg-primary/20 cursor-pointer">
+            <.icon name="lucide-swords" class="size-3.5" />
+          </div>
+          <div tabindex="0" class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+            <form phx-submit="list_add_timeline" class="flex flex-col gap-1">
+              <input type="hidden" name="entry" value={@entry["id"]} />
+              <span class="text-[11px] font-semibold text-base-content/70">New timeline for</span>
+              <label :for={kind <- GiftPlans.condition_run_kinds()} class="flex items-center gap-1.5 text-xs" title={applies_hint(kind)}>
+                <input type="checkbox" name="kinds[]" value={kind} disabled={kind in @used_kinds} class="checkbox checkbox-xs" /><%= applies_label(kind) %>
+              </label>
+              <button type="submit" class="btn btn-xs btn-primary">Add timeline</button>
+            </form>
+          </div>
         </div>
-        <button type="button" phx-click="list_split" phx-value-entry={@entry["id"]} phx-value-floor={Enum.max(@froms) + 1}
-                disabled={Enum.max(@froms) >= GiftPlans.max_floor()} title="New tab"
-                class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/20 disabled:opacity-30">+</button>
       </div>
     """
   end
@@ -1702,23 +1771,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   attr :section, :map, required: true
 
-  def applies_picker(assigns) do
-    ~H"""
-    <div class="dropdown">
-      <div tabindex="0" role="button" title={applies_hint(@section["applies"] || "always")}
-           class={"h-full rounded-lg border px-2 py-1 flex items-center text-[11px] font-semibold cursor-pointer " <> applies_badge_color(@section["applies"])}>
-        <%= if @section["applies"] not in [nil, "always"], do: "When: " %><%= applies_label(@section["applies"] || "always") %><%= if @section["applies"] not in [nil, "always"], do: " do →" %>
-      </div>
-      <div tabindex="0" class="dropdown-content z-30 mt-1 w-40 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
-        <button :for={option <- GiftPlans.section_applies_options()} type="button" phx-click="list_set_applies" phx-value-applies={option} phx-value-section={@section["id"]} title={applies_hint(option)}
-                class="btn btn-ghost btn-xs w-full justify-start"><%= applies_label(option) %></button>
-      </div>
-    </div>
-    """
-  end
-
-  attr :section, :map, required: true
-
   def goal_chips(assigns) do
     ~H"""
     <div class={"rounded-lg border px-2 py-1 flex flex-col justify-center " <> goal_color("required")}>
@@ -1785,15 +1837,15 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <%= for chunk <- entry_chunks(@entries) do %>
         <%= case chunk do %>
           <% {:single, entry} -> %>
-            <.section_entry_row entry={entry} section={@section} from={active_from(@entry_tabs, entry)} in_group={false}
+            <.section_entry_row entry={entry} section={@section} from={active_from(@entry_tabs, entry)} timeline={active_timeline(@entry_tabs, entry)} in_group={false}
                                   gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
           <% {:group, key, [lead | _] = members} -> %>
             <div data-sort-id={"group:#{key}"} data-sort-stay class="flex flex-col">
-              <.schedule_tabs entry={lead} members={members} from={active_from(@entry_tabs, lead)} />
+              <.schedule_tabs entry={lead} members={members} from={active_from(@entry_tabs, lead)} timeline={active_timeline(@entry_tabs, lead)} />
               <div id={"entry-group-#{key}"} phx-hook="SortableList" data-sort-event="list_reorder_entries" data-sort-move-event="list_move_entry"
                    data-sort-shared={@shared} data-sort-scope={"group:#{key}"} data-sort-highlight data-sort-multi
                    class="flex flex-col gap-1 min-h-8 p-1 border-2 border-primary rounded-b-lg rounded-tr-lg transition-colors">
-                <.section_entry_row :for={entry <- members} entry={entry} section={@section} from={active_from(@entry_tabs, entry)} in_group={true}
+                <.section_entry_row :for={entry <- members} entry={entry} section={@section} from={active_from(@entry_tabs, entry)} timeline={active_timeline(@entry_tabs, entry)} in_group={true}
                                       gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
               </div>
             </div>
@@ -1803,23 +1855,22 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     """
   end
 
-  defp scheduled?(entry), do: entry["scheduled"] == true or length(entry["floors"]) > 1
-
   def entry_chunks(entries) do
     entries
-    |> Enum.chunk_by(&if(scheduled?(&1), do: {:group, GiftPlans.group_key(&1)}, else: {:single, &1["id"]}))
-    |> Enum.map(fn [first | _] = run -> if scheduled?(first), do: {:group, GiftPlans.group_key(first), run}, else: {:single, first} end)
+    |> Enum.chunk_by(&if(GiftPlans.scheduled?(&1), do: {:group, GiftPlans.group_key(&1)}, else: {:single, &1["id"]}))
+    |> Enum.map(fn [first | _] = run -> if GiftPlans.scheduled?(first), do: {:group, GiftPlans.group_key(first), run}, else: {:single, first} end)
   end
 
   attr :entry, :map, required: true
   attr :section, :map, required: true
   attr :from, :integer, required: true
   attr :in_group, :boolean, required: true
+  attr :timeline, :string, default: nil
   attr :gifts_by_name, :map, required: true
   attr :gifts_by_id, :map, required: true
 
   def section_entry_row(assigns) do
-    entry = assigns.entry
+    entry = GiftPlans.timeline_view(assigns.entry, assigns.timeline)
     segment = Enum.find(entry["floors"], &(&1["from"] == assigns.from))
     pattern? = GiftPlans.pattern_entry?(entry)
     action? = GiftPlans.action_entry?(entry)

@@ -108,6 +108,10 @@ defmodule StarlightBot.GiftPlansTest do
 
       assert GiftPlans.subject_label(tier["subject"]) == "Any T2"
       assert GiftPlans.subject_label(affinity["subject"]) == "Any burn T2, T3"
+      assert GiftPlans.subject_label(GiftPlans.affinity_subject("none", [4])) == "Any keywordless T4"
+      assert GiftPlans.subject_label(GiftPlans.affinity_subject("none", [])) == "Any keywordless"
+      assert GiftPlans.subject_matches?(GiftPlans.affinity_subject("none", [4]), %{affinity: "none", tier: 4})
+      refute GiftPlans.subject_matches?(GiftPlans.affinity_subject("none", [4]), %{affinity: "burn", tier: 4})
       assert %{disposition: "ignore", buy: true, goal: nil} = GiftPlans.resolve(tier, 1)
       assert %{disposition: "ignore"} = GiftPlans.resolve(%{tier | "floors" => [%{hd(tier["floors"]) | "disposition" => "keep"}]}, 1)
     end
@@ -194,6 +198,97 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.ruling_entry(entries, by_name()["Ing B"]).subject == %{"affinity" => "burn", "tiers" => [2]}
       assert GiftPlans.ruling_entry(entries, by_name()["Drumstick"]).subject == %{"affinity" => "burn", "tiers" => []}
       assert GiftPlans.ruling_entry(entries, by_name()["Sundered Memory"]) == nil
+    end
+  end
+
+  describe "run type timelines" do
+    defp with_timeline(kinds) do
+      {data, id} = with_gifts(["Glimpse", "Drumstick"])
+      entry_id = entry_for(data, id, "Glimpse")["id"]
+      {GiftPlans.add_timeline(data, id, entry_id, "tl_x", kinds), id, entry_id}
+    end
+
+    test "a new timeline copies the base tabs and only takes kinds no other timeline uses" do
+      {data, id, entry_id} = with_timeline(["all_hard", "bogus"])
+      entry = entry_for(data, id, "Glimpse")
+      assert [%{"id" => "tl_x", "kinds" => ["all_hard"], "floors" => floors}] = entry["timelines"]
+      assert floors == entry["floors"]
+
+      assert GiftPlans.add_timeline(data, id, entry_id, "tl_y", ["all_hard"]) == data
+      assert GiftPlans.add_timeline(data, id, entry_id, "tl_y", []) == data
+      assert [_, %{"kinds" => ["all_normal"]}] = entry_for(GiftPlans.add_timeline(data, id, entry_id, "tl_y", ["all_normal", "all_hard"]), id, "Glimpse")["timelines"]
+    end
+
+    test "tab edits on a timeline leave the base tabs alone" do
+      {data, id, entry_id} = with_timeline(["all_hard"])
+      data = data |> GiftPlans.split_entry(id, entry_id, 4, "tl_x") |> GiftPlans.update_segment(id, entry_id, 4, &Map.put(&1, "disposition", "sell"), "tl_x")
+      entry = entry_for(data, id, "Glimpse")
+
+      assert Enum.map(entry["floors"], & &1["from"]) == [1]
+      assert [%{"floors" => [%{"from" => 1}, %{"from" => 4, "disposition" => "sell"}]}] = entry["timelines"]
+
+      data = data |> GiftPlans.move_segment(id, entry_id, 4, 6, "tl_x") |> GiftPlans.remove_segment(id, entry_id, 1, "tl_x")
+      assert [%{"floors" => [%{"from" => 1}, %{"from" => 6}]}] = entry_for(data, id, "Glimpse")["timelines"]
+
+      data = GiftPlans.remove_segment(data, id, entry_id, 6, "tl_x")
+      assert [%{"floors" => [%{"from" => 1}]}] = entry_for(data, id, "Glimpse")["timelines"]
+    end
+
+    test "toggling kinds keeps at least one and never shares a kind between timelines" do
+      {data, id, entry_id} = with_timeline(["all_hard"])
+      data = GiftPlans.add_timeline(data, id, entry_id, "tl_y", ["all_normal"])
+      kinds = fn data, timeline -> data |> entry_for(id, "Glimpse") |> GiftPlans.find_timeline(timeline) |> Map.fetch!("kinds") end
+
+      assert kinds.(GiftPlans.toggle_timeline_kind(data, id, entry_id, "tl_x", "extreme"), "tl_x") == ["all_hard", "extreme"]
+      assert kinds.(GiftPlans.toggle_timeline_kind(data, id, entry_id, "tl_x", "all_normal"), "tl_x") == ["all_hard"]
+      assert kinds.(GiftPlans.toggle_timeline_kind(data, id, entry_id, "tl_x", "all_hard"), "tl_x") == ["all_hard"]
+      assert GiftPlans.toggle_timeline_kind(data, id, entry_id, "tl_x", "nonsense") == data
+      assert entry_for(GiftPlans.remove_timeline(GiftPlans.remove_timeline(data, id, entry_id, "tl_x"), id, entry_id, "tl_y"), id, "Glimpse") |> Map.has_key?("timelines") == false
+    end
+
+    test "for_run swaps in the matching timeline, with extreme falling back to hard from F1" do
+      {data, id, entry_id} = with_timeline(["all_hard"])
+      data = GiftPlans.update_segment(data, id, entry_id, 1, &Map.put(&1, "disposition", "sell"), "tl_x")
+      disposition = fn data, kind -> data |> GiftPlans.for_run(kind) |> entry_for(id, "Glimpse") |> GiftPlans.resolve(1) |> Map.fetch!(:disposition) end
+
+      assert disposition.(data, "all_normal") == "keep"
+      assert disposition.(data, "becomes_hard") == "keep"
+      assert disposition.(data, "all_hard") == "sell"
+      assert disposition.(data, "extreme") == "sell"
+      refute Map.has_key?(entry_for(GiftPlans.for_run(data, "all_hard"), id, "Glimpse"), "timelines")
+
+      data = GiftPlans.add_timeline(data, id, entry_id, "tl_e", ["extreme"])
+      data = GiftPlans.update_segment(data, id, entry_id, 1, &Map.put(&1, "disposition", "ignore"), "tl_e")
+      assert disposition.(data, "extreme") == "ignore"
+      assert disposition.(data, "all_hard") == "sell"
+    end
+
+    test "a stage whose entries are all abandoned for the run is dropped, like a stage that does not apply" do
+      {data, id} = with_gifts(["Glimpse"])
+      {data, stage} = GiftPlans.add_stage(data, id)
+      data = GiftPlans.add_gift(data, stage["id"], "Drumstick", by_name(), fn tier -> routes_for(tier) end)
+      drum = entry_for(data, stage["id"], "Drumstick")
+      data = GiftPlans.update_entry(data, stage["id"], drum["id"], fn entry -> %{entry | "floors" => Enum.map(entry["floors"], &Map.put(&1, "abandoned", true))} end)
+      data = GiftPlans.add_timeline(data, stage["id"], drum["id"], "tl_x", ["extreme"])
+      data = GiftPlans.update_segment(data, stage["id"], drum["id"], 1, &Map.put(&1, "abandoned", false), "tl_x")
+
+      assert Enum.map(GiftPlans.for_run(data, "all_normal")["sections"], & &1["id"]) == [id]
+      assert Enum.map(GiftPlans.for_run(data, "extreme")["sections"], & &1["id"]) == [id, stage["id"]]
+    end
+
+    test "a gift with timelines counts as scheduled and issues are checked per run type" do
+      {data, id, _entry_id} = with_timeline(["all_hard"])
+      assert GiftPlans.scheduled?(entry_for(data, id, "Glimpse"))
+      refute GiftPlans.scheduled?(entry_for(data, id, "Drumstick"))
+      assert is_list(GiftPlans.issues(data, by_name()))
+    end
+
+    test "joining a group copies the timelines of the group" do
+      {data, id, entry_id} = with_timeline(["all_hard"])
+      other_id = entry_for(data, id, "Drumstick")["id"]
+      ids = [entry_id, other_id]
+      data = GiftPlans.join_group(data, id, other_id, GiftPlans.group_key(entry_for(data, id, "Glimpse")), ids)
+      assert [%{"id" => "tl_x", "kinds" => ["all_hard"]}] = entry_for(data, id, "Drumstick")["timelines"]
     end
   end
 
@@ -621,28 +716,6 @@ defmodule StarlightBot.GiftPlansTest do
     end
   end
 
-  describe "section applies" do
-    defp plan_with(applies) do
-      sections = for {kind, id} <- Enum.with_index(applies), do: %{GiftPlans.new_section() | "id" => "ms_#{id}", "applies" => kind}
-      %{"sections" => sections}
-    end
-
-    test "filters sections by run kind" do
-      plan = plan_with(["always", "all_normal", "becomes_hard", "all_hard", "extreme"])
-      names = fn kind -> plan |> GiftPlans.for_run(kind) |> Map.fetch!("sections") |> Enum.map(& &1["applies"]) end
-
-      assert names.("all_normal") == ["always", "all_normal"]
-      assert names.("becomes_hard") == ["always", "becomes_hard"]
-      assert names.("all_hard") == ["always", "all_hard"]
-      assert names.("extreme") == ["always", "all_hard", "extreme"]
-    end
-
-    test "sections without the key apply always" do
-      plan = %{"sections" => [%{"id" => "ms_a"}]}
-      assert Enum.map(GiftPlans.for_run(plan, "extreme")["sections"], & &1["id"]) == ["ms_a"]
-    end
-  end
-
   describe "stages" do
     defp end_entry(id, subject, segment) do
       %{"id" => id, "subject" => subject, "fusion" => nil, "floors" => [Map.merge(GiftPlans.default_segment(), segment)]}
@@ -656,13 +729,12 @@ defmodule StarlightBot.GiftPlansTest do
       {data, stage}
     end
 
-    test "a stage lands right after its section and copies its applies" do
-      data = %{"sections" => [%{GiftPlans.new_section() | "id" => "ms_a", "applies" => "extreme"}, %{GiftPlans.new_section() | "id" => "ms_b"}]}
+    test "a stage lands right after its section" do
+      data = %{"sections" => [%{GiftPlans.new_section() | "id" => "ms_a"}, %{GiftPlans.new_section() | "id" => "ms_b"}]}
       {data, stage} = GiftPlans.add_stage(data, "ms_a")
       {data, second} = GiftPlans.add_stage(data, "ms_a")
       assert Enum.map(data["sections"], & &1["id"]) == ["ms_a", stage["id"], second["id"], "ms_b"]
       assert stage["stage_of"] == "ms_a"
-      assert stage["applies"] == "extreme"
       assert stage["name"] == "Stage 2"
       assert second["name"] == "Stage 3"
     end
@@ -681,10 +753,9 @@ defmodule StarlightBot.GiftPlansTest do
       {data, stage} = staged()
       heal = end_entry("h1", %{"action" => "heal"}, heal_segment())
       gift = %{"id" => "g1", "subject" => %{"gift" => "Gift"}}
-      data = data |> GiftPlans.update_section("ms_a", &%{&1 | "goals" => [%{"letter" => "A"}], "entries" => [heal, gift]}) |> GiftPlans.set_applies(stage["id"], "extreme")
+      data = data |> GiftPlans.update_section("ms_a", &%{&1 | "goals" => [%{"letter" => "A"}], "entries" => [heal, gift]}) 
       swapped = GiftPlans.move_stage(data, stage["id"], -1)
       root = GiftPlans.find_section(swapped, "ms_a")
-      assert root["applies"] == "extreme"
       assert root["goals"] == []
       assert root["entries"] == [heal]
       first = GiftPlans.find_section(swapped, stage["id"])
@@ -757,11 +828,8 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.condition_leaf(%{"op" => "run_kind", "kind" => "bogus"})["kind"] == "all_normal"
     end
 
-    test "for_run drops stages whose section is dropped and the run type survives normalize" do
-      {data, stage} = staged()
-      data = GiftPlans.set_applies(data, "ms_a", "extreme")
-      assert Enum.map(GiftPlans.for_run(data, "all_normal")["sections"], & &1["id"]) == ["ms_b"]
-      assert Enum.map(GiftPlans.for_run(data, "extreme")["sections"], & &1["id"]) == ["ms_a", stage["id"], "ms_b"]
+    test "the run type survives normalize" do
+      {data, _stage} = staged()
       kept = data |> GiftPlans.for_run("extreme") |> Map.put("version", GiftPlans.version()) |> GiftPlans.normalize()
       assert kept["run_kind"] == "extreme"
     end
@@ -772,14 +840,11 @@ defmodule StarlightBot.GiftPlansTest do
       assert Enum.map(GiftPlans.sections(data, "ms_b"), & &1["id"]) == ["ms_b"]
     end
 
-    test "for_run puts pursue_optional on the last section that applies" do
+    test "for_run puts pursue_optional on the last section" do
       {data, stage} = staged()
       data = GiftPlans.update_section(data, "ms_a", &Map.put(&1, "pursue_optional", true))
       flags = fn data, kind -> for m <- GiftPlans.for_run(data, kind)["sections"], m["id"] in ["ms_a", stage["id"]], do: {m["id"], m["pursue_optional"]} end
       assert flags.(data, "extreme") == [{"ms_a", false}, {stage["id"], true}]
-
-      only_root = GiftPlans.set_applies(data, stage["id"], "all_normal")
-      assert flags.(only_root, "extreme") == [{"ms_a", true}]
       assert flags.(GiftPlans.update_section(data, "ms_a", &Map.put(&1, "pursue_optional", false)), "extreme") == [{"ms_a", false}, {stage["id"], false}]
     end
 

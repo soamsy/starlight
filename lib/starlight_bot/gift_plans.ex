@@ -274,7 +274,7 @@ defmodule StarlightBot.GiftPlans do
   def normalize(_data), do: blank()
 
   defp normalize_section(section) do
-    %{"id" => section["id"], "applies" => section["applies"] || "always", "goals" => section["goals"] || [], "entries" => section["entries"] || [], "refresh" => section["refresh"] || [],
+    %{"id" => section["id"], "goals" => section["goals"] || [], "entries" => section["entries"] || [], "refresh" => section["refresh"] || [],
       "refresh_floors" => section["refresh_floors"] || [], "refresh_scheduled" => section["refresh_scheduled"] == true, "pursue_optional" => section["pursue_optional"] == true}
     |> then(&if(is_binary(section["stage_of"]), do: Map.merge(&1, %{"stage_of" => section["stage_of"], "name" => section["name"]}), else: &1))
   end
@@ -283,35 +283,36 @@ defmodule StarlightBot.GiftPlans do
     prefix <> "_" <> Base.encode32(:crypto.strong_rand_bytes(4), case: :lower, padding: false)
   end
 
-  def new_section, do: %{"id" => new_id("ms"), "applies" => "always", "goals" => [], "entries" => [], "refresh" => []}
+  def new_section, do: %{"id" => new_id("ms"), "goals" => [], "entries" => [], "refresh" => []}
 
-  @section_applies ~w(always all_normal becomes_hard all_hard extreme)
   @condition_run_kinds ~w(all_normal becomes_hard all_hard extreme)
   @run_kind_labels %{"all_normal" => "Normal F1-F5", "becomes_hard" => "Hard starts F2-F5", "all_hard" => "Hard from F1", "extreme" => "Extreme planned"}
 
   def condition_run_kinds, do: @condition_run_kinds
   def run_kind_label(kind), do: Map.get(@run_kind_labels, kind, "(unknown)")
 
-  def section_applies_options, do: @section_applies
-
-  def section_applies?(section, run_kind) do
-    case Map.get(section, "applies", "always") do
-      "all_normal" -> run_kind == "all_normal"
-      "becomes_hard" -> run_kind == "becomes_hard"
-      "all_hard" -> run_kind in ["all_hard", "extreme"]
-      "extreme" -> run_kind == "extreme"
-      _ -> true
-    end
-  end
+  defp run_kind_matches?("all_hard", run_kind), do: run_kind in ["all_hard", "extreme"]
+  defp run_kind_matches?(kind, run_kind), do: kind == run_kind
 
   def for_run(%{"sections" => sections} = data, run_kind) when is_list(sections) do
-    applying = Enum.filter(sections, &section_applies?(&1, run_kind))
-    root_ids = for section <- applying, not stage?(section), into: MapSet.new(), do: section["id"]
-    kept = Enum.filter(applying, &(not stage?(&1) or MapSet.member?(root_ids, &1["stage_of"])))
-    Map.put(%{data | "sections" => stamp_pursue_optional(kept)}, "run_kind", run_kind)
+    timelined = for section <- sections, Enum.any?(section["entries"] || [], &(timelines(&1) != [])), into: MapSet.new(), do: section["id"]
+    resolved = resolve_timelines(data, run_kind)
+    kept = Enum.reject(resolved["sections"], &(MapSet.member?(timelined, &1["id"]) and inert?(&1)))
+    apply_sections(%{resolved | "sections" => kept}, run_kind)
   end
 
   def for_run(data, _run_kind), do: data
+
+  defp inert?(%{"entries" => [_ | _] = entries}), do: Enum.all?(entries, fn entry -> Enum.all?(entry["floors"], &abandoned?(entry, &1)) end)
+  defp inert?(_section), do: false
+
+  defp apply_sections(%{"sections" => sections} = data, run_kind) when is_list(sections) do
+    root_ids = for section <- sections, not stage?(section), into: MapSet.new(), do: section["id"]
+    kept = Enum.filter(sections, &(not stage?(&1) or MapSet.member?(root_ids, &1["stage_of"])))
+    Map.put(%{data | "sections" => stamp_pursue_optional(kept)}, "run_kind", run_kind)
+  end
+
+  defp apply_sections(data, _run_kind), do: data
 
   defp stamp_pursue_optional(sections) do
     root_of = &(&1["stage_of"] || &1["id"])
@@ -355,8 +356,8 @@ defmodule StarlightBot.GiftPlans do
       nil ->
         {data, nil}
 
-      root ->
-        stage = Map.merge(new_section(), %{"name" => "Stage #{length(stages(data, root_id)) + 2}", "applies" => root["applies"], "stage_of" => root_id})
+      _root ->
+        stage = Map.merge(new_section(), %{"name" => "Stage #{length(stages(data, root_id)) + 2}", "stage_of" => root_id})
 
         last =
           data["sections"]
@@ -378,8 +379,8 @@ defmodule StarlightBot.GiftPlans do
       {root_heals, root_entries} = Enum.split_with(root["entries"], &heal_entry?/1)
 
       data
-      |> update_section(root_id, &Map.merge(&1, %{"goals" => first["goals"], "applies" => first["applies"], "entries" => root_heals ++ first["entries"]}))
-      |> update_section(first["id"], &Map.merge(&1, %{"goals" => root["goals"], "applies" => root["applies"], "entries" => root_entries}))
+      |> update_section(root_id, &Map.merge(&1, %{"goals" => first["goals"], "entries" => root_heals ++ first["entries"]}))
+      |> update_section(first["id"], &Map.merge(&1, %{"goals" => root["goals"], "entries" => root_entries}))
     else
       _ -> data
     end
@@ -420,8 +421,6 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
-  def set_applies(data, id, applies), do: update_section(data, id, &Map.put(&1, "applies", applies))
-
   def gift_subject(name), do: %{"gift" => name}
   def tier_subject(tiers), do: %{"tiers" => tiers |> Enum.uniq() |> Enum.sort()}
   def affinity_subject(affinity, tiers), do: %{"affinity" => affinity, "tiers" => tiers |> Enum.uniq() |> Enum.sort()}
@@ -461,6 +460,8 @@ defmodule StarlightBot.GiftPlans do
   def subject_label(%{"action" => "revive"}), do: "Revive (if dead)"
   def subject_label(%{"action" => "heal_all"}), do: "Heal Everyone"
   def subject_label(%{"action" => "skill_replace"}), do: "Skill Replace"
+  def subject_label(%{"affinity" => "none", "tiers" => []}), do: "Any keywordless"
+  def subject_label(%{"affinity" => "none", "tiers" => tiers}), do: "Any keywordless " <> Enum.map_join(tiers, ", ", &"T#{&1}")
   def subject_label(%{"affinity" => affinity, "tiers" => []}), do: "Any #{affinity}"
   def subject_label(%{"affinity" => affinity, "tiers" => tiers}), do: "Any #{affinity} " <> Enum.map_join(tiers, ", ", &"T#{&1}")
   def subject_label(%{"tiers" => tiers}), do: "Any " <> Enum.map_join(tiers, ", ", &"T#{&1}")
@@ -778,11 +779,104 @@ defmodule StarlightBot.GiftPlans do
     end)
   end
 
-  def update_segment(data, id, entry_id, from, fun) do
+  def update_segment(data, id, entry_id, from, fun, timeline \\ nil) do
     update_entry(data, id, entry_id, fn entry ->
-      Map.update!(entry, "floors", fn floors -> Enum.map(floors, &if(&1["from"] == from, do: fun.(&1), else: &1)) end)
+      with_timeline(entry, timeline, fn entry ->
+        Map.update!(entry, "floors", fn floors -> Enum.map(floors, &if(&1["from"] == from, do: fun.(&1), else: &1)) end)
+      end)
     end)
   end
+
+  def with_timeline(entry, nil, fun), do: fun.(entry)
+
+  def with_timeline(entry, timeline_id, fun) do
+    case find_timeline(entry, timeline_id) do
+      nil ->
+        entry
+
+      timeline ->
+        floors = fun.(Map.put(entry, "floors", timeline["floors"]))["floors"]
+        Map.put(entry, "timelines", Enum.map(entry["timelines"], &if(&1["id"] == timeline_id, do: %{&1 | "floors" => floors}, else: &1)))
+    end
+  end
+
+  def timelines(entry), do: entry["timelines"] || []
+
+  def find_timeline(entry, timeline_id), do: Enum.find(timelines(entry), &(&1["id"] == timeline_id))
+
+  def timeline_view(entry, timeline_id) do
+    case timeline_id && find_timeline(entry, timeline_id) do
+      %{"floors" => floors} -> %{entry | "floors" => floors}
+      _ -> entry
+    end
+  end
+
+  def all_floors(entry), do: entry["floors"] ++ Enum.flat_map(timelines(entry), & &1["floors"])
+
+  def timeline_kinds(entry), do: timelines(entry) |> Enum.flat_map(& &1["kinds"]) |> Enum.uniq()
+
+  def add_timeline(data, id, entry_id, timeline_id, kinds) do
+    update_entry(data, id, entry_id, fn entry ->
+      kinds = Enum.filter(@condition_run_kinds, &(&1 in kinds and &1 not in timeline_kinds(entry)))
+
+      if kinds == [] or find_timeline(entry, timeline_id),
+        do: entry,
+        else: Map.put(entry, "timelines", timelines(entry) ++ [%{"id" => timeline_id, "kinds" => kinds, "floors" => entry["floors"]}])
+    end)
+  end
+
+  def toggle_timeline_kind(data, id, entry_id, timeline_id, kind) when kind in @condition_run_kinds do
+    update_entry(data, id, entry_id, fn entry ->
+      case find_timeline(entry, timeline_id) do
+        nil ->
+          entry
+
+        %{"kinds" => kinds} = timeline ->
+          next =
+            cond do
+              kind in kinds -> List.delete(kinds, kind)
+              kind in timeline_kinds(entry) -> kinds
+              true -> Enum.filter(@condition_run_kinds, &(&1 in [kind | kinds]))
+            end
+
+          if next == [], do: entry, else: Map.put(entry, "timelines", Enum.map(entry["timelines"], &if(&1 == timeline, do: %{timeline | "kinds" => next}, else: &1)))
+      end
+    end)
+  end
+
+  def toggle_timeline_kind(data, _id, _entry_id, _timeline_id, _kind), do: data
+
+  def remove_timeline(data, id, entry_id, timeline_id) do
+    update_entry(data, id, entry_id, fn entry ->
+      case Enum.reject(timelines(entry), &(&1["id"] == timeline_id)) do
+        [] -> Map.delete(entry, "timelines")
+        rest -> Map.put(entry, "timelines", rest)
+      end
+    end)
+  end
+
+  def timeline_for(entry, run_kind) do
+    timelines = timelines(entry)
+    Enum.find(timelines, &(run_kind in &1["kinds"])) || (run_kind == "extreme" && Enum.find(timelines, &("all_hard" in &1["kinds"]))) || nil
+  end
+
+  def resolve_timelines(%{"sections" => sections} = data, run_kind) when is_list(sections) do
+    resolved =
+      for section <- sections do
+        Map.update(section, "entries", [], fn entries ->
+          for entry <- entries do
+            case timeline_for(entry, run_kind) do
+              nil -> Map.delete(entry, "timelines")
+              timeline -> entry |> Map.delete("timelines") |> Map.put("floors", timeline["floors"])
+            end
+          end
+        end)
+      end
+
+    %{data | "sections" => resolved}
+  end
+
+  def resolve_timelines(data, _run_kind), do: data
 
   def remove_entry(data, id, entry_id) do
     update_section(data, id, fn section -> Map.update(section, "entries", [], &Enum.reject(&1, fn entry -> entry["id"] == entry_id end)) end)
@@ -860,7 +954,7 @@ defmodule StarlightBot.GiftPlans do
         |> Enum.map(fn entry ->
           entry
           |> Map.delete("group")
-          |> Map.update!("floors", fn floors -> Enum.map(floors, &if(keep_goal?.(&1["goal"]), do: &1, else: Map.put(&1, "goal", "required"))) end)
+          |> map_all_floors(fn floors -> Enum.map(floors, &if(keep_goal?.(&1["goal"]), do: &1, else: Map.put(&1, "goal", "required"))) end)
         end)
 
       data
@@ -922,17 +1016,25 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
-  defp scheduled_alone?(entry), do: entry["scheduled"] == true or length(entry["floors"]) > 1
+  def scheduled?(entry), do: entry["scheduled"] == true or length(entry["floors"]) > 1 or timelines(entry) != []
+
+  defp scheduled_alone?(entry), do: scheduled?(entry)
 
   defp adopt_schedule(entry, template) do
-    floors =
-      for tab <- template["floors"] do
-        segment = segment_at(entry, tab["from"])
-        segment = if not pattern_entry?(entry) and segment["disposition"] == "ignore", do: Map.put(segment, "disposition", "keep"), else: segment
-        Map.merge(segment, %{"from" => tab["from"], "abandoned" => abandoned?(template, tab)})
-      end
+    adopted = Map.put(entry, "floors", adopt_floors(entry, template, template["floors"]))
 
-    Map.put(entry, "floors", floors)
+    case timelines(template) do
+      [] -> Map.delete(adopted, "timelines")
+      timelines -> Map.put(adopted, "timelines", Enum.map(timelines, &%{&1 | "floors" => adopt_floors(entry, template, &1["floors"])}))
+    end
+  end
+
+  defp adopt_floors(entry, template, tabs) do
+    for tab <- tabs do
+      segment = segment_at(entry, tab["from"])
+      segment = if not pattern_entry?(entry) and segment["disposition"] == "ignore", do: Map.put(segment, "disposition", "keep"), else: segment
+      Map.merge(segment, %{"from" => tab["from"], "abandoned" => abandoned?(template, tab)})
+    end
   end
 
   defp place_block(entries, member?, block) do
@@ -946,36 +1048,57 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
-  def split_entry(data, id, entry_id, floor) when floor in 2..@max_floor do
+  def split_entry(data, id, entry_id, floor, timeline \\ nil)
+
+  def split_entry(data, id, entry_id, floor, timeline) when floor in 2..@max_floor do
     update_entry(data, id, entry_id, fn entry ->
-      if Enum.any?(entry["floors"], &(&1["from"] == floor)) do
-        entry
-      else
-        segment = %{segment_at(entry, floor) | "from" => floor}
-        Map.put(entry, "floors", Enum.sort_by(entry["floors"] ++ [segment], & &1["from"]))
-      end
+      with_timeline(entry, timeline, fn entry ->
+        if Enum.any?(entry["floors"], &(&1["from"] == floor)) do
+          entry
+        else
+          segment = %{segment_at(entry, floor) | "from" => floor}
+          Map.put(entry, "floors", Enum.sort_by(entry["floors"] ++ [segment], & &1["from"]))
+        end
+      end)
     end)
   end
 
-  def split_entry(data, _id, _entry_id, _floor), do: data
+  def split_entry(data, _id, _entry_id, _floor, _timeline), do: data
 
-  def move_segment(data, id, entry_id, from, to) when from != 1 and to in 2..@max_floor do
+  def move_segment(data, id, entry_id, from, to, timeline \\ nil)
+
+  def move_segment(data, id, entry_id, from, to, timeline) when from != 1 and to in 2..@max_floor do
     update_entry(data, id, entry_id, fn entry ->
-      if Enum.any?(entry["floors"], &(&1["from"] == to)) do
-        entry
-      else
-        floors = Enum.map(entry["floors"], &if(&1["from"] == from, do: %{&1 | "from" => to}, else: &1))
-        Map.put(entry, "floors", Enum.sort_by(floors, & &1["from"]))
-      end
+      with_timeline(entry, timeline, fn entry ->
+        if Enum.any?(entry["floors"], &(&1["from"] == to)) do
+          entry
+        else
+          floors = Enum.map(entry["floors"], &if(&1["from"] == from, do: %{&1 | "from" => to}, else: &1))
+          Map.put(entry, "floors", Enum.sort_by(floors, & &1["from"]))
+        end
+      end)
     end)
   end
 
-  def move_segment(data, _id, _entry_id, _from, _to), do: data
+  def move_segment(data, _id, _entry_id, _from, _to, _timeline), do: data
 
-  def remove_segment(data, _id, _entry_id, 1), do: data
+  def remove_segment(data, id, entry_id, from, timeline \\ nil)
 
-  def remove_segment(data, id, entry_id, from) do
-    update_entry(data, id, entry_id, fn entry -> Map.update!(entry, "floors", &Enum.reject(&1, fn segment -> segment["from"] == from end)) end)
+  def remove_segment(data, _id, _entry_id, 1, _timeline), do: data
+
+  def remove_segment(data, id, entry_id, from, timeline) do
+    update_entry(data, id, entry_id, fn entry ->
+      with_timeline(entry, timeline, fn entry -> Map.update!(entry, "floors", &Enum.reject(&1, fn segment -> segment["from"] == from end)) end)
+    end)
+  end
+
+  defp map_all_floors(entry, fun) do
+    entry = Map.update!(entry, "floors", fun)
+
+    case timelines(entry) do
+      [] -> entry
+      timelines -> Map.put(entry, "timelines", Enum.map(timelines, &%{&1 | "floors" => fun.(&1["floors"])}))
+    end
   end
 
   def goal_letters(section), do: Enum.map(section["goals"] || [], & &1["letter"])
@@ -1010,7 +1133,7 @@ defmodule StarlightBot.GiftPlans do
     update_section(data, id, fn section ->
       entries =
         Enum.map(section["entries"] || [], fn entry ->
-          Map.update!(entry, "floors", fn floors -> Enum.map(floors, &if(&1["goal"] == letter, do: Map.put(&1, "goal", "required"), else: &1)) end)
+          map_all_floors(entry, fn floors -> Enum.map(floors, &if(&1["goal"] == letter, do: Map.put(&1, "goal", "required"), else: &1)) end)
         end)
 
       %{section | "goals" => Enum.reject(section["goals"] || [], &(&1["letter"] == letter)), "entries" => entries}
@@ -1282,7 +1405,7 @@ defmodule StarlightBot.GiftPlans do
   defp eval_base(%{"op" => "owns", "gift" => gift}, %{owned: owned}), do: MapSet.member?(owned, gift)
   defp eval_base(%{"op" => "stage"} = leaf, %{plan: plan} = env), do: section_reached?(plan, leaf["stage"], env)
   defp eval_base(%{"op" => "goal"} = leaf, %{plan: plan} = env), do: goal_reached?(plan, leaf["stage"] || env[:current_section], leaf["goal"], env)
-  defp eval_base(%{"op" => "run_kind"} = leaf, %{plan: %{"run_kind" => run_kind}}), do: section_applies?(%{"applies" => leaf["kind"]}, run_kind)
+  defp eval_base(%{"op" => "run_kind"} = leaf, %{plan: %{"run_kind" => run_kind}}), do: run_kind_matches?(leaf["kind"], run_kind)
   defp eval_base(%{"op" => "run_kind"}, _env), do: false
 
   defp refresh_spend(%{"when" => "after"}, %{case_action: action, refresh_costs: costs}), do: Map.get(costs, action, 0)
@@ -1380,6 +1503,12 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def issues(data, gifts_by_name \\ %{}) do
+    if Enum.any?(data["sections"] || [], fn section -> Enum.any?(section["entries"] || [], &(timelines(&1) != [])) end),
+      do: @condition_run_kinds |> Enum.flat_map(&plan_issues(resolve_timelines(data, &1), gifts_by_name)) |> Enum.uniq(),
+      else: plan_issues(data, gifts_by_name)
+  end
+
+  defp plan_issues(data, gifts_by_name) do
     (gift_search_issues(data, gifts_by_name) ++
        Enum.flat_map(data["sections"] || [], &section_issues(&1, gifts_by_name)) ++
        keep_sell_issues(data))
@@ -1436,7 +1565,7 @@ defmodule StarlightBot.GiftPlans do
   defp pairs(list), do: for({a, i} <- Enum.with_index(list), {b, j} <- Enum.with_index(list), i < j, do: [a, b])
 
   defp goal_issues(section, prefix) do
-    used = for entry <- section["entries"] || [], segment <- entry["floors"], into: MapSet.new(), do: segment["goal"]
+    used = for entry <- section["entries"] || [], segment <- all_floors(entry), into: MapSet.new(), do: segment["goal"]
     empty = for letter <- goal_letters(section), not MapSet.member?(used, letter), do: "#{prefix}: goal #{letter} has no entries."
     unknown = for letter <- used, letter not in [nil, "required", "optional"], letter not in goal_letters(section), do: "#{prefix}: entries use goal #{letter}, which was removed."
     empty ++ unknown

@@ -111,12 +111,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert [%{"from" => 1, "uptie" => 2, "buy" => false, "disposition" => "keep"}, %{"from" => 5, "disposition" => "sell", "max" => 2, "uptie" => 2}] =
              entry(socket, "Glimpse of Flames")["floors"]
 
-    assert socket.assigns.entry_tabs[glimpse] == 5
+    assert socket.assigns.entry_tabs[glimpse] == {nil, 5}
     html = render(socket)
     assert html =~ "F1-4" and html =~ "F5+" and html =~ "Max per floor"
 
     socket = event(socket, "list_select_tab", %{"entry" => glimpse, "from" => "1"})
-    assert socket.assigns.entry_tabs[glimpse] == 1
+    assert socket.assigns.entry_tabs[glimpse] == {nil, 1}
 
     socket = event(socket, "list_remove_segment", %{"entry" => glimpse, "from" => "5"})
     assert [%{"from" => 1}] = entry(socket, "Glimpse of Flames")["floors"]
@@ -129,6 +129,30 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     ids = section(socket)["entries"] |> Enum.map(& &1["id"]) |> Enum.reverse()
     socket = event(socket, "list_reorder_entries", %{"scope" => section(socket)["id"], "ids" => ids})
     assert Enum.map(section(socket)["entries"], & &1["id"]) == ids
+  end
+
+  test "a run type timeline gets its own tabs, edits land on it, and the base tabs stay put", %{socket: socket} do
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"})
+    glimpse = entry(socket, "Glimpse of Flames")["id"]
+
+    socket = event(socket, "list_add_timeline", %{"entry" => glimpse, "kinds" => ["all_hard", "extreme"]})
+    [%{"id" => timeline, "kinds" => ["all_hard", "extreme"]}] = entry(socket, "Glimpse of Flames")["timelines"]
+    assert socket.assigns.entry_tabs[glimpse] == {timeline, 1}
+    html = render(socket)
+    assert html =~ "Hard from F1 + Extreme planned" and html =~ "list_remove_timeline"
+    refute html =~ "list_remove_schedule"
+
+    socket = socket |> event("list_split", %{"entry" => glimpse, "floor" => "4"}) |> event("list_toggle", %{"entry" => glimpse, "from" => "4", "field" => "sell"})
+    entry = entry(socket, "Glimpse of Flames")
+    assert Enum.map(entry["floors"], & &1["from"]) == [1]
+    assert [%{"floors" => [%{"disposition" => "keep"}, %{"from" => 4, "disposition" => "sell"}]}] = entry["timelines"]
+
+    socket = event(socket, "list_split", %{"entry" => glimpse, "timeline" => "", "floor" => "2"})
+    assert Enum.map(entry(socket, "Glimpse of Flames")["floors"], & &1["from"]) == [1, 2]
+    assert socket.assigns.entry_tabs[glimpse] == {nil, 2}
+
+    socket = event(socket, "list_remove_timeline", %{"entry" => glimpse, "timeline" => timeline})
+    refute Map.has_key?(entry(socket, "Glimpse of Flames"), "timelines")
   end
 
   test "Add Schedule shows floor tabs, new tabs start after the last one, and a tab's start floor can move to any free floor", %{socket: socket} do
@@ -147,7 +171,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
     socket = event(socket, "list_move_segment", %{"entry" => glimpse, "from" => "2", "to" => "8"})
     assert Enum.map(entry(socket, "Glimpse of Flames")["floors"], & &1["from"]) == [1, 3, 8]
-    assert socket.assigns.entry_tabs[glimpse] == 8
+    assert socket.assigns.entry_tabs[glimpse] == {nil, 8}
     html = render(socket)
     assert html =~ "F1-2" and html =~ "F3-7" and html =~ "F8+"
 
@@ -218,7 +242,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     socket = socket |> event("list_split", %{"entry" => fiery, "floor" => "8"}) |> event("list_set_segment_mode", %{"entry" => glimpse, "from" => "5", "mode" => "abandon"})
     assert froms.(socket, "Glimpse of Flames") == [1, 5, 8] and froms.(socket, "Fiery Down") == [1, 5, 8]
     assert Enum.all?([glimpse, fiery], fn id -> Enum.find(section(socket)["entries"], &(&1["id"] == id))["floors"] |> Enum.at(1) |> Map.get("abandoned") end)
-    assert socket.assigns.entry_tabs[group] == 5
+    assert socket.assigns.entry_tabs[group] == {nil, 5}
 
     socket = event(socket, "list_reorder_entries", %{"scope" => "group:#{group}", "ids" => [fiery, glimpse]})
     assert order.(socket) == [fiery, glimpse, ing]
@@ -463,10 +487,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     socket = event(socket, "list_update_segment", %{"entry" => fiery, "from" => "1", "segment" => %{"disposition" => "keep", "goal" => "A"}})
     [_, stage] = GiftPlans.sections(socket.assigns.plan_data, socket.assigns.root_section_id)
     assert [%{"goal" => "A"}] = hd(stage["entries"])["floors"]
-
-    socket = event(socket, "list_set_applies", %{"applies" => "extreme", "section" => stage["id"]})
-    [root, stage] = GiftPlans.sections(socket.assigns.plan_data, socket.assigns.root_section_id)
-    assert {root["applies"], stage["applies"]} == {"always", "extreme"}
 
     socket = event(socket, "list_remove_stage", %{"id" => stage["id"]})
     assert [_] = GiftPlans.sections(socket.assigns.plan_data, socket.assigns.root_section_id)
