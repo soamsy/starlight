@@ -57,7 +57,7 @@ defmodule StarlightBot.PlanTemplatesTest do
     socket = event.(socket, "template_edit", %{"id" => id})
     assert socket.assigns.editing_template == template_id
 
-    changed = Map.put(original, "search_floors", [5])
+    changed = Map.put(original, "search_floors", %{"normal" => [5], "hard" => []})
     {:ok, _} = Plans.save(:pack_plans, %{id: plan_id, name: Plans.get(:pack_plans, plan_id).name, data: changed})
     socket = event.(socket, "template_new", %{})
     assert PlanTemplates.get(socket.assigns.editing_template).data == changed
@@ -99,7 +99,7 @@ defmodule StarlightBot.PlanTemplatesTest do
     {:ok, other} = Teams.create_default_team()
     first = Teams.get_team(team).pack_plan_id
     foreign = Teams.get_team(other).pack_plan_id
-    {:ok, template} = PlanTemplates.create(:pack_plans, %{"mode_schedule" => [], "packs" => %{}, "search_floors" => [7]})
+    {:ok, template} = PlanTemplates.create(:pack_plans, %{"mode_schedule" => [], "packs" => %{}, "search_floors" => %{"normal" => [7], "hard" => []}})
     bare = %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, flash: %{}}}
     {:ok, socket} = Live.mount(%{}, %{"team_id" => team}, bare)
     event = fn socket, name, params -> elem(Live.handle_event(name, params, socket), 1) end
@@ -120,8 +120,8 @@ defmodule StarlightBot.PlanTemplatesTest do
     assert copy not in [first, second]
     assert socket.assigns.template_id == nil
     assert Teams.get_team(team).pack_template_id == nil
-    assert Plans.get(:pack_plans, copy).data["search_floors"] == [7]
-    assert PlanTemplates.get(template).data["search_floors"] == [7]
+    assert Plans.get(:pack_plans, copy).data["search_floors"] == %{"normal" => [7], "hard" => []}
+    assert PlanTemplates.get(template).data["search_floors"] == %{"normal" => [7], "hard" => []}
     assert length(socket.assigns.plans) == 3
 
     socket = event.(socket, "template_plan_delete", %{"id" => to_string(copy)})
@@ -142,13 +142,13 @@ defmodule StarlightBot.PlanTemplatesTest do
     {:ok, team} = Teams.create_default_team()
     own = Plans.get(:pack_plans, Teams.get_team(team).pack_plan_id).data
     {:ok, gift_template} = PlanTemplates.create(:gift_plans, %{"sections" => []})
-    {:ok, pack_template} = PlanTemplates.create(:pack_plans, %{"search_floors" => [3]})
+    {:ok, pack_template} = PlanTemplates.create(:pack_plans, %{"search_floors" => %{"normal" => [3], "hard" => []}})
 
     {:ok, _} = Teams.set_template(team, :pack_plan_id, gift_template)
     assert Plans.for_team(Teams.get_team(team), :pack_plans).data == own
 
     {:ok, _} = Teams.set_template(team, :pack_plan_id, pack_template)
-    assert %{template_id: ^pack_template, data: %{"search_floors" => [3]}} = Plans.for_team(Teams.get_team(team), :pack_plans)
+    assert %{template_id: ^pack_template, data: %{"search_floors" => %{"normal" => [3], "hard" => []}}} = Plans.for_team(Teams.get_team(team), :pack_plans)
 
     {:ok, _} = PlanTemplates.delete(pack_template)
     assert %{template_id: nil, data: ^own} = Plans.for_team(Teams.get_team(team), :pack_plans)

@@ -111,7 +111,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
       packs = [pack("thm_a", [1, 2], [1, 2]), pack("thm_b", [1, 2], [1, 2]), pack("thm_c", [1, 2], [1, 2])]
 
       plan = %{
-        "search_floors" => [2],
+        "search_floors" => %{"normal" => [2], "hard" => []},
         "packs" => %{
           "thm_a" => %{"normal" => %{"2" => "hunt"}},
           "thm_b" => %{"normal" => %{"2" => "hunt"}}
@@ -133,7 +133,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
 
     test "nil on F11+ even when listed as a search floor", %{packs: packs, plan: plan} do
       packs = Enum.map(packs, &%{&1 | hard_floors: Jason.encode!([11])})
-      plan = %{plan | "search_floors" => [11], "packs" => %{"thm_a" => %{"hard" => %{"11" => "hunt"}}}}
+      plan = %{plan | "search_floors" => %{"normal" => [], "hard" => [11]}, "packs" => %{"thm_a" => %{"hard" => %{"11" => "hunt"}}}}
       assert ThemePackSelector.search_target(plan, packs, "hard", 11, [], fn _ -> true end) == nil
     end
 

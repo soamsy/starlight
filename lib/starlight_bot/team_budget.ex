@@ -113,7 +113,7 @@ defmodule StarlightBot.TeamBudget do
           top = Enum.find(odds.rows, &(&1.kind == :wanted))
           %{floor: floor, searching?: odds.searching?, chance: odds.search, pack: top && top.pack}
         end,
-      search_floors: Enum.filter(plan_data["search_floors"] || [], &(&1 in 1..5)) |> Enum.sort(),
+      search_floors: Resolver.scheduled_search_floors(plan_data, 1..5),
       search_average_cost: Odds.expected_search_cost(run.searches),
       max_pack_searches: max_pack_searches,
       has_gift_plan?: gift_data != %{},

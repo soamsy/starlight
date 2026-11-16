@@ -168,7 +168,7 @@
                     <% hard? = StarlightBot.PackPlans.Resolver.mode_for_floor(@plan_data["mode_schedule"], floor) == "hard" %>
                     <% breakpoint? = Enum.any?(@plan_data["mode_schedule"], &(&1["from_floor"] == floor)) %>
                     <% searchable? = StarlightBot.PackPlans.Resolver.searchable_floor?(floor) %>
-                    <% search? = searchable? and floor in @plan_data["search_floors"] %>
+                    <% search? = StarlightBot.PackPlans.Resolver.search_floor?(@plan_data, path_mode(@plan_data, floor, @view), floor) %>
                     <div class={"row-start-2 flex items-center justify-between gap-1 px-1 py-1 rounded-t " <> if(hard?, do: "bg-warning/15", else: "")}
                          style={"grid-column: #{floor + 1}; " <> if(extreme_disabled? and floor >= 6, do: disabled_stripes_style(), else: "")}
                          title={if(extreme_disabled? and floor >= 6, do: "Extreme floors only run when the plan goes extreme")}>
@@ -199,7 +199,7 @@
                         <% end %>
                         <button phx-click="toggle_search_floor" phx-value-floor={floor} disabled={not searchable?}
                                 class={"btn btn-xs h-4 min-h-0 px-1 text-[9px] " <> if(search?, do: "btn-error", else: "btn-ghost border-base-300")}
-                                title={if(searchable?, do: "Once refreshes run out, search-replace the leftmost pack with the highest unvisited favorite (or Hunt pack when there are no favorites) that has a search hook", else: "Pack search is unavailable on F11+")}>
+                                title={if(searchable?, do: "Search on #{path_mode(@plan_data, floor, @view)} mode. Once refreshes run out, search-replace the leftmost pack with the highest unvisited favorite (or Hunt pack when there are no favorites) that has a search hook", else: "Pack search is unavailable on F11+")}>
                           search
                         </button>
                       </div>

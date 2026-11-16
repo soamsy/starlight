@@ -106,13 +106,16 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   @impl true
   def handle_event("toggle_search_floor", %{"floor" => floor}, socket) do
     floor = String.to_integer(floor)
-    search_floors = socket.assigns.plan_data["search_floors"]
+    plan_data = socket.assigns.plan_data
+    mode = path_mode(plan_data, floor, socket.assigns.view)
 
     if Resolver.searchable_floor?(floor) do
+      search_floors = Resolver.search_floors(plan_data, mode)
+
       search_floors =
         if floor in search_floors, do: List.delete(search_floors, floor), else: Enum.sort([floor | search_floors])
 
-      plan_data = Map.put(socket.assigns.plan_data, "search_floors", search_floors)
+      plan_data = put_in(plan_data, ["search_floors", mode], search_floors)
       {:noreply, socket |> assign(:plan_data, plan_data) |> persist_plan()}
     else
       {:noreply, socket}
@@ -602,9 +605,11 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
     data
     |> Map.put_new("mode_schedule", [])
     |> Map.put_new("packs", %{})
-    |> Map.put_new("search_floors", [])
+    |> Map.update("search_floors", %{"normal" => [], "hard" => []}, &normalize_search_floors/1)
     |> Map.update!("mode_schedule", &normalize_mode_schedule/1)
   end
+
+  defp normalize_search_floors(%{} = by_mode), do: %{"normal" => by_mode["normal"] || [], "hard" => by_mode["hard"] || []}
 
   def normalize_mode_schedule(schedule) do
     schedule

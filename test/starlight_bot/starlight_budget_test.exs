@@ -44,8 +44,8 @@ defmodule StarlightBot.StarlightBudgetTest do
   end
 
   test "max_pack_searches/1 counts search floors inside the run" do
-    assert StarlightBudget.max_pack_searches(%{"search_floors" => [1, 2, 3, 4, 5]}) == 5
-    assert StarlightBudget.max_pack_searches(%{"search_floors" => [4, 5, 9]}) == 2
+    assert StarlightBudget.max_pack_searches(%{"search_floors" => %{"normal" => [1, 2, 3, 4, 5], "hard" => [1, 2, 3, 4, 5]}}) == 5
+    assert StarlightBudget.max_pack_searches(%{"search_floors" => %{"normal" => [4, 5, 9], "hard" => [4, 5, 9]}}) == 2
     assert StarlightBudget.max_pack_searches(%{}) == 0
   end
 

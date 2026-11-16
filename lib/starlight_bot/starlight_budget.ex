@@ -51,7 +51,7 @@ defmodule StarlightBot.StarlightBudget do
 
   def pack_search_cost(searches), do: @first_pack_search_cost * searches + div(@pack_search_cost_step * searches * (searches - 1), 2)
 
-  def max_pack_searches(plan_data), do: Enum.count(plan_data["search_floors"] || [], &(&1 in @floors))
+  def max_pack_searches(plan_data), do: plan_data |> Resolver.scheduled_search_floors(@floors) |> length()
 
   def railway_pack?(pack), do: String.starts_with?(pack.name_en, @railway_prefix)
 

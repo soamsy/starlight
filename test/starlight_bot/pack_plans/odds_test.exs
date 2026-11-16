@@ -42,7 +42,7 @@ defmodule StarlightBot.PackPlans.OddsTest do
   describe "for_run" do
     defp pack(id, floors), do: %{id: id, name_en: id, normal_floors: Jason.encode!(floors), hard_floors: "[]"}
 
-    defp plan(statuses), do: %{"mode_schedule" => [], "search_floors" => [], "packs" => statuses}
+    defp plan(statuses), do: %{"mode_schedule" => [], "search_floors" => %{"normal" => [], "hard" => []}, "packs" => statuses}
 
     test "a pack hunted on two floors is split by the chance it was already taken" do
       packs = [pack("a", [1, 2]), pack("b", [1, 2]), pack("c", [1, 2]), pack("d", [1, 2])]
@@ -79,7 +79,7 @@ defmodule StarlightBot.PackPlans.OddsTest do
         "p2" => %{"normal" => %{"1" => "favorite"}}
       }
 
-      plan = Map.put(plan(statuses), "search_floors", [1])
+      plan = Map.put(plan(statuses), "search_floors", %{"normal" => [1], "hard" => [1]})
       [top, second] = Odds.for_run(plan, packs, [{1, "normal"}], [])[1].rows
       assert second.final > 0.0
       assert top.final < 1.0
@@ -89,7 +89,7 @@ defmodule StarlightBot.PackPlans.OddsTest do
     test "search floor gives the top available pack everything" do
       packs = [pack("a", [1]), pack("b", [1])]
       statuses = %{"a" => %{"normal" => %{"1" => "favorite"}}}
-      plan = Map.put(plan(statuses), "search_floors", [1])
+      plan = Map.put(plan(statuses), "search_floors", %{"normal" => [1], "hard" => [1]})
       odds = Odds.for_run(plan, packs, [{1, "normal"}], [])
       assert_in_delta hd(odds[1].rows).final, 1.0, 1.0e-9
     end
@@ -121,7 +121,7 @@ defmodule StarlightBot.PackPlans.OddsTest do
         "p2" => %{"normal" => %{"1" => "favorite", "2" => "favorite"}}
       }
 
-      plan = Map.put(plan(statuses), "search_floors", [1, 2])
+      plan = Map.put(plan(statuses), "search_floors", %{"normal" => [1, 2], "hard" => [1, 2]})
       run = Odds.run(plan, packs, [{1, "normal"}, {2, "normal"}], [])
 
       assert_in_delta run.searches |> Map.values() |> Enum.sum(), 1.0, 1.0e-9

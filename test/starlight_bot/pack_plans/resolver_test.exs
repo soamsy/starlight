@@ -30,7 +30,7 @@ defmodule StarlightBot.PackPlans.ResolverTest do
   end
 
   describe "search override" do
-    @searching %{"search_floors" => [2, 4]}
+    @searching %{"search_floors" => %{"normal" => [2, 4], "hard" => [2, 4]}}
 
     test "default and unknown values keep the plan's search floors" do
       assert Resolver.with_search_override(@searching, "default") == @searching
@@ -38,8 +38,23 @@ defmodule StarlightBot.PackPlans.ResolverTest do
     end
 
     test "all searches every searchable floor and none searches nothing" do
-      assert Resolver.with_search_override(@searching, "all")["search_floors"] == Enum.to_list(1..10)
-      assert Resolver.with_search_override(@searching, "none")["search_floors"] == []
+      assert Resolver.with_search_override(@searching, "all")["search_floors"] == %{"normal" => Enum.to_list(1..10), "hard" => Enum.to_list(1..10)}
+      assert Resolver.with_search_override(@searching, "none")["search_floors"] == %{"normal" => [], "hard" => []}
+    end
+  end
+
+  describe "per-mode search floors" do
+    @split %{"mode_schedule" => [%{"from_floor" => 3, "mode" => "hard"}], "search_floors" => %{"normal" => [1, 2], "hard" => [4]}}
+
+    test "search_floor?/3 reads the list for the given mode" do
+      assert Resolver.search_floor?(@split, "normal", 1)
+      refute Resolver.search_floor?(@split, "hard", 1)
+      assert Resolver.search_floor?(@split, "hard", 4)
+      refute Resolver.search_floor?(@split, "normal", 4)
+    end
+
+    test "scheduled_search_floors/2 follows the mode each floor is played in" do
+      assert Resolver.scheduled_search_floors(@split, 1..5) == [1, 2, 4]
     end
   end
 

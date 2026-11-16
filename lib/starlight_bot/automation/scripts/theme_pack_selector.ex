@@ -368,7 +368,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
         case search_replace(target, ctx, length(pool), limits.exit_to) do
           {:error, {:search_failed, _reason}} ->
             Ctx.log(ctx, :info, "theme pack selector: rescanning theme packs after failed search")
-            plan_without_search = Map.put(plan_data, "search_floors", [])
+            plan_without_search = Resolver.with_search_override(plan_data, "none")
 
             case await_ready_only(ctx) do
               {:ok, next_frame} -> attempt(next_frame, backup, hunt, theme_packs, plan_without_search, mode, floor, limits, refreshes_used, ctx)
@@ -393,7 +393,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   end
 
   def search_target(plan_data, theme_packs, mode, floor, visited_ids, search_hook_ready?) do
-    if Resolver.searchable_floor?(floor) and floor in Map.get(plan_data, "search_floors", []) do
+    if Resolver.search_floor?(plan_data, mode, floor) do
       hunt = plan_data |> packs_with_priority(theme_packs, mode, floor, "hunt") |> Resolver.sort_hunt(plan_data, mode, floor)
       favorites = Enum.filter(hunt, &Resolver.favorite?(plan_data, &1.id, mode, floor))
       candidates = if favorites == [], do: hunt, else: favorites

@@ -54,7 +54,7 @@ defmodule StarlightBot.PackPlans.Odds do
       shown: ThemePackSelector.expected_pack_count(grace_picks) - if(floor == @pinned_floor, do: 1, else: 0),
       refreshes: refreshes,
       looks: refreshes + 1,
-      searching?: Resolver.searchable_floor?(floor) and floor in Map.get(plan_data, "search_floors", [])
+      searching?: Resolver.search_floor?(plan_data, mode, floor)
     }
   end
 

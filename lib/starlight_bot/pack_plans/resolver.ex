@@ -39,8 +39,8 @@ defmodule StarlightBot.PackPlans.Resolver do
   def parse_search_override(value) when value in @search_overrides, do: value
   def parse_search_override(_value), do: "default"
 
-  def with_search_override(plan_data, "all"), do: Map.put(plan_data, "search_floors", Enum.to_list(1..@last_searchable_floor))
-  def with_search_override(plan_data, "none"), do: Map.put(plan_data, "search_floors", [])
+  def with_search_override(plan_data, "all"), do: Map.put(plan_data, "search_floors", Map.new(~w(normal hard), &{&1, Enum.to_list(1..@last_searchable_floor)}))
+  def with_search_override(plan_data, "none"), do: Map.put(plan_data, "search_floors", %{"normal" => [], "hard" => []})
   def with_search_override(plan_data, _override), do: plan_data
 
 
@@ -66,6 +66,15 @@ defmodule StarlightBot.PackPlans.Resolver do
   def extreme_override?(plan_data, pack_id, mode), do: pack_id == @extreme_override_pack and mode == "hard" and extreme?(plan_data)
 
   def searchable_floor?(floor), do: floor <= @last_searchable_floor
+
+  def search_floors(plan_data, mode), do: get_in(plan_data, ["search_floors", mode]) || []
+
+  def search_floor?(plan_data, mode, floor), do: searchable_floor?(floor) and floor in search_floors(plan_data, mode)
+
+  def scheduled_search_floors(plan_data, floors) do
+    schedule = plan_data["mode_schedule"] || []
+    Enum.filter(floors, &search_floor?(plan_data, mode_for_floor(schedule, &1), &1))
+  end
 
   def eligible_floors(pack, "hard"), do: ThemePacks.decode_floors(pack.hard_floors)
   def eligible_floors(pack, "normal"), do: ThemePacks.decode_floors(pack.normal_floors)
