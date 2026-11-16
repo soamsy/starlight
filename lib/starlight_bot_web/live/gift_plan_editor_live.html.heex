@@ -59,14 +59,14 @@
                         <.icon name="lucide-search" class="size-3.5 shrink-0 text-base-content/50" />
                         <input id="gift-search-input" phx-hook="GiftSearchNav" type="text" placeholder="Search gifts (press /)…" value={@gift_filter} phx-keyup="filter_gifts" class="grow min-w-0" />
                       </label>
-                      <button :if={@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter} type="button" phx-click="clear_gift_filters" title="Clear all filters"
-                              class="btn btn-ghost btn-xs btn-square"><.icon name="lucide-x" class="size-3.5" /></button>
-                      <details class="dropdown dropdown-end" phx-mounted={JS.ignore_attributes("open")} phx-click-away={JS.remove_attribute("open")}>
+                      <button type="button" phx-click="clear_gift_filters" title="Clear all filters"
+                              class={"btn btn-ghost btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter, do: "", else: "hidden")}><.icon name="lucide-x" class="size-3.5" /></button>
+                      <details id="gift-filter-menu" phx-hook="FloatingDropdown" data-keep-open class="dropdown dropdown-end">
                         <summary title="Filter"
                              class={"btn btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter, do: "btn-primary", else: "btn-ghost")}>
                           <.icon name="lucide-funnel" class="size-3.5" />
                         </summary>
-                        <div class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-200 p-2 shadow-lg ring-2 ring-base-content/20 space-y-2">
+                        <div popover="manual" class="dropdown-content z-30 w-56 rounded-lg border border-base-300 bg-base-200 p-2 shadow-lg ring-2 ring-base-content/20 space-y-2">
                           <div class="flex flex-col gap-1">
                             <span class="text-[11px] text-base-content/60">Tier</span>
                             <div class="flex flex-wrap gap-1">
@@ -104,18 +104,18 @@
                           </div>
                         </div>
                       </details>
-                      <div class="dropdown dropdown-end">
-                        <div tabindex="0" role="button" title={"Sort: #{gift_sort_label(@gift_sort)}"}
+                      <details id="gift-sort-menu" phx-hook="FloatingDropdown" data-keep-open class="dropdown dropdown-end">
+                        <summary title={"Sort: #{gift_sort_label(@gift_sort)}"}
                              class={"btn btn-xs btn-square " <> if(@gift_sort != "default", do: "btn-primary", else: "btn-ghost")}>
                           <.icon name="lucide-arrow-down-up" class="size-3.5" />
-                        </div>
-                        <div tabindex="0" class="dropdown-content z-30 mt-1 w-36 rounded-lg border border-base-300 bg-base-200 p-1 shadow-lg ring-2 ring-base-content/20">
+                        </summary>
+                        <div popover="manual" class="dropdown-content z-30 w-36 rounded-lg border border-base-300 bg-base-200 p-1 shadow-lg ring-2 ring-base-content/20">
                           <button :for={sort_by <- gift_sorts()} type="button" phx-click="set_gift_sort" value={sort_by}
                                   class={"btn btn-xs w-full justify-start " <> if(@gift_sort == sort_by, do: "btn-primary", else: "btn-ghost")}>
                             <%= gift_sort_label(sort_by) %>
                           </button>
                         </div>
-                      </div>
+                      </details>
                     </div>
 
                     <% picks = @plan_data["gift_search"] %>
@@ -181,7 +181,7 @@
                   <%= if @active_tab == :loadout do %>
               <div class="flex items-start gap-3 flex-wrap">
                 <form phx-change="set_affinity" class="flex flex-col gap-1">
-                  <details class="dropdown">
+                  <details id="gift-affinity-menu" phx-hook="FloatingDropdown" data-close-on-click class="dropdown">
                     <summary class="btn btn-outline capitalize! text-base gap-1.5 justify-between min-w-40 min-h-10 min-[600px]:min-h-[3.625rem]">
                       <span class="flex items-center gap-1.5">
                         <img :if={@plan_data["affinity"] not in [nil, ""]} src={gift_affinity_icon(@plan_data["affinity"])} class="w-4 h-4 object-contain" />
@@ -189,14 +189,19 @@
                       </span>
                       <.icon name="lucide-chevron-down" class="size-3.5" />
                     </summary>
-                    <ul class="dropdown-content menu bg-base-100 rounded-box border border-base-300 shadow z-20 w-40 p-1">
-                      <li :for={affinity <- affinities()}>
-                        <label class="cursor-pointer">
-                          <input type="radio" name="affinity" value={affinity} checked={@plan_data["affinity"] == affinity} class="hidden" />
-                          <img src={gift_affinity_icon(affinity)} class="w-4 h-4 object-contain" /><span class="capitalize"><%= affinity %></span>
-                        </label>
-                      </li>
-                    </ul>
+                    <div popover="manual" class="dropdown-content z-30 w-max rounded-box border border-base-300 bg-base-100 p-1 shadow">
+                      <ul class="menu w-40 p-0">
+                        <%= for affinity <- affinity_order() do %>
+                          <li :if={affinity == "slash"} class="pointer-events-none my-1 h-px bg-base-300 p-0"></li>
+                          <li>
+                            <label class="cursor-pointer">
+                              <input type="radio" name="affinity" value={affinity} checked={@plan_data["affinity"] == affinity} class="hidden" />
+                              <img src={gift_affinity_icon(affinity)} class="w-4 h-4 object-contain" /><span class="capitalize"><%= affinity %></span>
+                            </label>
+                          </li>
+                        <% end %>
+                      </ul>
+                    </div>
                   </details>
                 </form>
                 <div :if={GiftPlans.cabinet_order(@plan_data) != []} id="cabinet-bracket" phx-hook="CabinetBracket" data-count={GiftPlans.cabinet_pick_count(@plan_data)} class="relative pb-8">
@@ -422,9 +427,9 @@
                       </div>
                       <div class="flex flex-col items-end gap-1 shrink-0 ml-auto">
                       <div class="flex items-center gap-1">
-                        <div :for={{action, label} <- [{"heal", "+ Greatly heal"}, {"revive", "+ Revive"}]} class="dropdown dropdown-end">
-                          <div tabindex="0" role="button" class="btn btn-xs btn-outline"><%= label %></div>
-                          <div tabindex="0" class="dropdown-content z-30 mt-1 w-80 max-w-[90vw] rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg"><div class="grid grid-cols-3 gap-1">
+                        <details :for={{action, label} <- [{"heal", "+ Greatly heal"}, {"revive", "+ Revive"}]} id={"#{action}-menu-#{section["id"]}"} phx-hook="FloatingDropdown" data-close-on-click class="dropdown dropdown-end">
+                          <summary class="btn btn-xs btn-outline"><%= label %></summary>
+                          <div popover="manual" class="dropdown-content z-30 w-80 max-w-[90vw] rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg"><div class="grid grid-cols-3 gap-1">
                             <button :if={action == "revive"} type="button" phx-click="list_add_action" phx-value-action="revive" phx-value-sinner="everyone"
                                     class="btn btn-ghost btn-xs col-span-3 justify-start gap-1 px-1"><.icon name="lucide-users" class="size-4" />Everyone</button>
                             <button :for={sinner <- @sinners} type="button" phx-click="list_add_action" phx-value-action={action} phx-value-sinner={sinner}
@@ -433,7 +438,7 @@
                             </button>
                           </div>
                           </div>
-                        </div>
+                        </details>
                         <button type="button" phx-click="list_add_action" phx-value-action="heal_all" class="btn btn-xs btn-outline">+ Heal all</button>
                       </div>
                       <% offers = loadout_offers(@plan_data, section) %>
@@ -448,42 +453,50 @@
                         </div>
                         <div class="flex items-center gap-1"
                              title="Any-tier and any-affinity entries never count toward goals and never keep anything. Buy buys matches when nothing wanted is on the shelf; Sell sells matches at the start of each stage. A specific gift entry overrides them.">
-                          <div class="dropdown dropdown-end">
-                            <div tabindex="0" role="button" class="btn btn-xs btn-outline">+Any tier</div>
-                            <div tabindex="0" class="dropdown-content z-30 mt-1 w-36 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
-                              <button :for={affinity <- affinities()} type="button" phx-click="list_add_affinity_any" phx-value-affinity={affinity}
-                                      class="btn btn-ghost btn-xs w-full justify-start capitalize">
-                                <img src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
-                              </button>
+                          <details id={"any-tier-menu-#{section["id"]}"} phx-hook="FloatingDropdown" data-close-on-click class="dropdown dropdown-end">
+                            <summary class="btn btn-xs btn-outline">+Any tier</summary>
+                            <div popover="manual" class="dropdown-content z-30 w-44 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
                               <button type="button" phx-click="list_add_affinity_any" phx-value-affinity="none" class="btn btn-ghost btn-xs w-full justify-start">
                                 <.icon name="lucide-circle-off" class="size-3.5" />Keywordless
                               </button>
+                              <div class="my-1 border-t border-base-300"></div>
+                              <%= for affinity <- affinity_order() do %>
+                                <div :if={affinity == "slash"} class="my-1 border-t border-base-300"></div>
+                                <button type="button" phx-click="list_add_affinity_any" phx-value-affinity={affinity} class="btn btn-ghost btn-xs w-full justify-start capitalize">
+                                  <img src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
+                                </button>
+                              <% end %>
                             </div>
-                          </div>
-                          <div :for={tier <- GiftPlans.shop_tiers()} class="dropdown dropdown-end">
-                            <div tabindex="0" role="button" class="btn btn-xs btn-outline">+T<%= tier %></div>
-                            <div tabindex="0" class="dropdown-content z-30 mt-1 w-36 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
-                              <button type="button" phx-click="list_add_tier" phx-value-tier={tier} class="btn btn-ghost btn-xs w-full justify-start">Any</button>
-                              <button :for={affinity <- affinities()} type="button" phx-click="list_add_affinity" phx-value-affinity={affinity} phx-value-tier={tier}
-                                      class="btn btn-ghost btn-xs w-full justify-start capitalize">
-                                <img src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
-                              </button>
-                              <button type="button" phx-click="list_add_affinity" phx-value-affinity="none" phx-value-tier={tier} class="btn btn-ghost btn-xs w-full justify-start">
-                                <.icon name="lucide-circle-off" class="size-3.5" />Keywordless
-                              </button>
+                          </details>
+                          <details :for={tier <- GiftPlans.shop_tiers()} id={"tier-#{tier}-menu-#{section["id"]}"} phx-hook="FloatingDropdown" data-close-on-click class="dropdown dropdown-end">
+                            <summary class="btn btn-xs btn-outline">+T<%= tier %></summary>
+                            <div popover="manual" class="dropdown-content z-30 w-52 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+                              <div class="flex gap-0.5">
+                                <button type="button" phx-click="list_add_tier" phx-value-tier={tier} class="btn btn-ghost btn-xs flex-1 justify-start">Any</button>
+                                <button type="button" phx-click="list_add_affinity" phx-value-affinity="none" phx-value-tier={tier} class="btn btn-ghost btn-xs flex-1 justify-start">
+                                  <.icon name="lucide-circle-off" class="size-3.5" />Keywordless
+                                </button>
+                              </div>
+                              <div class="my-1 border-t border-base-300"></div>
+                              <%= for affinity <- affinity_order() do %>
+                                <div :if={affinity == "slash"} class="my-1 border-t border-base-300"></div>
+                                <button type="button" phx-click="list_add_affinity" phx-value-affinity={affinity} phx-value-tier={tier} class="btn btn-ghost btn-xs w-full justify-start capitalize">
+                                  <img src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
+                                </button>
+                              <% end %>
                             </div>
-                          </div>
+                          </details>
                         </div>
-                        <div class="dropdown dropdown-end">
-                          <div tabindex="0" role="button" class="btn btn-xs btn-outline">+ Skill replace</div>
-                          <div tabindex="0" class="dropdown-content z-30 mt-1 w-80 max-w-[90vw] rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg"><div class="grid grid-cols-3 gap-1">
+                        <details id={"skill-replace-menu-#{section["id"]}"} phx-hook="FloatingDropdown" data-close-on-click class="dropdown dropdown-end">
+                          <summary class="btn btn-xs btn-outline">+ Skill replace</summary>
+                          <div popover="manual" class="dropdown-content z-30 w-80 max-w-[90vw] rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg"><div class="grid grid-cols-3 gap-1">
                             <button :for={sinner <- @sinners} type="button" phx-click="list_add_action" phx-value-action="skill_replace" phx-value-sinner={sinner}
                                     title={sinner_label(sinner)} class="btn btn-ghost btn-xs min-w-0 flex-nowrap justify-start gap-1 px-1">
                               <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-4 w-4 shrink-0 object-contain" /><span class="truncate"><%= sinner_label(sinner) %></span>
                             </button>
                           </div>
                           </div>
-                        </div>
+                        </details>
                       </div>
                       </div>
                     </div>
@@ -573,7 +586,7 @@
                                   <input type="radio" name="action" value={action} checked={refresh_case["action"] == action} class="hidden" />
                                   <%= label %><.icon :if={action == "affinity_refresh"} name="lucide-refresh-cw" class="size-3" />
                                 </label>
-                                <details id={"refresh-aff-#{refresh_case["id"]}"} phx-hook="FloatingDropdown" class="dropdown join-item border-0">
+                                <details id={"refresh-aff-#{refresh_case["id"]}"} phx-hook="FloatingDropdown" data-close-on-click class="dropdown join-item border-0">
                                   <summary class={"btn btn-xs rounded-[inherit] gap-1 flex-nowrap whitespace-nowrap " <> if(refresh_case["action"] == "affinity_refresh", do: "btn-primary", else: "")}>
                                     <img :if={(refresh_case["affinity"] || @plan_data["affinity"]) not in [nil, ""]} src={gift_affinity_icon(refresh_case["affinity"] || @plan_data["affinity"])} class="w-3 h-3 object-contain shrink-0" />
                                     <%= refresh_case["affinity"] || "plan" %>
@@ -586,12 +599,16 @@
                                           <img :if={@plan_data["affinity"] not in [nil, ""]} src={gift_affinity_icon(@plan_data["affinity"])} class="w-3 h-3 object-contain" />plan
                                         </label>
                                       </li>
-                                      <li :for={affinity <- affinities()}>
-                                        <label class="cursor-pointer">
-                                          <input type="radio" name="affinity" value={affinity} checked={refresh_case["affinity"] == affinity} class="hidden" />
-                                          <img src={gift_affinity_icon(affinity)} class="w-3 h-3 object-contain" /><%= affinity %>
-                                        </label>
-                                      </li>
+                                      <li class="pointer-events-none my-1 h-px bg-base-300 p-0"></li>
+                                      <%= for affinity <- affinity_order() do %>
+                                        <li :if={affinity == "slash"} class="pointer-events-none my-1 h-px bg-base-300 p-0"></li>
+                                        <li>
+                                          <label class="cursor-pointer">
+                                            <input type="radio" name="affinity" value={affinity} checked={refresh_case["affinity"] == affinity} class="hidden" />
+                                            <img src={gift_affinity_icon(affinity)} class="w-3 h-3 object-contain" /><%= affinity %>
+                                          </label>
+                                        </li>
+                                      <% end %>
                                     </ul>
                                   </div>
                                 </details>

@@ -139,7 +139,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     [%{"id" => timeline, "kinds" => ["all_hard", "extreme"]}] = entry(socket, "Glimpse of Flames")["timelines"]
     assert socket.assigns.entry_tabs[glimpse] == {timeline, 1}
     html = render(socket)
-    assert html =~ "Hard from F1 + Extreme planned" and html =~ "list_remove_timeline"
+    assert html =~ "Hard from F1 + Extreme planned" and html =~ "list_toggle_timeline_kind"
     refute html =~ "list_remove_schedule"
 
     socket = socket |> event("list_split", %{"entry" => glimpse, "floor" => "4"}) |> event("list_toggle", %{"entry" => glimpse, "from" => "4", "field" => "sell"})
@@ -151,8 +151,15 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert Enum.map(entry(socket, "Glimpse of Flames")["floors"], & &1["from"]) == [1, 2]
     assert socket.assigns.entry_tabs[glimpse] == {nil, 2}
 
-    socket = event(socket, "list_remove_timeline", %{"entry" => glimpse, "timeline" => timeline})
+    socket = event(socket, "list_toggle_timeline_kind", %{"entry" => glimpse, "timeline" => timeline, "kind" => "extreme"})
+    assert [%{"kinds" => ["all_hard"]}] = entry(socket, "Glimpse of Flames")["timelines"]
+
+    socket = event(socket, "list_toggle_timeline_kind", %{"entry" => glimpse, "timeline" => timeline, "kind" => "all_hard"})
     refute Map.has_key?(entry(socket, "Glimpse of Flames"), "timelines")
+    assert socket.assigns.entry_tabs[glimpse] == {nil, 1}
+
+    socket = event(socket, "list_add_timeline", %{"entry" => glimpse, "kind" => "extreme"})
+    assert [%{"kinds" => ["extreme"]}] = entry(socket, "Glimpse of Flames")["timelines"]
   end
 
   test "Add Schedule shows floor tabs, new tabs start after the last one, and a tab's start floor can move to any free floor", %{socket: socket} do

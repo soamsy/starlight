@@ -46,8 +46,8 @@
     <% scheduler_on = runs_on || charger_on %>
     <% status = window_status(assigns[:game_window_rect]) %>
     <% busy = assigns[:game_window_busy] %>
-    <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-xs lg:btn-sm gap-0 overflow-hidden p-0">
+    <details id="window-status-menu" phx-hook="FloatingDropdown" data-keep-open class="dropdown dropdown-end">
+      <summary class="btn btn-ghost btn-xs lg:btn-sm gap-0 overflow-hidden p-0">
         <span
           class={[
             "flex size-6 lg:size-8 items-center justify-center",
@@ -79,21 +79,21 @@
           <.icon name={if scheduler_on, do: "lucide-clock", else: "lucide-timer-off"} class="size-4 lg:size-5" />
           <% end %>
         </span>
-      </div>
-      <div tabindex="0" class={[
-        "dropdown-content z-50 mt-2 w-72 rounded-lg border bg-base-100 p-3 shadow-lg text-xs",
+      </summary>
+      <div popover="manual" class={[
+        "dropdown-content z-50 w-72 rounded-lg border bg-base-100 p-3 shadow-lg text-xs",
         status == :exact && "border-success",
         status == :scaled && "border-warning",
         status == :bad_aspect && "border-error",
         status == :missing && "border-base-300"
       ]}>
-        <button :if={assigns[:run_live]} type="button" phx-click="run_cancel" onclick="document.activeElement.blur()" class="btn btn-error btn-xs w-full mb-2">Cancel</button>
+        <button :if={assigns[:run_live]} type="button" phx-click="run_cancel" data-dismiss class="btn btn-error btn-xs w-full mb-2">Cancel</button>
         <div class="flex items-center justify-between gap-2">
           <label class="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" class="toggle toggle-xs toggle-success" checked={runs_on} phx-click="scheduler_toggle" />
             <span class="font-semibold">Daily runs</span>
           </label>
-          <button type="button" phx-click="settings_open" onclick="document.activeElement.blur()"
+          <button type="button" phx-click="settings_open" data-dismiss
                   class="btn btn-ghost btn-square btn-xs text-base-content/60">
             <.icon name="lucide-sliders-horizontal" class="size-4" />
           </button>
@@ -128,7 +128,7 @@
                 <% true -> %>Open Limbus
               <% end %>
             </button>
-            <button type="button" phx-click="settings_open" onclick="document.activeElement.blur()" class="link mt-2 block text-center">
+            <button type="button" phx-click="settings_open" data-dismiss class="link mt-2 block text-center">
               Launcher settings
             </button>
           <% else %>
@@ -170,14 +170,14 @@
           </button>
         <% end %>
       </div>
-    </div>
+    </details>
 
-      <div class="dropdown dropdown-end">
+      <details id="page-menu" phx-hook="FloatingDropdown" data-close-on-click class="dropdown dropdown-end">
         <% profiles_on = on_teams and assigns[:team_nav] != nil and @team_nav.pane == "profiles" %>
-        <div tabindex="0" role="button" class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :prepare_lineups, :rewards, :linux_checks, :windows_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
+        <summary class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :prepare_lineups, :rewards, :linux_checks, :windows_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
           <.icon name="lucide-layout-grid" class="size-4 lg:size-5" />
-        </div>
-        <div tabindex="0" class="dropdown-content z-50 mt-2 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+        </summary>
+        <div popover="manual" class="dropdown-content z-50 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
         <div class="grid grid-cols-4 gap-1">
     <%= if nav = assigns[:team_nav] do %>
     <.link {if on_teams, do: [patch: TeamNav.team_path(nav.team_id, if(profiles_on, do: TeamNav.plan_pane(nav.pane), else: "profiles"))], else: [navigate: TeamNav.team_path(nav.team_id, "profiles")]}
@@ -266,7 +266,7 @@
     </.link>
         </div>
         </div>
-      </div>
+      </details>
     </div>
   </nav>
 

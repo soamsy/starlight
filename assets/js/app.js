@@ -2291,7 +2291,14 @@ const FloatingDropdown = {
     this.close = (event) => {
       if (this.el.open && !this.el.contains(event.target)) this.el.open = false
     }
+    this.dismiss = (event) => {
+      if (!event.target.closest(".dropdown-content")) return
+      const dismisser = event.target.closest("[data-dismiss]")
+      const closer = "closeOnClick" in this.el.dataset && event.target.closest("button:not(:disabled), a, label")
+      if (dismisser || closer) setTimeout(() => { this.el.open = false }, 0)
+    }
     this.el.addEventListener("toggle", this.place)
+    this.el.addEventListener("click", this.dismiss)
     window.addEventListener("resize", this.place)
     window.addEventListener("scroll", this.place, true)
     document.addEventListener("click", this.close)

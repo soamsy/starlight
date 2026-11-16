@@ -992,17 +992,17 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                if(from == @active, do: "border-primary bg-primary text-primary-content font-semibold", else: "border-primary/40 bg-primary/25 hover:bg-primary/40")}>
           <button type="button" phx-click="select_schedule_tab" phx-value-schedule={@schedule["id"]} phx-value-from={from}
                   title={if BattlePlans.loop_segment?(@schedule, from), do: BattlePlans.loop_turns_label(@schedule, from)}><%= BattlePlans.segment_label(@schedule, from) %></button>
-          <div :if={from != 1 and not BattlePlans.loop_segment?(@schedule, from)} class="dropdown">
-            <div tabindex="0" role="button" class="cursor-pointer opacity-60 hover:opacity-100" title="Change the turn this starts on">
+          <details :if={from != 1 and not BattlePlans.loop_segment?(@schedule, from)} id={"turn-menu-#{@schedule["id"]}-#{from}"} phx-hook="FloatingDropdown" data-close-on-click class="dropdown">
+            <summary class="cursor-pointer opacity-60 hover:opacity-100 list-none" title="Change the turn this starts on">
               <.icon name="lucide-chevron-down" class="size-3" />
-            </div>
-            <div tabindex="0" class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg">
+            </summary>
+            <div popover="manual" class="dropdown-content z-30 w-56 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg">
               <div class="grid grid-cols-5 gap-0.5">
                 <button :for={turn <- 2..@max_turn} type="button" phx-click="move_schedule_segment" phx-value-schedule={@schedule["id"]} phx-value-from={from} phx-value-to={turn}
                         disabled={(turn != from and turn in @froms) or BattlePlans.loop_segment?(@schedule, turn)} class={"btn btn-xs " <> if(turn == from, do: "btn-primary", else: "btn-ghost")}>T<%= turn %></button>
               </div>
             </div>
-          </div>
+          </details>
           <%= cond do %>
             <% BattlePlans.loop_segment?(@schedule, from) and from == BattlePlans.loop_from(@schedule) and Enum.count(@froms, &(&1 >= from)) == 1 -> %>
               <button type="button" phx-click="set_schedule_loop" phx-value-schedule={@schedule["id"]} phx-value-turn="" class="opacity-60 hover:opacity-100" title="Remove the loop, keeping its tab"><.icon name="lucide-x" class="size-3.5" /></button>
@@ -1022,19 +1022,19 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         <button type="button" phx-click="split_schedule" phx-value-schedule={@schedule["id"]} phx-value-turn={Enum.max(@froms) + 1}
                 disabled={Enum.max(@froms) >= @max_turn} title={if BattlePlans.looping?(@schedule), do: "New loop tab", else: "New tab"}
                 class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/20 disabled:opacity-30">+</button>
-        <div class="dropdown ml-auto">
-          <div tabindex="0" role="button" title="Repeat the tabs from a turn onward, starting over once the last one is done"
-               class={"rounded-t-lg border border-b-0 px-2 py-0.5 text-[11px] cursor-pointer " <> if(BattlePlans.looping?(@schedule), do: "border-primary bg-primary text-primary-content font-semibold", else: "border-primary/40 hover:bg-primary/20")}>
+        <details id={"loop-menu-#{@schedule["id"]}"} phx-hook="FloatingDropdown" data-close-on-click class="dropdown ml-auto">
+          <summary title="Repeat the tabs from a turn onward, starting over once the last one is done"
+               class={"rounded-t-lg border border-b-0 px-2 py-0.5 text-[11px] cursor-pointer list-none " <> if(BattlePlans.looping?(@schedule), do: "border-primary bg-primary text-primary-content font-semibold", else: "border-primary/40 hover:bg-primary/20")}>
             <%= if BattlePlans.looping?(@schedule), do: "Loop from T#{BattlePlans.loop_from(@schedule)}", else: "Loop" %>
-          </div>
-          <div tabindex="0" class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg right-0">
+          </summary>
+          <div popover="manual" class="dropdown-content z-30 w-56 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg">
             <div class="grid grid-cols-5 gap-0.5">
               <button :for={turn <- 1..@max_turn} type="button" phx-click="set_schedule_loop" phx-value-schedule={@schedule["id"]} phx-value-turn={turn}
                       class={"btn btn-xs " <> if(turn == BattlePlans.loop_from(@schedule), do: "btn-primary", else: "btn-ghost")}>T<%= turn %></button>
             </div>
             <button :if={BattlePlans.looping?(@schedule)} type="button" phx-click="set_schedule_loop" phx-value-schedule={@schedule["id"]} phx-value-turn="" class="btn btn-xs btn-ghost mt-1 w-full">No loop</button>
           </div>
-        </div>
+        </details>
       </div>
       <div class="p-1 border-2 border-primary rounded-b-lg rounded-tr-lg">
         <.action_list container={@schedule["id"] <> "|" <> to_string(@active)} playbook={@playbook} sinner_options={@sinner_options}
@@ -1591,7 +1591,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                     options={[{"only", "all of"}, {"except", "all but"}, {"before", "all before"}, {"after", "all after"}]} />
     </div>
     <%= if @holder["who"] != "everyone" do %>
-      <.sinner_multi name={field_name(@prefix, "sinners_csv")} chosen={@chosen} sinner_options={@sinner_options} empty_label="(none selected)" />
+      <.sinner_multi id={"sinners-#{@action_id}-#{String.replace(@prefix, ~r/[^a-z0-9]+/i, "-")}"} name={field_name(@prefix, "sinners_csv")} chosen={@chosen} sinner_options={@sinner_options} empty_label="(none selected)" />
     <% end %>
     <%= if is_map(@holder["where"]) do %>
       <div class="flex items-start gap-1">
@@ -1607,6 +1607,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     """
   end
 
+  attr :id, :string, required: true
   attr :name, :string, required: true
   attr :chosen, :list, required: true
   attr :sinner_options, :list, required: true
@@ -1617,9 +1618,9 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     assigns = assign(assigns, choices: choices, options_by_id: Map.new(assigns.sinner_options, &{&1.id, &1}))
 
     ~H"""
-    <div class="dropdown min-w-28">
+    <details id={@id} phx-hook="FloatingDropdown" data-keep-open class="dropdown min-w-28">
       <input type="hidden" name={@name} value={Enum.join(@chosen, ",")} />
-      <div tabindex="0" role="button" title="Pick sinners"
+      <summary title="Pick sinners"
            class="btn btn-outline btn-xs w-full min-w-0 flex-nowrap justify-start gap-0.5 px-1 font-normal overflow-hidden">
         <span :if={@chosen == []} class="truncate text-base-content/40"><%= @empty_label %></span>
         <%= for id <- @chosen do %>
@@ -1628,8 +1629,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                  class={"h-5 w-auto rounded shrink-0 " <> if(option.profiled?, do: "", else: "ring-1 ring-warning")} />
         <% end %>
         <span class="ml-auto min-w-0 truncate pl-1 text-base-content/40">+ add</span>
-      </div>
-      <div tabindex="0" class="dropdown-content z-30 mt-1 w-48 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+      </summary>
+      <div popover="manual" class="dropdown-content z-30 w-48 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
         <div class="flex flex-col gap-0.5">
           <button :for={p <- @choices} type="button" data-value={p.id}
                   onclick="const i = this.closest('.dropdown').querySelector('input'); const v = this.dataset.value; const ids = i.value.split(',').filter(Boolean); const at = ids.indexOf(v); if (at >= 0) ids.splice(at, 1); else ids.push(v); i.value = ids.join(','); i.dispatchEvent(new Event('input', {bubbles: true}))"
@@ -1639,7 +1640,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
           </button>
         </div>
       </div>
-    </div>
+    </details>
     """
   end
 
@@ -1816,13 +1817,13 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
       <input type="number" name="value" min="0" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
     <% BattlePlans.tray_leaf?(@node) -> %>
-      <.sinner_multi name="sinners_csv" chosen={@node["sinners"] || []} sinner_options={@sinner_options} empty_label="(anyone)" />
+      <.sinner_multi id={"sinners-cond-#{@values["action"]}-#{String.replace(@path, ~r/[^a-z0-9]+/i, "-")}"} name="sinners_csv" chosen={@node["sinners"] || []} sinner_options={@sinner_options} empty_label="(anyone)" />
       <.skill_chips values={@node["matches"] || []} extras={BattlePlans.where_extras()} name="matches[]" anchor="matches_edit" id={"chips-cond-#{@values["action"]}-#{String.replace(@path, ~r/[^a-z0-9]+/i, "-")}"} />
       <.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
       <input type="number" name="value" min="0" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
     <% BattlePlans.fight_leaf?(@node) -> %>
     <% BattlePlans.position_leaf?(@node) -> %>
-      <.sinner_multi name="sinners_csv" chosen={@node["sinners"] || []} sinner_options={@sinner_options} empty_label="(pick a sinner)" />
+      <.sinner_multi id={"sinners-pos-#{@values["action"]}-#{String.replace(@path, ~r/[^a-z0-9]+/i, "-")}"} name="sinners_csv" chosen={@node["sinners"] || []} sinner_options={@sinner_options} empty_label="(pick a sinner)" />
       <select name="pick" class="select select-bordered select-xs w-auto" title="Count positions from the first sinner or from the last">
         <option :for={pick <- ~w(first last)} value={pick} selected={@node["position"]["pick"] == pick}><%= pick_label(pick) %></option>
       </select>

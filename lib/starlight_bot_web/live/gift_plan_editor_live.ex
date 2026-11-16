@@ -10,6 +10,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
     @gift_tiers 1..6
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)
+  @affinity_order ~w(burn bleed tremor rupture sinking poise charge slash pierce blunt)
   @gift_sorts ~w(default name tier affinity)
   @uptie_views ~w(base uptie2 uptie3)
   @stat_codes %{"cp" => "Clash Power", "fc" => "Final Power", "bc" => "Base Power", "cg" => "Coin Count"}
@@ -802,11 +803,23 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("list_add_timeline", %{"entry" => entry_id, "kind" => kind}, socket), do: handle_event("list_add_timeline", %{"entry" => entry_id, "kinds" => [kind]}, socket)
+
+  @impl true
   def handle_event("list_add_timeline", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("list_toggle_timeline_kind", %{"entry" => entry_id, "timeline" => timeline_id, "kind" => kind}, socket) do
-    {:noreply, for_group(socket, entry_id, fn socket, id -> update_plan(socket, &GiftPlans.toggle_timeline_kind(&1, entry_section_id(socket, id), id, timeline_id, kind)) end)}
+    socket = for_group(socket, entry_id, fn socket, id -> update_plan(socket, &GiftPlans.toggle_timeline_kind(&1, entry_section_id(socket, id), id, timeline_id, kind)) end)
+
+    removed? =
+      socket.assigns.plan_data
+      |> GiftPlans.find_section(entry_section_id(socket, entry_id))
+      |> GiftPlans.find_entry(entry_id)
+      |> GiftPlans.find_timeline(timeline_id)
+      |> is_nil()
+
+    {:noreply, if(removed?, do: put_tab(socket, entry_id, nil, 1), else: socket)}
   end
 
   @impl true
@@ -968,6 +981,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def graces, do: @graces
   def gift_tiers, do: @gift_tiers
   def affinities, do: @affinities
+  def affinity_order, do: @affinity_order
 
   def searchable_gifts(gifts), do: Enum.filter(gifts, &GiftPlans.gift_searchable?/1)
 
@@ -1073,6 +1087,26 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def applies_label("becomes_hard"), do: "Hard starts F2-F5"
   def applies_label("all_hard"), do: "Hard from F1"
   def applies_label("extreme"), do: "Extreme planned"
+
+  attr :entry_id, :string, required: true
+  attr :strip, :any, required: true
+  attr :used_kinds, :list, required: true
+
+  def timeline_kinds(assigns) do
+    assigns = assign(assigns, kinds: (assigns.strip && assigns.strip.kinds) || [])
+
+    ~H"""
+    <div popover="manual" class="dropdown-content z-30 w-max rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg space-y-1">
+      <button :for={kind <- GiftPlans.condition_run_kinds()} type="button"
+              phx-click={if @strip, do: "list_toggle_timeline_kind", else: "list_add_timeline"} phx-value-entry={@entry_id}
+              phx-value-timeline={@strip && @strip.id} phx-value-kind={kind}
+              disabled={kind in @used_kinds and kind not in @kinds}
+              title={applies_hint(kind)} class={"btn btn-xs w-full justify-start " <> if(kind in @kinds, do: "btn-primary", else: "btn-ghost")}>
+        <.icon name={if kind in @kinds, do: "lucide-check", else: "lucide-minus"} class="size-3" /><%= applies_label(kind) %>
+      </button>
+    </div>
+    """
+  end
 
   def applies_hint("always"), do: "Will work on this stage in every run"
   def applies_hint("all_normal"), do: "Will work on this stage if F1-F5 are all normal, with no planned hard switch"
@@ -1601,31 +1635,23 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <div class="flex items-end gap-0.5 flex-wrap">
         <span data-sort-handle class="cursor-grab text-base-content/40 select-none px-1 pb-0.5" title="Drag this schedule and its entries">⠿</span>
         <%= for strip <- @strips do %>
-          <div :if={strip.id} class="dropdown self-end pb-0.5 pl-1.5">
-            <div tabindex="0" role="button" title="Run types this timeline applies to"
-                 class={"flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold cursor-pointer " <> applies_badge_color(hd(strip.kinds))}>
+          <details :if={strip.id} id={"applies-#{@entry["id"]}-#{strip.id}"} phx-hook="FloatingDropdown" data-keep-open class="dropdown self-end pb-0.5 pl-1.5">
+            <summary title="Run types this timeline applies to"
+                 class={"flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[10px] font-semibold cursor-pointer list-none " <> applies_badge_color(hd(strip.kinds))}>
               <.icon name="lucide-swords" class="size-3" /><%= Enum.map_join(strip.kinds, " + ", &applies_label/1) %><.icon name="lucide-chevron-down" class="size-3" />
-            </div>
-            <div tabindex="0" class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg space-y-1">
-              <button :for={kind <- GiftPlans.condition_run_kinds()} type="button" phx-click="list_toggle_timeline_kind" phx-value-entry={@entry["id"]}
-                      phx-value-timeline={strip.id} phx-value-kind={kind} disabled={(kind in @used_kinds and kind not in strip.kinds) or strip.kinds == [kind]}
-                      title={applies_hint(kind)} class={"btn btn-xs w-full justify-start " <> if(kind in strip.kinds, do: "btn-primary", else: "btn-ghost")}>
-                <.icon name={if kind in strip.kinds, do: "lucide-check", else: "lucide-minus"} class="size-3" /><%= applies_label(kind) %>
-              </button>
-              <button type="button" phx-click="list_remove_timeline" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id}
-                      class="btn btn-xs btn-outline btn-error w-full">Remove timeline</button>
-            </div>
-          </div>
+            </summary>
+            <.timeline_kinds entry_id={@entry["id"]} strip={strip} used_kinds={@used_kinds} />
+          </details>
           <div :for={from <- strip.froms}
                class={"flex items-center gap-0.5 rounded-t-lg border border-b-0 px-2 py-0.5 text-[11px] " <>
                  if(strip.id == @timeline and from == @from, do: "border-primary bg-primary text-primary-content font-semibold", else: "border-primary/40 bg-primary/25 hover:bg-primary/40")}
                style={if from in strip.abandoned_froms, do: StarlightBotWeb.Live.PackPlanEditorLive.disabled_stripes_style()}>
             <button type="button" phx-click="list_select_tab" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from}><%= segment_label(strip.entry, from) %></button>
-            <div class="dropdown">
-              <div tabindex="0" role="button" class="cursor-pointer opacity-60 hover:opacity-100" title={if from == 1, do: "Start later", else: "Change or abandon from a floor"}>
+            <details id={"segment-#{@entry["id"]}-#{strip.id || "main"}-#{from}"} phx-hook="FloatingDropdown" data-keep-open class="dropdown">
+              <summary class="cursor-pointer opacity-60 hover:opacity-100 list-none" title={if from == 1, do: "Start later", else: "Change or abandon from a floor"}>
                 <.icon name="lucide-chevron-down" class="size-3" />
-              </div>
-              <div tabindex="0" class={"dropdown-content z-30 mt-1 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg space-y-1 " <> if(from == 1, do: "w-max", else: "w-56")}>
+              </summary>
+              <div popover="manual" class={"dropdown-content z-30 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg space-y-1 " <> if(from == 1, do: "w-max", else: "w-56")}>
                 <button :if={from == 1} type="button" phx-click="list_set_segment_mode" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from}
                         phx-value-mode={if from in strip.abandoned_froms, do: "change", else: "abandon"}
                         class={"btn btn-xs " <> if(from in strip.abandoned_froms, do: "btn-primary", else: "btn-outline")}>Start later</button>
@@ -1640,7 +1666,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
                           class={"btn btn-xs " <> if(floor == from, do: "btn-primary", else: "btn-ghost")}>F<%= floor %></button>
                 </div>
               </div>
-            </div>
+            </details>
             <button :if={from != 1} type="button" phx-click="list_remove_segment" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from}
                     class="opacity-60 hover:opacity-100" title={"Close this tab; #{segment_label(strip.entry, from)} use the earlier tab's settings"}><.icon name="lucide-x" class="size-3.5" /></button>
             <button :if={from == 1 and length(strip.froms) == 1 and is_nil(strip.id) and @used_kinds == []} type="button" phx-click="list_remove_schedule" phx-value-entry={@entry["id"]}
@@ -1650,22 +1676,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
                   disabled={Enum.max(strip.froms) >= GiftPlans.max_floor()} title="New tab"
                   class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/20 disabled:opacity-30">+</button>
         <% end %>
-        <div :if={length(@used_kinds) < length(GiftPlans.condition_run_kinds())} class="dropdown">
-          <div tabindex="0" role="button" title="New timeline for specific run types"
-               class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-primary hover:bg-primary/20 cursor-pointer">
+        <details :if={length(@used_kinds) < length(GiftPlans.condition_run_kinds())} id={"new-timeline-#{@entry["id"]}"} phx-hook="FloatingDropdown" data-close-on-click class="dropdown">
+          <summary title="New timeline for specific run types"
+               class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-primary hover:bg-primary/20 cursor-pointer list-none">
             <.icon name="lucide-swords" class="size-3.5" />
-          </div>
-          <div tabindex="0" class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
-            <form phx-submit="list_add_timeline" class="flex flex-col gap-1">
-              <input type="hidden" name="entry" value={@entry["id"]} />
-              <span class="text-[11px] font-semibold text-base-content/70">New timeline for</span>
-              <label :for={kind <- GiftPlans.condition_run_kinds()} class="flex items-center gap-1.5 text-xs" title={applies_hint(kind)}>
-                <input type="checkbox" name="kinds[]" value={kind} disabled={kind in @used_kinds} class="checkbox checkbox-xs" /><%= applies_label(kind) %>
-              </label>
-              <button type="submit" class="btn btn-xs btn-primary">Add timeline</button>
-            </form>
-          </div>
-        </div>
+          </summary>
+          <.timeline_kinds entry_id={@entry["id"]} strip={nil} used_kinds={@used_kinds} />
+        </details>
       </div>
     """
   end
@@ -1756,17 +1773,17 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
            class={"flex items-center gap-0.5 rounded-t-lg border border-b-0 px-2 py-0.5 text-[11px] " <>
              if(from == @from, do: "border-primary bg-primary text-primary-content font-semibold", else: "border-primary/40 bg-primary/25 hover:bg-primary/40")}>
         <button type="button" phx-click="list_refresh_select_tab" phx-value-from={from}><%= refresh_tab_label(@section, from) %></button>
-        <div :if={from != 1} class="dropdown">
-          <div tabindex="0" role="button" class="cursor-pointer opacity-60 hover:opacity-100" title="Change the floor this starts on">
+        <details :if={from != 1} id={"refresh-tab-#{@section["id"]}-#{from}"} phx-hook="FloatingDropdown" data-close-on-click class="dropdown">
+          <summary class="cursor-pointer opacity-60 hover:opacity-100 list-none" title="Change the floor this starts on">
             <.icon name="lucide-chevron-down" class="size-3" />
-          </div>
-          <div tabindex="0" class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg">
+          </summary>
+          <div popover="manual" class="dropdown-content z-30 w-56 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg">
             <div class="grid grid-cols-5 gap-0.5">
               <button :for={floor <- 2..GiftPlans.max_floor()} type="button" phx-click="list_refresh_move_segment" phx-value-from={from} phx-value-to={floor}
                       disabled={floor != from and floor in @froms} class={"btn btn-xs " <> if(floor == from, do: "btn-primary", else: "btn-ghost")}>F<%= floor %></button>
             </div>
           </div>
-        </div>
+        </details>
         <button :if={from != 1} type="button" phx-click="list_refresh_remove_segment" phx-value-from={from} class="opacity-60 hover:opacity-100"
                 title={"Close this tab; #{refresh_tab_label(@section, from)} use the earlier tab's cases"}><.icon name="lucide-x" class="size-3.5" /></button>
         <button :if={from == 1 and length(@froms) == 1} type="button" phx-click="list_refresh_remove_schedule" class="opacity-60 hover:opacity-100"

@@ -102,9 +102,9 @@
                           </button>
                           <form phx-change="set_sinner_profile" class="flex items-center gap-0.5 min-w-0">
                             <input type="hidden" name="sinner" value={sinner} />
-                            <div class="dropdown min-w-0 flex-1">
+                            <details id={"profiles-#{sinner}"} phx-hook="FloatingDropdown" data-keep-open class="dropdown min-w-0 flex-1">
                               <input type="hidden" name="profile_ids" value={Enum.map_join(chosen, ",", & &1.id)} />
-                              <div tabindex="0" role="button"
+                              <summary
                                    title={if(chosen == [], do: "No profile: playbook checks for #{sinner_label(sinner)} are skipped", else: Enum.map_join(chosen, ", ", & &1.name))}
                                    class={"btn btn-outline btn-xs w-full min-w-0 flex-nowrap justify-start gap-0.5 px-1 font-normal text-[10px] overflow-hidden " <> if(chosen == [], do: "text-base-content/40", else: "")}>
                                 <%= if chosen == [] do %>
@@ -116,8 +116,8 @@
                                   <% end %>
                                   <span class="ml-auto min-w-0 truncate pl-1 text-base-content/40">+ add</span>
                                 <% end %>
-                              </div>
-                              <div tabindex="0" class="dropdown-content z-30 mt-1 w-56 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+                              </summary>
+                              <div popover="manual" class="dropdown-content z-30 w-56 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
                                 <button :for={p <- Map.get(@profiles_by_sinner, sinner, [])} type="button" data-value={p.id}
                                         onclick="const i = this.closest('.dropdown').querySelector('input'); const v = this.dataset.value; const ids = i.value.split(',').filter(Boolean); const at = ids.indexOf(v); if (at >= 0) ids.splice(at, 1); else ids.push(v); i.value = ids.join(','); i.dispatchEvent(new Event('input', {bubbles: true}))"
                                         class={"btn btn-xs h-auto min-h-7 w-full flex-nowrap justify-start gap-1.5 py-0.5 " <> if(Enum.any?(chosen, &(&1.id == p.id)), do: "btn-primary", else: "btn-ghost")}>
@@ -125,7 +125,7 @@
                                   <span class="truncate"><%= p.name %></span>
                                 </button>
                               </div>
-                            </div>
+                            </details>
                           </form>
                         </div>
                       <% end %>

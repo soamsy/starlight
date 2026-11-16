@@ -234,14 +234,16 @@ defmodule StarlightBot.GiftPlansTest do
       assert [%{"floors" => [%{"from" => 1}]}] = entry_for(data, id, "Glimpse")["timelines"]
     end
 
-    test "toggling kinds keeps at least one and never shares a kind between timelines" do
+    test "toggling kinds never shares a kind between timelines and unselecting the last one removes the timeline" do
       {data, id, entry_id} = with_timeline(["all_hard"])
       data = GiftPlans.add_timeline(data, id, entry_id, "tl_y", ["all_normal"])
       kinds = fn data, timeline -> data |> entry_for(id, "Glimpse") |> GiftPlans.find_timeline(timeline) |> Map.fetch!("kinds") end
 
       assert kinds.(GiftPlans.toggle_timeline_kind(data, id, entry_id, "tl_x", "extreme"), "tl_x") == ["all_hard", "extreme"]
       assert kinds.(GiftPlans.toggle_timeline_kind(data, id, entry_id, "tl_x", "all_normal"), "tl_x") == ["all_hard"]
-      assert kinds.(GiftPlans.toggle_timeline_kind(data, id, entry_id, "tl_x", "all_hard"), "tl_x") == ["all_hard"]
+      removed = GiftPlans.toggle_timeline_kind(data, id, entry_id, "tl_x", "all_hard")
+      assert removed |> entry_for(id, "Glimpse") |> GiftPlans.find_timeline("tl_x") == nil
+      assert kinds.(removed, "tl_y") == ["all_normal"]
       assert GiftPlans.toggle_timeline_kind(data, id, entry_id, "tl_x", "nonsense") == data
       assert entry_for(GiftPlans.remove_timeline(GiftPlans.remove_timeline(data, id, entry_id, "tl_x"), id, entry_id, "tl_y"), id, "Glimpse") |> Map.has_key?("timelines") == false
     end

@@ -282,12 +282,12 @@
             <StarlightBotWeb.Components.WindowGate.gate_button :if={gate == :launch} gate={gate} busy={@game_window_busy}
               disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
               class={"join-item flex-1 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary", else: "btn-primary")} />
-            <div class="dropdown dropdown-end">
-              <div tabindex="0" role="button"
-                   class={"btn btn-sm join-item w-12 px-0 border-l-2 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary border-l-[hsla(320,20%,80%,50%)]", else: "btn-primary border-l-[hsla(0,0%,20%,50%)]")}>
+            <details id="runner-then-menu" phx-hook="FloatingDropdown" data-keep-open class="dropdown dropdown-end join-item border-0">
+              <summary
+                   class={"btn btn-sm rounded-[inherit] w-12 px-0 border-l-2 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary border-l-[hsla(320,20%,80%,50%)]", else: "btn-primary border-l-[hsla(0,0%,20%,50%)]")}>
                 <.icon name="lucide-chevron-down" class="size-3.5" />
-              </div>
-              <div tabindex="0" class="dropdown-content z-10 mt-1 w-64 rounded-box bg-base-100 p-3 shadow">
+              </summary>
+              <div popover="manual" class="dropdown-content z-10 w-64 rounded-box bg-base-100 p-3 shadow">
                 <div class="flex flex-col gap-1">
                   <label class="flex items-center gap-2">
                     <input type="checkbox" name="then" value="mirror_dungeon" checked={@then_md} disabled={is_nil(@md_next)}
@@ -297,7 +297,7 @@
                   <span :if={is_nil(@md_next)} class="text-xs text-base-content/50">Set up a mirror dungeon run on its page first.</span>
                 </div>
               </div>
-            </div>
+            </details>
           </div>
         <% end %>
 

@@ -855,20 +855,22 @@ defmodule StarlightBot.GiftPlans do
               true -> Enum.filter(@condition_run_kinds, &(&1 in [kind | kinds]))
             end
 
-          if next == [], do: entry, else: Map.put(entry, "timelines", Enum.map(entry["timelines"], &if(&1 == timeline, do: %{timeline | "kinds" => next}, else: &1)))
+          if next == [],
+            do: remove_timeline_from(entry, timeline["id"]),
+            else: Map.put(entry, "timelines", Enum.map(entry["timelines"], &if(&1 == timeline, do: %{timeline | "kinds" => next}, else: &1)))
       end
     end)
   end
 
   def toggle_timeline_kind(data, _id, _entry_id, _timeline_id, _kind), do: data
 
-  def remove_timeline(data, id, entry_id, timeline_id) do
-    update_entry(data, id, entry_id, fn entry ->
-      case Enum.reject(timelines(entry), &(&1["id"] == timeline_id)) do
-        [] -> Map.delete(entry, "timelines")
-        rest -> Map.put(entry, "timelines", rest)
-      end
-    end)
+  def remove_timeline(data, id, entry_id, timeline_id), do: update_entry(data, id, entry_id, &remove_timeline_from(&1, timeline_id))
+
+  defp remove_timeline_from(entry, timeline_id) do
+    case Enum.reject(timelines(entry), &(&1["id"] == timeline_id)) do
+      [] -> Map.delete(entry, "timelines")
+      rest -> Map.put(entry, "timelines", rest)
+    end
   end
 
   def timeline_for(entry, run_kind) do
