@@ -9,6 +9,8 @@ defmodule StarlightBot.Navigation.Navigator do
   @topic "navigation"
   @log_limit 1000
   @broadcast_interval_ms 250
+  @max_crash_retries 3
+  @code_bug_errors [:badarg, :undef, :function_clause, :badarith, :badarity, :badfun, :badmatch, :case_clause, :badkey, :badmap, :badrecord, :if_clause, :try_clause]
 
   defstruct [
     current_screen: nil,   # nil = never localized | :unknown | screen atom
@@ -28,7 +30,8 @@ defmodule StarlightBot.Navigation.Navigator do
     run_started_at: nil,
     run_archive: [],
     screen_times: %ScreenTimes{},
-    next_run: nil
+    next_run: nil,
+    crash_retry: nil
   ]
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -222,7 +225,8 @@ defmodule StarlightBot.Navigation.Navigator do
 
     state = %{
       state
-      | phase: :running,
+      | crash_retry: begin_retryable(state, {:run_luxcavation, team, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count}),
+        phase: :running,
         goal: nil,
         run_kind: :luxcavation,
         pause_flag: pause_flag,
@@ -245,7 +249,7 @@ defmodule StarlightBot.Navigation.Navigator do
     ctx = nav_ctx(paused_to: {self(), :nav_paused}, pause_flag: pause_flag, run_memory_to: {self(), :nav_run_memory})
     state = launch(state, :run_script, MirrorDungeonRunner.program(picks, run_count, config), ctx, [])
 
-    state = %{state | phase: :running, goal: nil, run_kind: :mirror_dungeon, pause_flag: pause_flag, run_clock: RunClock.start(now_ms()), run_splits: [], run_times_kind: :mirror_dungeon, run_started_at: DateTime.utc_now(), screen_times: ScreenTimes.track(%ScreenTimes{}, %{run: 1}, 0, DateTime.utc_now())}
+    state = %{state | crash_retry: begin_retryable(state, {:run_mirror_dungeon, picks, run_count, config}), phase: :running, goal: nil, run_kind: :mirror_dungeon, pause_flag: pause_flag, run_clock: RunClock.start(now_ms()), run_splits: [], run_times_kind: :mirror_dungeon, run_started_at: DateTime.utc_now(), screen_times: ScreenTimes.track(%ScreenTimes{}, %{run: 1}, 0, DateTime.utc_now())}
     broadcast(state)
     {:noreply, state}
   end
@@ -513,6 +517,10 @@ defmodule StarlightBot.Navigation.Navigator do
 
   @impl true
   def handle_info({:DOWN, _ref, :process, pid, reason}, %{task_pid: pid} = state) do
+    retry = crash_retry(state, reason)
+    origin = state.origin
+    snapshot = state.run_memory
+
     state =
       state
       |> release_run()
@@ -524,17 +532,49 @@ defmodule StarlightBot.Navigation.Navigator do
       |> Map.put(:next_run, nil)
       |> Map.put(:origin, :manual)
       |> Map.put(:last_run, nil)
+      |> Map.put(:crash_retry, nil)
       |> update_clock(&RunClock.stop/2)
       |> add_log(:error, "Run crashed: #{inspect(reason)}")
 
-    broadcast(state)
-    {:noreply, state}
+    case retry do
+      nil ->
+        broadcast(state)
+        {:noreply, state}
+
+      %{msg: msg, tries: tries} = retry ->
+        StarlightBot.Input.Mouse.release_all()
+        state = add_log(state, :info, "Restarting the crashed run (retry #{tries}/#{@max_crash_retries})")
+        state = %{state | crash_retry: %{retry | restarting: true, snapshot: snapshot}}
+        {:noreply, state} = handle_cast(msg, state)
+        {:noreply, %{state | origin: origin}}
+    end
   end
 
   @impl true
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
     {:noreply, state}
   end
+
+  defp begin_retryable(%{crash_retry: %{restarting: true} = retry}, _msg), do: %{retry | restarting: false}
+  defp begin_retryable(_state, msg), do: %{msg: msg, tries: 0, restarting: false, snapshot: nil}
+
+  defp restore_seeds(%{crash_retry: %{restarting: true, snapshot: snapshot}}, seeds)
+       when is_list(seeds) and is_map(snapshot) and map_size(snapshot) > 0,
+       do: seeds ++ [{:merge, snapshot}]
+
+  defp restore_seeds(_state, seeds), do: seeds
+
+  defp crash_retry(%{run_kind: kind, crash_retry: %{tries: tries} = retry}, reason)
+       when kind in [:mirror_dungeon, :luxcavation] and tries < @max_crash_retries do
+    if code_bug?(reason), do: nil, else: %{retry | tries: tries + 1}
+  end
+
+  defp crash_retry(_state, _reason), do: nil
+
+  defp code_bug?({%{__exception__: true}, _stacktrace}), do: true
+  defp code_bug?({error, _stacktrace}) when error in @code_bug_errors, do: true
+  defp code_bug?({{error, _detail}, _stacktrace}) when error in @code_bug_errors, do: true
+  defp code_bug?(_reason), do: false
 
   defp team_label(nil), do: "none"
   defp team_label(%{id: id, hook: hook}), do: "#{id}/#{hook}"
@@ -549,7 +589,7 @@ defmodule StarlightBot.Navigation.Navigator do
   end
 
   defp launch(state, kind, program, ctx, run_memory_seeds \\ nil) do
-    ctx = with_run_memory(ctx, run_memory_seeds)
+    ctx = with_run_memory(ctx, restore_seeds(state, run_memory_seeds))
     %{state | task_pid: start_machine(program, kind, ctx), run_memory_agent: ctx.run_memory}
   end
 
