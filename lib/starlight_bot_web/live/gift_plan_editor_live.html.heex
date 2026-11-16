@@ -61,10 +61,10 @@
                         <input id="gift-search-input" phx-hook="GiftSearchNav" type="text" placeholder="Search gifts (press /)…" value={@gift_filter} phx-keyup="filter_gifts" class="grow min-w-0" />
                       </label>
                       <button type="button" phx-click="clear_gift_filters" title="Clear all filters"
-                              class={"btn btn-ghost btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter, do: "", else: "hidden")}><.icon name="lucide-x" class="size-3.5" /></button>
+                              class={"btn btn-ghost btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter or @gift_pack_filter != "", do: "", else: "hidden")}><.icon name="lucide-x" class="size-3.5" /></button>
                       <details id="gift-filter-menu" phx-hook="FloatingDropdown" data-keep-open class="dropdown dropdown-end">
                         <summary title="Filter"
-                             class={"btn btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter, do: "btn-primary", else: "btn-ghost")}>
+                             class={"btn btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter or @gift_pack_filter != "", do: "btn-primary", else: "btn-ghost")}>
                           <.icon name="lucide-funnel" class="size-3.5" />
                         </summary>
                         <div popover="manual" class="dropdown-content z-30 w-56 rounded-lg border border-base-300 bg-base-200 p-2 shadow-lg ring-2 ring-base-content/20 space-y-2">
@@ -85,10 +85,32 @@
                                 <img src={gift_affinity_icon(affinity)} alt={affinity} class="w-4 h-4" />
                               </button>
                               <button type="button" phx-click="set_gift_affinity_filter" value="none"
-                                      class={"btn btn-xs " <> if("none" in @gift_affinity_filter, do: "btn-primary", else: "btn-ghost border-base-300")}>
-                                none
+                                      class={"btn btn-xs gap-1 " <> if("none" in @gift_affinity_filter, do: "btn-primary", else: "btn-ghost border-base-300")}>
+                                <.icon name="lucide-circle-off" class="size-3.5" />Keywordless
                               </button>
                             </div>
+                          </div>
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[11px] text-base-content/60">Theme pack</span>
+                            <details id="gift-pack-filter-menu" phx-hook="FloatingDropdown" data-close-on-click class="dropdown w-full">
+                              <summary class="btn btn-xs w-full justify-between font-normal btn-ghost border-base-300">
+                                <span class="flex min-w-0 items-center gap-1.5">
+                                  <img :if={@theme_pack_images[@gift_pack_filter]} src={@theme_pack_images[@gift_pack_filter]} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                                  <span class="truncate"><%= pack_filter_label(@gift_pack_filter) %></span>
+                                </span>
+                                <.icon name="lucide-chevron-down" class="size-3.5 shrink-0" />
+                              </summary>
+                              <div popover="manual" class="dropdown-content z-40 w-52 rounded-lg border border-base-300 bg-base-200 p-1 shadow-lg ring-2 ring-base-content/20">
+                                <div class="flex max-h-64 flex-col overflow-y-auto">
+                                  <button :for={{value, label} <- [{"", "Any"}, {pack_only_filter(), "Theme pack only"}] ++ Enum.map(theme_pack_names(@theme_packs_by_gift_id), &{&1, &1})}
+                                          type="button" phx-click="set_gift_pack_filter" value={value}
+                                          class={"btn btn-xs w-full justify-start font-normal " <> if(@gift_pack_filter == value, do: "btn-primary", else: "btn-ghost")}>
+                                    <img :if={@theme_pack_images[value]} src={@theme_pack_images[value]} class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                                    <span class="truncate"><%= label %></span>
+                                  </button>
+                                </div>
+                              </div>
+                            </details>
                           </div>
                           <div class="flex flex-col gap-1">
                             <span class="text-[11px] text-base-content/60">Other</span>
@@ -120,7 +142,7 @@
                     </div>
 
                     <% picks = @plan_data["gift_search"] %>
-                    <% shown = filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_fixed_filter, @gift_no_pack_filter, @theme_packs_by_gift_id, @gifts_by_id, @gift_sort) %>
+                    <% shown = filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_fixed_filter, @gift_no_pack_filter, @gift_pack_filter, @theme_packs_by_gift_id, @gifts_by_id, @gift_sort) %>
                     <div id="gift-drag-source" phx-hook="GiftDragSource" class="flex flex-col flex-1 min-h-0 max-lg:min-h-28 overflow-y-auto">
                       <% added? = fn gift -> if(@active_tab == :loadout, do: gift.name in picks, else: GiftPlans.has_gift?(add_target, gift.name)) end %>
                       <div :for={gift <- shown} data-gift-row={gift.name} data-drag-gift={if not added?.(gift), do: gift.name} class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-base-200">
