@@ -172,7 +172,7 @@
       </div>
     </details>
 
-      <details id="page-menu" phx-hook="FloatingDropdown" data-close-on-click class="dropdown dropdown-end">
+      <details id="page-menu" phx-hook="FloatingDropdown" data-keep-open data-close-on-click class="dropdown dropdown-end">
         <% profiles_on = on_teams and assigns[:team_nav] != nil and @team_nav.pane == "profiles" %>
         <summary class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :prepare_lineups, :rewards, :linux_checks, :windows_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
           <.icon name="lucide-layout-grid" class="size-4 lg:size-5" />
