@@ -1936,7 +1936,13 @@ const GiftPopup = {
         this.pushEvent("hide_gift_popup", {})
       }
     }
+    this.onDown = (e) => {
+      if (!this.el.dataset.gift) return
+      if (e.target.closest("[data-popup-control]") || e.target.closest("[data-gift-popup]")) return
+      this.pushEvent("hide_gift_popup", {})
+    }
     document.addEventListener("click", this.onClick, true)
+    document.addEventListener("pointerdown", this.onDown, true)
     this.place()
   },
   updated() {
@@ -1944,6 +1950,7 @@ const GiftPopup = {
   },
   destroyed() {
     document.removeEventListener("click", this.onClick, true)
+    document.removeEventListener("pointerdown", this.onDown, true)
   },
   place() {
     const box = this.el.firstElementChild

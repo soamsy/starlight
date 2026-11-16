@@ -1,6 +1,7 @@
 defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   use StarlightBotWeb, :live_view
   import StarlightBotWeb.Components.ConditionTree
+  import StarlightBotWeb.Components.GiftPopup, only: [gift_popup: 1]
   import StarlightBotWeb.Components.PlanPicker
   import StarlightBotWeb.Components.PlanTemplates
 

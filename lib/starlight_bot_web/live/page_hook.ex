@@ -11,6 +11,7 @@ defmodule StarlightBotWeb.Live.PageHook do
 
   @gated_pages [:runner]
 
+  @latest_log_flush_ms 250
   @self_subscribed_views [
     StarlightBotWeb.Live.RunnerLive,
     StarlightBotWeb.Live.BattleInspectorLive,
@@ -190,7 +191,21 @@ defmodule StarlightBotWeb.Live.PageHook do
   end
 
   defp handle_log_entry({:log_entry, entry}, %{view: StarlightBotWeb.Live.LogLive} = socket), do: {:cont, assign(socket, :latest_log, entry)}
-  defp handle_log_entry({:log_entry, entry}, socket), do: {:halt, assign(socket, :latest_log, entry)}
+  defp handle_log_entry({:log_entry, entry}, socket) do
+    socket = assign(socket, :pending_log, entry)
+
+    if socket.assigns[:log_flush_scheduled?] do
+      {:halt, socket}
+    else
+      Process.send_after(self(), :flush_latest_log, @latest_log_flush_ms)
+      {:halt, assign(socket, :log_flush_scheduled?, true)}
+    end
+  end
+
+  defp handle_log_entry(:flush_latest_log, socket) do
+    {:halt, socket |> assign(:latest_log, socket.assigns.pending_log) |> assign(:log_flush_scheduled?, false)}
+  end
+
   defp handle_log_entry(_msg, socket), do: {:cont, socket}
 
   defp assign_scheduler(socket, settings) do

@@ -1,6 +1,7 @@
 defmodule StarlightBotWeb.Live.RunnerLive do
   use StarlightBotWeb, :live_view
   import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1]
+  import StarlightBotWeb.Components.GiftPopup, only: [gift_popup: 1]
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Navigation.{Navigator, RunArchive, ScreenTimes}
   alias StarlightBot.{AppSettings, EgoGifts, GiftPlans, LuxSchedule, Plans, RestCycle, RunHistory, RunnerForms, SinnerProfiles, StarlightBudget, TeamBudget, Teams}
@@ -30,6 +31,9 @@ defmodule StarlightBotWeb.Live.RunnerLive do
      socket
      |> assign(:tab, socket.assigns[:live_action] || nav.run_kind || :mirror_dungeon)
      |> assign(:gifts_by_name, Map.new(EgoGifts.list_gifts(), &{&1.name, &1}))
+     |> assign(:gifts_by_id, Map.new(EgoGifts.list_gifts(), &{&1.id, &1}))
+     |> assign(:theme_packs_by_gift_id, StarlightBot.ThemePacks.names_by_gift_id())
+     |> assign(:gift_popup, nil)
      |> assign_nav(nav)
      |> assign(:show_screen_times, false)
      |> assign(:show_forecast_info, false)
@@ -74,6 +78,24 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   def handle_params(_params, _uri, socket), do: {:noreply, socket}
 
   @impl true
+  def handle_event("show_gift_popup", %{"gift" => gift, "x" => x, "y" => y} = params, socket) do
+    view =
+      case params["uptie"] do
+        "1" -> "uptie2"
+        "2" -> "uptie3"
+        _ -> "base"
+      end
+
+    view = if (found = socket.assigns.gifts_by_name[gift]) && GiftPlanEditorLive.uptie_view_available?(found, view, socket.assigns.gifts_by_id), do: view, else: "base"
+    {:noreply, assign(socket, :gift_popup, %{name: gift, x: x, y: y, view: view})}
+  end
+
+  def handle_event("set_gift_popup_view", %{"level" => level}, socket) when level in ~w(base uptie2 uptie3) do
+    {:noreply, update(socket, :gift_popup, &(&1 && %{&1 | view: level}))}
+  end
+
+  def handle_event("hide_gift_popup", _params, socket), do: {:noreply, assign(socket, :gift_popup, nil)}
+
   def handle_event("toggle_forecast_info", _, socket), do: {:noreply, update(socket, :show_forecast_info, &(!&1))}
 
   @impl true
@@ -355,7 +377,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
     Process.send_after(self(), :clock_tick, @clock_tick_ms)
 
     case socket.assigns.run_clock do
-      %{running?: true} -> {:noreply, assign(socket, :now_ms, now_ms())}
+      %{running?: true} -> {:noreply, socket |> assign(:now_ms, now_ms()) |> assign_run_groups()}
       _ -> {:noreply, socket}
     end
   end
@@ -385,7 +407,10 @@ defmodule StarlightBotWeb.Live.RunnerLive do
     |> assign(:run_archive, nav.run_archive)
     |> assign(:screen_times, nav.screen_times)
     |> assign_other_running()
+    |> assign_run_groups()
   end
+
+  defp assign_run_groups(socket), do: assign(socket, :run_groups, run_time_groups(socket.assigns))
 
   defp assign_other_running(socket) do
     %{run_kind: run_kind, tab: tab} = socket.assigns
@@ -684,7 +709,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
     assigns = assign(assigns, :gift, assigns.gifts_by_name[assigns.owned.name])
 
     ~H"""
-    <div class={"relative w-9 h-9 shrink-0 rounded overflow-hidden bg-base-300 ring-1 ring-base-300 " <> if(@dim, do: "opacity-40", else: "")} title={@owned.name}>
+    <div class={"relative w-9 h-9 shrink-0 rounded overflow-hidden bg-base-300 ring-1 ring-base-300 cursor-pointer " <> if(@dim, do: "opacity-40", else: "")} title={@owned.name} data-gift-popup={@owned.name} data-gift-uptie={Map.get(@owned, :uptie, 0)}>
       <img :if={@gift} src={@gift.image_path} class="w-full h-full object-cover" draggable="false" />
       <span :if={is_nil(@gift)} class="text-[8px] leading-none p-0.5 break-all"><%= @owned.name %></span>
       <span :if={@show_tier and @gift && @gift.tier} class="absolute top-0 left-0 px-0.5 text-[9px] leading-tight font-bold bg-base-100/80 rounded-br"><%= GiftPlanEditorLive.gift_tier_roman(@gift.tier) %></span>
