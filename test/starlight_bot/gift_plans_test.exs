@@ -391,6 +391,16 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.eval_condition(nil, env)
     end
 
+    test "owns reads the inventory and tolerates an env without one" do
+      leaf = %{"op" => "owns", "gift" => "Downpour"}
+      inventory = %{1 => %{name: "Downpour", uptie: 0, count: 1}}
+
+      assert GiftPlans.eval_condition(leaf, %{inventory: inventory})
+      refute GiftPlans.eval_condition(leaf, %{inventory: %{}})
+      refute GiftPlans.eval_condition(leaf, %{floor: 1, plan: %{}})
+      assert GiftPlans.eval_condition(Map.put(leaf, "not", true), %{floor: 1, plan: %{}})
+    end
+
     test "evaluates and/or trees", %{env: env} do
       tree = %{
         "op" => "and",

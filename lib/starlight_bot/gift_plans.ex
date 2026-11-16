@@ -1668,7 +1668,7 @@ defmodule StarlightBot.GiftPlans do
   defp eval_base(%{"op" => "cost"} = leaf, %{wallet: wallet} = env) when is_integer(wallet), do: compare(wallet - refresh_spend(leaf, env), leaf["cmp"], leaf["value"])
   defp eval_base(%{"op" => "cost"}, _env), do: false
   defp eval_base(%{"op" => "refreshes"} = leaf, env), do: compare(Map.get(env, :refreshes, 0), leaf["cmp"], leaf["value"])
-  defp eval_base(%{"op" => "owns", "gift" => gift}, %{owned: owned}), do: MapSet.member?(owned, gift)
+  defp eval_base(%{"op" => "owns", "gift" => gift}, env), do: owns?(env, gift)
   defp eval_base(%{"op" => "stage"} = leaf, %{plan: plan} = env), do: section_reached?(plan, leaf["stage"], env)
   defp eval_base(%{"op" => "goal"} = leaf, %{plan: plan} = env), do: goal_reached?(plan, leaf["stage"] || env[:current_section], leaf["goal"], env)
   defp eval_base(%{"op" => "run_kind"} = leaf, %{plan: %{"run_kind" => run_kind}}), do: run_kind_matches?(leaf["kind"], run_kind)

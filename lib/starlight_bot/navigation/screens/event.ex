@@ -161,7 +161,6 @@ defmodule StarlightBot.Navigation.Screens.Event do
           floor: RunMemory.floor(ctx),
           gifts: Map.new(gifts, &{&1.name, &1}),
           gifts_by_id: Map.new(gifts, &{&1.id, &1}),
-          owned: inventory |> Map.values() |> MapSet.new(& &1.name),
           inventory: inventory,
           skill_replaces: RunMemory.skill_replaces(ctx)
         }
