@@ -662,7 +662,7 @@
                                   <%= label %><.icon :if={action == "affinity_refresh"} name="lucide-refresh-cw" class="size-3" />
                                 </label>
                                 <details id={"refresh-aff-#{refresh_case["id"]}"} phx-hook="FloatingDropdown" data-close-on-click class="dropdown join-item border-0">
-                                  <summary class={"btn btn-xs rounded-[inherit] gap-1 flex-nowrap whitespace-nowrap " <> if(refresh_case["action"] == "affinity_refresh", do: "btn-primary", else: "")}>
+                                  <summary class={"btn btn-xs rounded-[inherit] gap-1 flex-nowrap whitespace-nowrap " <> if(refresh_case["action"] == "affinity_refresh", do: "btn-primary", else: "opacity-40 grayscale")}>
                                     <img :if={(refresh_case["affinity"] || @plan_data["affinity"]) not in [nil, ""]} src={gift_affinity_icon(refresh_case["affinity"] || @plan_data["affinity"])} class="sinner-icon w-3 h-3 object-contain shrink-0" />
                                     <%= refresh_case["affinity"] || "plan" %>
                                   </summary>
