@@ -116,7 +116,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
     [
       {:battle_turn,
         [
-          branch([{:turn_opener, [wait_until(not_hook(:turn_opener), timeout: 500)]}, {:default, []}], wait: 500),
+          branch([{:turn_opener, [wait_until(not_hook(:turn_opener), timeout: 500)]}, {:default, []}], wait: 300),
           sleep(200)
         ]},
       {:loading_stage_1, loading() ++ after_loading()},
