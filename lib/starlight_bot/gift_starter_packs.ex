@@ -77,6 +77,22 @@ defmodule StarlightBot.GiftStarterPacks do
     end
   end
 
+  def usage_count(ref) when is_binary(ref) do
+    pattern = ~s|%"ref":"#{ref}"%|
+
+    [{Repo, "gift_plans", ""}, {BaseRepo, "plan_templates", " AND kind = 'gift_plans'"}]
+    |> Enum.flat_map(fn {repo, table, extra} ->
+      case repo.query("SELECT data FROM #{table} WHERE data LIKE ?#{extra}", [pattern]) do
+        {:ok, %{rows: rows}} -> for [json] <- rows, {:ok, data} <- [Jason.decode(json)], uses?(data, ref), do: :used
+        {:error, _} -> []
+      end
+    end)
+    |> length()
+  end
+
+  defp uses?(%{"sections" => sections}, ref) when is_list(sections), do: Enum.any?(sections, fn section -> Enum.any?(section["packs"] || [], &(&1["ref"] == ref)) end)
+  defp uses?(_data, _ref), do: false
+
   def grouped(packs, plan_affinity) do
     packs
     |> Enum.group_by(& &1.affinity)

@@ -524,6 +524,20 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("pack_reorder", %{"scope" => section_id, "ids" => ids}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.reorder_packs(&1, section_id, ids))}
+  end
+
+  @impl true
+  def handle_event("pack_move", %{"scope" => to, "from" => from, "id" => pack_id, "ids" => ids}, socket) do
+    root_sections = socket.assigns.plan_data |> GiftPlans.sections(socket.assigns.root_section_id) |> Enum.map(& &1["id"])
+
+    if from in root_sections and to in root_sections,
+      do: {:noreply, update_plan(socket, &GiftPlans.move_pack(&1, from, to, pack_id, ids))},
+      else: {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("pack_rename", %{"value" => name}, %{assigns: %{pack_edit: %{ref: ref}}} = socket) do
     {:noreply, save_pack_fields(socket, ref, %{name: name}, :name, String.trim(name))}
   end
@@ -1239,6 +1253,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> Enum.take(3)
   end
 
+  def pack_delete_confirm(%{name: name, uses: 0}), do: "Delete the starter pack #{name}? No plans use it."
+  def pack_delete_confirm(%{name: name, uses: 1}), do: "Delete the starter pack #{name}? 1 plan uses it and will lose its entries."
+  def pack_delete_confirm(%{name: name, uses: uses}), do: "Delete the starter pack #{name}? #{uses} plans use it and will lose its entries."
+
   def pack_rows(view) do
     for item <- view.entries,
         timeline <- [nil | Enum.map(GiftPlans.timelines(item.entry), & &1["id"])],
@@ -1479,7 +1497,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         parent = Map.take(socket.assigns, [:plan_data, :root_section_id, :active_tab])
 
         socket
-        |> assign(:pack_edit, %{ref: ref, name: pack.name, affinity: pack.affinity, notes: pack.notes, editable: pack.editable, source: pack.source, parent: parent})
+        |> assign(:pack_edit, %{ref: ref, name: pack.name, affinity: pack.affinity, notes: pack.notes, uses: GiftStarterPacks.usage_count(ref), editable: pack.editable, source: pack.source, parent: parent})
         |> assign(:pack_locked, not pack.editable)
         |> assign(:plan_data, pack.data)
         |> assign(:root_section_id, GiftStarterPacks.section(pack)["id"])
@@ -2007,13 +2025,14 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :gifts_by_name, :map, required: true
   attr :gifts_by_id, :map, required: true
   attr :views, :list, default: []
+  attr :packs_enabled, :boolean, default: true
 
   def section_entries(assigns) do
     gifts = Enum.reject(assigns.section["entries"], &GiftPlans.heal_entry?/1)
     assigns = assign(assigns, gifts: gifts)
 
     ~H"""
-    <.starter_packs section={@section} views={@views} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+    <.starter_packs :if={@packs_enabled} section={@section} views={@views} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
     <.entry_list id={"section-entries-#{@section["id"]}"} shared={"list-#{@section["stage_of"] || @section["id"]}"} entries={@gifts} section={@section}
                  entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
     """
@@ -2026,11 +2045,14 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def starter_packs(assigns) do
     ~H"""
-    <div :for={view <- @views} class="flex flex-col shrink-0">
+    <div id={"section-packs-#{@section["id"]}"} phx-hook="SortableList" data-sort-event="pack_reorder" data-sort-move-event="pack_move"
+         data-sort-shared={"packs-#{@section["stage_of"] || @section["id"]}"} data-sort-scope={@section["id"]} class="flex flex-col gap-1 min-h-3 shrink-0">
+    <div :for={view <- @views} data-sort-id={view.id} class="flex flex-col shrink-0">
       <%= if view.pack do %>
         <% pack_section = %{@section | "entries" => Enum.map(view.entries, & &1.entry), "goals" => view.goals} %>
         <div class="flex items-end gap-0.5 flex-wrap">
           <div class="flex items-center gap-1.5 rounded-t-lg border-2 border-b-0 border-primary bg-primary/10 px-2 py-0.5 text-[11px] font-semibold">
+            <span data-sort-handle class="cursor-grab text-base-content/40 select-none" title="Drag to another stage or reorder. Earlier packs win when two hold the same gift.">⠿</span>
             <.icon name="lucide-package" class="size-3.5" />
             <span>Starter pack</span>
             <span class="font-normal"><%= view.pack.name %></span>
@@ -2060,6 +2082,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           </button>
         </div>
       <% end %>
+    </div>
     </div>
     """
   end

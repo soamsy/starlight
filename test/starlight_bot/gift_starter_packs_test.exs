@@ -50,6 +50,20 @@ defmodule StarlightBot.GiftStarterPacksTest do
     assert GiftStarterPacks.get(ref).notes == "Good for F1"
   end
 
+  test "usage counts plans and shipped plan templates that reference a pack" do
+    {:ok, ref} = GiftStarterPacks.create("Used", "any")
+    {:ok, other} = GiftStarterPacks.create("Unused", "any")
+    plan = fn refs -> %{"sections" => [%{"packs" => Enum.map(refs, &%{"id" => "sp", "ref" => &1})}]} end
+    {:ok, _} = StarlightBot.Plans.save(:gift_plans, %{name: "A", data: plan.([ref])})
+    {:ok, _} = StarlightBot.Plans.save(:gift_plans, %{name: "B", data: plan.([ref, other])})
+    {:ok, _} = StarlightBot.Plans.save(:gift_plans, %{name: "C", data: plan.([other])})
+    {:ok, _} = StarlightBot.PlanTemplates.create(:gift_plans, plan.([ref]))
+
+    assert GiftStarterPacks.usage_count(ref) == 3
+    assert GiftStarterPacks.usage_count(other) == 2
+    assert GiftStarterPacks.usage_count("b:999") == 0
+  end
+
   test "names must be unique across both layers and affinities must be valid" do
     {:ok, _} = GiftStarterPacks.create("Same", "any")
     assert {:error, :name_taken} = GiftStarterPacks.create("Same", "burn")

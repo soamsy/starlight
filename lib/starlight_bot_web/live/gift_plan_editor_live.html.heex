@@ -171,8 +171,8 @@
                   <span :if={@pack_edit.source == :base} class="badge badge-ghost badge-sm" title="Ships with the app">shipped</span>
                   <div class="ml-auto flex items-center gap-1">
                     <PlanHistory.buttons can_undo={@can_undo} can_redo={@can_redo} locked={@pack_locked} />
-                    <button :if={@pack_edit.editable} type="button" phx-click="pack_delete" data-confirm={"Delete the starter pack #{@pack_edit.name}? Plans using it will lose its entries."}
-                            class="btn btn-sm btn-outline btn-error btn-square" title="Delete this starter pack"><.icon name="lucide-trash-2" class="size-4" /></button>
+                    <button :if={@pack_edit.editable} type="button" phx-click="pack_delete" data-confirm={pack_delete_confirm(@pack_edit)}
+                            class="btn btn-sm btn-outline btn-error gap-1" title="Delete this starter pack"><.icon name="lucide-trash" class="size-4" />Delete</button>
                   </div>
                 </div>
               <% else %>
@@ -576,7 +576,7 @@
                     </div>
 
                     <div data-drop-section={section["id"]} class="flex flex-col gap-1 rounded-lg shrink-0">
-                      <.section_entries section={section} views={Map.get(pack_views, section["id"], [])} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+                      <.section_entries section={section} packs_enabled={is_nil(@pack_edit)} views={Map.get(pack_views, section["id"], [])} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
                       <div :if={Enum.all?(section["entries"], &GiftPlans.heal_entry?/1) and Map.get(pack_views, section["id"], []) == []} class="text-xs text-base-content/40 italic">No entries yet. Add gifts from the search on the left.</div>
                     </div>
 
@@ -593,7 +593,7 @@
                           <button type="button" phx-click="list_remove_stage" phx-value-id={stage["id"]} data-confirm={"Remove stage #{number} and its entries?"}
                                   class="btn btn-ghost btn-xs px-1 text-error" title="Remove this stage and its entries"><.icon name="lucide-x" class="size-3.5" /></button>
                         </div>
-                        <.section_entries section={stage} views={Map.get(pack_views, stage["id"], [])} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+                        <.section_entries section={stage} packs_enabled={is_nil(@pack_edit)} views={Map.get(pack_views, stage["id"], [])} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
                         <div :if={Enum.all?(stage["entries"], &GiftPlans.heal_entry?/1) and Map.get(pack_views, stage["id"], []) == []} class="text-xs text-base-content/40 italic">No entries yet. Drag gifts here from the search on the left.</div>
                       </div>
                       <div :if={section["pursue_optional"] == true and is_nil(@pack_edit)} class="flex flex-col gap-1 rounded-xl border border-dashed border-base-content/30 p-2 shrink-0">

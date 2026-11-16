@@ -684,6 +684,31 @@ defmodule StarlightBot.GiftPlans do
     end)
   end
 
+  def reorder_packs(data, id, ids) do
+    update_section(data, id, fn section ->
+      case packs(section) do
+        [] -> section
+        list -> Map.put(section, "packs", reorder_by_keys(list, ids, & &1["id"]))
+      end
+    end)
+  end
+
+  def move_pack(data, from, to, pack_id, ids) do
+    case data |> find_section(from) |> packs() |> Enum.find(&(&1["id"] == pack_id)) do
+      nil ->
+        data
+
+      pack ->
+        data
+        |> remove_pack(from, pack_id)
+        |> update_section(to, fn section ->
+          existing = packs(section)
+          list = if Enum.any?(existing, &(&1["ref"] == pack["ref"])), do: existing, else: existing ++ [pack]
+          Map.put(section, "packs", reorder_by_keys(list, ids, & &1["id"]))
+        end)
+    end
+  end
+
   def pack_views(data, resolver \\ &StarlightBot.GiftStarterPacks.get/1)
 
   def pack_views(%{"sections" => sections} = data, resolver) when is_list(sections) do

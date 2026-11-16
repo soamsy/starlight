@@ -107,4 +107,42 @@ defmodule StarlightBot.GiftPlans.StarterPacksTest do
     assert [%{"ref" => "b:1", "id" => id}] = root(added)["packs"]
     refute Map.has_key?(root(GiftPlans.remove_pack(added, "ms_root", id)), "packs")
   end
+
+  defp two_stage_plan(packs) do
+    %{
+      "version" => 6,
+      "sections" => [
+        %{"id" => "ms_root", "goals" => [], "entries" => [], "refresh" => [], "packs" => packs},
+        %{"id" => "ms_stage", "stage_of" => "ms_root", "name" => "Stage 2", "goals" => [], "entries" => [], "refresh" => []}
+      ]
+    }
+  end
+
+  test "moving a pack to another stage keeps its id and follows the given order" do
+    data = two_stage_plan([%{"id" => "sp_1", "ref" => "b:1"}, %{"id" => "sp_2", "ref" => "b:2"}])
+    moved = GiftPlans.move_pack(data, "ms_root", "ms_stage", "sp_1", ["sp_1"])
+
+    assert [%{"id" => "sp_2"}] = GiftPlans.packs(GiftPlans.find_section(moved, "ms_root"))
+    assert [%{"id" => "sp_1", "ref" => "b:1"}] = GiftPlans.packs(GiftPlans.find_section(moved, "ms_stage"))
+  end
+
+  test "moving a pack onto a stage already holding it just removes the source reference" do
+    data = two_stage_plan([%{"id" => "sp_1", "ref" => "b:1"}])
+    data = GiftPlans.add_pack(data, "ms_stage", "b:1")
+    moved = GiftPlans.move_pack(data, "ms_root", "ms_stage", "sp_1", ["sp_1"])
+
+    assert GiftPlans.packs(GiftPlans.find_section(moved, "ms_root")) == []
+    assert [%{"ref" => "b:1"}] = GiftPlans.packs(GiftPlans.find_section(moved, "ms_stage"))
+  end
+
+  test "reordering packs changes which one wins an overlap" do
+    data = two_stage_plan([%{"id" => "sp_1", "ref" => "b:1"}, %{"id" => "sp_2", "ref" => "b:2"}])
+    first = %{ref: "b:1", data: pack([entry("a", "Shared", "required")]).data}
+    second = %{ref: "b:2", data: pack([entry("b", "Shared", "optional")]).data}
+    lookup = fn "b:1" -> first; "b:2" -> second end
+    winner = fn data -> data |> GiftPlans.expand_packs(lookup) |> root() |> Map.fetch!("entries") |> hd() |> goal_of() end
+
+    assert winner.(data) == "required"
+    assert winner.(GiftPlans.reorder_packs(data, "ms_root", ["sp_2", "sp_1"])) == "optional"
+  end
 end

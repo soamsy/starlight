@@ -692,6 +692,18 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
       assert length(GiftPlans.for_run(saved(socket), "all_normal")["sections"] |> hd() |> Map.fetch!("entries")) == 2
     end
 
+    test "dragging a pack to another stage moves the reference", %{socket: socket, ref: ref} do
+      socket = socket |> event("pack_select", %{"ref" => ref}) |> event("pack_add", %{}) |> event("list_add_stage", %{})
+      [root, stage] = saved(socket)["sections"]
+      [%{"id" => pack_id}] = root["packs"]
+      socket = event(socket, "pack_move", %{"scope" => stage["id"], "from" => root["id"], "id" => pack_id, "ids" => [pack_id]})
+      [root, stage] = saved(socket)["sections"]
+
+      refute Map.has_key?(root, "packs")
+      assert [%{"id" => ^pack_id, "ref" => ^ref}] = stage["packs"]
+      assert render(socket) =~ "Starter pack"
+    end
+
     test "unpacking copies the entries into the stage and drops the reference", %{socket: socket, ref: ref} do
       socket = socket |> event("pack_select", %{"ref" => ref}) |> event("pack_add", %{})
       [%{"id" => pack_id}] = section(socket)["packs"]
