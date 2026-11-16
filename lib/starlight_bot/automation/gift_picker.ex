@@ -9,6 +9,7 @@ defmodule StarlightBot.Automation.GiftPicker do
   @min_item_area_px 550
   @selected_radius_px 170
   @anchor_leniency_px 20
+  @unknown_hp 100
 
   def pick(scan_hook, count, tier_hooks, fallback_hook, ctx, pick_delay_ms \\ 0, opts \\ []) do
     gifts_by_id = Map.new(EgoGifts.list_gifts(), &{&1.id, &1})
@@ -41,12 +42,15 @@ defmodule StarlightBot.Automation.GiftPicker do
   def assign_hp(slots, hp_badges, gate_rects) do
     gated = gate_rects |> Enum.map(&nearest_slot(slots, &1)) |> Enum.reject(&is_nil/1) |> MapSet.new(& &1.center)
 
-    Enum.reduce(hp_badges, Enum.map(slots, &Map.put(&1, :hp, 0)), fn {hp, rect}, slots ->
-      nearest = nearest_slot(slots, rect)
+    badge_hp =
+      hp_badges
+      |> Enum.flat_map(fn {hp, rect} -> if nearest = nearest_slot(slots, rect), do: [{nearest.center, hp}], else: [] end)
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+      |> Map.new(fn {center, hps} -> {center, Enum.max(hps)} end)
 
-      if nearest && MapSet.member?(gated, nearest.center),
-        do: Enum.map(slots, &if(&1 == nearest, do: %{&1 | hp: max(&1.hp, hp)}, else: &1)),
-        else: slots
+    Enum.map(slots, fn slot ->
+      hp = if MapSet.member?(gated, slot.center), do: Map.get(badge_hp, slot.center, @unknown_hp), else: 0
+      Map.put(slot, :hp, hp)
     end)
   end
 
