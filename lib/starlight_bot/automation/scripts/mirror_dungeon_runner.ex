@@ -5,7 +5,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   alias StarlightBot.Automation.SeasonPassCollector
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.Ctx
-  alias StarlightBot.{DailyProgress, GiftPlans, RunnerForms, Teams}
+  alias StarlightBot.{DailyProgress, EnkephalinSchedule, GiftPlans, RunnerForms, Teams}
   alias StarlightBot.Navigation.{Catalog, Runner, Screen}
   alias StarlightBot.PackPlans.Resolver
   alias StarlightBot.Navigation.Screens.Shop
@@ -712,7 +712,8 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   end
 
   defp charge_enkephalin?(run_state, config) do
-    Map.get(config, :collect_enkephalin?, false) and not Map.get(run_state, :enkephalin_charged?, false)
+    Map.get(config, :collect_enkephalin?, false) and not Map.get(run_state, :enkephalin_charged?, false) and
+      not EnkephalinSchedule.recently_charged?()
   end
 
   defp continue_at({:ok, screen}, run_state) when is_atom(screen), do: {:continue, run_state, screen}

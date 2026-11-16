@@ -62,6 +62,24 @@ defmodule StarlightBot.EnkephalinSchedule do
     :ok
   end
 
+  def recently_charged?(now_utc \\ DateTime.utc_now()) do
+    case get_settings().last_converted_at do
+      nil -> false
+      last_local -> charged_within_hour?(last_local, now_utc) or same_limbus_day?(last_local, now_utc)
+    end
+  end
+
+  defp charged_within_hour?(last_local, now_utc), do: DateTime.diff(now_utc, local_to_utc(last_local), :second) < 3600
+
+  defp same_limbus_day?(last_local, now_utc), do: limbus_day(local_to_utc(last_local)) == limbus_day(now_utc)
+
+  defp limbus_day(%DateTime{} = utc), do: utc |> DateTime.add(-21 * 3600, :second) |> DateTime.to_date()
+
+  defp local_to_utc(%NaiveDateTime{} = local) do
+    offset_s = :calendar.datetime_to_gregorian_seconds(:calendar.local_time()) - :calendar.datetime_to_gregorian_seconds(:calendar.universal_time())
+    local |> NaiveDateTime.add(-offset_s) |> DateTime.from_naive!("Etc/UTC")
+  end
+
   def close_after_charge?(charge_settings, scheduler_settings, remaining, last_run) do
     charge_settings.close_game_after_charge and match?(%{kind: :enkephalin, ok?: true}, last_run) and
       not (scheduler_settings.enabled and DailyProgress.pending?(remaining))

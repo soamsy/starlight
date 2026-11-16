@@ -3,7 +3,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
   alias StarlightBot.Automation.{BattleLoop, Engine, EnkephalinCharger, Recovery, RunMemory}
   alias StarlightBot.Automation.Scripts.SelectTeamOnScreen
   alias StarlightBot.Automation.SeasonPassCollector
-  alias StarlightBot.{Ctx, DailyProgress}
+  alias StarlightBot.{Ctx, DailyProgress, EnkephalinSchedule}
 
   @max_consecutive 10
   @max_navigation_retries 10
@@ -57,6 +57,10 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
 
     cond do
       not lux.collect_enkephalin? ->
+        next(lux, queue, screen, frame, ctx)
+
+      EnkephalinSchedule.recently_charged?() ->
+        Ctx.log(ctx, :info, "enkephalin was charged within the last hour or this Limbus day, skipping")
         next(lux, queue, screen, frame, ctx)
 
       Engine.in_battle?(screen) ->
