@@ -1497,7 +1497,7 @@ const bindSortSelectionGlobals = () => {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && sortSelection.list) clearSortSelection()
     if (!sortSelection.list || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
-    const key = e.key.toLowerCase()
+    const key = e.key?.toLowerCase()
     if (key !== "c" && key !== "v") return
     if (document.activeElement?.closest(EDITABLE)) return
     const hook = sortHooks.get(sortSelection.list)
@@ -2502,8 +2502,8 @@ document.addEventListener("keydown", (e) => {
   if (e.defaultPrevented || e.altKey || e.metaKey || e.repeat) return
   const target = e.target instanceof Element ? e.target : null
   const teamSearch = inTauri
-    ? e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "t"
-    : !e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "t" && !isTypingTarget(target)
+    ? e.ctrlKey && !e.shiftKey && e.key?.toLowerCase() === "t"
+    : !e.ctrlKey && !e.shiftKey && e.key?.toLowerCase() === "t" && !isTypingTarget(target)
   if (teamSearch) {
     const button = document.querySelector('[data-hotkey="team-search"]')
     if (!button) return
