@@ -8,6 +8,7 @@ defmodule StarlightBot.Navigation.Navigator do
 
   @topic "navigation"
   @log_limit 1000
+  @broadcast_interval_ms 250
 
   defstruct [
     current_screen: nil,   # nil = never localized | :unknown | screen atom
@@ -485,13 +486,20 @@ defmodule StarlightBot.Navigation.Navigator do
 
   def handle_info({:nav_log, kind, text}, state) do
     state = remember_log(state, kind, text)
-    broadcast(state)
+    throttled_broadcast()
     {:noreply, state}
   end
 
   @impl true
   def handle_info({:nav_run_memory, snapshot}, state) do
     state = state |> track_screen(snapshot) |> Map.put(:run_memory, snapshot) |> track_split(snapshot)
+    throttled_broadcast()
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info(:flush_broadcast, state) do
+    Process.delete(:broadcast_timer)
     broadcast(state)
     {:noreply, state}
   end
@@ -667,6 +675,14 @@ defmodule StarlightBot.Navigation.Navigator do
   defp remember_log(state, kind, text) do
     entry = %{at: LogStore.now(), kind: kind, text: text}
     %{state | log: [entry | state.log] |> Enum.take(@log_limit)}
+  end
+
+  defp throttled_broadcast do
+    unless Process.get(:broadcast_timer) do
+      Process.put(:broadcast_timer, Process.send_after(self(), :flush_broadcast, @broadcast_interval_ms))
+    end
+
+    :ok
   end
 
   defp broadcast(state) do

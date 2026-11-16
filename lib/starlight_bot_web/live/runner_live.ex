@@ -633,7 +633,16 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   end
 
   defp assign_sections(socket) do
-    assign(socket, :sections, section_statuses(socket.assigns.run_memory, socket.assigns.gifts_by_name))
+    run_memory = socket.assigns.run_memory
+    key = {get_in(run_memory, [:team, :id]), current_floor(run_memory), ego_gifts(run_memory), Map.get(run_memory, :skill_replaces)}
+
+    if socket.assigns[:sections_key] == key do
+      socket
+    else
+      socket
+      |> assign(:sections_key, key)
+      |> assign(:sections, section_statuses(run_memory, socket.assigns.gifts_by_name))
+    end
   end
 
   defp section_statuses(run_memory, gifts_by_name) do
