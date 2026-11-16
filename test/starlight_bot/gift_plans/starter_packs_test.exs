@@ -72,7 +72,7 @@ defmodule StarlightBot.GiftPlans.StarterPacksTest do
     data = plan([entry("me_1", "Own")])
 
     assert GiftPlans.expand_packs(data, fn _ -> nil end) |> root() |> Map.fetch!("entries") |> length() == 1
-    assert ["Shopping list: a starter pack no longer exists."] = GiftPlans.issues(data)
+    assert ["Stage 1: a starter pack no longer exists."] = GiftPlans.issues(data)
   end
 
   test "schedules in pack entries survive expansion with their group prefixed" do

@@ -348,10 +348,10 @@ defmodule StarlightBot.GiftPlans do
   def root_section(_data, section), do: section
 
   def section_name(%{"stage_of" => root_id} = section) when is_binary(root_id), do: section["name"] || "Stage"
-  def section_name(_section), do: "Shopping list"
+  def section_name(section), do: section["name"] || "Stage 1"
 
   def rename_stage(data, id, name) do
-    update_section(data, id, &if(stage?(&1), do: Map.put(&1, "name", name), else: &1))
+    update_section(data, id, &Map.put(&1, "name", name))
   end
 
   def add_stage(data, root_id) do

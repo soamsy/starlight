@@ -183,7 +183,7 @@ defmodule StarlightBot.GiftPlansTest do
       data = data |> GiftPlans.add_gift(other["id"], "Glimpse", by_name(), &routes_for/1) |> set_segment(other["id"], "Glimpse", %{"disposition" => "sell"})
 
       assert GiftPlans.keep_set(data, 1) == MapSet.new(["Glimpse"])
-      assert Enum.any?(GiftPlans.issues(data, by_name()), &(&1 =~ "Shopping list: sells Glimpse from F1, but another stage keeps it"))
+      assert Enum.any?(GiftPlans.issues(data, by_name()), &(&1 =~ "Stage 1: sells Glimpse from F1, but another stage keeps it"))
     end
 
     test "the most specific matching entry rules a gift" do
@@ -375,10 +375,10 @@ defmodule StarlightBot.GiftPlansTest do
       data = data |> GiftPlans.remove_entry(id, entry_for(data, id, "Ing D")["id"]) |> set_segment(id, "Ing B", %{"uptie" => 2}) |> GiftPlans.add_goal(id)
       issues = GiftPlans.issues(data, by_name())
 
-      assert "Shopping list: Cookbook needs Ing D in this stage." in issues
-      assert "Shopping list: Ing B is upgraded to +2 but gets fused into Soothe." in issues
-      assert "Shopping list: Soothe and Twin both use Ing A; fusing one leaves the other without it." in issues
-      assert "Shopping list: goal A has no entries." in issues
+      assert "Stage 1: Cookbook needs Ing D in this stage." in issues
+      assert "Stage 1: Ing B is upgraded to +2 but gets fused into Soothe." in issues
+      assert "Stage 1: Soothe and Twin both use Ing A; fusing one leaves the other without it." in issues
+      assert "Stage 1: goal A has no entries." in issues
     end
   end
 
@@ -426,7 +426,7 @@ defmodule StarlightBot.GiftPlansTest do
       refute GiftPlans.eval_condition(leaf, env(data, %{}))
       assert GiftPlans.eval_condition(leaf, env(data, %{"Glimpse" => 0}))
       assert GiftPlans.eval_condition(%{"op" => "stage", "stage" => id, "not" => true}, env(data, %{}))
-      assert GiftPlans.condition_label(leaf, data) == "Shopping list done"
+      assert GiftPlans.condition_label(leaf, data) == "Stage 1 done"
       assert GiftPlans.condition_label(%{"op" => "stage", "stage" => "ms_gone"}, data) == "(deleted) done"
     end
 

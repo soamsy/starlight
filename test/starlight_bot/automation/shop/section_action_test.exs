@@ -114,13 +114,13 @@ defmodule StarlightBot.Automation.Shop.Actions.SectionTest do
     late = %{"id" => "rc_late", "condition" => %{"op" => "refreshes", "cmp" => "gte", "value" => 5}, "action" => "refresh"}
     leave = %{"id" => "rc_leave", "condition" => nil, "action" => "leave"}
 
-    assert {:skipped, "Shopping list already reached", state_after} = Section.run(%{}, Map.put(section, "refresh", [late]), state, ctx)
+    assert {:skipped, "Main already reached", state_after} = Section.run(%{}, Map.put(section, "refresh", [late]), state, ctx)
     refute Map.get(state_after, :left)
 
     section = Map.put(section, "refresh", [late, leave])
-    assert {:skipped, "Shopping list already reached", state_after} = Section.run(%{}, section, state, ctx)
+    assert {:skipped, "Main already reached", state_after} = Section.run(%{}, section, state, ctx)
     refute Map.get(state_after, :left)
-    assert {:would_run, "Shopping list already reached", _} = Section.preview(%{}, section, state, ctx)
+    assert {:would_run, "Main already reached", _} = Section.preview(%{}, section, state, ctx)
   end
 
   test "a partway uptie commits its goal, so the goal's other entries are dropped", %{ctx: ctx, state: state, section: section} do
@@ -135,7 +135,7 @@ defmodule StarlightBot.Automation.Shop.Actions.SectionTest do
     assert {:would_run, "would buy if on the shelf Three, Four; fuse T4 Four, T3 Three, then uptie again", _} = Section.preview(%{}, section, state, ctx)
 
     for {id, name} <- [{"g_3", "Three"}, {"g_4", "Four"}], do: RunMemory.add_ego_gift(ctx, id, name)
-    assert {:skipped, "Shopping list already reached", _} = Section.run(%{}, section, state, ctx)
+    assert {:skipped, "Main already reached", _} = Section.run(%{}, section, state, ctx)
   end
 
   test "optional and Ignore + Buy entries are listed separately and never hold the section back", %{ctx: ctx, state: state, section: section} do
@@ -154,7 +154,7 @@ defmodule StarlightBot.Automation.Shop.Actions.SectionTest do
     assert detail =~ "; optionals if possible: buy Extra, Any T2"
 
     for {id, name} <- [{"g_fixed", "Fixed"}, {"g_3", "Three"}, {"g_4", "Four"}], do: RunMemory.add_ego_gift(ctx, id, name)
-    assert {:skipped, "Shopping list already reached", _} = Section.run(%{}, section, state, ctx)
+    assert {:skipped, "Main already reached", _} = Section.run(%{}, section, state, ctx)
   end
 
   test "sells go first, priciest first, up to the entry's max per floor", %{ctx: ctx, state: state, section: section} do

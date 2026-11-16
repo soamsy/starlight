@@ -519,6 +519,9 @@
                     <.heal_entries :if={is_nil(@pack_edit)} section={section} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
                     <div class="flex items-start gap-2">
                       <div class="flex items-stretch gap-2 flex-wrap flex-1 min-w-0 rounded-xl border border-base-300 bg-base-200/60 p-1">
+                        <input id={"stage-name-#{section["id"]}"} type="text" value={GiftPlans.section_name(section)} phx-blur="rename_stage" phx-value-id={section["id"]} maxlength="40"
+                               title="Name of the first stage. Shown in refresh stages and run progress."
+                               class="input input-ghost input-xs w-32 self-center font-semibold" />
                         <.goal_chips section={section} views={Map.get(pack_views, section["id"], [])} />
                       </div>
                       <div class="flex flex-col items-end gap-1 shrink-0 ml-auto">
