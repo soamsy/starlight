@@ -9,6 +9,7 @@ defmodule StarlightBot.Automation.GiftPicker do
   @min_item_area_px 550
   @selected_radius_px 170
   @anchor_leniency_px 60
+  @unanchored_min_confidence 0.9
   @unknown_hp 100
 
   def pick(scan_hook, count, tier_hooks, fallback_hook, ctx, pick_delay_ms \\ 0, opts \\ []) do
@@ -86,8 +87,9 @@ defmodule StarlightBot.Automation.GiftPicker do
     Ctx.log(ctx, :info, "gift picker: #{length(lefts)} #{anchor_hook} anchor(s) at x=#{inspect(Enum.map(lefts, &round/1))}")
 
     {kept, dropped} =
-      Enum.split_with(detections, fn %{x: x, w: w} ->
-        Enum.any?(lefts, &(&1 >= x - @anchor_leniency_px and &1 <= x + w + @anchor_leniency_px))
+      Enum.split_with(detections, fn %{x: x, w: w} = item ->
+        (item.classifier_confidence || 0) >= @unanchored_min_confidence or
+          Enum.any?(lefts, &(&1 >= x - @anchor_leniency_px and &1 <= x + w + @anchor_leniency_px))
       end)
 
     Enum.each(dropped, fn %{x: x, w: w} = item ->
