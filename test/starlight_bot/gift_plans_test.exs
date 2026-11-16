@@ -876,4 +876,54 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.find_section(normalized, stage["id"])["stage_of"] == "ms_a"
     end
   end
+
+  describe "segment branches" do
+    setup do
+      {data, id} = with_gifts(["Glimpse"])
+      entry_id = entry_for(data, id, "Glimpse")["id"]
+      rich = %{"op" => "and", "children" => [%{"op" => "cost", "cmp" => "gte", "value" => 500}]}
+      data = GiftPlans.add_branch(data, id, entry_id, 1, nil, "br_a", rich)
+      data = GiftPlans.update_segment(data, id, entry_id, 1, &Map.merge(&1, %{"disposition" => "sell", "buy" => false}), nil, "br_a")
+      %{data: data, id: id, entry_id: entry_id, entry: entry_for(data, id, "Glimpse")}
+    end
+
+    test "a branch copies the tab's settings and edits stay on the branch", %{entry: entry} do
+      assert [%{"floors" => [segment]}] = [entry]
+      assert [%{"id" => "br_a", "disposition" => "sell", "buy" => false}] = segment["branches"]
+      assert %{"disposition" => "keep", "buy" => true} = segment
+      refute Map.has_key?(hd(segment["branches"]), "from")
+    end
+
+    test "resolving without an environment uses the otherwise settings", %{entry: entry} do
+      assert %{disposition: "keep", buy: true} = GiftPlans.resolve(entry, 1)
+    end
+
+    test "the first branch whose condition holds wins, else the tab's own settings apply", %{entry: entry} do
+      assert %{disposition: "sell"} = GiftPlans.resolve(entry, 1, %{wallet: 600, owned: MapSet.new()})
+      assert %{disposition: "keep", buy: true} = GiftPlans.resolve(entry, 1, %{wallet: 100, owned: MapSet.new()})
+      assert %{disposition: "keep"} = GiftPlans.resolve(entry, 1, %{wallet: 600, owned: MapSet.new(), no_branches: true})
+    end
+
+    test "branches are checked in order and can be moved, removed and reordered", %{data: data, id: id, entry_id: entry_id} do
+      always = %{"op" => "and", "children" => [%{"op" => "refreshes", "cmp" => "gte", "value" => 0}]}
+      data = GiftPlans.add_branch(data, id, entry_id, 1, nil, "br_b", always)
+      env = %{wallet: 600, owned: MapSet.new(), refreshes: 0}
+      assert %{disposition: "sell"} = GiftPlans.resolve(entry_for(data, id, "Glimpse"), 1, env)
+
+      data = GiftPlans.move_branch(data, id, entry_id, 1, nil, "br_b", -1)
+      assert Enum.map(hd(entry_for(data, id, "Glimpse")["floors"])["branches"], & &1["id"]) == ["br_b", "br_a"]
+      assert %{disposition: "keep"} = GiftPlans.resolve(entry_for(data, id, "Glimpse"), 1, env)
+
+      data = data |> GiftPlans.remove_branch(id, entry_id, 1, nil, "br_b") |> GiftPlans.remove_branch(id, entry_id, 1, nil, "br_a")
+      refute Map.has_key?(hd(entry_for(data, id, "Glimpse")["floors"]), "branches")
+    end
+
+    test "a goal condition does not recurse into branch resolution", %{data: data, id: id, entry_id: entry_id} do
+      goal = %{"op" => "and", "children" => [%{"op" => "goal", "goal" => "required"}]}
+      data = GiftPlans.set_branch_condition(data, id, entry_id, 1, nil, "br_a", goal)
+      env = %{plan: data, floor: 1, inventory: %{}, owned: MapSet.new(), gifts: by_name(), gifts_by_id: by_id()}
+      assert %{disposition: disposition} = GiftPlans.resolve(entry_for(data, id, "Glimpse"), 1, env)
+      assert disposition in ["keep", "sell"]
+    end
+  end
 end

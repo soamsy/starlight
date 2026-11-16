@@ -78,9 +78,9 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
   defp refresh_label(%{"action" => action}), do: String.downcase(GiftPlans.refresh_action_label(action))
 
   defp work(section, state, ctx) do
-    {sold_lines, sold?, state} = Sell.run_entries(sells(section, state), entries(section, state), keep(section, state), state, ctx)
-    {heal_lines, healed?, state} = Heal.run_entries(heal_entries(section, state), state, ctx)
-    {replace_lines, replaced?, state} = SkillReplace.run_entries(GiftPlans.skill_replace_entries(entries(section, state)), state, ctx)
+    {sold_lines, sold?, state} = Sell.run_entries(sells(section, state, ctx), entries(section, state, ctx), keep(section, state), state, ctx)
+    {heal_lines, healed?, state} = Heal.run_entries(heal_entries(section, state, ctx), state, ctx)
+    {replace_lines, replaced?, state} = SkillReplace.run_entries(GiftPlans.skill_replace_entries(entries(section, state, ctx)), state, ctx)
     sell_lines = sold_lines ++ heal_lines ++ replace_lines
     sold? = sold? or healed? or replaced?
 
@@ -88,7 +88,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
       detail = Enum.join(sell_lines ++ ["#{GiftPlans.section_name(section)} already reached"], "; ")
       {if(sold?, do: :done, else: :skipped), detail, state}
     else
-      state = Map.put(state, :section_entries, GiftPlans.working_entries(state.plan, section, shop_floor(state)))
+      state = Map.put(state, :section_entries, GiftPlans.working_entries(state.plan, section, shop_floor(state), env(state, ctx)))
 
       {lines, progressed?, state} =
         Enum.reduce(@passes, {sell_lines, sold?, state}, fn pass, {lines, progressed?, state} ->
@@ -106,28 +106,28 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
     end
   end
 
-  def heals?(section, state), do: not GiftPlans.stage?(section) and heal_entries(section, state) != []
+  def heals?(section, state, ctx), do: not GiftPlans.stage?(section) and heal_entries(section, state, ctx) != []
 
-  defp heal_entries(section, state) do
-    state.plan |> GiftPlans.root_section(section) |> GiftPlans.resolved_entries(shop_floor(state)) |> GiftPlans.heal_entries()
+  defp heal_entries(section, state, ctx) do
+    state.plan |> GiftPlans.root_section(section) |> GiftPlans.resolved_entries(shop_floor(state), env(state, ctx)) |> GiftPlans.heal_entries()
   end
 
   def heal_only(section, state, ctx) do
-    {lines, healed?, state} = Heal.run_entries(heal_entries(section, state), state, ctx)
+    {lines, healed?, state} = Heal.run_entries(heal_entries(section, state, ctx), state, ctx)
     {if(healed?, do: :done, else: :skipped), Enum.join(lines ++ ["#{GiftPlans.section_name(section)} already reached, only healing"], "; "), state}
   end
 
-  def heal_only_preview(section, state) do
-    heals = heal_entries(section, state) |> Enum.map(&heal_label/1)
+  def heal_only_preview(section, state, ctx) do
+    heals = heal_entries(section, state, ctx) |> Enum.map(&heal_label/1)
     {:would_run, "check heals: #{Enum.join(heals, ", ")}; #{GiftPlans.section_name(section)} already reached, only healing", state}
   end
 
   def preview(_step, section, state, ctx) do
-    sold = Sell.plan(sells(section, state), entries(section, state), keep(section, state), state, ctx)
+    sold = Sell.plan(sells(section, state, ctx), entries(section, state, ctx), keep(section, state), state, ctx)
     selling = if sold == [], do: [], else: ["sell " <> Enum.map_join(sold, ", ", fn {gift, _entry} -> gift.name end)]
-    heals = heal_entries(section, state) |> Enum.map(&heal_label/1)
+    heals = heal_entries(section, state, ctx) |> Enum.map(&heal_label/1)
     selling = selling ++ if(heals == [], do: [], else: ["check heals: " <> Enum.join(heals, ", ")])
-    replaces = section |> entries(state) |> GiftPlans.skill_replace_entries() |> Enum.flat_map(fn entry -> Enum.filter(entry.sinners, &SkillReplace.pending?(&1, entry, ctx)) end)
+    replaces = section |> entries(state, ctx) |> GiftPlans.skill_replace_entries() |> Enum.flat_map(fn entry -> Enum.filter(entry.sinners, &SkillReplace.pending?(&1, entry, ctx)) end)
     selling = selling ++ if(replaces == [], do: [], else: ["check skill replace for " <> Enum.join(Enum.uniq(replaces), ", ")])
 
     if reached?(section, state, ctx) do
@@ -363,8 +363,8 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
     end
   end
 
-  defp sells(section, state), do: section |> entries(state) |> GiftPlans.sell_entries()
-  defp entries(section, state), do: GiftPlans.resolved_entries(section, shop_floor(state))
+  defp sells(section, state, ctx), do: section |> entries(state, ctx) |> GiftPlans.sell_entries()
+  defp entries(section, state, ctx), do: GiftPlans.resolved_entries(section, shop_floor(state), env(state, ctx))
 
   defp keep(%{"stage_of" => _} = section, state), do: GiftPlans.keep_set(state.plan, shop_floor(state), section["id"])
   defp keep(_section, state), do: Map.get_lazy(state, :protected, fn -> GiftPlans.keep_set(state.plan, shop_floor(state)) end)

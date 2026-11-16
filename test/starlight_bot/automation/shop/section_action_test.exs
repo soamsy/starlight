@@ -65,8 +65,8 @@ defmodule StarlightBot.Automation.Shop.Actions.SectionTest do
     stage = Map.merge(GiftPlans.new_section(), %{"id" => "ms_stage", "stage_of" => "ms_main"})
     state = %{state | plan: %{"sections" => [root, stage]}}
     assert {:would_run, "check heals: Greatly Heal yi_sang" <> _, _} = Section.preview(%{}, stage, state, ctx)
-    assert Section.heals?(root, state)
-    refute Section.heals?(stage, state)
+    assert Section.heals?(root, state, ctx)
+    refute Section.heals?(stage, state, ctx)
   end
 
   test "preview lists the heal entries it would check first, skipping abandoned ones", %{ctx: ctx, state: state, section: section} do

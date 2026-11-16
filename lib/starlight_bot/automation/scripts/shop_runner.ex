@@ -58,7 +58,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
         {:ok, %{state | left: true}}
 
       :full ->
-        keep_open? = mode == :run and sell_first?(hd(sections), state.floor)
+        keep_open? = mode == :run and sell_first?(hd(sections), state, ctx)
 
         with {:ok, _} <- Ops.check_inventory(ctx, keep_open?), do: {:ok, %{state | sell_popup_open: keep_open?}}
     end
@@ -68,7 +68,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     env = condition_env(state, ctx)
 
     if Enum.all?(sections, &GiftPlans.section_reached?(state.plan, &1["id"], env)) do
-      case heal_need(sections, state) do
+      case heal_need(sections, state, env) do
         0 ->
           Ctx.log(ctx, :info, "shop runner: every stage is reached and nobody needs healing, leaving without checking the inventory")
           :leave
@@ -86,10 +86,10 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     end
   end
 
-  defp heal_need(sections, state) do
+  defp heal_need(sections, state, env) do
     entries =
       sections
-      |> Enum.flat_map(&GiftPlans.resolved_entries(&1, state.floor))
+      |> Enum.flat_map(&GiftPlans.resolved_entries(&1, state.floor, env))
       |> GiftPlans.heal_entries()
 
     if entries == [] do
@@ -138,7 +138,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     env = condition_env(state, ctx)
 
     cond do
-      GiftPlans.section_reached?(state.plan, section["id"], env) and Section.heals?(section, state) and
+      GiftPlans.section_reached?(state.plan, section["id"], env) and Section.heals?(section, state, ctx) and
           Enum.all?(rest, &GiftPlans.section_effectively_reached?(state.plan, &1["id"], env)) ->
         case run_section(section, close_sell_popup(state, ctx), mode, ctx, :heal_only) do
           :interrupted -> {:error, :window_not_focused}
@@ -150,7 +150,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
         {:steps, [call(__MODULE__, :work, [rest, state, mode])]}
 
       true ->
-        state = if sell_first?(section, state.floor), do: state, else: close_sell_popup(state, ctx)
+        state = if sell_first?(section, state, ctx), do: state, else: close_sell_popup(state, ctx)
 
         case run_section(section, state, mode, ctx, :full) do
           :interrupted -> {:error, :window_not_focused}
@@ -210,7 +210,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     state
   end
 
-  defp sell_first?(section, floor), do: section |> GiftPlans.resolved_entries(floor) |> GiftPlans.sell_entries() != []
+  defp sell_first?(section, state, ctx), do: section |> GiftPlans.resolved_entries(state.floor, condition_env(state, ctx)) |> GiftPlans.sell_entries() != []
 
   defp close_sell_popup(%{sell_popup_open: true} = state, ctx) do
     Ops.close_sell_popup(ctx)
@@ -259,7 +259,7 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
 
     {outcome, detail, state} =
       case {mode, scope} do
-        {:dry_run, :heal_only} -> Section.heal_only_preview(section, state)
+        {:dry_run, :heal_only} -> Section.heal_only_preview(section, state, ctx)
         {:dry_run, :full} -> Section.preview(nil, section, state, ctx)
         {:run, :heal_only} -> Section.heal_only(section, state, ctx)
         {:run, :full} -> Section.run(nil, section, state, ctx)

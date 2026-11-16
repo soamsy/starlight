@@ -78,7 +78,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
-  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_copy_entries list_select_tab list_refresh_select_tab rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_select pack_new pack_edit pack_close)
+  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_select_branch list_copy_entries list_select_tab list_refresh_select_tab rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_select pack_new pack_edit pack_close)
 
   def read_only_events, do: @read_only_events
 
@@ -475,7 +475,51 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def handle_event("cond_add", %{"path" => path, "node" => node} = params, socket) do
     child = if node == "group", do: Conditions.group(GiftPlans.default_leaf()), else: GiftPlans.default_leaf()
     socket = update_condition(socket, params, &Conditions.add(&1, path, child))
-    {:noreply, assign(socket, :editing_condition_case_id, params["case_id"])}
+    {:noreply, assign(socket, :editing_condition_case_id, params["case_id"] || params["branch"])}
+  end
+
+  @impl true
+  def handle_event("list_add_branch", %{"entry" => entry_id, "from" => from} = params, socket) do
+    timeline = timeline_param(socket, entry_id, params)
+    from = String.to_integer(from)
+    branch_id = GiftPlans.new_id("br")
+    condition = Conditions.add(nil, "", %{"op" => "refreshes", "cmp" => "gte", "value" => 3})
+
+    socket =
+      for_group(socket, entry_id, fn socket, id ->
+        update_plan(socket, &GiftPlans.add_branch(&1, entry_section_id(socket, id), id, from, timeline, branch_id, condition))
+      end)
+
+    {:noreply, socket |> put_tab(entry_id, timeline, from, branch_id) |> assign(:editing_condition_case_id, branch_id)}
+  end
+
+  @impl true
+  def handle_event("list_select_branch", %{"entry" => entry_id, "from" => from, "branch" => branch} = params, socket) do
+    {:noreply, put_tab(socket, entry_id, timeline_param(socket, entry_id, params), String.to_integer(from), blank_to_nil(branch))}
+  end
+
+  @impl true
+  def handle_event("list_remove_branch", %{"entry" => entry_id, "from" => from, "branch" => branch} = params, socket) do
+    timeline = timeline_param(socket, entry_id, params)
+    from = String.to_integer(from)
+
+    socket =
+      for_group(socket, entry_id, fn socket, id ->
+        update_plan(socket, &GiftPlans.remove_branch(&1, entry_section_id(socket, id), id, from, timeline, branch))
+      end)
+
+    {:noreply, socket |> put_tab(entry_id, timeline, from) |> assign(:editing_condition_case_id, nil)}
+  end
+
+  @impl true
+  def handle_event("list_move_branch", %{"entry" => entry_id, "from" => from, "branch" => branch, "delta" => delta} = params, socket) do
+    timeline = timeline_param(socket, entry_id, params)
+    from = String.to_integer(from)
+
+    {:noreply,
+     for_group(socket, entry_id, fn socket, id ->
+       update_plan(socket, &GiftPlans.move_branch(&1, entry_section_id(socket, id), id, from, timeline, branch, parse_int(delta, 0)))
+     end)}
   end
 
   @impl true
@@ -1127,7 +1171,21 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def active_timeline(entry_tabs, entry) do
     case entry_tabs[GiftPlans.group_key(entry)] do
-      {timeline, _from} when is_binary(timeline) -> if GiftPlans.find_timeline(entry, timeline), do: timeline
+      tab when is_tuple(tab) and is_binary(elem(tab, 0)) -> if GiftPlans.find_timeline(entry, elem(tab, 0)), do: elem(tab, 0)
+      _ -> nil
+    end
+  end
+
+  def active_segment(entry_tabs, entry) do
+    from = active_from(entry_tabs, entry)
+    Enum.find(GiftPlans.timeline_view(entry, active_timeline(entry_tabs, entry))["floors"], &(&1["from"] == from))
+  end
+
+  def active_branch(entry_tabs, entry) do
+    with {_timeline, _from, branch} when is_binary(branch) <- entry_tabs[GiftPlans.group_key(entry)],
+         %{} <- GiftPlans.find_branch(active_segment(entry_tabs, entry), branch) do
+      branch
+    else
       _ -> nil
     end
   end
@@ -1136,7 +1194,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     froms = entry |> GiftPlans.timeline_view(active_timeline(entry_tabs, entry)) |> Map.fetch!("floors") |> Enum.map(& &1["from"])
 
     case entry_tabs[GiftPlans.group_key(entry)] do
-      {_timeline, from} when is_integer(from) -> if from in froms, do: from, else: hd(froms)
+      tab when is_tuple(tab) and is_integer(elem(tab, 1)) -> if elem(tab, 1) in froms, do: elem(tab, 1), else: hd(froms)
       _ -> hd(froms)
     end
   end
@@ -1600,6 +1658,33 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp update_plan(socket, fun), do: socket |> assign(:plan_data, fun.(socket.assigns.plan_data)) |> persist_plan()
 
+  defp update_condition(socket, %{"branch" => branch, "entry" => entry_id, "from" => from} = params, fun) do
+    timeline = blank_to_nil(params["timeline"])
+    from = String.to_integer(from)
+
+    socket =
+      for_group(socket, entry_id, fn socket, id ->
+        section_id = entry_section_id(socket, id)
+
+        update_plan(socket, fn data ->
+          segment = data |> GiftPlans.find_section(section_id) |> GiftPlans.find_entry(id) |> GiftPlans.timeline_view(timeline) |> Map.fetch!("floors") |> Enum.find(&(&1["from"] == from))
+
+          case segment && GiftPlans.find_branch(segment, branch) do
+            %{"condition" => condition} ->
+              case condition |> fun.() |> GiftPlans.prune_condition() do
+                nil -> GiftPlans.remove_branch(data, section_id, id, from, timeline, branch)
+                updated -> GiftPlans.set_branch_condition(data, section_id, id, from, timeline, branch, updated)
+              end
+
+            _ ->
+              data
+          end
+        end)
+      end)
+
+    if branch_param(socket, entry_id), do: socket, else: put_tab(socket, entry_id, timeline, from)
+  end
+
   defp update_condition(socket, %{"case_id" => id}, fun) do
     update_plan(socket, &GiftPlans.update_refresh_case(&1, socket.assigns.root_section_id, id, fn refresh_case ->
       Map.put(refresh_case, "condition", refresh_case["condition"] |> fun.() |> GiftPlans.prune_condition())
@@ -1654,14 +1739,24 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp update_segment(socket, entry_id, from, fun, params \\ %{}) do
     timeline = timeline_param(socket, entry_id, params)
-    update_plan(socket, &GiftPlans.update_segment(&1, entry_section_id(socket, entry_id), entry_id, String.to_integer(from), fun, timeline))
+    from = String.to_integer(from)
+    branch = if from == active_from(socket.assigns.entry_tabs, GiftPlans.find_entry(entry_section(socket, entry_id), entry_id)), do: branch_param(socket, entry_id)
+    update_plan(socket, &GiftPlans.update_segment(&1, entry_section_id(socket, entry_id), entry_id, from, fun, timeline, branch))
   end
 
   defp timeline_param(_socket, _entry_id, %{"timeline" => ""}), do: nil
   defp timeline_param(_socket, _entry_id, %{"timeline" => timeline}), do: timeline
   defp timeline_param(socket, entry_id, _params), do: active_timeline(socket.assigns.entry_tabs, GiftPlans.find_entry(entry_section(socket, entry_id), entry_id))
 
-  defp put_tab(socket, entry_id, timeline, from), do: assign(socket, :entry_tabs, Map.put(socket.assigns.entry_tabs, tab_key(socket, entry_id), {timeline, from}))
+  defp put_tab(socket, entry_id, timeline, from, branch \\ nil) do
+    tab = if branch, do: {timeline, from, branch}, else: {timeline, from}
+    assign(socket, :entry_tabs, Map.put(socket.assigns.entry_tabs, tab_key(socket, entry_id), tab))
+  end
+
+  defp branch_param(socket, entry_id) do
+    entry = GiftPlans.find_entry(entry_section(socket, entry_id), entry_id)
+    active_branch(socket.assigns.entry_tabs, entry)
+  end
 
   defp ensure_fusion(socket, entry_id) do
     case fusion_entry(socket, entry_id) do
@@ -1786,7 +1881,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <span class="hidden items-center h-6 px-1.5 rounded bg-error text-[11px] font-semibold text-error-content select-none peer-checked:inline-flex">NOT</span>
     </label>
     <StarlightBotWeb.Live.BattlePlanEditorLive.radio_group name="op" value={@node["op"]}
-      options={[{"cost", "cost"}, {"refreshes", "refreshes"}, {"owns", "owns"}, {"stage", "stage done"}, {"goal", "goal done"}, {"run_kind", "run type"}]} />
+      options={if(Map.get(assigns, :branch?), do: [{"cost", "cost"}, {"refreshes", "refreshes"}, {"owns", "owns"}, {"goal", "goal done"}], else: [{"cost", "cost"}, {"refreshes", "refreshes"}, {"owns", "owns"}, {"stage", "stage done"}, {"goal", "goal done"}, {"run_kind", "run type"}])} />
     <%= cond do %>
       <% @node["op"] in ["cost", "refreshes"] -> %>
         <StarlightBotWeb.Live.BattlePlanEditorLive.radio_group :if={@node["op"] == "cost"} name="when" value={@node["when"] || "before"} options={[{"before", "before refresh"}, {"after", "after refresh"}]} />
@@ -1809,6 +1904,66 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         <input type="text" name="gift" value={@node["gift"]} list="gift-name-options" phx-debounce="blur"
                placeholder="Gift name" class="input input-bordered input-xs flex-1 min-w-0" />
     <% end %>
+    """
+  end
+
+  attr :entry, :map, required: true
+  attr :from, :integer, required: true
+  attr :timeline, :string, default: nil
+  attr :branch, :string, default: nil
+  attr :editing, :string, default: nil
+  attr :plan_data, :map, required: true
+  attr :section, :map, required: true
+
+  def branch_strip(assigns) do
+    segment = Enum.find(GiftPlans.timeline_view(assigns.entry, assigns.timeline)["floors"], &(&1["from"] == assigns.from))
+    branches = GiftPlans.branches(segment)
+    editing = Enum.find(branches, &(&1["id"] == assigns.editing))
+    index = editing && Enum.find_index(branches, &(&1["id"] == editing["id"]))
+
+    values = fn branch ->
+      %{"entry" => assigns.entry["id"], "from" => assigns.from, "timeline" => assigns.timeline || "", "branch" => branch["id"]}
+    end
+
+    assigns = assign(assigns, branches: branches, editing_branch: editing, editing_index: index, values: values)
+
+    ~H"""
+    <div class="flex flex-col gap-1 border-2 border-b-0 border-primary bg-primary/10 rounded-tr-lg px-1.5 py-1">
+      <div class="flex items-center gap-1 flex-wrap text-[11px]">
+        <.icon name="lucide-split" class="size-3.5 text-primary shrink-0" />
+        <%= for {branch, index} <- Enum.with_index(@branches) do %>
+          <span class="font-semibold text-base-content/60"><%= if index == 0, do: "if", else: "else if" %></span>
+          <span class={"inline-flex items-center rounded border " <> if(@branch == branch["id"], do: "border-primary bg-primary text-primary-content", else: "border-primary/40 bg-base-100 hover:bg-primary/20")}>
+            <button type="button" phx-click="list_select_branch" phx-value-entry={@entry["id"]} phx-value-timeline={@timeline || ""} phx-value-from={@from} phx-value-branch={branch["id"]}
+                    class="max-w-64 truncate px-1.5 py-0.5"><%= GiftPlans.condition_label(branch["condition"], @plan_data) || "always" %></button>
+            <button type="button" phx-click="open_case_condition" phx-value-case_id={branch["id"]} title="Edit this condition" class="px-1 py-0.5 opacity-70 hover:opacity-100">
+              <.icon name="lucide-pencil" class="size-3" />
+            </button>
+          </span>
+        <% end %>
+        <span class="font-semibold text-base-content/60">else</span>
+        <button type="button" phx-click="list_select_branch" phx-value-entry={@entry["id"]} phx-value-timeline={@timeline || ""} phx-value-from={@from} phx-value-branch=""
+                class={"rounded border px-1.5 py-0.5 " <> if(is_nil(@branch), do: "border-primary bg-primary text-primary-content", else: "border-primary/40 bg-base-100 hover:bg-primary/20")}>otherwise</button>
+        <button type="button" phx-click="list_add_branch" phx-value-entry={@entry["id"]} phx-value-timeline={@timeline || ""} phx-value-from={@from}
+                title="Add another condition" class="rounded border border-dashed border-primary/60 px-1.5 py-0.5 text-primary hover:bg-primary/20">+</button>
+      </div>
+      <div :if={@editing_branch} phx-click-away="close_case_condition" class="flex items-start gap-1 rounded border border-base-300 bg-base-100 p-1">
+        <button type="button" phx-click="close_case_condition" title="Close the condition editor" class="btn btn-ghost btn-xs h-6 min-h-6 px-1">▾</button>
+        <div class="flex-1 min-w-0 flex flex-col gap-1">
+          <.condition_node node={@editing_branch["condition"]} path="" values={@values.(@editing_branch)} removable={false}
+                           leaf={&gift_leaf(Map.merge(&1, %{plan_data: @plan_data, section: @section, branch?: true}))} />
+          <p :for={warning <- GiftPlans.condition_warnings(@editing_branch["condition"], @plan_data, @section)} class="flex items-center gap-1 text-[11px] text-warning">
+            <.icon name="lucide-triangle-exclamation-point" class="size-3.5 shrink-0" /><%= warning %>
+          </p>
+        </div>
+        <button type="button" phx-click="list_move_branch" phx-value-entry={@entry["id"]} phx-value-timeline={@timeline || ""} phx-value-from={@from} phx-value-branch={@editing_branch["id"]} phx-value-delta="-1"
+                disabled={@editing_index == 0} title="Check earlier" class="btn btn-ghost btn-xs px-1"><.icon name="lucide-arrow-left" class="size-3.5" /></button>
+        <button type="button" phx-click="list_move_branch" phx-value-entry={@entry["id"]} phx-value-timeline={@timeline || ""} phx-value-from={@from} phx-value-branch={@editing_branch["id"]} phx-value-delta="1"
+                disabled={@editing_index == length(@branches) - 1} title="Check later" class="btn btn-ghost btn-xs px-1"><.icon name="lucide-arrow-right" class="size-3.5" /></button>
+        <button type="button" phx-click="list_remove_branch" phx-value-entry={@entry["id"]} phx-value-timeline={@timeline || ""} phx-value-from={@from} phx-value-branch={@editing_branch["id"]}
+                title="Delete this branch" class="btn btn-ghost btn-xs px-1 text-error"><.icon name="lucide-trash-2" class="size-3.5" /></button>
+      </div>
+    </div>
     """
   end
 
@@ -1861,13 +2016,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
                style={if from in strip.abandoned_froms, do: StarlightBotWeb.Live.PackPlanEditorLive.disabled_stripes_style()}>
             <button type="button" phx-click="list_select_tab" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from}><%= segment_label(strip.entry, from) %></button>
             <details id={"segment-#{@entry["id"]}-#{strip.id || "main"}-#{from}"} phx-hook="FloatingDropdown" data-keep-open class="dropdown">
-              <summary class="cursor-pointer opacity-60 hover:opacity-100 list-none" title={if from == 1, do: "Start later", else: "Change or abandon from a floor"}>
+              <summary class="cursor-pointer opacity-60 hover:opacity-100 list-none" title={if from == 1, do: "Tab options", else: "Change or abandon from a floor"}>
                 <.icon name="lucide-chevron-down" class="size-3" />
               </summary>
               <div popover="manual" class={"dropdown-content z-30 rounded-lg border border-base-300 bg-base-100 p-1.5 shadow-lg space-y-1 " <> if(from == 1, do: "w-max", else: "w-56")}>
-                <button :if={from == 1} type="button" phx-click="list_set_segment_mode" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from}
-                        phx-value-mode={if from in strip.abandoned_froms, do: "change", else: "abandon"}
-                        class={"btn btn-xs " <> if(from in strip.abandoned_froms, do: "btn-primary", else: "btn-outline")}>Start later</button>
                 <div :if={from != 1} class="join w-full">
                   <button :for={{mode, label} <- [{"change", "Change at"}, {"abandon", "Abandon at"}]} type="button" phx-click="list_set_segment_mode"
                           phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from} phx-value-mode={mode}
@@ -1878,6 +2030,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
                           phx-value-from={from} phx-value-to={floor} disabled={floor != from and floor in strip.froms}
                           class={"btn btn-xs " <> if(floor == from, do: "btn-primary", else: "btn-ghost")}>F<%= floor %></button>
                 </div>
+                <button type="button" phx-click="list_add_branch" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from} data-dismiss
+                        class="btn btn-xs btn-outline w-full justify-start gap-1"><.icon name="lucide-split" class="size-3.5" />+ if condition</button>
               </div>
             </details>
             <button :if={from != 1} type="button" phx-click="list_remove_segment" phx-value-entry={@entry["id"]} phx-value-timeline={strip.id || ""} phx-value-from={from}
@@ -2046,6 +2200,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :gifts_by_id, :map, required: true
   attr :views, :list, default: []
   attr :packs_enabled, :boolean, default: true
+  attr :plan_data, :map, default: nil
+  attr :editing_branch, :string, default: nil
 
   def section_entries(assigns) do
     gifts = Enum.reject(assigns.section["entries"], &GiftPlans.heal_entry?/1)
@@ -2054,7 +2210,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     ~H"""
     <.starter_packs :if={@packs_enabled} section={@section} views={@views} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
     <.entry_list id={"section-entries-#{@section["id"]}"} shared={"list-#{@section["stage_of"] || @section["id"]}"} entries={@gifts} section={@section}
-                 entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+                 entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} plan_data={@plan_data} editing_branch={@editing_branch} />
     """
   end
 
@@ -2111,6 +2267,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :entry_tabs, :map, required: true
   attr :gifts_by_name, :map, required: true
   attr :gifts_by_id, :map, required: true
+  attr :plan_data, :map, default: nil
+  attr :editing_branch, :string, default: nil
 
   def heal_entries(assigns) do
     assigns = assign(assigns, heals: Enum.filter(assigns.section["entries"], &GiftPlans.heal_entry?/1))
@@ -2118,7 +2276,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     ~H"""
     <div :if={@heals != []} class="flex flex-col gap-1">
       <.entry_list id={"section-actions-#{@section["id"]}"} shared={"list-#{@section["id"]}-actions"} entries={@heals} section={@section}
-                   entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
+                   entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} plan_data={@plan_data} editing_branch={@editing_branch} />
     </div>
     """
   end
@@ -2130,6 +2288,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :entry_tabs, :map, required: true
   attr :gifts_by_name, :map, required: true
   attr :gifts_by_id, :map, required: true
+  attr :plan_data, :map, default: nil
+  attr :editing_branch, :string, default: nil
 
   defp entry_list(assigns) do
     ~H"""
@@ -2143,10 +2303,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           <% {:group, key, [lead | _] = members} -> %>
             <div data-sort-id={"group:#{key}"} data-sort-stay class="flex flex-col">
               <.schedule_tabs entry={lead} members={members} from={active_from(@entry_tabs, lead)} timeline={active_timeline(@entry_tabs, lead)} />
+              <% branched? = GiftPlans.branches(active_segment(@entry_tabs, lead)) != [] %>
+              <.branch_strip :if={branched?} entry={lead} from={active_from(@entry_tabs, lead)} timeline={active_timeline(@entry_tabs, lead)} branch={active_branch(@entry_tabs, lead)}
+                             editing={@editing_branch} plan_data={@plan_data} section={@section} />
               <div id={"entry-group-#{key}"} phx-hook="SortableList" data-sort-event="list_reorder_entries" data-sort-move-event="list_move_entry"
                    data-sort-shared={@shared} data-sort-scope={"group:#{key}"} data-sort-highlight data-sort-multi
-                   class="flex flex-col gap-1 min-h-8 p-1 border-2 border-primary rounded-b-lg rounded-tr-lg transition-colors">
-                <.section_entry_row :for={entry <- members} entry={entry} section={@section} from={active_from(@entry_tabs, entry)} timeline={active_timeline(@entry_tabs, entry)} in_group={true}
+                   class={"flex flex-col gap-1 min-h-8 p-1 border-2 border-primary rounded-b-lg transition-colors " <> if(branched?, do: "", else: "rounded-tr-lg")}>
+                <.section_entry_row :for={entry <- members} entry={entry} section={@section} from={active_from(@entry_tabs, entry)} timeline={active_timeline(@entry_tabs, entry)} branch={active_branch(@entry_tabs, entry)} in_group={true}
                                       gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} />
               </div>
             </div>
@@ -2169,12 +2332,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :readonly, :boolean, default: false
   attr :shadowed, :boolean, default: false
   attr :timeline, :string, default: nil
+  attr :branch, :string, default: nil
   attr :gifts_by_name, :map, required: true
   attr :gifts_by_id, :map, required: true
 
   def section_entry_row(assigns) do
     entry = GiftPlans.timeline_view(assigns.entry, assigns.timeline)
-    segment = Enum.find(entry["floors"], &(&1["from"] == assigns.from))
+    segment = entry["floors"] |> Enum.find(&(&1["from"] == assigns.from)) |> GiftPlans.branch_view(assigns.branch)
     pattern? = GiftPlans.pattern_entry?(entry)
     action? = GiftPlans.action_entry?(entry)
     gift = assigns.gifts_by_name[GiftPlans.subject_gift(entry)]

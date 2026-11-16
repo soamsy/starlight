@@ -162,6 +162,30 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert [%{"kinds" => ["extreme"]}] = entry(socket, "Glimpse of Flames")["timelines"]
   end
 
+  test "a tab can branch on a condition, branch edits land on the branch and the chain renders under the tab", %{socket: socket} do
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"})
+    glimpse = entry(socket, "Glimpse of Flames")["id"]
+    socket = event(socket, "list_add_branch", %{"entry" => glimpse, "from" => "1", "timeline" => ""})
+    [%{"branches" => [%{"id" => branch, "condition" => %{"op" => "and", "children" => [_]}, "buy" => true}]}] = entry(socket, "Glimpse of Flames")["floors"]
+    assert socket.assigns.entry_tabs[glimpse] == {nil, 1, branch}
+    assert socket.assigns.editing_condition_case_id == branch
+    assert render(socket) =~ "list_select_branch"
+
+    socket = event(socket, "list_toggle", %{"entry" => glimpse, "from" => "1", "field" => "sell"})
+    assert [%{"disposition" => "keep", "branches" => [%{"disposition" => "sell"}]}] = entry(socket, "Glimpse of Flames")["floors"]
+
+    socket = event(socket, "cond_update", %{"entry" => glimpse, "from" => "1", "timeline" => "", "branch" => branch, "path" => "0", "op" => "refreshes", "cmp" => "gte", "value" => "2"})
+    assert [%{"branches" => [%{"condition" => %{"children" => [%{"op" => "refreshes", "value" => 2}]}}]}] = entry(socket, "Glimpse of Flames")["floors"]
+
+    socket = event(socket, "list_select_branch", %{"entry" => glimpse, "from" => "1", "timeline" => "", "branch" => ""})
+    assert socket.assigns.entry_tabs[glimpse] == {nil, 1}
+    socket = event(socket, "list_toggle", %{"entry" => glimpse, "from" => "1", "field" => "buy"})
+    assert [%{"buy" => false, "branches" => [%{"disposition" => "sell"}]}] = entry(socket, "Glimpse of Flames")["floors"]
+
+    socket = event(socket, "list_remove_branch", %{"entry" => glimpse, "from" => "1", "timeline" => "", "branch" => branch})
+    refute Map.has_key?(hd(entry(socket, "Glimpse of Flames")["floors"]), "branches")
+  end
+
   test "Add Schedule shows floor tabs, new tabs start after the last one, and a tab's start floor can move to any free floor", %{socket: socket} do
     socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"})
     glimpse = entry(socket, "Glimpse of Flames")["id"]

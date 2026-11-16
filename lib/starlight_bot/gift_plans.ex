@@ -491,8 +491,26 @@ defmodule StarlightBot.GiftPlans do
 
   def abandoned?(entry, segment), do: segment["abandoned"] == true or (not pattern_entry?(entry) and segment["disposition"] == "ignore")
 
-  def resolve(entry, floor) do
-    segment = segment_at(entry, floor)
+  def branches(segment), do: segment["branches"] || []
+
+  def find_branch(segment, branch_id), do: Enum.find(branches(segment), &(&1["id"] == branch_id))
+
+  def branch_view(segment, nil), do: Map.delete(segment, "branches")
+
+  def branch_view(segment, branch_id) do
+    case find_branch(segment, branch_id) do
+      nil -> Map.delete(segment, "branches")
+      branch -> segment |> Map.delete("branches") |> Map.merge(Map.drop(branch, ["id", "condition"]))
+    end
+  end
+
+  def effective_segment(segment, env) do
+    branch = if is_map(env) and not Map.get(env, :no_branches, false), do: Enum.find(branches(segment), &eval_condition(&1["condition"], Map.put(env, :no_branches, true)))
+    branch_view(segment, branch && branch["id"])
+  end
+
+  def resolve(entry, floor, env \\ nil) do
+    segment = entry |> segment_at(floor) |> effective_segment(env)
     abandoned? = abandoned?(entry, segment)
 
     disposition =
@@ -528,8 +546,9 @@ defmodule StarlightBot.GiftPlans do
   defp skill_replace_subject?(%{"action" => "skill_replace"}), do: true
   defp skill_replace_subject?(_subject), do: false
 
-  def resolved_entries(nil, _floor), do: []
-  def resolved_entries(section, floor), do: Enum.map(section["entries"] || [], &resolve(&1, floor))
+  def resolved_entries(section, floor, env \\ nil)
+  def resolved_entries(nil, _floor, _env), do: []
+  def resolved_entries(section, floor, env), do: Enum.map(section["entries"] || [], &resolve(&1, floor, env))
 
   def keep_set(data, floor, current_id \\ nil) do
     sections = data["sections"] || []
@@ -980,12 +999,54 @@ defmodule StarlightBot.GiftPlans do
     end)
   end
 
-  def update_segment(data, id, entry_id, from, fun, timeline \\ nil) do
+  def update_segment(data, id, entry_id, from, fun, timeline \\ nil, branch \\ nil) do
     update_entry(data, id, entry_id, fn entry ->
       with_timeline(entry, timeline, fn entry ->
-        Map.update!(entry, "floors", fn floors -> Enum.map(floors, &if(&1["from"] == from, do: fun.(&1), else: &1)) end)
+        Map.update!(entry, "floors", fn floors -> Enum.map(floors, &if(&1["from"] == from, do: update_in_branch(&1, branch, fun), else: &1)) end)
       end)
     end)
+  end
+
+  defp update_in_branch(segment, nil, fun), do: fun.(segment)
+
+  defp update_in_branch(segment, branch_id, fun) do
+    Map.update(segment, "branches", [], fn branches -> Enum.map(branches, &if(&1["id"] == branch_id, do: fun.(&1), else: &1)) end)
+  end
+
+  def add_branch(data, id, entry_id, from, timeline, branch_id, condition) do
+    update_segment(data, id, entry_id, from, fn segment ->
+      branch = segment |> branch_view(nil) |> Map.drop(["from"]) |> Map.merge(%{"id" => branch_id, "condition" => condition})
+      Map.put(segment, "branches", branches(segment) ++ [branch])
+    end, timeline)
+  end
+
+  def set_branch_condition(data, id, entry_id, from, timeline, branch_id, condition) do
+    update_segment(data, id, entry_id, from, &Map.put(&1, "condition", condition), timeline, branch_id)
+  end
+
+  def remove_branch(data, id, entry_id, from, timeline, branch_id) do
+    update_segment(data, id, entry_id, from, fn segment ->
+      case Enum.reject(branches(segment), &(&1["id"] == branch_id)) do
+        [] -> Map.delete(segment, "branches")
+        rest -> Map.put(segment, "branches", rest)
+      end
+    end, timeline)
+  end
+
+  def move_branch(data, id, entry_id, from, timeline, branch_id, delta) do
+    update_segment(data, id, entry_id, from, fn segment ->
+      list = branches(segment)
+
+      case Enum.find_index(list, &(&1["id"] == branch_id)) do
+        nil ->
+          segment
+
+        index ->
+          target = index |> Kernel.+(delta) |> max(0) |> min(length(list) - 1)
+          {branch, rest} = List.pop_at(list, index)
+          Map.put(segment, "branches", List.insert_at(rest, target, branch))
+      end
+    end, timeline)
   end
 
   def with_timeline(entry, nil, fun), do: fun.(entry)
@@ -1219,7 +1280,7 @@ defmodule StarlightBot.GiftPlans do
     end
   end
 
-  def scheduled?(entry), do: entry["scheduled"] == true or length(entry["floors"]) > 1 or timelines(entry) != []
+  def scheduled?(entry), do: entry["scheduled"] == true or length(entry["floors"]) > 1 or timelines(entry) != [] or Enum.any?(entry["floors"], &(branches(&1) != []))
 
   defp scheduled_alone?(entry), do: scheduled?(entry)
 
@@ -1357,27 +1418,29 @@ defmodule StarlightBot.GiftPlans do
 
   def progress(data, id, env) do
     section = find_section(data, id)
-    build_progress(data, section, resolved_entries(section, env_floor(env)), env)
+    build_progress(data, section, resolved_entries(section, env_floor(env), env), env)
   end
 
   def working_progress(data, id, env) do
     section = find_section(data, id)
     floor = env_floor(env)
-    build_progress(data, section, resolved_entries(section, floor) ++ carried_entries(data, section, floor), env)
+    build_progress(data, section, resolved_entries(section, floor, env) ++ carried_entries(data, section, floor, env), env)
   end
 
-  def working_entries(data, section, floor), do: resolved_entries(section, floor) ++ carried_entries(data, section, floor)
+  def working_entries(data, section, floor, env \\ nil), do: resolved_entries(section, floor, env) ++ carried_entries(data, section, floor, env)
 
-  def carried_entries(_data, nil, _floor), do: []
+  def carried_entries(data, section, floor, env \\ nil)
 
-  def carried_entries(data, section, floor) do
+  def carried_entries(_data, nil, _floor, _env), do: []
+
+  def carried_entries(data, section, floor, env) do
     own = MapSet.new(section["entries"] || [], & &1["subject"])
 
     data
     |> sections(root_id(data, section["id"]))
     |> Enum.take_while(&(&1["id"] != section["id"]))
     |> Enum.reverse()
-    |> Enum.flat_map(&resolved_entries(&1, floor))
+    |> Enum.flat_map(&resolved_entries(&1, floor, env))
     |> Enum.uniq_by(& &1.subject)
     |> Enum.reject(&MapSet.member?(own, &1.subject))
     |> Enum.filter(&carried?/1)
@@ -1387,7 +1450,7 @@ defmodule StarlightBot.GiftPlans do
   defp carried?(_entry), do: false
 
   defp build_progress(data, section, entries, env) do
-    covered = data["sections"] |> Enum.flat_map(&resolved_entries(&1, env_floor(env))) |> covered(env)
+    covered = data["sections"] |> Enum.flat_map(&resolved_entries(&1, env_floor(env), env)) |> covered(env)
     statuses = Map.new(entries, &{&1.id, entry_status(&1, env, covered)})
     %{section: section, entries: entries, statuses: statuses, pending: pending_ingredients(entries, env)}
   end
