@@ -542,7 +542,13 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   defp retry_confirm(_search_hook, 0, reason, _ctx), do: {:error, reason}
 
   defp retry_confirm(search_hook, retries_left, _reason, ctx) do
-    Ctx.log(ctx, :info, "theme pack selector: pack still in search after confirm, clicking confirm again (#{retries_left} retries left)")
+    Ctx.log(ctx, :info, "theme pack selector: pack still in search after confirm, clicking pack and confirm again (#{retries_left} retries left)")
+
+    with {:ok, frame} <- Capture.grab_frame(),
+         {:ok, rect} <- Matcher.find(frame, search_hook) do
+      click_rect_center(frame, rect)
+    end
+
     confirm_search(search_hook, retries_left - 1, ctx)
   end
 
