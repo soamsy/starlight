@@ -581,6 +581,8 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       BattlePlans.tray_leaf?(leaf) -> tray_count_leaf(leaf, tray_info, ctx)
       BattlePlans.position_leaf?(leaf) -> position_leaf(leaf, tray_info, ctx)
       BattlePlans.fight_leaf?(leaf) -> fight_leaf(leaf, ctx)
+      BattlePlans.shop_stages_leaf?(leaf) -> shop_stages_leaf(leaf, ctx)
+      BattlePlans.shop_complete_leaf?(leaf) -> shop_complete_leaf(ctx)
       BattlePlans.enemy_leaf?(leaf) -> enemy_count_leaf(leaf, frame, ctx)
       not BattlePlans.sinner_leaf?(leaf) -> hook_leaf(leaf, frame, ctx)
       is_nil(tray_info.sinners) -> :unknown
@@ -641,6 +643,30 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     boss? = RunMemory.venue(ctx) == "md_boss"
     Ctx.log(ctx, :info, "playbook: #{if boss?, do: "boss fight", else: "not a boss fight"} (venue #{RunMemory.venue(ctx)})")
     boss?
+  end
+
+  defp shop_stages_leaf(leaf, ctx) do
+    case RunMemory.shop_stages(ctx) do
+      nil ->
+        Ctx.log(ctx, :info, "playbook: no shopping list in this run, treating #{BattlePlans.condition_label(leaf)} as false")
+        :unknown
+
+      {done, total} ->
+        Ctx.log(ctx, :info, "playbook: #{done} of #{total} shop stage(s) done, #{BattlePlans.condition_label(leaf)}")
+        BattlePlans.shop_stages_matches?(leaf, done)
+    end
+  end
+
+  defp shop_complete_leaf(ctx) do
+    case RunMemory.shop_stages(ctx) do
+      nil ->
+        Ctx.log(ctx, :info, "playbook: no shopping list in this run, treating shopping list complete as false")
+        :unknown
+
+      {done, total} ->
+        Ctx.log(ctx, :info, "playbook: #{done} of #{total} shop stage(s) done")
+        done >= total
+    end
   end
 
   defp hook_leaf(%{"hook" => name}, frame, ctx) do

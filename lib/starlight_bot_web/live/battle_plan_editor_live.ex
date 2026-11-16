@@ -1808,7 +1808,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <span class="inline-flex items-center justify-center h-6 w-6 rounded border border-dashed border-base-content/20 text-sm text-base-content/25 select-none peer-checked:hidden">≠</span>
       <span class="hidden items-center h-6 px-1.5 rounded bg-error text-[11px] font-semibold text-error-content select-none peer-checked:inline-flex">NOT</span>
     </label>
-    <.radio_group name="op" value={@node["op"]} options={[{"tray_count", "tray slots"}, {"sinner_count", "sinner count"}, {"enemy_count", "target count"}, {"sinner_position", "sinner position"}, {"boss_fight", "boss"}, {"hook", "hook"}]} />
+    <.radio_group name="op" value={@node["op"]} options={[{"tray_count", "tray slots"}, {"sinner_count", "sinner count"}, {"enemy_count", "target count"}, {"sinner_position", "sinner position"}, {"boss_fight", "boss"}, {"shop_stages", "shop stages"}, {"shop_complete", "shop complete"}, {"hook", "hook"}]} />
     <%= cond do %>
     <% BattlePlans.sinner_leaf?(@node) -> %>
       <.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
@@ -1822,7 +1822,15 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
       <input type="number" name="value" min="0" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
     <% BattlePlans.fight_leaf?(@node) -> %>
+    <% BattlePlans.shop_complete_leaf?(@node) -> %>
+    <% BattlePlans.shop_stages_leaf?(@node) -> %>
+      <.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
+      <input type="number" name="value" min="0" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
     <% BattlePlans.position_leaf?(@node) -> %>
+      <div :if={not Enum.any?(@sinner_options, & &1.profiled?)} class="alert alert-warning w-full gap-1.5 px-2 py-1 text-xs">
+        <.icon name="lucide-triangle-exclamation-point" class="size-4 shrink-0" />
+        <span>No sinner profiles are assigned in this plan, so there are no sinners to pick and this condition is always false. Assign a profile to each sinner in the Lineups section first.</span>
+      </div>
       <.sinner_multi id={"sinners-pos-#{@values["action"]}-#{String.replace(@path, ~r/[^a-z0-9]+/i, "-")}"} name="sinners_csv" chosen={@node["sinners"] || []} sinner_options={@sinner_options} empty_label="(pick a sinner)" />
       <select name="pick" class="select select-bordered select-xs w-auto" title="Count positions from the first sinner or from the last">
         <option :for={pick <- ~w(first last)} value={pick} selected={@node["position"]["pick"] == pick}><%= pick_label(pick) %></option>

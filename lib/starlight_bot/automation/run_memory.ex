@@ -190,6 +190,20 @@ defmodule StarlightBot.Automation.RunMemory do
     if shop_progress(ctx), do: put(ctx, :shop_progress, nil), else: :ok
   end
 
+  def shop_stages(ctx) do
+    case gift_plan(ctx) do
+      %{"sections" => [_ | _] = sections} ->
+        total = Enum.count(sections, &(&1["pursue_optional"] != true))
+        {done_count(shop_plan(ctx)), total}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp done_count(%{steps: steps}), do: steps |> Enum.filter(&(&1.outcome in [:done, :skipped])) |> Enum.uniq_by(& &1.id) |> length()
+  defp done_count(_trace), do: 0
+
   def gift_plan(ctx) do
     with %{id: team_id} <- team(ctx),
          %{} = full <- Teams.get_team(team_id),
