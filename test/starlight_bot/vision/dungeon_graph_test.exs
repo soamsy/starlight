@@ -145,6 +145,33 @@ defmodule StarlightBot.Vision.DungeonGraphTest do
       assert Enum.any?(graph.diagnostics, &(&1.hook == :dungeon_graph_1_high_high))
     end
 
+    test "a square of straight edges gets a diagonal toward mid" do
+      matches = [
+        match(0, :mid, :high, []),
+        match(0, :mid, :mid, []),
+        match(1, :mid, :mid, []),
+        match(1, :high, :high, [])
+      ]
+
+      graph = DungeonGraph.build_from_matches(matches)
+      inferred = Enum.filter(graph.edges, &(&1.hook == :inferred_diagonal))
+
+      assert [%{from_node: {1, :high}, to_node: {2, :mid}}] = inferred
+    end
+
+    test "a triangle gets the missing diagonal to the shared next node" do
+      matches = [
+        match(0, :mid, :mid, []),
+        match(0, :mid, :high, []),
+        match(1, :mid, :mid, [])
+      ]
+
+      graph = DungeonGraph.build_from_matches(matches)
+      inferred = Enum.filter(graph.edges, &(&1.hook == :inferred_diagonal))
+
+      assert [%{from_node: {1, :high}, to_node: {2, :mid}}] = inferred
+    end
+
     test "no matched hop-0 edges yields an empty graph with a warning" do
       matches = [match(0, :mid, :mid, matched?: false)]
 

@@ -204,6 +204,7 @@ defmodule StarlightBot.Vision.DungeonGraph do
           partition_edges(accepted, visited)
       end
 
+    reachable = reachable ++ inferred_diagonals(reachable)
     orphan_warning = if orphaned == [], do: [], else: [:orphan_edges_excluded]
 
     %__MODULE__{
@@ -349,6 +350,48 @@ defmodule StarlightBot.Vision.DungeonGraph do
           }
         ]
     end
+  end
+
+  defp inferred_diagonals(edges) do
+    nodes = edges |> Enum.flat_map(&[&1.from_node, &1.to_node]) |> MapSet.new()
+    hops = nodes |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+
+    for hop <- hops,
+        [a, b] <- Enum.chunk_every(@levels, 2, 1, :discard),
+        MapSet.member?(nodes, {hop, a}) and MapSet.member?(nodes, {hop, b}),
+        diagonal <- diagonals_for_pair(edges, hop, a, b),
+        do: diagonal
+  end
+
+  defp diagonals_for_pair(edges, hop, a, b) do
+    low = {hop, a}
+    high = {hop, b}
+    out_low = Enum.filter(edges, &(&1.from_node == low))
+    out_high = Enum.filter(edges, &(&1.from_node == high))
+    straight_low = Enum.find(out_low, &(&1.to_node == {hop + 1, a}))
+    straight_high = Enum.find(out_high, &(&1.to_node == {hop + 1, b}))
+
+    cond do
+      straight_low && straight_high && length(out_low) == 1 && length(out_high) == 1 ->
+        if level_distance_to_mid(a) <= level_distance_to_mid(b),
+          do: [inferred_edge(high, straight_low)],
+          else: [inferred_edge(low, straight_high)]
+
+      straight_low && out_low == [straight_low] && out_high == [] ->
+        [inferred_edge(high, straight_low)]
+
+      straight_high && out_high == [straight_high] && out_low == [] ->
+        [inferred_edge(low, straight_high)]
+
+      true ->
+        []
+    end
+  end
+
+  defp level_distance_to_mid(level), do: abs(level_index(level) - level_index(:mid))
+
+  defp inferred_edge(from_node, %{to_node: to_node, variant: variant}) do
+    %{from_node: from_node, to_node: to_node, hook: :inferred_diagonal, variant: variant, score: 0.0, rect: nil}
   end
 
   defp current_level_and_warnings(accepted) do
