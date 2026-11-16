@@ -79,6 +79,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
   defp refresh_label(%{"action" => action}), do: String.downcase(GiftPlans.refresh_action_label(action))
 
   defp work(section, state, ctx) do
+    state = Map.put(state, :fuse_blocked, false)
     {sold_lines, sold?, state} = Sell.run_entries(sells(section, state, ctx), entries(section, state, ctx), keep(section, state), state, ctx, reserved(section, state, ctx))
     {heal_lines, healed?, state} = Heal.run_entries(heal_entries(section, state, ctx), state, ctx)
     {replace_lines, replaced?, state} = SkillReplace.run_entries(GiftPlans.skill_replace_entries(entries(section, state, ctx)), state, ctx)
@@ -298,9 +299,10 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
 
   defp fuse_each(entries, state, ctx, eligible?) do
     Enum.reduce(entries, {[], false, state}, fn entry, {lines, progressed?, state} ->
-      if eligible?.(entry) do
+      if not Map.get(state, :fuse_blocked, false) and eligible?.(entry) do
         {outcome, detail, state} = Fusion.obtain(entry, %{"max_retries" => nil}, state, ctx, [])
         if outcome == :failed, do: Ops.recover_to_shop(ctx)
+        state = if outcome in [:done, :skipped], do: state, else: Map.put(state, :fuse_blocked, true)
         {lines ++ ["#{entry.gift}: #{detail}"], progressed? or outcome in [:done, :partial], state}
       else
         {lines, progressed?, state}
