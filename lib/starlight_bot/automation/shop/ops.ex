@@ -93,8 +93,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @fuse_merge_area_hook :shop_fuse_popup_merge_area
   @fuse_dismiss_info_hook :shop_fuse_popup_dismiss_gift_info_popup
   @fuse_merge_retries 3
-  @fuse_merge_settle_ms 200
-  @fuse_merge_settle_timeout_ms 1_000
+  @fuse_merge_settle_ms 400
+  @fuse_merge_settle_timeout_ms 1_200
   @fuse_confirm_confirm_hooks [:shop_fuse_popup_confirm_confirm, :shop_fuse_popup_confirm_confirm_2]
   @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
