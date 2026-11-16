@@ -1,11 +1,13 @@
 defmodule StarlightBot.Input.MouseProfile do
+  alias StarlightBot.AppSettings
+
   @move_duration_mult 0.50
   @scroll_delay_mult 0.45
   @drift_decay 0.97
   @drift_sigma 0.02
   @drift_limit 0.15
 
-  def move_duration_mult, do: @move_duration_mult * personality().tempo * advance_drift()
+  def move_duration_mult, do: @move_duration_mult * personality().tempo * advance_drift() / AppSettings.cursor_speed()
   def scroll_delay_mult, do: @scroll_delay_mult * personality().tempo
 
   def click_hold_ms do
@@ -29,7 +31,7 @@ defmodule StarlightBot.Input.MouseProfile do
   end
 
   def hesitation_ms do
-    personality().hesitation_ms |> lognormal(0.5) |> round()
+    (personality().hesitation_ms * AppSettings.hesitation_mult()) |> lognormal(0.5) |> round()
   end
 
   def trailing_ms do

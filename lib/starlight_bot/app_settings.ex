@@ -57,11 +57,50 @@ defmodule StarlightBot.AppSettings do
 
   def put_battle_debug(enabled?) when is_boolean(enabled?), do: put("battle_debug", to_string(enabled?))
 
+  @cursor_speed_range {0.2, 2.0}
+  @hesitation_range {0.5, 2.0}
+
+  def cursor_speed, do: cached_multiplier("cursor_speed", @cursor_speed_range)
+
+  def put_cursor_speed(value), do: put_multiplier("cursor_speed", value, @cursor_speed_range)
+
+  def hesitation_mult, do: cached_multiplier("hesitation_mult", @hesitation_range)
+
+  def put_hesitation_mult(value), do: put_multiplier("hesitation_mult", value, @hesitation_range)
+
   def get(key), do: Repo.one(from_key(key))
 
   def put(key, value) do
     Repo.insert_all("app_settings", [%{key: key, value: value}], on_conflict: {:replace, [:value]}, conflict_target: :key)
     :ok
+  end
+
+  defp cached_multiplier(key, range) do
+    case :persistent_term.get({__MODULE__, key}, nil) do
+      nil ->
+        value = key |> get() |> parse_multiplier(range)
+        :persistent_term.put({__MODULE__, key}, value)
+        value
+
+      value ->
+        value
+    end
+  end
+
+  defp put_multiplier(key, value, {lo, hi} = range) do
+    case parse_multiplier(to_string(value), range) do
+      parsed when is_float(parsed) and parsed >= lo and parsed <= hi ->
+        put(key, Float.to_string(parsed))
+        :persistent_term.put({__MODULE__, key}, parsed)
+        {:ok, parsed}
+    end
+  end
+
+  defp parse_multiplier(value, {lo, hi}) do
+    case value && Float.parse(value) do
+      {parsed, _} -> parsed |> max(lo) |> min(hi) |> Float.round(2)
+      _ -> 1.0
+    end
   end
 
   defp from_key(key), do: from(s in "app_settings", where: s.key == ^key, select: s.value)
