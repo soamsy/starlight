@@ -456,6 +456,9 @@
                                       class="btn btn-ghost btn-xs w-full justify-start capitalize">
                                 <img src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
                               </button>
+                              <button type="button" phx-click="list_add_affinity_any" phx-value-affinity="none" class="btn btn-ghost btn-xs w-full justify-start">
+                                <.icon name="lucide-circle-off" class="size-3.5" />Keywordless
+                              </button>
                             </div>
                           </div>
                           <div :for={tier <- GiftPlans.shop_tiers()} class="dropdown dropdown-end">
@@ -465,6 +468,9 @@
                               <button :for={affinity <- affinities()} type="button" phx-click="list_add_affinity" phx-value-affinity={affinity} phx-value-tier={tier}
                                       class="btn btn-ghost btn-xs w-full justify-start capitalize">
                                 <img src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
+                              </button>
+                              <button type="button" phx-click="list_add_affinity" phx-value-affinity="none" phx-value-tier={tier} class="btn btn-ghost btn-xs w-full justify-start">
+                                <.icon name="lucide-circle-off" class="size-3.5" />Keywordless
                               </button>
                             </div>
                           </div>
