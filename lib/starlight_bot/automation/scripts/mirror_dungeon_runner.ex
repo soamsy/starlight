@@ -549,7 +549,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
         [capture([invoke(SelectTeamOnScreen, :run, [team_id, "md_battle", 1])], then: {__MODULE__, :team_selected, [run, run_state]})]
 
       screen == :grace ->
-        steps = Enum.flat_map(grace_picks, &grace_pick_steps/1)
+        steps = [sleep(100)] ++ Enum.flat_map(grace_picks, &grace_pick_steps/1)
         ensure_saved = branch([{:grace_convert_starlight_checked, [click(:grace_convert_starlight_checked)]}, {:default, []}], wait: @fresh_check_ms)
         grace = steps ++ [goto(:grace, :grace_confirm), ensure_saved, goto(:grace_confirm, :cabinet_ego_gifts)]
         [capture(grace, then: resume_after(run, run_state))]
