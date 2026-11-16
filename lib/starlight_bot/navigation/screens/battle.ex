@@ -21,7 +21,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   screen :battle_settings_popup, identity: :battle_settings_give_up, refines: :battle do
     transition to: :battle, do: [key(:esc), sleep(300)]
     transition to: :battle_given_up, do: [click(:battle_settings_give_up)] ++ loading()
-    transition to: :battle_retried, do: [click(:battle_settings_retry)] ++ loading()
+    transition to: :battle_retried, do: [click(:battle_settings_retry), premove(:battle_safe_click_spot)] ++ loading()
   end
 
   screen :battle_given_up, identity: nil, catch_all: true
