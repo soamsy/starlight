@@ -184,7 +184,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
     progress = progress(section, state, ctx)
     {required, optional} = progress.entries |> fixed() |> split_optional()
     {lines, progressed?, state} = fuse_each(required, state, ctx, &GiftPlans.needed?(progress(section, state, ctx), &1))
-    {more, more?, state} = fuse_each(optional, state, ctx, &(not owned?(&1.gift, ctx) and ingredients_owned?(&1, state, ctx)))
+    {more, more?, state} = fuse_each(optional, state, ctx, &(unfinished?(section, &1, state, ctx) and ingredients_owned?(&1, state, ctx)))
     {lines ++ more, progressed? or more?, state}
   end
 
@@ -198,7 +198,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
       now.entries |> Enum.filter(& &1.fuse) |> Enum.reject(&(&1.goal == "optional")) |> Enum.all?(&(not GiftPlans.needed?(now, &1)))
     end
 
-    {more, more?, state} = fuse_each(optional, state, ctx, &(not owned?(&1.gift, ctx) and fusions_done?.()))
+    {more, more?, state} = fuse_each(optional, state, ctx, &(unfinished?(section, &1, state, ctx) and fusions_done?.()))
     {lines ++ more, progressed? or more?, state}
   end
 
@@ -319,6 +319,8 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
     |> Enum.sort_by(fn {_item, rank} -> rank end)
     |> Enum.map(fn {item, _rank} -> item end)
   end
+
+  defp unfinished?(section, entry, state, ctx), do: not owned?(entry.gift, ctx) and GiftPlans.status(progress(section, state, ctx), entry) != :done
 
   defp split_optional(entries), do: entries |> Enum.split_with(&(&1.goal == "optional")) |> then(fn {optional, required} -> {required, optional} end)
 
