@@ -2,6 +2,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Automation.Scripts.ShopRunner
   alias StarlightBot.Automation.Shop.Actions.{AffinityRefresh, Fusion, Heal, Refresh, Sell, SkillReplace}
+  alias StarlightBot.Automation.Shop.FusionReserve
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.GiftPlans
 
@@ -78,7 +79,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
   defp refresh_label(%{"action" => action}), do: String.downcase(GiftPlans.refresh_action_label(action))
 
   defp work(section, state, ctx) do
-    {sold_lines, sold?, state} = Sell.run_entries(sells(section, state, ctx), entries(section, state, ctx), keep(section, state), state, ctx)
+    {sold_lines, sold?, state} = Sell.run_entries(sells(section, state, ctx), entries(section, state, ctx), keep(section, state), state, ctx, reserved(section, state, ctx))
     {heal_lines, healed?, state} = Heal.run_entries(heal_entries(section, state, ctx), state, ctx)
     {replace_lines, replaced?, state} = SkillReplace.run_entries(GiftPlans.skill_replace_entries(entries(section, state, ctx)), state, ctx)
     sell_lines = sold_lines ++ heal_lines ++ replace_lines
@@ -123,7 +124,7 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
   end
 
   def preview(_step, section, state, ctx) do
-    sold = Sell.plan(sells(section, state, ctx), entries(section, state, ctx), keep(section, state), state, ctx)
+    sold = Sell.plan(sells(section, state, ctx), entries(section, state, ctx), keep(section, state), state, ctx, reserved(section, state, ctx))
     selling = if sold == [], do: [], else: ["sell " <> Enum.map_join(sold, ", ", fn {gift, _entry} -> gift.name end)]
     heals = heal_entries(section, state, ctx) |> Enum.map(&heal_label/1)
     selling = selling ++ if(heals == [], do: [], else: ["check heals: " <> Enum.join(heals, ", ")])
@@ -365,6 +366,8 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
 
   defp sells(section, state, ctx), do: section |> entries(state, ctx) |> GiftPlans.sell_entries()
   defp entries(section, state, ctx), do: GiftPlans.resolved_entries(section, shop_floor(state), env(state, ctx))
+
+  defp reserved(section, state, ctx), do: FusionReserve.counts(progress(section, state, ctx), keep(section, state), state, ctx)
 
   defp keep(%{"stage_of" => _} = section, state), do: GiftPlans.keep_set(state.plan, shop_floor(state), section["id"])
   defp keep(_section, state), do: Map.get_lazy(state, :protected, fn -> GiftPlans.keep_set(state.plan, shop_floor(state)) end)

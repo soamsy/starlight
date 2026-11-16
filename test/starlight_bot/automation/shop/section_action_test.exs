@@ -48,7 +48,8 @@ defmodule StarlightBot.Automation.Shop.Actions.SectionTest do
       reserve: 0,
       sell_popup_open: false,
       gifts_by_name: Map.new(gifts, &{&1.name, &1}),
-      gifts_by_id: Map.new(gifts, &{&1.id, &1})
+      gifts_by_id: Map.new(gifts, &{&1.id, &1}),
+      shop_type: :normal
     }
 
     %{ctx: ctx, state: state, section: section}
@@ -170,6 +171,15 @@ defmodule StarlightBot.Automation.Shop.Actions.SectionTest do
 
     ignored = entries ++ [%{id: "me_j2", subject: %{"gift" => "Junk Two"}, disposition: "ignore"}]
     assert [{%{name: "Junk One"}, _}] = Sell.plan(sells, ignored, MapSet.new(), state, ctx)
+  end
+
+  test "sells skip gifts reserved for a pending fusion", %{ctx: ctx, state: state, section: section} do
+    for {id, name} <- [{"g_j1", "Junk One"}, {"g_j2", "Junk Two"}], do: RunMemory.add_ego_gift(ctx, id, name)
+
+    entries = GiftPlans.resolved_entries(section, 1)
+    sells = GiftPlans.sell_entries(entries)
+    assert [{%{name: "Junk One"}, _}] = Sell.plan(sells, entries, MapSet.new(), state, ctx, %{"g_j2" => 1})
+    assert Sell.plan(sells, entries, MapSet.new(), state, ctx, %{"g_j1" => 1, "g_j2" => 1}) == []
   end
 
   test "upties skip an ingredient waiting to be fused into a fixed fusion", %{ctx: ctx, state: state, section: section} do

@@ -3,10 +3,12 @@ defmodule StarlightBot.Automation.Shop.Actions.Sell do
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.GiftPlans
 
-  def run_entries([], _entries, _keep, state, ctx), do: {[], false, close_popup(state, ctx)}
+  def run_entries(sell_entries, entries, keep, state, ctx, reserved \\ %{})
 
-  def run_entries(sell_entries, entries, keep, state, ctx) do
-    case plan(sell_entries, entries, keep, state, ctx) do
+  def run_entries([], _entries, _keep, state, ctx, _reserved), do: {[], false, close_popup(state, ctx)}
+
+  def run_entries(sell_entries, entries, keep, state, ctx, reserved) do
+    case plan(sell_entries, entries, keep, state, ctx, reserved) do
       [] ->
         {[], false, close_popup(state, ctx)}
 
@@ -22,12 +24,13 @@ defmodule StarlightBot.Automation.Shop.Actions.Sell do
     end
   end
 
-  def plan(sell_entries, entries, keep, state, ctx) do
+  def plan(sell_entries, entries, keep, state, ctx, reserved \\ %{}) do
     order = sell_entries |> Enum.with_index() |> Map.new(fn {entry, index} -> {entry.id, index} end)
 
     ctx
     |> RunMemory.ego_gifts()
     |> GiftPlans.fodder(keep, state.gifts_by_id)
+    |> without_reserved(reserved)
     |> Enum.flat_map(fn gift ->
       case GiftPlans.ruling_entry(entries, gift) do
         %{disposition: "sell"} = entry -> [{gift, entry}]
@@ -43,6 +46,18 @@ defmodule StarlightBot.Automation.Shop.Actions.Sell do
         else: {picked ++ [{gift, entry}], Map.put(counts, entry.id, sold + 1)}
     end)
     |> elem(0)
+  end
+
+  defp without_reserved(fodder, reserved) do
+    {kept, _left} =
+      Enum.reduce(fodder, {[], reserved}, fn gift, {kept, left} ->
+        case Map.get(left, gift.id, 0) do
+          0 -> {[gift | kept], left}
+          n -> {kept, Map.put(left, gift.id, n - 1)}
+        end
+      end)
+
+    Enum.reverse(kept)
   end
 
   defp count_sold(state, sold) do
