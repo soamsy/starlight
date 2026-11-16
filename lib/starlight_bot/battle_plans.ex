@@ -543,6 +543,8 @@ defmodule StarlightBot.BattlePlans do
 
   def lineups(data), do: (is_map(data) && data["lineups"]) || []
 
+  def lineup_notes(data), do: (is_map(data) && data["lineup_notes"]) || ""
+
   def lineup_track(data, venue), do: get_in(data, ["lineup_tracks", venue]) || []
 
   def find_lineup(data, id), do: Enum.find(lineups(data), &(&1["id"] == id))

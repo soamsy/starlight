@@ -7,7 +7,7 @@
     <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
       <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
         <%= if @data do %>
-          <div class="flex flex-wrap items-start gap-3 lg:flex-nowrap">
+          <div class="relative flex flex-wrap items-start gap-3 lg:flex-nowrap">
           <div class="flex min-w-0 basis-full flex-col gap-2 lg:flex-1 lg:basis-0">
             <% lineup = StarlightBot.BattlePlans.find_lineup(@data, @lineup_id) %>
             <%= if lineup do %>
@@ -82,9 +82,10 @@
                   </table>
                   </div>
                 </div>
-                <div class="flex flex-col gap-2 pt-10 w-2xl max-w-full">
+                <div class="grid w-full max-w-[min(100%,62rem)] grid-cols-1 content-start min-[1400px]:w-[62rem] min-[1400px]:grid-cols-[minmax(0,42rem)_minmax(6rem,1fr)] gap-x-3 gap-y-2 pt-10">
+                  <div class="flex flex-col gap-2">
                   <%= for row <- sinner_rows() do %>
-                    <div class="grid grid-cols-6 gap-1 max-w-2xl">
+                    <div class="grid grid-cols-6 gap-1 min-[1400px]:max-w-2xl">
                       <%= for sinner <- row do %>
                         <% pos = Enum.find_index(lineup["sinners"], &(&1 == sinner)) %>
                         <% chosen = for id <- Map.get(StarlightBot.BattlePlans.profiles(@data), sinner, []), p = @profiles_by_id[id], do: p %>
@@ -131,7 +132,10 @@
                       <% end %>
                     </div>
                   <% end %>
-                  <div class="flex items-center justify-between gap-2 max-w-2xl text-xs">
+                  </div>
+                  <textarea name="value" placeholder="Add notes here" phx-blur="set_lineup_notes"
+                            class="textarea textarea-bordered textarea-xs order-last h-24 w-full resize-none leading-tight min-[1400px]:order-none min-[1400px]:col-start-2 min-[1400px]:row-span-2 min-[1400px]:row-start-1 min-[1400px]:h-full min-[1400px]:min-h-0"><%= StarlightBot.BattlePlans.lineup_notes(@data) %></textarea>
+                  <div class="flex items-center justify-between gap-2 text-xs min-[1400px]:max-w-2xl">
                     <span class="text-base-content/50">
                       <%= length(lineup["sinners"]) %> picked
                       <%= if length(lineup["sinners"]) > StarlightBot.BattlePlans.front_line_size() do %>
@@ -146,7 +150,7 @@
               <.lineup_list data={@data} lineup_id={@lineup_id} renaming_lineup_id={@renaming_lineup_id} reorder_rev={@reorder_rev} />
             <% end %>
           </div>
-            <div class="order-first ml-auto flex shrink-0 items-center gap-3 lg:order-none">
+            <div class="order-first ml-auto flex shrink-0 items-center gap-3 lg:absolute lg:right-0 lg:top-0 lg:z-10 lg:order-none">
             <label class="flex items-center gap-1.5 cursor-pointer" title="Show the floors 6-15 columns">
               <input type="checkbox" checked={@extreme?} phx-click="toggle_extreme" class="toggle toggle-sm toggle-primary" />
               <span class={"badge badge-sm font-bold " <> if(@extreme?, do: "badge-primary", else: "badge-ghost text-base-content/50")}>F6-F15</span>

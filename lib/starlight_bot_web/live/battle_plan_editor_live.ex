@@ -267,6 +267,14 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   end
 
   @impl true
+  def handle_event("set_lineup_notes", %{"value" => notes}, socket) do
+    if notes == BattlePlans.lineup_notes(socket.assigns.data) do
+      {:noreply, socket}
+    else
+      {:noreply, socket |> assign(:data, Map.put(socket.assigns.data, "lineup_notes", notes)) |> persist()}
+    end
+  end
+
   def handle_event("clear_lineup", _, socket) do
     {:noreply, update_lineup(socket, &Map.put(&1, "sinners", []))}
   end
