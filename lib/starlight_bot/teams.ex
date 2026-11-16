@@ -45,7 +45,6 @@ defmodule StarlightBot.Teams do
           id: t.id,
           name: t.name,
           notes: t.notes,
-          hooks: t.hooks,
           gift_plan_id: t.gift_plan_id,
           gift_plan_name: g.name,
           battle_plan_id: t.battle_plan_id,
@@ -58,7 +57,7 @@ defmodule StarlightBot.Teams do
           pack_template_id: t.pack_template_id
         }
     )
-    |> Enum.map(&(&1 |> decode_hooks() |> decorate()))
+    |> Enum.map(&decorate/1)
   rescue
     _ -> []
   end
@@ -74,7 +73,6 @@ defmodule StarlightBot.Teams do
           id: t.id,
           name: t.name,
           notes: t.notes,
-          hooks: t.hooks,
           gift_plan_id: t.gift_plan_id,
           gift_plan_data: g.data,
           battle_plan_id: t.battle_plan_id,
@@ -84,7 +82,6 @@ defmodule StarlightBot.Teams do
           pack_template_id: t.pack_template_id
         }
     )
-    |> decode_hooks()
     |> decode_affinity()
   rescue
     _ -> nil
@@ -95,7 +92,6 @@ defmodule StarlightBot.Teams do
 
     row = %{
       name: name,
-      hooks: Jason.encode!(attrs[:hooks] || []),
       gift_plan_id: attrs[:gift_plan_id],
       battle_plan_id: attrs[:battle_plan_id],
       pack_plan_id: attrs[:pack_plan_id]
@@ -139,7 +135,7 @@ defmodule StarlightBot.Teams do
         {:error, :not_found}
 
       template ->
-        with {:ok, id} <- save_team(%{name: unique_name(template.name), hooks: template.hooks}),
+        with {:ok, id} <- save_team(%{name: unique_name(template.name)}),
              :ok <- copy_template_plans(template, id),
              :ok <- ensure_plans(id) do
           {:ok, id}
@@ -200,7 +196,7 @@ defmodule StarlightBot.Teams do
         {:error, :not_found}
 
       team ->
-        with {:ok, new_id} <- team |> Map.take([:hooks]) |> Map.put(:name, unique_name("#{team.name} (copy)")) |> save_team() do
+        with {:ok, new_id} <- save_team(%{name: unique_name("#{team.name} (copy)")}) do
           Enum.each(@plan_fields, &copy_plan(team, new_id, &1))
           Enum.each(@template_fields, fn {field, template_field} -> set_template(new_id, field, Map.get(team, template_field)) end)
           with :ok <- ensure_plans(new_id), do: {:ok, new_id}
@@ -304,10 +300,6 @@ defmodule StarlightBot.Teams do
 
   def default_hook_icon, do: "/images/other/default.webp"
 
-  def pick_hook(%{hooks: hooks}, hook) do
-    if hook in hooks, do: hook, else: List.first(hooks)
-  end
-
   defp unique_name(base) do
     existing = Repo.all(from t in "teams", select: t.name) |> MapSet.new()
 
@@ -317,18 +309,6 @@ defmodule StarlightBot.Teams do
     else
       base
     end
-  end
-
-  defp decode_hooks(nil), do: nil
-
-  defp decode_hooks(%{hooks: json} = team) do
-    hooks =
-      case Jason.decode(json || "") do
-        {:ok, hooks} when is_list(hooks) -> hooks
-        _ -> []
-      end
-
-    %{team | hooks: hooks}
   end
 
   defp decode_affinity(nil), do: nil
@@ -372,7 +352,6 @@ defmodule StarlightBot.Teams do
 
     missing =
       [
-        team.hooks == [] and :hook,
         is_nil(team.gift_plan_id) and :gift_plan,
         is_nil(team.battle_plan_id) and :battle_plan,
         lineup_issues != [] and :lineup,

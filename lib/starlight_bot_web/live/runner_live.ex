@@ -24,7 +24,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
     end
 
     nav = Navigator.status()
-    teams = Teams.list_teams() |> Enum.reject(&(&1.hooks == []))
+    teams = Teams.list_teams()
 
     {:ok,
      socket
@@ -341,7 +341,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
 
   @impl true
   def handle_info(:team_plans_changed, socket) do
-    teams = Teams.list_teams() |> Enum.reject(&(&1.hooks == []))
+    teams = Teams.list_teams()
     {:noreply, socket |> assign(:teams, teams)}
   end
 
@@ -697,7 +697,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   def current_mode(run_memory), do: Map.get(run_memory, :mode) || RunMemory.mode_for(Map.get(run_memory, :team), current_floor(run_memory))
 
   defp default_picks([]), do: []
-  defp default_picks([team | _]), do: [%{id: team.id, hook: Teams.pick_hook(team, nil), mode: "default", search: "default"}]
+  defp default_picks([team | _]), do: [%{id: team.id, hook: nil, mode: "default", search: "default"}]
 
   def search_override_label("default"), do: "Default"
   def search_override_label("all"), do: "Search All"
@@ -850,7 +850,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
           <option value={team.id} selected={team.id == @pick.id}><%= team.name %></option>
         <% end %>
       </select>
-      <.hook_select name={"#{@prefix}_hooks[]"} hooks={team_hooks(@teams, @pick.id)} selected={@pick.hook} disabled={@teams == [] or @locked} />
+      <.hook_select id={"#{@prefix}-hook-#{@index}"} name={"#{@prefix}_hooks[]"} selected={@pick.hook} disabled={@teams == [] or @locked} />
       <span :if={@forecast} class="relative">
         <span title={"Expected starlight per run with #{@forecast.rest_bonus} rest bonus"}
               class={"badge badge-sm font-mono " <> if(@forecast.net >= 0, do: "badge-success", else: "badge-error")}><%= signed(@forecast.net) %></span>
@@ -904,7 +904,6 @@ defmodule StarlightBotWeb.Live.RunnerLive do
     """
   end
 
-  def team_hooks(teams, team_id), do: Enum.find_value(teams, [], &(&1.id == team_id && &1.hooks))
 
   def restore_form(socket, nil), do: socket
 
@@ -1008,7 +1007,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   defp normalize_pick(%{id: id, hook: hook}, teams) do
     case Enum.find(teams, &(&1.id == id)) do
       nil -> nil
-      team -> %{id: id, hook: Teams.pick_hook(team, hook)}
+      _team -> %{id: id, hook: hook}
     end
   end
 
@@ -1172,7 +1171,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
             <option value="" selected={pick == nil}>None selected</option>
             <option :for={team <- @teams} value={team.id} selected={pick != nil and team.id == pick.id}>{team.name}</option>
           </select>
-          <.hook_select name={"#{@kind}_team_hooks[]"} hooks={if(pick, do: team_hooks(@teams, pick.id), else: [])} selected={pick && pick.hook} disabled={@teams == []} />
+          <.hook_select id={"#{@kind}-team-hook-#{index}"} name={"#{@kind}_team_hooks[]"} selected={pick && pick.hook} disabled={@teams == [] or pick == nil} />
         </div>
       </div>
       <div class="relative flex flex-col gap-1 shrink-0">

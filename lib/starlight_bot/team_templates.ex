@@ -9,8 +9,7 @@ defmodule StarlightBot.TeamTemplates do
   def writable?, do: Data.base_writable?()
 
   def list do
-    Repo.all(from t in "team_templates", order_by: [asc: t.name], select: %{id: t.id, name: t.name, hooks: t.hooks})
-    |> Enum.map(&%{&1 | hooks: decode_list(&1.hooks)})
+    Repo.all(from t in "team_templates", order_by: [asc: t.name], select: %{id: t.id, name: t.name})
   rescue
     _ -> []
   end
@@ -19,11 +18,11 @@ defmodule StarlightBot.TeamTemplates do
     Repo.one(
       from t in "team_templates",
         where: t.id == ^id,
-        select: %{id: t.id, name: t.name, hooks: t.hooks, gift_plan: t.gift_plan, battle_plan: t.battle_plan, pack_plan: t.pack_plan}
+        select: %{id: t.id, name: t.name, gift_plan: t.gift_plan, battle_plan: t.battle_plan, pack_plan: t.pack_plan}
     )
     |> case do
       nil -> nil
-      row -> %{row | hooks: decode_list(row.hooks), gift_plan: decode_map(row.gift_plan), battle_plan: decode_map(row.battle_plan), pack_plan: decode_map(row.pack_plan)}
+      row -> %{row | gift_plan: decode_map(row.gift_plan), battle_plan: decode_map(row.battle_plan), pack_plan: decode_map(row.pack_plan)}
     end
   end
 
@@ -42,7 +41,7 @@ defmodule StarlightBot.TeamTemplates do
         end
 
       now = DateTime.utc_now() |> DateTime.truncate(:second)
-      row = Map.merge(plans, %{name: new_name(team.name), hooks: Jason.encode!(team.hooks), inserted_at: now, updated_at: now})
+      row = Map.merge(plans, %{name: new_name(team.name), inserted_at: now, updated_at: now})
 
       case Repo.insert_all("team_templates", [row], returning: [:id]) do
         {1, [%{id: id}]} -> {:ok, id}
@@ -67,13 +66,6 @@ defmodule StarlightBot.TeamTemplates do
 
     Stream.concat([base], Stream.iterate(2, &(&1 + 1)) |> Stream.map(&"#{base} #{&1}"))
     |> Enum.find(&(not MapSet.member?(existing, &1)))
-  end
-
-  defp decode_list(json) do
-    case Jason.decode(json || "") do
-      {:ok, list} when is_list(list) -> list
-      _ -> []
-    end
   end
 
   defp decode_map(nil), do: nil

@@ -121,14 +121,10 @@ defmodule StarlightBotWeb.Live.ShopRunnerLive do
     end
   end
 
-  defp resolve_team_hook(socket, hook) do
-    case Enum.find(socket.assigns.teams, &(&1.id == socket.assigns.team_id)) do
-      nil -> nil
-      team -> Teams.pick_hook(team, hook)
-    end
-  end
+  defp resolve_team_hook(_socket, hook) when hook in [nil, ""], do: nil
+  defp resolve_team_hook(_socket, hook), do: hook
 
-  def team_hooks(teams, team_id), do: Enum.find_value(teams, [], &(&1.id == team_id && &1.hooks))
+  def team_hooks, do: Teams.team_hooks() |> Enum.flat_map(&elem(&1, 1))
 
   defp start_countdown(socket, action) do
     Process.send_after(self(), :countdown_tick, 1_000)

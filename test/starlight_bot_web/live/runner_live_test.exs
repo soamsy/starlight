@@ -5,11 +5,12 @@ defmodule StarlightBotWeb.Live.RunnerLiveTest do
   alias StarlightBot.RunnerForms
   alias StarlightBotWeb.Live.RunnerLive, as: Live
 
-  @teams [%{id: 5, name: "Burn", hooks: ["team_burn"]}, %{id: 10, name: "Saikai", hooks: ["team_slash", "team_pierce"]}]
-  @burn %{id: 5, hook: "team_burn", mode: "default", search: "default"}
-  @saikai %{id: 10, hook: "team_slash", mode: "default", search: "default"}
+  @teams [%{id: 5, name: "Burn"}, %{id: 10, name: "Saikai"}]
+  @burn %{id: 5, hook: nil, mode: "default", search: "default"}
+  @saikai %{id: 10, hook: nil, mode: "default", search: "default"}
   @saikai_pierce %{id: 10, hook: "team_pierce", mode: "default", search: "default"}
-  @bleed %{id: 7, hook: "team_bleed", mode: "default", search: "default"}
+  @burn_hooked %{@burn | hook: "team_burn"}
+  @bleed %{id: 7, hook: nil, mode: "default", search: "default"}
 
   defp socket(picks) do
     %Phoenix.LiveView.Socket{
@@ -33,10 +34,10 @@ defmodule StarlightBotWeb.Live.RunnerLiveTest do
     assert RunnerForms.parse_team_picks(nil, nil, nil, nil, @teams, [@burn]) == [@burn]
   end
 
-  test "parse_team_picks keeps each row's hook and falls back to the team's first hook" do
-    assert RunnerForms.parse_team_picks(["10", "10"], ["team_pierce", "team_slash"], nil, nil, @teams) == [@saikai_pierce, @saikai]
-    assert RunnerForms.parse_team_picks(["10", "5"], ["team_burn", "team_pierce"], nil, nil, @teams) == [@saikai, @burn]
-    assert RunnerForms.parse_team_picks(["5", "10"], ["team_burn"], nil, nil, @teams) == [@burn, @saikai]
+  test "parse_team_picks keeps each row's hook and leaves blank ones unset" do
+    assert RunnerForms.parse_team_picks(["10", "10"], ["team_pierce", "team_slash"], nil, nil, @teams) == [@saikai_pierce, %{@saikai | hook: "team_slash"}]
+    assert RunnerForms.parse_team_picks(["10", "5"], ["team_burn", ""], nil, nil, @teams) == [%{@saikai | hook: "team_burn"}, @burn]
+    assert RunnerForms.parse_team_picks(["5", "10"], ["team_burn"], nil, nil, @teams) == [@burn_hooked, @saikai]
   end
 
   test "parse_team_picks keeps each row's mode override and falls back to default for unknown values" do
@@ -67,7 +68,7 @@ defmodule StarlightBotWeb.Live.RunnerLiveTest do
 
   test "restoring a saved form reads its team list and hooks" do
     socket = Live.restore_form(socket([@burn]), %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "run_count" => "4", "rewards" => "claim"})
-    assert socket.assigns.picks == [@saikai_pierce, @burn]
+    assert socket.assigns.picks == [@saikai_pierce, @burn_hooked]
     assert socket.assigns.run_count == "4"
     assert socket.assigns.rewards == "claim"
     assert Live.restore_form(socket, nil) == socket
@@ -78,7 +79,7 @@ defmodule StarlightBotWeb.Live.RunnerLiveTest do
 
     saved = RunnerForms.get("mirror_dungeon")
     assert %{"team_ids" => ["10", "5"], "team_hooks" => ["team_pierce", "team_burn"], "start_index" => "1", "run_count" => "3", "collect_xp" => "true", "rewards" => "auto"} = saved
-    assert {:ok, {:run_mirror_dungeon, [@burn, @saikai_pierce], 3, %{collect_xp?: true}}} = RunnerForms.mirror_dungeon_action(saved, @teams)
+    assert {:ok, {:run_mirror_dungeon, [@burn_hooked, @saikai_pierce], 3, %{collect_xp?: true}}} = RunnerForms.mirror_dungeon_action(saved, @teams)
   end
 
   test "running queues the whole cycle" do
@@ -101,7 +102,7 @@ defmodule StarlightBotWeb.Live.RunnerLiveTest do
     socket = event(socket([@burn]), "run", %{"team_ids" => ["5", "10", "7"], "start_index" => "1", "run_count" => "3"})
     assert {:run_mirror_dungeon, [@saikai, @burn], 3, _} = socket.assigns.pending_action
 
-    teams = @teams ++ [%{id: 7, name: "Bleed", hooks: ["team_bleed"]}]
+    teams = @teams ++ [%{id: 7, name: "Bleed"}]
     socket = %{socket([@burn]) | assigns: %{socket([@burn]).assigns | teams: teams}}
     socket = event(socket, "run", %{"team_ids" => ["5", "10", "7"], "start_index" => "2", "run_count" => "3"})
     assert {:run_mirror_dungeon, [@bleed, @burn, @saikai], 3, _} = socket.assigns.pending_action

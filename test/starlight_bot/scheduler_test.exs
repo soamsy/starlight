@@ -138,7 +138,7 @@ defmodule StarlightBot.SchedulerTest do
     setup do
       :ok = StarlightBot.TestDB.checkout()
       now = DateTime.utc_now() |> DateTime.truncate(:second)
-      StarlightBot.Repo.insert_all("teams", [%{id: 5, name: "Burn", hooks: ~s(["team_burn"]), inserted_at: now, updated_at: now}])
+      StarlightBot.Repo.insert_all("teams", [%{id: 5, name: "Burn", inserted_at: now, updated_at: now}])
       :ok
     end
 
@@ -157,7 +157,7 @@ defmodule StarlightBot.SchedulerTest do
     }
 
     @lux_form %{"exp_team_ids" => List.duplicate("7", 4), "thread_team_ids" => List.duplicate("7", 7), "exp_waves" => "9", "thread_waves" => "9", "collect_xp" => "true", "collect_enkephalin" => "false"}
-    @md_form %{"team_ids" => ["5"], "start_index" => "0", "run_count" => "9", "rewards" => "weekly", "collect_xp" => "true"}
+    @md_form %{"team_ids" => ["5"], "team_hooks" => ["team_burn"], "start_index" => "0", "run_count" => "9", "rewards" => "weekly", "collect_xp" => "true"}
 
     test "save_settings stores the schedule and get_settings reads it back" do
       RunnerForms.put("luxcavation", @lux_form)

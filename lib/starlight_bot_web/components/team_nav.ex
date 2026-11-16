@@ -11,7 +11,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
   @panes @plan_panes ++ ["profiles"]
 
   def init do
-    build(stored_team_id(), stored_pane(), %{renaming_id: nil, editing_notes_id: nil, editing_hooks?: false, query: "", cursor: 0})
+    build(stored_team_id(), stored_pane(), %{renaming_id: nil, editing_notes_id: nil, query: "", cursor: 0})
   end
 
   def reload(socket) do
@@ -56,7 +56,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
   def handle_event("team_nav_search_open", _params, socket) do
     nav = socket.assigns.team_nav
     cursor = Enum.find_index(nav.teams, &(&1.id == nav.team_id)) || 0
-    {:halt, Phoenix.Component.assign(socket, :team_nav, %{nav | query: "", cursor: cursor, editing_hooks?: false, renaming_id: nil, editing_notes_id: nil})}
+    {:halt, Phoenix.Component.assign(socket, :team_nav, %{nav | query: "", cursor: cursor, renaming_id: nil, editing_notes_id: nil})}
   end
 
   def handle_event("team_nav_search", %{"query" => query}, socket) do
@@ -89,7 +89,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
       end
 
     case result do
-      {:ok, id} -> {:halt, socket |> changed() |> select(id) |> put_ui(:editing_hooks?, true) |> put_flash(:info, "Team created.")}
+      {:ok, id} -> {:halt, socket |> changed() |> select(id) |> put_flash(:info, "Team created.")}
       {:error, reason} -> {:halt, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
     end
   end
@@ -110,7 +110,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
 
   def handle_event("team_nav_duplicate", %{"id" => id}, socket) do
     case Teams.duplicate_team(to_id(id)) do
-      {:ok, new_id} -> {:halt, socket |> changed() |> select(new_id) |> put_ui(:editing_hooks?, true) |> put_flash(:info, "Team duplicated.")}
+      {:ok, new_id} -> {:halt, socket |> changed() |> select(new_id) |> put_flash(:info, "Team duplicated.")}
       {:error, reason} -> {:halt, put_flash(socket, :error, "Duplicate failed: #{inspect(reason)}")}
     end
   end
@@ -149,65 +149,6 @@ defmodule StarlightBotWeb.Components.TeamNav do
       {:halt, socket}
     else
       {:halt, save_team(socket, %{team | notes: notes}, "Save failed")}
-    end
-  end
-
-  def handle_event("team_nav_set_name", %{"value" => value}, socket) do
-    name = String.trim(value)
-
-    case current_team(socket) do
-      %{name: current} = team when name != "" and name != current -> {:halt, save_team(socket, %{team | name: name}, "Rename failed")}
-      _ -> {:halt, socket}
-    end
-  end
-
-  def handle_event("team_nav_set_notes", %{"value" => value}, socket) do
-    notes = String.trim(value)
-
-    case current_team(socket) do
-      %{notes: current} = team ->
-        if notes == (current || "") do
-          {:halt, socket}
-        else
-          {:halt, save_team(socket, %{team | notes: notes}, "Save failed")}
-        end
-
-      _ ->
-        {:halt, socket}
-    end
-  end
-
-  def handle_event("team_nav_toggle_edit_hooks", _params, socket),
-    do: {:halt, put_ui(socket, :editing_hooks?, not socket.assigns.team_nav.editing_hooks?)}
-
-  def handle_event("team_nav_close_edit_hooks", _params, socket), do: {:halt, put_ui(socket, :editing_hooks?, false)}
-
-  def handle_event("team_nav_toggle_hook", %{"hook" => hook}, socket) do
-    hooks = current_hooks(socket)
-    {:halt, save_hooks(socket, if(hook in hooks, do: List.delete(hooks, hook), else: hooks ++ [hook]))}
-  end
-
-  def handle_event("team_nav_replace_hook", %{"index" => index, "hook" => hook}, socket) do
-    hooks = current_hooks(socket)
-
-    if hook == "" or hook in hooks do
-      {:halt, socket}
-    else
-      {:halt, save_hooks(socket, List.replace_at(hooks, String.to_integer(index), hook))}
-    end
-  end
-
-  def handle_event("team_nav_remove_hook", %{"index" => index}, socket),
-    do: {:halt, save_hooks(socket, List.delete_at(current_hooks(socket), String.to_integer(index)))}
-
-  def handle_event("team_nav_reorder_hooks", %{"ids" => ids}, socket) do
-    hooks = current_hooks(socket)
-    order = Enum.map(ids, &String.to_integer/1)
-
-    if Enum.sort(order) == Enum.to_list(0..(length(hooks) - 1)//1) do
-      {:halt, save_hooks(socket, Enum.map(order, &Enum.at(hooks, &1)))}
-    else
-      {:halt, socket}
     end
   end
 
@@ -250,7 +191,6 @@ defmodule StarlightBotWeb.Components.TeamNav do
       pane: pane,
       teams: teams,
       templates: TeamTemplates.list(),
-      hook_groups: Teams.team_hooks(),
       profiles_by_id: Map.new(SinnerProfiles.list(), &{&1.id, &1}),
       locator_thumbs: Hooks.hook_thumbnails("locator"),
       counts: PlanCounts.for_team(team_id)
@@ -263,7 +203,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
   defp first_id([%{id: id} | _]), do: id
   defp first_id([]), do: nil
 
-  defp ui(nav), do: Map.take(nav, [:renaming_id, :editing_notes_id, :editing_hooks?, :query, :cursor])
+  defp ui(nav), do: Map.take(nav, [:renaming_id, :editing_notes_id, :query, :cursor])
 
   defp put_ui(socket, key, value),
     do: Phoenix.Component.assign(socket, :team_nav, Map.put(socket.assigns.team_nav, key, value))
@@ -322,23 +262,6 @@ defmodule StarlightBotWeb.Components.TeamNav do
     if socket.assigns.page == :teams, do: push_patch(socket, to: path), else: push_navigate(socket, to: path)
   end
 
-  defp current_hooks(socket) do
-    nav = socket.assigns.team_nav
-    Enum.find_value(nav.teams, [], &(&1.id == nav.team_id && &1.hooks))
-  end
-
-  defp current_team(socket) do
-    nav = socket.assigns.team_nav
-    Enum.find(nav.teams, &(&1.id == nav.team_id))
-  end
-
-  defp save_hooks(socket, hooks) do
-    case current_team(socket) do
-      nil -> socket
-      team -> save_team(socket, %{team | hooks: hooks}, "Save failed")
-    end
-  end
-
   defp save_team(socket, team, error_prefix) do
     case Teams.save_team(team) do
       {:ok, _id} -> changed(socket)
@@ -372,11 +295,6 @@ defmodule StarlightBotWeb.Components.TeamNav do
 
   def open_team_menu(js), do: js |> JS.push("team_nav_search_open") |> JS.focus(to: "#team-search-input")
 
-  def team_menu_away(editing_hooks?) do
-    js = JS.hide(to: "#team-menu")
-    if editing_hooks?, do: JS.push(js, "team_nav_close_edit_hooks"), else: js
-  end
-
   def profile_icons(profile_ids, profiles_by_id, locator_thumbs) do
     for id <- profile_ids, profile = profiles_by_id[id] do
       src =
@@ -395,41 +313,10 @@ defmodule StarlightBotWeb.Components.TeamNav do
     end
   end
 
-  defp missing_label(:hook), do: "team selector"
   defp missing_label(:gift_plan), do: "gift plan"
   defp missing_label(:battle_plan), do: "battle plan"
   defp missing_label(:lineup), do: "lineup (set it up in the battle plan)"
   defp missing_label(:pack_plan), do: "pack plan"
-
-  attr :groups, :list, required: true
-  attr :used, :list, required: true
-  attr :event, :string, required: true
-  attr :index, :integer, default: nil
-  attr :label, :string, required: true
-  attr :icon, :string, default: nil
-  attr :class, :string, default: ""
-
-  def hook_picker(assigns) do
-    ~H"""
-    <div id={"hook-picker-#{@event}-#{@index}"} phx-hook="HookPicker" class="dropdown w-full">
-      <div tabindex="0" role="button" class={"btn btn-sm w-full justify-start font-normal " <> @class}><img :if={@icon} src={@icon} class="size-4 object-contain" /><%= @label %></div>
-      <div tabindex="0" class="dropdown-content z-50 mt-1 w-[32rem] rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
-        <div class="columns-3 gap-3">
-          <%= for {group, hooks} <- @groups, hooks = Enum.reject(hooks, &(&1 in @used)), hooks != [] do %>
-            <div class="break-inside-avoid mb-2">
-              <div class="px-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/50"><%= group %></div>
-              <button :for={h <- hooks} type="button" phx-click={@event} phx-value-hook={h} phx-value-index={@index}
-                      onclick="document.activeElement.blur()"
-                      class="btn btn-ghost btn-xs w-full justify-start font-mono">
-                <img :if={Teams.hook_icon(h)} src={Teams.hook_icon(h)} class="size-4 object-contain" /><%= Teams.hook_label(h) %>
-              </button>
-            </div>
-          <% end %>
-        </div>
-      </div>
-    </div>
-    """
-  end
 
   attr :nav, :map, required: true
   attr :on_page, :boolean, default: true
@@ -438,15 +325,13 @@ defmodule StarlightBotWeb.Components.TeamNav do
     assigns = assign(assigns, :current, Enum.find(assigns.nav.teams, &(&1.id == assigns.nav.team_id)))
 
     ~H"""
-    <div class="relative" phx-click-away={team_menu_away(@nav.editing_hooks?)}>
+    <div class="relative" phx-click-away={JS.hide(to: "#team-menu")}>
       <div class={["flex h-6 items-stretch rounded-lg border-2 bg-base-100 shadow-sm transition hover:border-primary hover:shadow-md lg:h-8", if(@on_page, do: "border-primary/60", else: "border-primary/30 grayscale opacity-70")]}>
         <button type="button" phx-click={if(@on_page, do: open_team_menu(JS.toggle(to: "#team-menu")), else: JS.push("team_nav_open"))} title={if(@on_page, do: "Switch team", else: "Open the team plans")}
-                class="flex min-w-48 flex-1 items-center gap-2 rounded-l-md pl-3 pr-2 cursor-pointer hover:bg-primary/10 lg:min-w-60">
+                class="flex min-w-48 flex-1 items-center gap-2 rounded-md pl-3 pr-2 cursor-pointer hover:bg-primary/10 lg:min-w-60">
           <%= if @current do %>
             <span class="text-xs font-semibold lg:text-sm"><%= @current.name %></span>
             <span class="inline-flex items-center gap-1">
-              <img :for={hook <- @current.hooks} src={Teams.hook_icon(hook) || Teams.default_hook_icon()} title={Teams.hook_label(hook)} class="size-4 object-contain" />
-              <img :if={@current.hooks == []} src={Teams.default_hook_icon()} class="size-4 object-contain" />
               <img :for={icon <- profile_icons(@current.profile_ids, @nav.profiles_by_id, @nav.locator_thumbs)} src={icon.src} title={icon.name} class="h-4 w-auto rounded object-contain" />
             </span>
             <span :if={@current.missing != []} class="badge badge-warning badge-xs" title={"Missing: " <> Enum.map_join(@current.missing, ", ", &missing_label/1)}>!</span>
@@ -455,10 +340,6 @@ defmodule StarlightBotWeb.Components.TeamNav do
           <% end %>
           <kbd class="kbd kbd-xs ml-auto hidden lg:inline-flex"><span class="[html[data-shell=tauri]_&]:hidden">T</span><span class="hidden [html[data-shell=tauri]_&]:inline">Ctrl+T</span></kbd>
           <.icon name="lucide-chevron-down" class="size-4 text-primary" />
-        </button>
-        <button :if={@current} id="edit-hooks-button" type="button" phx-click={if(@on_page, do: JS.push("team_nav_toggle_edit_hooks") |> JS.hide(to: "#team-menu"), else: JS.push("team_nav_open"))} title="Edit team selectors"
-                class={"flex items-center rounded-r-md border-l-2 px-2 cursor-pointer " <> if(@nav.editing_hooks?, do: "border-primary bg-primary text-primary-content", else: "border-primary/60 hover:bg-primary/10")}>
-          <.icon name="lucide-square-pen" class="size-4" />
         </button>
       </div>
 
@@ -490,8 +371,6 @@ defmodule StarlightBotWeb.Components.TeamNav do
                           class={"w-28 shrink-0 truncate font-mono text-xs select-none " <> if(selected?, do: "font-bold", else: "")}><%= team.name %></span>
                   <% end %>
                   <span class="flex w-28 shrink-0 flex-nowrap items-center gap-1.5 overflow-hidden">
-                    <img :for={hook <- team.hooks} src={Teams.hook_icon(hook) || Teams.default_hook_icon()} title={Teams.hook_label(hook)} class="size-4 shrink-0 object-contain" />
-                    <img :if={team.hooks == []} src={Teams.default_hook_icon()} class="size-4 shrink-0 object-contain" />
                     <img :for={icon <- profile_icons(team.profile_ids, @nav.profiles_by_id, @nav.locator_thumbs)} src={icon.src} title={icon.name} class="h-4 w-auto shrink-0 rounded object-contain" />
                     <span :if={team.missing != []} class="badge badge-warning badge-xs shrink-0" title={"Missing: " <> Enum.map_join(team.missing, ", ", &missing_label/1)}>!</span>
                   </span>
@@ -523,7 +402,6 @@ defmodule StarlightBotWeb.Components.TeamNav do
                       title={"Create a team from the template '#{template.name}'"}
                       class="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left">
                 <span class="min-w-0 truncate font-mono text-xs"><%= template.name %></span>
-                <img :for={hook <- template.hooks} src={Teams.hook_icon(hook) || Teams.default_hook_icon()} class="size-4 shrink-0 object-contain" />
               </button>
               <button :if={TeamTemplates.writable?()} type="button" phx-click="team_nav_delete_template" phx-value-id={template.id}
                       data-confirm={"Delete the template '#{template.name}'?"} class="btn btn-xs btn-ghost text-error">Del</button>
@@ -535,48 +413,14 @@ defmodule StarlightBotWeb.Components.TeamNav do
             <button :if={@nav.templates != []} type="button" phx-click={JS.toggle(to: "#new-team-menu", display: "flex")}
                     title="Create a team from a template" class="btn btn-primary btn-sm join-item"><.icon name="lucide-chevron-down" class="size-4" /></button>
             <button :if={@current} type="button" phx-click={JS.push("team_nav_duplicate", value: %{id: @current.id}) |> JS.hide(to: "#team-menu")}
-                    title="Copy the selected team, keeping its hook and plans" class="btn btn-sm join-item flex-1">Duplicate</button>
+                    title="Copy the selected team, keeping its plans" class="btn btn-sm join-item flex-1">Duplicate</button>
             <button :if={@current && TeamTemplates.writable?()} type="button" phx-click="team_nav_new_template" phx-value-id={@current.id}
-                    title="Add a template holding a copy of the selected team's hooks and active plans" class="btn btn-sm join-item flex-1">Templatize</button>
+                    title="Add a template holding a copy of the selected team's active plans" class="btn btn-sm join-item flex-1">Templatize</button>
           </div>
         </div>
       </div>
 
       <button type="button" data-hotkey="team-search" phx-click={open_team_menu(JS.show(to: "#team-menu"))} class="hidden" tabindex="-1" aria-hidden="true"></button>
-
-      <div :if={@nav.editing_hooks? and @current} id="edit-hooks-panel"
-           class="absolute left-0 top-full z-50 mt-1 w-[32rem] max-w-[calc(100vw-1rem)] max-h-[75vh] overflow-y-auto rounded-lg border border-base-300 bg-base-100 p-2 shadow-xl">
-        <div class="mb-2 flex items-start gap-1">
-          <input type="text" id={"team-name-input-#{@current.id}"} name="value" value={@current.name} placeholder="Team name"
-                 phx-blur="team_nav_set_name" phx-keydown="team_nav_set_name" phx-key="Enter"
-                 class="input input-bordered input-sm h-10 w-[35%] min-w-0 font-semibold" />
-          <textarea id={"team-notes-input-#{@current.id}"} name="value" rows="1" placeholder="Enter notes here" phx-blur="team_nav_set_notes"
-                    class="textarea textarea-bordered textarea-sm min-h-10 w-[65%] min-w-0 resize-y"><%= @current.notes %></textarea>
-        </div>
-        <div class="px-1 pb-1 text-xs font-medium">Team Selectors</div>
-        <div id="team-hooks" phx-hook="SortableList" data-sort-event="team_nav_reorder_hooks" class="mb-2 flex flex-col gap-1">
-          <%= for {hook, index} <- Enum.with_index(@current.hooks) do %>
-            <div id={"team-hook-#{index}-#{hook}"} data-sort-id={index} class="flex items-center gap-1">
-              <span data-sort-handle class="cursor-grab px-0.5 text-base-content/40" title="Drag to reorder">⠿</span>
-              <span class="w-5 text-right text-xs text-base-content/50"><%= index + 1 %>.</span>
-              <div class="flex-1">
-                <.hook_picker groups={@nav.hook_groups} used={@current.hooks} event="team_nav_replace_hook" index={index} label={Teams.hook_label(hook)} icon={Teams.hook_icon(hook)} class="btn-ghost" />
-              </div>
-              <button type="button" phx-click="team_nav_remove_hook" phx-value-index={index}
-                      class="btn btn-ghost btn-xs text-error"><.icon name="lucide-x" class="size-3.5" /></button>
-            </div>
-          <% end %>
-        </div>
-        <div class="columns-3 gap-3 border-t border-base-300 pt-2">
-          <div :for={{group, hooks} <- @nav.hook_groups} data-group={group} class="mb-2 break-inside-avoid">
-            <div class="px-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/50"><%= group %></div>
-            <button :for={h <- hooks} type="button" phx-click="team_nav_toggle_hook" phx-value-hook={h}
-                    class={"btn btn-xs w-full justify-start font-mono " <> if(h in @current.hooks, do: "btn-primary", else: "btn-ghost")}>
-              <img :if={Teams.hook_icon(h)} src={Teams.hook_icon(h)} class="size-4 object-contain" /><%= Teams.hook_label(h) %>
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
     """
   end

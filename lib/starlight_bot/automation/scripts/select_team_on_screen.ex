@@ -144,10 +144,10 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
       {:error, :unknown_team_hook}
   end
 
-  defp run_hook(%{id: id} = team, ctx) do
+  defp run_hook(%{id: id}, ctx) do
     case RunMemory.team(ctx) do
-      %{id: ^id, hook: hook} -> Teams.pick_hook(team, hook)
-      _ -> Teams.pick_hook(team, nil)
+      %{id: ^id, hook: hook} -> hook
+      _ -> nil
     end
   end
 

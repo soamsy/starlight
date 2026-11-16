@@ -348,7 +348,6 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   defp prepare_teams(picks, ctx) do
     Enum.reduce_while(picks, {:ok, []}, fn %{id: team_id, hook: hook} = pick, {:ok, acc} ->
       with {:ok, team} <- fetch_team(team_id, ctx),
-           hook = Teams.pick_hook(team, hook),
            {:ok, team_type} <- resolve_team_type(hook, ctx) do
         prepared = %{
           id: team_id,

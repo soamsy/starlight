@@ -35,7 +35,29 @@ defmodule StarlightBot.RunnerForms do
     end
   end
 
-  def schedulable_teams, do: Teams.list_teams() |> Enum.reject(&(&1.hooks == []))
+  def schedulable_teams, do: Teams.list_teams()
+
+  def lineup_picks do
+    teams = Teams.list_teams()
+    md = get("mirror_dungeon") || %{}
+    lux = get("luxcavation") || %{}
+
+    md_picks = parse_team_picks(md["team_ids"], md["team_hooks"], md["team_modes"], md["team_searches"], teams)
+
+    lux_picks =
+      Enum.flat_map(["exp", "thread"], fn kind ->
+        ids = List.wrap(lux["#{kind}_team_ids"])
+
+        case parse_slot_picks(ids, lux["#{kind}_team_hooks"], length(ids)) do
+          {:ok, picks} -> Enum.reject(picks, &is_nil/1)
+          :error -> []
+        end
+      end)
+
+    (md_picks ++ lux_picks)
+    |> Enum.filter(&(&1.hook && Enum.any?(teams, fn team -> team.id == &1.id end)))
+    |> Enum.uniq_by(&{&1.id, &1.hook})
+  end
 
   def mirror_dungeon_action do
     with %{} = params <- get("mirror_dungeon"),
@@ -145,8 +167,8 @@ defmodule StarlightBot.RunnerForms do
     |> Enum.zip(Enum.zip([hooks, modes, searches]))
     |> Enum.flat_map(fn {value, {hook, mode, search}} ->
       with {id, ""} <- Integer.parse(to_string(value)),
-           %{} = team <- Enum.find(teams, &(&1.id == id)) do
-        [%{id: id, hook: Teams.pick_hook(team, hook), mode: Resolver.parse_mode_override(mode), search: Resolver.parse_search_override(search)}]
+           %{} <- Enum.find(teams, &(&1.id == id)) do
+        [%{id: id, hook: blank_to_nil(hook), mode: Resolver.parse_mode_override(mode), search: Resolver.parse_search_override(search)}]
       else
         _ -> []
       end

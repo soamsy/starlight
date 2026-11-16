@@ -2,7 +2,7 @@ defmodule StarlightBot.Automation.Scripts.PrepareLineups do
   use StarlightBot.Navigation.DSL
   alias StarlightBot.Automation.Engine
   alias StarlightBot.Automation.Scripts.SelectTeamOnScreen
-  alias StarlightBot.{Ctx, Teams}
+  alias StarlightBot.{Ctx, RunnerForms, Teams}
 
   @top_clicks 16
   @scroll_up_available %{
@@ -87,11 +87,11 @@ defmodule StarlightBot.Automation.Scripts.PrepareLineups do
 
   defp pending_by_hook(ctx) do
     grouped =
-      Teams.list_teams()
-      |> Enum.flat_map(fn team ->
-        case team |> Teams.pick_hook(nil) |> existing_atom() do
-          nil -> []
-          hook -> [{hook, team}]
+      RunnerForms.lineup_picks()
+      |> Enum.flat_map(fn %{id: id, hook: name} ->
+        case {existing_atom(name), Teams.get_team(id)} do
+          {hook, %{} = team} when not is_nil(hook) -> [{hook, team}]
+          _ -> []
         end
       end)
       |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))

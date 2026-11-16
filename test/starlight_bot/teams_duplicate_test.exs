@@ -7,15 +7,14 @@ defmodule StarlightBot.TeamsDuplicateTest do
     :ok = StarlightBot.TestDB.checkout()
   end
 
-  test "duplicate_team copies the hooks and plans under a unique name" do
-    {:ok, id} = Teams.save_team(%{name: "Saikai", hooks: ["team_slash", "team_pierce"], battle_plan_id: 7})
+  test "duplicate_team copies the plans under a unique name" do
+    {:ok, id} = Teams.save_team(%{name: "Saikai", battle_plan_id: 7})
 
     {:ok, copy_id} = Teams.duplicate_team(id)
     {:ok, second_id} = Teams.duplicate_team(id)
 
     copy = Teams.get_team(copy_id)
     assert copy.name == "Saikai (copy)"
-    assert copy.hooks == ["team_slash", "team_pierce"]
     assert Teams.get_team(second_id).name == "Saikai (copy) 2"
   end
 
