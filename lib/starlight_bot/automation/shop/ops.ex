@@ -902,7 +902,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
         {:error, :merge_area_mismatch}
 
       {:extras, extras} ->
-        reopen_fuse_popup(target, click_plan, ctx, attempt, "unexpected gifts in the merge area (#{Enum.join(extras, ", ")})")
+        reopen_fuse_popup(target, click_plan, ctx, attempt, "unexpected gifts in the merge area (#{Enum.join(gift_labels(extras, ctx), ", ")})")
 
       {:missing, _} ->
         with {:ok, _} <- Engine.act([click(@fuse_dismiss_info_hook, missing: :ok)], ctx) do
@@ -920,10 +920,10 @@ defmodule StarlightBot.Automation.Shop.Ops do
         err
 
       {:extras, extras} ->
-        reopen_fuse_popup(target, click_plan, ctx, attempt, "unexpected gifts in the merge area (#{Enum.join(extras, ", ")})")
+        reopen_fuse_popup(target, click_plan, ctx, attempt, "unexpected gifts in the merge area (#{Enum.join(gift_labels(extras, ctx), ", ")})")
 
       {:missing, missing} ->
-        Ctx.log(ctx, :info, "shop fuse: merge area is missing #{Enum.join(Map.keys(missing), ", ")}, clicking them again (retry #{attempt + 1}/#{@fuse_merge_retries})")
+        Ctx.log(ctx, :info, "shop fuse: merge area is missing #{Enum.join(gift_labels(Map.keys(missing), ctx), ", ")}, clicking them again (retry #{attempt + 1}/#{@fuse_merge_retries})")
         scroll_popup_to_bottom(@fuse_popup, ctx, 0)
 
         case select_fuse_pass({:strict, missing, %{}}, ctx, 0, true) do
@@ -1116,15 +1116,30 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp missing_ingredient_names(state, ctx) do
-    owned = RunMemory.ego_gifts(ctx)
-
     state
     |> missing_ingredient_ids()
-    |> Enum.map(fn id ->
+    |> gift_names(ctx)
+  end
+
+  defp gift_names(ids, ctx) do
+    owned = RunMemory.ego_gifts(ctx)
+
+    Enum.map(ids, fn id ->
       case owned do
         %{^id => %{name: name}} -> name
         _ -> id
       end
+    end)
+  end
+
+  defp gift_label(id, ctx), do: hd(gift_labels([id], ctx))
+
+  defp gift_labels(ids, ctx) do
+    ids
+    |> Enum.zip(gift_names(ids, ctx))
+    |> Enum.map(fn
+      {id, id} -> id
+      {id, name} -> "#{name} (#{id})"
     end)
   end
 
@@ -1266,7 +1281,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
       :ok
     else
       {:error, reason} = err ->
-        Ctx.log(ctx, :error, "shop sell: #{gift_id} — #{inspect(reason)}")
+        Ctx.log(ctx, :error, "shop sell: #{gift_label(gift_id, ctx)} — #{inspect(reason)}")
         err
     end
   end
@@ -1281,7 +1296,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
           {:error, {:not_selected, gift_id}}
 
         true ->
-          Ctx.log(ctx, :info, "shop sell: #{gift_id} click didn't select it, rescanning (#{attempt}/#{@sell_select_tries})")
+          Ctx.log(ctx, :info, "shop sell: #{gift_label(gift_id, ctx)} click didn't select it, rescanning (#{attempt}/#{@sell_select_tries})")
           select_sell_gift(gift_id, ctx, attempt + 1)
       end
     end
@@ -1294,7 +1309,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
       commit_uptie(from, to, ctx)
     else
       {:error, reason} = err ->
-        Ctx.log(ctx, :error, "shop uptie: #{gift_id} — #{inspect(reason)}")
+        Ctx.log(ctx, :error, "shop uptie: #{gift_label(gift_id, ctx)} — #{inspect(reason)}")
         FailureShot.record("shop_uptie_#{gift_id}", ctx)
         err
     end
