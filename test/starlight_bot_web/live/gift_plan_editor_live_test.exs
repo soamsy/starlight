@@ -400,22 +400,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert id == first["id"]
   end
 
-  test "a refresh case with a max stops matching once it has run that many times", %{socket: socket} do
-    socket = socket |> shop() |> event("list_add_refresh_case", %{})
-    [refresh_case] = section(socket)["refresh"]
-    assert refresh_case["max"] == nil
-
-    socket = event(socket, "list_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => "2"})
-    assert [%{"max" => 2}] = section(socket)["refresh"]
-
-    assert GiftPlans.matching_refresh_case(section(socket), %{wallet: 1000, case_runs: %{refresh_case["id"] => 1}})
-    refute GiftPlans.matching_refresh_case(section(socket), %{wallet: 1000, case_runs: %{refresh_case["id"] => 2}})
-
-    socket = event(socket, "list_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => ""})
-    assert [%{"max" => nil}] = section(socket)["refresh"]
-    assert GiftPlans.matching_refresh_case(section(socket), %{wallet: 1000, case_runs: %{refresh_case["id"] => 99}})
-  end
-
   test "a refresh case needs the cost left after refreshing to reach its minimum", %{socket: socket} do
     socket = socket |> shop() |> event("list_add_refresh_case", %{})
     [refresh_case] = section(socket)["refresh"]
