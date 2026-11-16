@@ -44,8 +44,16 @@ defmodule StarlightBot.Automation.Recovery do
   def goto_delivered(_to, then, _attempts_left, result, _frame, _ctx), do: deliver(then, result)
 
   def goto_relocated(to, then, _attempts_left, _err, {:ok, to}, _frame, _ctx), do: deliver(then, {:ok, to})
+  def goto_relocated(:battle, then, attempts_left, err, {:ok, screen}, _frame, _ctx) do
+    if screen in team_select_family(),
+      do: {:steps, [{:goto, screen, :battle, then, attempts_left - 1}]},
+      else: deliver(then, err)
+  end
+
   def goto_relocated(to, then, attempts_left, _err, {:ok, screen}, _frame, _ctx), do: {:steps, [{:goto, screen, to, then, attempts_left - 1}]}
   def goto_relocated(_to, then, _attempts_left, err, :unknown, _frame, _ctx), do: deliver(then, err)
+
+  defp team_select_family, do: [:team_select | Enum.map(Catalog.refinements_of(:team_select), & &1.name)]
 
   def cancel_run(_frame, _ctx) do
     Navigator.cancel()
