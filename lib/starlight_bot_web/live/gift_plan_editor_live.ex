@@ -542,6 +542,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
            :error -> nil
          end
        })
+       |> put_min_cost(params["min_cost"])
      end))}
   end
 
@@ -1446,6 +1447,15 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp first_id([%{"id" => id} | _]), do: id
   defp first_id(_), do: nil
+
+  defp put_min_cost(refresh_case, nil), do: refresh_case
+
+  defp put_min_cost(refresh_case, value) do
+    case Integer.parse(value) do
+      {int, _} -> Map.put(refresh_case, "min_cost", max(int, 0))
+      :error -> Map.put(refresh_case, "min_cost", 0)
+    end
+  end
 
   defp blank_to_nil(nil), do: nil
   defp blank_to_nil(""), do: nil

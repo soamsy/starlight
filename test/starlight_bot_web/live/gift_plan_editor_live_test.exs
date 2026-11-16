@@ -383,7 +383,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
              section(socket)["refresh"]
 
     html = render(socket)
-    assert html =~ "else if" and html =~ "leave the shop" and html =~ ~s(<option value="leave" selected)
+    assert html =~ "else if" and html =~ "leave the shop" and html =~ ~s(value="leave" checked)
 
     socket = event(socket, "list_reorder_refresh", %{"scope" => section(socket)["id"], "ids" => [second["id"], first["id"]]})
     assert Enum.map(section(socket)["refresh"], & &1["id"]) == [second["id"], first["id"]]
@@ -401,12 +401,27 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     socket = event(socket, "list_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => "2"})
     assert [%{"max" => 2}] = section(socket)["refresh"]
 
-    assert GiftPlans.matching_refresh_case(section(socket), %{case_runs: %{refresh_case["id"] => 1}})
-    refute GiftPlans.matching_refresh_case(section(socket), %{case_runs: %{refresh_case["id"] => 2}})
+    assert GiftPlans.matching_refresh_case(section(socket), %{wallet: 1000, case_runs: %{refresh_case["id"] => 1}})
+    refute GiftPlans.matching_refresh_case(section(socket), %{wallet: 1000, case_runs: %{refresh_case["id"] => 2}})
 
     socket = event(socket, "list_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => ""})
     assert [%{"max" => nil}] = section(socket)["refresh"]
-    assert GiftPlans.matching_refresh_case(section(socket), %{case_runs: %{refresh_case["id"] => 99}})
+    assert GiftPlans.matching_refresh_case(section(socket), %{wallet: 1000, case_runs: %{refresh_case["id"] => 99}})
+  end
+
+  test "a refresh case needs the cost left after refreshing to reach its minimum", %{socket: socket} do
+    socket = socket |> shop() |> event("list_add_refresh_case", %{})
+    [refresh_case] = section(socket)["refresh"]
+    assert refresh_case["min_cost"] == 250
+
+    env = %{wallet: 400, refresh_costs: %{"refresh" => 200}}
+    refute GiftPlans.matching_refresh_case(section(socket), env)
+
+    socket = event(socket, "list_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => "", "min_cost" => "200"})
+    assert GiftPlans.matching_refresh_case(section(socket), env)
+
+    socket = event(socket, "list_update_refresh_case", %{"case_id" => refresh_case["id"], "action" => "refresh", "max" => "", "min_cost" => "0"})
+    assert GiftPlans.matching_refresh_case(section(socket), %{wallet: 10, refresh_costs: %{"refresh" => 200}})
   end
 
   test "refresh cases can be scheduled by floor and the matching case follows the shop floor", %{socket: socket} do
@@ -422,8 +437,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     socket = event(socket, "list_update_refresh_case", %{"case_id" => added["id"], "action" => "leave"})
     assert render(socket) =~ "F1-4" and render(socket) =~ "F5+"
 
-    assert %{"action" => "refresh"} = GiftPlans.matching_refresh_case(section(socket), %{floor: 4})
-    assert %{"id" => id} = GiftPlans.matching_refresh_case(section(socket), %{floor: 5})
+    assert %{"action" => "refresh"} = GiftPlans.matching_refresh_case(section(socket), %{floor: 4, wallet: 1000})
+    assert %{"id" => id} = GiftPlans.matching_refresh_case(section(socket), %{floor: 5, wallet: 1000})
     assert id == copied["id"]
 
     socket = event(socket, "list_refresh_move_segment", %{"from" => "5", "to" => "7"})

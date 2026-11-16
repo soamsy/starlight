@@ -9,6 +9,7 @@ defmodule StarlightBot.GiftPlans do
   @heal_actions ~w(heal revive heal_all)
   @heal_all_max 7
   @refresh_actions ~w(refresh affinity_refresh leave)
+  @default_min_cost 250
   @skill_option_costs %{"s1_s2" => 45, "s2_s3" => 75, "s1_s3" => 120}
   @skill_moves %{"s1_s2" => {"s1", "s2"}, "s2_s3" => {"s2", "s3"}, "s1_s3" => {"s1", "s3"}}
   @skill_start %{"s1" => 3, "s2" => 2, "s3" => 1}
@@ -672,7 +673,7 @@ defmodule StarlightBot.GiftPlans do
   def refresh_action_label("leave"), do: "Leave Shop"
 
   def add_refresh_case(data, id, from \\ 1) do
-    refresh_case = %{"id" => new_id("rc"), "condition" => nil, "action" => "refresh", "affinity" => nil, "max" => nil}
+    refresh_case = %{"id" => new_id("rc"), "condition" => nil, "action" => "refresh", "affinity" => nil, "max" => nil, "min_cost" => @default_min_cost}
     update_section(data, id, &update_refresh_cases(&1, from, fn cases -> cases ++ [refresh_case] end))
   end
 
@@ -764,12 +765,27 @@ defmodule StarlightBot.GiftPlans do
     env = Map.put(env, :current_section, section["id"])
 
     Enum.find(refresh_cases_at(source, Map.get(env, :floor) || 1), fn refresh_case ->
-      under_cap?(refresh_case, runs) and eval_condition(refresh_case["condition"], Map.put(env, :case_action, refresh_case["action"]))
+      under_cap?(refresh_case, runs) and cost_after_ok?(refresh_case, env) and eval_condition(refresh_case["condition"], Map.put(env, :case_action, refresh_case["action"]))
     end)
   end
 
   defp under_cap?(%{"max" => max, "id" => id}, runs) when is_integer(max), do: Map.get(runs, id, 0) < max
   defp under_cap?(_refresh_case, _runs), do: true
+
+  def default_min_cost, do: @default_min_cost
+
+  defp cost_after_ok?(%{"action" => "leave"}, _env), do: true
+
+  defp cost_after_ok?(refresh_case, env) do
+    min_cost = Map.get(refresh_case, "min_cost", @default_min_cost)
+
+    case env do
+      _ when min_cost == 0 -> true
+      %{wallet: wallet, refresh_costs: costs} when is_integer(wallet) -> wallet - Map.get(costs, refresh_case["action"], 0) >= min_cost
+      %{wallet: wallet} when is_integer(wallet) -> wallet >= min_cost
+      _ -> false
+    end
+  end
 
   def find_entry(section, entry_id), do: Enum.find(section["entries"] || [], &(&1["id"] == entry_id))
 

@@ -769,8 +769,8 @@ defmodule StarlightBot.GiftPlansTest do
       refresh_case = %{"id" => "rc_1", "condition" => nil, "action" => "refresh", "affinity" => nil, "max" => 2}
       data = GiftPlans.update_section(data, "ms_a", &Map.put(&1, "refresh", [refresh_case]))
       stage = GiftPlans.find_section(data, stage["id"])
-      assert GiftPlans.matching_refresh_case(stage, %{plan: data}) == refresh_case
-      assert GiftPlans.matching_refresh_case(stage, %{plan: data, case_runs: %{"rc_1" => 2}}) == nil
+      assert GiftPlans.matching_refresh_case(stage, %{plan: data, wallet: 1000}) == refresh_case
+      assert GiftPlans.matching_refresh_case(stage, %{plan: data, wallet: 1000, case_runs: %{"rc_1" => 2}}) == nil
       assert stage["refresh"] == []
     end
 
