@@ -13,7 +13,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @mode_cycle_settle_ms 300
   @mode_cleared_timeout_ms 500
   @focused_key_tries 3
-  @slot_click_settle_ms 150
+  @slot_click_settle_ms 60
   @ego_menu_timeout_ms 2_000
   @ego_menu_settle_ms 300
   @ego_card_timeout_ms 1_500
