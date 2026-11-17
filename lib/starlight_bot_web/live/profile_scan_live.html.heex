@@ -1,0 +1,93 @@
+<div class="flex flex-col h-full gap-3 overflow-hidden">
+  <div class="flex flex-wrap items-center gap-3 shrink-0">
+    <h1 class="text-lg font-bold">Profile Scan</h1>
+    <button phx-click="take_screenshot" class="btn btn-sm btn-primary">
+      <.icon name="lucide-camera" class="size-4" /> Take Screenshot
+    </button>
+    <form phx-change="set_options" class="flex flex-wrap items-center gap-2">
+      <select name="sinner" class="select select-xs select-bordered">
+        <option :for={s <- @sinners} value={s} selected={s == @sinner}>{sinner_label(s)}</option>
+      </select>
+      <label class="flex items-center gap-1 text-xs text-base-content/60">
+        min
+        <input type="number" name="min_scale" value={@params["min_scale"]} min="0.1" step="0.1" class="input input-xs input-bordered w-16" phx-debounce="400" />
+      </label>
+      <label class="flex items-center gap-1 text-xs text-base-content/60">
+        max
+        <input type="number" name="max_scale" value={@params["max_scale"]} min="0.1" step="0.5" class="input input-xs input-bordered w-16" phx-debounce="400" />
+      </label>
+      <label class="flex items-center gap-1 text-xs text-base-content/60">
+        steps
+        <input type="number" name="steps" value={@params["steps"]} min="1" max="200" step="1" class="input input-xs input-bordered w-16" phx-debounce="400" />
+      </label>
+      <label class="flex items-center gap-1 text-xs text-base-content/60">
+        cutoff %
+        <input type="number" name="cutoff" value={@params["cutoff"]} min="0" max="100" step="1" class="input input-xs input-bordered w-16" phx-debounce="400" />
+      </label>
+      <label class="flex cursor-pointer items-center gap-1 text-xs text-base-content/60">
+        <input type="checkbox" name="include_base" value="true" checked={@params["include_base"] == "true"} class="checkbox checkbox-xs" />
+        base hooks
+      </label>
+    </form>
+    <span class="text-xs text-base-content/60">
+      <%= cond do %>
+        <% @screenshot_mat == nil -> %>Take a screenshot, then drag a region to scan
+        <% @region == nil -> %>Drag on the screenshot to define the scan region
+        <% true -> %>
+          {elem(@region, 2)}x{elem(@region, 3)} at ({elem(@region, 0)}, {elem(@region, 1)})
+          <span :if={@elapsed_ms}>, {@elapsed_ms} ms</span>
+      <% end %>
+    </span>
+  </div>
+
+  <div class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-3">
+    <div class="flex items-center justify-center bg-base-200 rounded-lg border border-base-300 shrink-0" style="aspect-ratio: 16/9;">
+      <%= if @status != :idle do %>
+        <canvas id="profile-scan-canvas" phx-hook="GiftInspectorCanvas" phx-update="ignore"
+                class="max-w-full max-h-full" style="aspect-ratio: 16/9;"></canvas>
+      <% else %>
+        <div class="text-base-content/40 text-sm">Take a screenshot to scan for sinner profiles</div>
+      <% end %>
+    </div>
+
+    <%= if @results != [] do %>
+      <div class="overflow-x-auto shrink-0">
+        <table class="table table-xs">
+          <thead>
+            <tr><th>profile</th><th>hook</th><th>best</th><th>threshold</th><th>scale</th><th>size</th><th>at</th></tr>
+          </thead>
+          <tbody>
+            <%= for r <- visible(@results, @params) do %>
+              <tr phx-click="select_hook" phx-value-hook={r.hook} class={["cursor-pointer hover:bg-base-200", @selected == r.hook && "bg-base-200"]}>
+                <td>{r.profile}</td>
+                <td class="font-mono text-xs">{r.hook}</td>
+                <td class={score_class(r.best && r.best.score, r.confidence)}>{pct(r.best && r.best.score)}</td>
+                <td>{pct(r.confidence)}</td>
+                <td>{r.best && "x#{r.best.scale}"}</td>
+                <td>{r.best && "#{elem(r.best.rect, 2)}x#{elem(r.best.rect, 3)}"}</td>
+                <td>{r.best && "#{elem(r.best.rect, 0)}, #{elem(r.best.rect, 1)}"}</td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+
+      <%= if detail = selected_result(@results, @selected) do %>
+        <div class="shrink-0 rounded-lg border border-base-300 p-2">
+          <div class="mb-1 text-xs text-base-content/60">{detail.profile}: score per scale (template {elem(detail.template_size, 0)}x{elem(detail.template_size, 1)}, threshold {pct(detail.confidence)})</div>
+          <div class="flex h-24 items-end gap-px">
+            <%= for hit <- detail.per_scale do %>
+              <div class="relative flex-1 min-w-0" style="height: 100%;" title={"x#{hit.scale}: #{pct(hit.score)}"}>
+                <div class={["absolute inset-x-0 bottom-0", hit.score >= detail.confidence && "bg-success" || "bg-base-content/30"]} style={"height: #{max(hit.score, 0) * 100}%"}></div>
+              </div>
+            <% end %>
+          </div>
+          <div class="flex justify-between font-mono text-[10px] text-base-content/50">
+            <span>x{List.first(detail.per_scale) && List.first(detail.per_scale).scale}</span>
+            <span>x{List.last(detail.per_scale) && List.last(detail.per_scale).scale}</span>
+          </div>
+        </div>
+      <% end %>
+    <% end %>
+  </div>
+</div>

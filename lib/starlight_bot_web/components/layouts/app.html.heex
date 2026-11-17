@@ -174,7 +174,7 @@
 
       <details id="page-menu" phx-hook="FloatingDropdown" data-keep-open data-close-on-click class="dropdown dropdown-end">
         <% profiles_on = on_teams and assigns[:team_nav] != nil and @team_nav.pane == "profiles" %>
-        <summary class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :prepare_lineups, :rewards, :linux_checks, :windows_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
+        <summary class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or assigns[:page] in [:hooks, :battle, :dungeon, :gift_inspector, :profile_scan, :theme_packs, :events, :shop_runner, :prepare_lineups, :rewards, :linux_checks, :windows_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
           <.icon name="lucide-layout-grid" class="size-4 lg:size-5" />
         </summary>
         <div popover="manual" class="dropdown-content z-50 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
@@ -219,6 +219,11 @@
            class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :gift_inspector, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
       <.icon name="lucide-scan-search" class="size-4 lg:size-5" />
       <span class="text-[10px] font-normal leading-tight text-center">Gift Inspector</span>
+    </.link>
+    <.link navigate={~p"/profile-scan"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :profile_scan, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-scan-face" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Profile Scan</span>
     </.link>
     <.link navigate={~p"/theme-packs"}
            class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(assigns[:page] == :theme_packs, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
