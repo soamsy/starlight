@@ -1291,10 +1291,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def goal_label("required"), do: "Required"
   def goal_label("optional"), do: "Optional"
   def goal_label("abandon"), do: "Abandon"
+  def goal_label("use"), do: "Use"
   def goal_label(letter), do: "Goal #{letter}"
 
   def goal_hint("required", _section), do: "Required: the stage is not finished until this is owned."
   def goal_hint("optional", _section), do: "Optional: never blocks the stage. Kept, bought, fused and upgraded only when it comes along."
+  def goal_hint("use", _section), do: "Use: the bot does this on the floors this tab covers."
   def goal_hint("abandon", _section), do: "Abandon: the bot does not pursue this and it does not count toward the stage."
 
   def goal_hint(letter, section) do
@@ -1702,6 +1704,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp apply_goal(segment, nil), do: segment
   defp apply_goal(segment, "abandon"), do: Map.put(segment, "abandoned", true)
+  defp apply_goal(segment, "use"), do: Map.put(segment, "abandoned", false)
 
   defp apply_goal(segment, goal) do
     segment = Map.merge(segment, %{"goal" => goal, "abandoned" => false})
@@ -2344,6 +2347,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     action? = GiftPlans.action_entry?(entry)
     gift = assigns.gifts_by_name[GiftPlans.subject_gift(entry)]
     abandoned? = GiftPlans.abandoned?(entry, segment)
+    heal? = action? and entry["subject"]["action"] != "skill_replace"
     sell? = not abandoned? and segment["disposition"] == "sell"
     keep? = not abandoned? and not sell? and not pattern?
     buy? = not abandoned? and not sell? and segment["buy"] == true
@@ -2360,8 +2364,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         sell?: sell?,
         buy?: buy?,
         abandoned?: abandoned?,
+        heal?: heal?,
         made_from: made_from || nil,
-        goal_slot?: keep? or (action? and entry["subject"]["action"] == "skill_replace") or (abandoned? and not pattern?),
+        goal_slot?: keep? or (action? and entry["subject"]["action"] == "skill_replace") or (abandoned? and not pattern?) or (heal? and GiftPlans.scheduled?(assigns.entry)),
         fusable?: entry["fusion"] != nil or (gift != nil and GiftPlans.fusable?(gift)),
         uptie?: gift != nil and String.trim(gift.uptie2 || "") != "",
         surface:
@@ -2393,14 +2398,22 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         <span :if={@shadowed} class="badge badge-warning badge-sm whitespace-nowrap"
               title={if @pattern?, do: "This stage has the same entry, so the starter pack's version has no effect on the plan.", else: "This stage lists this gift itself, so the starter pack's version has no effect on the plan."}>Overridden</span>
         <span :if={@readonly and not @shadowed and @goal_slot?}
-              class={"badge badge-sm border whitespace-nowrap " <> if(@abandoned? or (@segment["goal"] || "required") == "optional", do: "", else: goal_select_color(@segment["goal"] || "required"))}>
-          <%= goal_label(if(@abandoned?, do: "abandon", else: @segment["goal"] || "required")) %>
+              class={"badge badge-sm border whitespace-nowrap " <> if(@abandoned? or @heal? or (@segment["goal"] || "required") == "optional", do: "", else: goal_select_color(@segment["goal"] || "required"))}>
+          <%= goal_label(cond do
+            @abandoned? -> "abandon"
+            @heal? -> "use"
+            true -> @segment["goal"] || "required"
+          end) %>
         </span>
         <select :if={not @readonly and @goal_slot?} name="segment[goal]"
-                title={goal_hint(if(@abandoned?, do: "abandon", else: @segment["goal"] || "required"), @section)}
-                class={"select select-bordered select-xs w-full " <> if(@abandoned?, do: "", else: goal_select_color(@segment["goal"] || "required"))}>
-          <option :for={goal <- ["required", "optional" | GiftPlans.goal_letters(@section)] ++ ["abandon"]} value={goal}
-                  selected={if @abandoned?, do: goal == "abandon", else: (@segment["goal"] || "required") == goal}><%= goal_label(goal) %></option>
+                title={goal_hint(cond do
+                  @abandoned? -> "abandon"
+                  @heal? -> "use"
+                  true -> @segment["goal"] || "required"
+                end, @section)}
+                class={"select select-bordered select-xs w-full " <> if(@abandoned? or @heal?, do: "", else: goal_select_color(@segment["goal"] || "required"))}>
+          <option :for={goal <- if(@heal?, do: ["use", "abandon"], else: ["required", "optional" | GiftPlans.goal_letters(@section)] ++ ["abandon"])} value={goal}
+                  selected={if @abandoned?, do: goal == "abandon", else: if(@heal?, do: goal == "use", else: (@segment["goal"] || "required") == goal)}><%= goal_label(goal) %></option>
         </select>
       </div>
       <div class="flex items-center gap-1.5 w-52 min-w-0 shrink-0">
