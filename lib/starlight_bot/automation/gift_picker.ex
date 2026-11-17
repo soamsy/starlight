@@ -11,10 +11,13 @@ defmodule StarlightBot.Automation.GiftPicker do
   @anchor_leniency_px 60
   @unanchored_min_confidence 0.9
   @unknown_hp 100
+  @settle_poll_ms 250
+  @settle_max_ms 2_000
+  @settle_grid_px 20
 
   def pick(scan_hook, count, tier_hooks, fallback_hook, ctx, pick_delay_ms \\ 0, opts \\ []) do
     gifts_by_id = Map.new(EgoGifts.list_gifts(), &{&1.id, &1})
-    {frame, detections} = scan(scan_hook, ctx)
+    {frame, detections} = scan_settled(scan_hook, ctx, opts[:settle])
     named = detections |> anchored(frame, opts[:anchor_hook], ctx) |> slots()
     badge_slots = badge_slots(named, tier_badges(frame, tier_hooks))
     slots = assign_hp(named ++ badge_slots, hp_badges(frame, opts[:hp_hooks]), hp_gates(frame, opts[:hp_gate_hook]))
@@ -170,6 +173,39 @@ defmodule StarlightBot.Automation.GiftPicker do
         true -> {-tier, 2, 0}
       end
     end)
+  end
+
+  defp scan_settled(scan_hook, ctx, true) do
+    deadline = System.monotonic_time(:millisecond) + @settle_max_ms
+    settle_loop(scan(scan_hook, ctx), scan_hook, ctx, deadline)
+  end
+
+  defp scan_settled(scan_hook, ctx, _settle), do: scan(scan_hook, ctx)
+
+  defp settle_loop({nil, _} = current, _scan_hook, _ctx, _deadline), do: current
+
+  defp settle_loop({_, previous} = current, scan_hook, ctx, deadline) do
+    if System.monotonic_time(:millisecond) >= deadline do
+      Ctx.log(ctx, :info, "gift picker: #{scan_hook} scan still changing after #{@settle_max_ms}ms, using latest")
+      current
+    else
+      Process.sleep(@settle_poll_ms)
+      case scan(scan_hook, ctx) do
+        {nil, _} ->
+          current
+
+        {_, detections} = next ->
+          if signature(detections) == signature(previous),
+            do: next,
+            else: settle_loop(next, scan_hook, ctx, deadline)
+      end
+    end
+  end
+
+  defp signature(detections) do
+    detections
+    |> Enum.map(&{&1.gift_id, round(&1.x / @settle_grid_px), round(&1.y / @settle_grid_px)})
+    |> Enum.sort()
   end
 
   defp scan(scan_hook, ctx) do
