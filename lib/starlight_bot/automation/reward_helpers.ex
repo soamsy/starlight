@@ -149,7 +149,7 @@ defmodule StarlightBot.Automation.RewardHelpers do
 
   defp press_past_ego_gift_get(leaving) do
     attempt(
-      [retry_until(not_hook(:ego_gift_get), [key(:space), key(:enter)], every: 300, tries: 5), await_next_screen(leaving)],
+      [retry_until(not_hook(:ego_gift_get), [key(:space), key(:enter)], every: 100, timeout: 1_500), await_next_screen(leaving)],
       else: [log(:info, "ego_gift_get: space didn't dismiss it — clicking confirm instead") | click_ego_gift_get_confirm_steps(leaving)]
     )
   end
