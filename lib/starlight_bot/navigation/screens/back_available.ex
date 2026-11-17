@@ -3,7 +3,13 @@ defmodule StarlightBot.Navigation.Screens.BackAvailable do
 
   screen :back_available, identity: any_of([:back_button_thin, :back_button_thick]) do
     transition to: :any? do
-      [key(:esc), sleep(300)]
+      [
+        branch([
+          {:back_button_thin, [click(:back_button_thin)]},
+          {:back_button_thick, [click(:back_button_thick)]},
+          {:default, [key(:escape)]}
+        ]),
+      ]
     end
   end
 

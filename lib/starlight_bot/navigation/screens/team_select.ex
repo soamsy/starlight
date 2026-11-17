@@ -2,7 +2,16 @@ defmodule StarlightBot.Navigation.Screens.TeamSelect do
   use StarlightBot.Navigation.DSL
 
   screen :team_select, identity: any_of([:team_selector, :team_selector_tall, :team_selector_gone]) do
-    transition to: :exit_team_select, do: [key(:esc)]
+    transition to: :exit_team_select do
+      [
+        branch([
+          {:back_button_thin, [click(:back_button_thin)]},
+          {:back_button_thick, [click(:back_button_thick)]},
+          {:default, [key(:esc)]}
+        ]),
+      ]
+    end
+
     transition to: :battle do
       [
         sleep(100),
