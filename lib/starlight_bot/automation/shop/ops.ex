@@ -37,7 +37,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @sell_close_every_ms 900
   @sell_confirm_steady_ms 200
   @sell_confirm_steady_timeout_ms 1_500
-  @sell_confirm_retry_ms 1_200
+  @sell_confirm_retry_ms 500
   @sell_confirm_tries 3
   @sell_confirm_confirm_hook :shop_sell_popup_confirm_confirm
   @sell_gift_passes_key :shop_sell_gift_passes
