@@ -113,7 +113,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
         </button>
         <div id={"#{@id}-menu"} class="hidden absolute right-0 z-30 mt-1 w-[30rem] max-w-[90vw] rounded-box border border-base-300 bg-base-100 shadow-lg p-2">
           <div class="max-h-80 overflow-y-auto flex flex-col gap-0.5">
-            <div :for={template <- @templates} class={["flex items-center gap-1 rounded px-1 py-0.5 hover:bg-base-200", @selected == template.id && "bg-primary/10"]}>
+            <div :for={template <- @templates} class={["group flex items-center gap-1 rounded px-1 py-0.5 hover:bg-base-200", @selected == template.id && "bg-primary/10"]}>
               <input :if={@editing == template.id} id={"#{@id}-name-#{template.id}"} type="text" value={template.name}
                      phx-blur="template_rename" phx-value-id={template.id} phx-mounted={JS.focus()}
                      onfocus="this.select()" onkeydown="if (event.key === 'Enter') this.blur()"
@@ -126,6 +126,8 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
                 <span class="badge badge-xs badge-ghost font-mono shrink-0"><%= template.count %></span>
                 <img :for={src <- template.icons} src={src} class={["h-5 w-5 shrink-0 object-contain", String.starts_with?(src, "/images/sinners/") && "sinner-icon"]} />
               </button>
+              <button :if={PlanTemplates.writable?() and @editing != template.id} type="button" phx-click="template_edit" phx-value-id={template.id} title="Rename"
+                      class={["btn btn-2xs btn-ghost shrink-0 px-1 opacity-0 focus-visible:opacity-100 group-hover:opacity-100", @selected == template.id && "opacity-100"]}><.icon name="lucide-pencil" class="size-3" /></button>
               <span :if={@selected == template.id} class="text-xs text-primary shrink-0">in use</span>
               <button :if={PlanTemplates.writable?()} type="button" phx-click="template_delete" phx-value-id={template.id} class="btn btn-xs btn-ghost text-error"
                       data-confirm={"Delete the template '#{template.name}'?"}>Del</button>
@@ -134,7 +136,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
           </div>
           <div class="my-2 border-t border-base-300"></div>
           <div class="max-h-60 overflow-y-auto flex flex-col gap-0.5">
-            <div :for={plan <- @plans} class={["flex items-center gap-1 rounded px-1 py-0.5 hover:bg-base-200", is_nil(@selected) && @plan_id == plan.id && "bg-primary/10"]}>
+            <div :for={plan <- @plans} class={["group flex items-center gap-1 rounded px-1 py-0.5 hover:bg-base-200", is_nil(@selected) && @plan_id == plan.id && "bg-primary/10"]}>
               <input :if={@editing_plan == plan.id} id={"#{@id}-plan-name-#{plan.id}"} type="text" value={plan.name}
                      phx-blur="template_plan_rename" phx-value-id={plan.id} phx-mounted={JS.focus()}
                      onfocus="this.select()" onkeydown="if (event.key === 'Enter') this.blur()"
@@ -145,6 +147,8 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
                 <span class="min-w-0 truncate font-mono text-xs font-semibold"><%= plan.name %></span>
                 <span class="badge badge-xs badge-ghost font-mono shrink-0"><%= if is_nil(@selected) and @plan_id == plan.id, do: @current_count || plan.count, else: plan.count %></span>
               </button>
+              <button :if={@editing_plan != plan.id} type="button" phx-click="template_plan_edit" phx-value-id={plan.id} title="Rename"
+                      class={["btn btn-2xs btn-ghost shrink-0 px-1 opacity-0 focus-visible:opacity-100 group-hover:opacity-100", is_nil(@selected) and @plan_id == plan.id && "opacity-100"]}><.icon name="lucide-pencil" class="size-3" /></button>
               <span :if={is_nil(@selected) and @plan_id == plan.id} class="text-xs text-primary shrink-0">in use</span>
               <button :if={length(@plans) > 1} type="button" phx-click="template_plan_delete" phx-value-id={plan.id} class="btn btn-xs btn-ghost text-error"
                       data-confirm={"Delete the #{@label} '#{plan.name}'?"}>Del</button>

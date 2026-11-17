@@ -605,19 +605,22 @@
                     <span class="text-base-content/20">—</span>
                   <% end %>
                 </td>
-                <td class="text-xs text-base-content/60 max-w-xs"
+                <td class="group text-xs text-base-content/60 max-w-xs"
                     id={"notes-cell-#{hook.name}"}
                     phx-hook="EditableNotes"
                     phx-update="ignore"
                     data-name={hook.name}
                     data-notes={hook.notes || ""}>
-                  <span class="notes-display truncate block min-h-4 max-w-[16rem] cursor-text" title="Double-click to edit">
-                    <%= if hook.notes in [nil, ""] do %>
-                      <span class="italic text-base-content/30">double-click to add</span>
-                    <% else %>
-                      <%= hook.notes %>
-                    <% end %>
-                  </span>
+                  <span class="notes-display block min-h-4 max-w-[16rem]"><span class="flex items-center gap-1">
+                    <span class="notes-text min-w-0 flex-1 truncate cursor-text" title="Double-click to edit">
+                      <%= if hook.notes in [nil, ""] do %>
+                        <span class="italic text-base-content/30">double-click to add</span>
+                      <% else %>
+                        <%= hook.notes %>
+                      <% end %>
+                    </span>
+                    <button type="button" class="notes-pencil btn btn-2xs btn-ghost shrink-0 px-1 opacity-0 focus-visible:opacity-100 group-hover:opacity-100" title="Edit notes"><.icon name="lucide-pencil" class="size-3" /></button>
+                  </span></span>
                   <textarea class="notes-edit hidden textarea textarea-bordered textarea-xs w-48 font-mono leading-tight p-1"
                             rows="2"><%= hook.notes %></textarea>
                 </td>

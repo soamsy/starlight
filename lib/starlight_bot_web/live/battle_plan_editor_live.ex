@@ -705,6 +705,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
               </button>
             <% end %>
             <div class="flex shrink-0 items-center opacity-40 group-hover:opacity-100">
+              <button phx-click="start_rename_lineup" phx-value-id={lineup["id"]} title="Rename this lineup" class="btn btn-2xs btn-ghost"><.icon name="lucide-pencil" class="size-3" /></button>
               <button phx-click="copy_lineup" phx-value-id={lineup["id"]} title="Copy this lineup to the clipboard as JSON" class="btn btn-2xs btn-ghost">Copy</button>
               <button phx-click="delete_lineup" phx-value-id={lineup["id"]} data-confirm={"Delete lineup '#{lineup["name"]}'?"} title="Delete this lineup" class="btn btn-2xs btn-ghost text-error"><.icon name="lucide-x" class="size-3.5" /></button>
             </div>

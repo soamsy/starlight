@@ -355,7 +355,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
             <%= for {team, index} <- Enum.with_index(results) do %>
               <% selected? = @nav.team_id == team.id %>
               <div id={"team-row-#{team.id}"} data-sort-id={team.id} data-sort-handle={String.trim(@nav.query) == "" || nil} data-active={index == @nav.cursor}
-                   class={"flex min-w-0 shrink-0 overflow-hidden rounded-lg border " <> if(selected?, do: "border-primary ", else: "border-base-300 ") <> if(index == @nav.cursor, do: "bg-primary/25 ring-1 ring-inset ring-primary/50", else: "bg-base-100 hover:bg-base-200")}>
+                   class={"group flex min-w-0 shrink-0 overflow-hidden rounded-lg border " <> if(selected?, do: "border-primary ", else: "border-base-300 ") <> if(index == @nav.cursor, do: "bg-primary/25 ring-1 ring-inset ring-primary/50", else: "bg-base-100 hover:bg-base-200")}>
                 <span :if={String.trim(@nav.query) == ""} class="flex shrink-0 cursor-grab items-center pl-1 text-base-content/40" title="Drag to reorder"><.icon name="lucide-grip-vertical" class="size-4" /></span>
                 <div class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 p-2"
                      phx-click={JS.push("team_nav_select", value: %{id: team.id})}>
@@ -366,9 +366,13 @@ defmodule StarlightBotWeb.Components.TeamNav do
                              class="input input-bordered input-xs w-full font-semibold" />
                     </form>
                   <% else %>
-                    <span id={"team-name-#{team.id}"} phx-hook="DblClickEvent" data-event="team_nav_start_rename" data-id={team.id}
-                          title="Double-click to rename"
-                          class={"w-28 shrink-0 truncate font-mono text-xs select-none " <> if(selected?, do: "font-bold", else: "")}><%= team.name %></span>
+                    <span class="flex w-28 shrink-0 items-center gap-1">
+                      <span id={"team-name-#{team.id}"} phx-hook="DblClickEvent" data-event="team_nav_start_rename" data-id={team.id}
+                            title="Double-click to rename"
+                            class={"min-w-0 flex-1 truncate font-mono text-xs select-none " <> if(selected?, do: "font-bold", else: "")}><%= team.name %></span>
+                      <button type="button" phx-click={JS.push("team_nav_start_rename", value: %{id: to_string(team.id)})} title="Rename"
+                              class={"btn btn-2xs btn-ghost shrink-0 px-1 opacity-0 focus-visible:opacity-100 group-hover:opacity-100" <> if(selected?, do: " opacity-100", else: "")}><.icon name="lucide-pencil" class="size-3" /></button>
+                    </span>
                   <% end %>
                   <span class="flex w-28 shrink-0 flex-nowrap items-center gap-1.5 overflow-hidden">
                     <img :for={icon <- profile_icons(team.profile_ids, @nav.profiles_by_id, @nav.locator_thumbs)} src={icon.src} title={icon.name} class="h-4 w-auto shrink-0 rounded object-contain" />
@@ -381,9 +385,13 @@ defmodule StarlightBotWeb.Components.TeamNav do
                              class="input input-bordered input-xs w-full" />
                     </form>
                   <% else %>
-                    <span id={"team-notes-#{team.id}"} phx-hook="DblClickEvent" data-event="team_nav_start_edit_notes" data-id={team.id}
-                          title={if String.trim(team.notes || "") == "", do: "Double-click to add notes", else: team.notes}
-                          class="min-h-4 min-w-0 flex-1 select-none truncate text-xs text-base-content/60"><%= team.notes %></span>
+                    <span class="flex min-w-0 flex-1 items-center gap-1">
+                      <span id={"team-notes-#{team.id}"} phx-hook="DblClickEvent" data-event="team_nav_start_edit_notes" data-id={team.id}
+                            title={if String.trim(team.notes || "") == "", do: "Double-click to add notes", else: team.notes}
+                            class="min-h-4 min-w-0 flex-1 select-none truncate text-xs text-base-content/60"><%= team.notes %></span>
+                      <button type="button" phx-click={JS.push("team_nav_start_edit_notes", value: %{id: to_string(team.id)})} title="Edit notes"
+                              class={"btn btn-2xs btn-ghost shrink-0 px-1 opacity-0 focus-visible:opacity-100 group-hover:opacity-100" <> if(selected?, do: " opacity-100", else: "")}><.icon name="lucide-pencil" class="size-3" /></button>
+                    </span>
                   <% end %>
                 </div>
                 <div class="join shrink-0 rounded-none border-l border-base-300">

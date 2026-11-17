@@ -634,15 +634,17 @@ const EditableNotes = {
     const display = cell.querySelector(".notes-display")
     const editor = cell.querySelector(".notes-edit")
 
+    const text = display.querySelector(".notes-text")
     const renderDisplay = (value) => {
       if (value.trim() === "") {
-        display.innerHTML = '<span class="italic text-base-content/30">double-click to add</span>'
+        text.innerHTML = '<span class="italic text-base-content/30">double-click to add</span>'
       } else {
-        display.textContent = value
+        text.textContent = value
       }
     }
 
-    display.addEventListener("dblclick", () => openNotesEditor(cell))
+    text.addEventListener("dblclick", () => openNotesEditor(cell))
+    display.querySelector(".notes-pencil").addEventListener("click", () => openNotesEditor(cell))
 
     editor.addEventListener("blur", () => {
       const value = editor.value
