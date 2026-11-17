@@ -99,7 +99,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
     {:ok, %{region: region}} = HookRegistry.find(hook)
     {_x, y} = center(region)
 
-    with {:ok, _} <- Runner.run_steps([click(hook), click(hook)], ctx), do: {:ok, y}
+    with {:ok, _} <- Runner.run_steps([click(hook), sleep(10), click(hook)], ctx), do: {:ok, y}
   end
 
   defp advantage_choice?(frame, clicked_y) do
@@ -127,6 +127,8 @@ defmodule StarlightBot.Navigation.Screens.Event do
         Ctx.log(ctx, :info, "event choice: clicking event_text_ego_gift at y=#{y}")
 
         with {:ok, {sx, sy}} <- Runner.to_screen_point(Leeway.in_rect(rect)) do
+          Mouse.click(sx, sy)
+          Process.sleep(10)
           Mouse.click(sx, sy)
           {:ok, y}
         end
