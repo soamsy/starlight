@@ -65,7 +65,7 @@ defmodule StarlightBot.EnkephalinSchedule do
   def recently_charged?(now_utc \\ DateTime.utc_now()) do
     case get_settings().last_converted_at do
       nil -> false
-      last_local -> charged_within_hour?(last_local, now_utc) or same_limbus_day?(last_local, now_utc)
+      last_local -> same_limbus_day?(last_local, now_utc) and charged_within_hour?(last_local, now_utc)
     end
   end
 
