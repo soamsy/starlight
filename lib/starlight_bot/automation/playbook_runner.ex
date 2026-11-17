@@ -169,7 +169,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
         {:steps, [run_actions(rest, turn)]}
 
       {:then, actions} ->
-        {:steps, [run_actions(actions ++ rest, turn)]}
+        {:steps, [run_actions(commit_trailing_rate(actions ++ rest), turn)]}
 
       {:steps, steps} ->
         {:steps, steps ++ [run_actions(rest, turn)]}
