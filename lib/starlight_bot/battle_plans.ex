@@ -1460,17 +1460,25 @@ defmodule StarlightBot.BattlePlans do
   end
 
   def pastable_actions(items, container, kind, sources) do
-    allowed = action_types(kind)
+    {clones, _skipped} = paste_outcome(items, container, kind, sources)
+    clones
+  end
+
+  def paste_outcome(items, container, kind, sources) do
+    allowed = action_types(kind) ++ if(kind == "focused", do: ~w(ego dodge nothing), else: [])
     terminal_taken? = Enum.any?(container_actions(items, container), &terminal?/1)
 
-    {clones, _taken} =
-      sources
-      |> Enum.filter(&((schedule?(&1) and container == "root") or &1["type"] in allowed))
-      |> Enum.reduce({[], terminal_taken?}, fn action, {acc, taken?} ->
-        if terminal?(action) and taken?, do: {acc, taken?}, else: {[refresh_ids(action) | acc], taken? or terminal?(action)}
+    {clones, _taken, skipped} =
+      Enum.reduce(sources, {[], terminal_taken?, []}, fn action, {acc, taken?, skipped} ->
+        cond do
+          schedule?(action) and container != "root" -> {acc, taken?, [:schedule | skipped]}
+          not schedule?(action) and action["type"] not in allowed -> {acc, taken?, [:type | skipped]}
+          terminal?(action) and taken? -> {acc, taken?, [:terminal | skipped]}
+          true -> {[refresh_ids(action) | acc], taken? or terminal?(action), skipped}
+        end
       end)
 
-    Enum.reverse(clones)
+    {Enum.reverse(clones), skipped |> Enum.reverse() |> Enum.frequencies()}
   end
 
   def insert_actions(items, container, clones, after_id) do

@@ -272,6 +272,15 @@ defmodule StarlightBot.BattlePlansTest do
     end
   end
 
+  describe "focused paste" do
+    test "keeps target actions converted to ego, dodge or nothing" do
+      target = BattlePlans.new_action("target")
+      converted = Enum.map(~w(ego dodge nothing), &BattlePlans.convert_action(target, &1))
+
+      assert BattlePlans.pastable_actions([], "root", "focused", converted) |> Enum.map(& &1["type"]) == ~w(ego dodge nothing)
+    end
+  end
+
   describe "if blocks" do
     test "enemy count leaves parse, label and match" do
       leaf = BattlePlans.condition_leaf(%{"op" => "enemy_count", "cmp" => "lte", "value" => "2", "hook" => "ignored"})

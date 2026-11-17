@@ -441,13 +441,12 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
 
     with %{} <- playbook,
          {:ok, sources} <- PlanClipboard.decode_actions(text, playbook["kind"]) do
-      case BattlePlans.pastable_actions(playbook["actions"], scope, playbook["kind"], sources) do
-        [] ->
-          {:noreply, put_flash(socket, :error, "None of those actions fit here.")}
+      case BattlePlans.paste_outcome(playbook["actions"], scope, playbook["kind"], sources) do
+        {[], skipped} ->
+          {:noreply, put_flash(socket, :error, "Nothing pasted. #{skip_reasons(skipped, playbook["kind"])}")}
 
-        clones ->
-          skipped = length(sources) - length(clones)
-          note = if skipped > 0, do: " Skipped #{skipped} that don't fit here.", else: ""
+        {clones, skipped} ->
+          note = if skipped == %{}, do: "", else: " Skipped #{skip_reasons(skipped, playbook["kind"])}"
           socket = update_items(socket, &BattlePlans.insert_actions(&1, scope, clones, after_id))
           {:noreply, put_flash(socket, :info, "Pasted #{length(clones)} #{if length(clones) == 1, do: "action", else: "actions"}.#{note}")}
       end
@@ -1972,6 +1971,17 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     id = socket.assigns.playbook_id
     playbooks = Enum.map(socket.assigns.data["playbooks"], fn pb -> if pb["id"] == id, do: fun.(pb), else: pb end)
     socket |> assign(:data, Map.put(socket.assigns.data, "playbooks", playbooks)) |> persist()
+  end
+
+  defp skip_reasons(skipped, kind) do
+    skipped
+    |> Enum.map(fn
+      {:terminal, n} -> "#{n} chain #{if n == 1, do: "action", else: "actions"} (this tab already has one, only one is allowed per tab)"
+      {:type, n} -> "#{n} not allowed in a #{kind} playbook"
+      {:schedule, n} -> "#{n} #{if n == 1, do: "schedule", else: "schedules"} (schedules can't go inside a tab or branch)"
+    end)
+    |> Enum.join("; ")
+    |> Kernel.<>(".")
   end
 
   defp update_items(socket, fun) do
