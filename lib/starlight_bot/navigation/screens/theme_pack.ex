@@ -15,6 +15,7 @@ defmodule StarlightBot.Navigation.Screens.ThemePack do
     transition to: :cabinet_reward do
       [
         retry_until(not_hook(:theme_pack_select), [drag(:theme_pack_middle, 0, 430)], every: 1000, tries: 4),
+        premove(:safe_corner),
         wait_until_arrived(timeout: 5_000)
       ]
     end
