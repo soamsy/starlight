@@ -388,7 +388,7 @@ defmodule StarlightBot.Automation.Scripts.SelectTeamOnScreen do
       Ctx.log(ctx, :info, "sinner_count_0 already set — skipping clear_selection")
       []
     else
-      [click(:clear_selection)] ++
+      [click(:clear_selection, settle_ms: 100)] ++
       confirm_enter(any_of([:clear_selection_confirm, :clear_selection_confirm_2]), steady: 400) ++ [sleep(500)]
     end
   end
