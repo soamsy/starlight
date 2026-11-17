@@ -103,8 +103,8 @@ defmodule StarlightBot.Input.Trajectory do
     total = fn a, soften -> times.(a, soften) |> List.last() |> elem(1) end
     soften = Enum.find(@approach_softening, List.last(@approach_softening), &(total.(@approach_max_speedup, &1) <= m.duration))
     a = bisect_speed(&total.(&1, soften), m.duration, 0.3, @approach_max_speedup, 40)
-    cumulative = times.(a, soften) |> Enum.map(&elem(&1, 1))
-    {List.to_tuple(cumulative), grid |> Enum.map(&elem(&1, 0)) |> List.to_tuple()}
+    cumulative = [0.0 | times.(a, soften) |> Enum.map(&elem(&1, 1))]
+    {List.to_tuple(cumulative), [0.0 | grid |> Enum.map(&elem(&1, 0))] |> List.to_tuple()}
   end
 
   defp bisect_speed(_total, _target, lo, hi, 0), do: (lo + hi) / 2

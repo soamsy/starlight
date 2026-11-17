@@ -37,6 +37,16 @@ defmodule StarlightBot.Input.TrajectoryTest do
     end
   end
 
+  test "long fixed-duration sweeps never crash or move backwards past the start" do
+    for _ <- 1..50, duration <- [700, 1200, 1650, 2400], arc <- [:upper, :lower, nil] do
+      waypoints = Trajectory.build({100.0, 1000.0}, {1700.0, 1000.0}, {0.0, 0.0}, {:duration_ms, duration}, arc)
+
+      for {x, _y, _t} <- waypoints do
+        assert x > 80.0
+      end
+    end
+  end
+
   test "fixed duration is honoured" do
     {_, _, t} = Trajectory.build({0.0, 0.0}, {200.0, 0.0}, {0.0, 0.0}, {:duration_ms, 300}) |> List.last()
     assert t >= 250.0 and t < 420.0
