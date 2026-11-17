@@ -73,7 +73,13 @@ defmodule StarlightBot.Automation.GiftPicker do
 
   defp hp_badges(nil, _hp_hooks), do: []
   defp hp_badges(_frame, nil), do: []
-  defp hp_badges(frame, hp_hooks), do: for({hook, hp} <- hp_hooks, rect <- Matcher.find_all(frame, hook), do: {hp, rect})
+  defp hp_badges(frame, hp_hooks) do
+    hp_by_hook = Map.new(hp_hooks)
+
+    for {hook, {:ok, matches}} <- Matcher.find_all_with_scores_batch(frame, Map.keys(hp_by_hook)),
+        {rect, _score} <- matches,
+        do: {hp_by_hook[hook], rect}
+  end
 
   defp hp_gates(nil, _gate_hook), do: []
   defp hp_gates(_frame, nil), do: []
