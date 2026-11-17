@@ -17,6 +17,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
+      StarlightBot.Perf.ensure_started()
       Navigator.subscribe()
       RunHistory.subscribe()
       RunnerForms.subscribe()
@@ -31,6 +32,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
      socket
      |> assign(:tab, socket.assigns[:live_action] || nav.run_kind || :mirror_dungeon)
      |> assign(:gifts_by_name, Map.new(EgoGifts.list_gifts(), &{&1.name, &1}))
+     |> assign(:hook_groups, Teams.team_hooks())
      |> assign(:gifts_by_id, Map.new(EgoGifts.list_gifts(), &{&1.id, &1}))
      |> assign(:theme_packs_by_gift_id, StarlightBot.ThemePacks.names_by_gift_id())
      |> assign(:gift_popup, nil)
@@ -364,7 +366,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   @impl true
   def handle_info(:team_plans_changed, socket) do
     teams = Teams.list_teams()
-    {:noreply, socket |> assign(:teams, teams)}
+    {:noreply, socket |> assign(:teams, teams) |> assign(:hook_groups, Teams.team_hooks())}
   end
 
   @impl true
@@ -847,6 +849,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   attr :index, :integer, required: true
   attr :list, :string, required: true
   attr :teams, :list, required: true
+  attr :hook_groups, :list, required: true
   attr :locked, :boolean, required: true
   attr :live, :boolean, default: false
   attr :cycle_size, :integer, default: 1
@@ -884,7 +887,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
           <option value={team.id} selected={team.id == @pick.id}><%= team.name %></option>
         <% end %>
       </select>
-      <.hook_select id={"#{@prefix}-hook-#{@index}"} name={"#{@prefix}_hooks[]"} selected={@pick.hook} disabled={@teams == [] or @locked} />
+      <.hook_select id={"#{@prefix}-hook-#{@index}"} name={"#{@prefix}_hooks[]"} selected={@pick.hook} groups={@hook_groups} disabled={@teams == [] or @locked} />
       <span :if={@forecast} class="relative">
         <span title={"Expected starlight per run with #{@forecast.rest_bonus} rest bonus"}
               class={"badge badge-sm font-mono " <> if(@forecast.net >= 0, do: "badge-success", else: "badge-error")}><%= signed(@forecast.net) %></span>
@@ -1172,6 +1175,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   attr :event, :string, required: true
   attr :picks, :list, required: true
   attr :teams, :list, required: true
+  attr :hook_groups, :list, required: true
   attr :labels, :list, required: true
   attr :current, :integer, required: true
   attr :auto_slot, :integer, required: true
@@ -1205,7 +1209,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
             <option value="" selected={pick == nil}>None selected</option>
             <option :for={team <- @teams} value={team.id} selected={pick != nil and team.id == pick.id}>{team.name}</option>
           </select>
-          <.hook_select id={"#{@kind}-team-hook-#{index}"} name={"#{@kind}_team_hooks[]"} selected={pick && pick.hook} disabled={@teams == [] or pick == nil} />
+          <.hook_select id={"#{@kind}-team-hook-#{index}"} name={"#{@kind}_team_hooks[]"} selected={pick && pick.hook} groups={@hook_groups} disabled={@teams == [] or pick == nil} />
         </div>
       </div>
       <div class="relative flex flex-col gap-1 shrink-0">

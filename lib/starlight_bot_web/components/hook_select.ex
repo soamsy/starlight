@@ -6,9 +6,10 @@ defmodule StarlightBotWeb.Components.HookSelect do
   attr :name, :string, required: true
   attr :selected, :string, default: nil
   attr :disabled, :boolean, default: false
+  attr :groups, :list, default: nil
 
   def hook_select(assigns) do
-    assigns = assign(assigns, :groups, Teams.team_hooks())
+    assigns = assign(assigns, :groups, assigns.groups || Teams.team_hooks())
 
     ~H"""
     <div :if={@disabled} class="w-24 shrink-0">

@@ -2537,3 +2537,41 @@ const liveSocket = new LiveSocket("/live", Socket, {
 
 liveSocket.connect()
 window.liveSocket = liveSocket
+
+if (document.querySelector("meta[name=dev-js-log]")) {
+  const perf = { longTasks: [], lagMax: 0, messages: {}, last: performance.now() }
+  const sendPerf = (message) => fetch("/dev/perf", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ message }),
+    keepalive: true,
+  }).catch(() => {})
+
+  try {
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) perf.longTasks.push(Math.round(entry.duration))
+    }).observe({ entryTypes: ["longtask"] })
+  } catch {}
+
+  liveSocket.socket.onMessage((msg) => {
+    const key = `${msg.event}:${String(msg.topic).split(":")[0]}`
+    perf.messages[key] = (perf.messages[key] || 0) + 1
+  })
+
+  setInterval(() => {
+    const now = performance.now()
+    perf.lagMax = Math.max(perf.lagMax, now - perf.last - 250)
+    perf.last = now
+  }, 250)
+
+  setInterval(() => {
+    const messages = Object.entries(perf.messages).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => `${k}=${v}`).join(" ")
+    const tasks = perf.longTasks.length ? `longtasks=${perf.longTasks.length} max=${Math.max(...perf.longTasks)}ms sum=${perf.longTasks.reduce((a, b) => a + b, 0)}ms` : "longtasks=0"
+    const heap = performance.memory ? ` heap=${Math.round(performance.memory.usedJSHeapSize / 1048576)}MB` : ""
+    const nodes = ` dom=${document.getElementsByTagName("*").length}`
+    sendPerf(`5s ${tasks} loopLagMax=${Math.round(perf.lagMax)}ms msgs[${messages}]${heap}${nodes}`)
+    perf.longTasks = []
+    perf.lagMax = 0
+    perf.messages = {}
+  }, 5000)
+}
