@@ -96,7 +96,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
       Engine.in_battle?(screen) ->
         Ctx.log(ctx, :info, "#{kind}: batch of #{size} consecutive battle(s)")
         Ctx.log(ctx, :info, "already at #{screen} — resuming battle instead of restarting the chunk")
-        {:steps, [capture(BattleLoop.steps(screen), then: {__MODULE__, :battle_done, [lux, kind, size, queue, errors]})]}
+        {:steps, [capture(BattleLoop.steps(screen, resume: true), then: {__MODULE__, :battle_done, [lux, kind, size, queue, errors]})]}
 
       true ->
         Ctx.log(ctx, :info, "#{kind}: batch of #{size} consecutive battle(s)")

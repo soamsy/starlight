@@ -10,10 +10,10 @@ defmodule StarlightBot.Automation.BattleLoop do
   @hiccup_max_attempts 7
   @give_up_screens [:battle_turn, :battle_chain, :battle_focused, :battle_settings_popup]
 
-  def steps(from), do: [call(__MODULE__, :start, [from])]
+  def steps(from, opts \\ []), do: [call(__MODULE__, :start, [from, Keyword.get(opts, :resume, false)])]
 
-  def start(from, _frame, ctx) do
-    RunMemory.put_battle_turn(ctx, 1)
+  def start(from, resume?, _frame, ctx) do
+    unless resume?, do: RunMemory.put_battle_turn(ctx, 1)
     {:steps, [play(from, @max_battle_loops)]}
   end
 
