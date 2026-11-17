@@ -54,6 +54,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
      |> assign(:collect_enkephalin, false)
      |> assign(:collect_xp, false)
      |> assign(:battle_debug, AppSettings.battle_debug?())
+     |> assign(:gift_scan_debug, AppSettings.gift_scan_debug?())
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)
      |> restore_form(RunnerForms.get("mirror_dungeon"))
@@ -139,6 +140,12 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   end
 
   @impl true
+  def handle_event("toggle_gift_scan_debug", _, socket) do
+    enabled? = not socket.assigns.gift_scan_debug
+    AppSettings.put_gift_scan_debug(enabled?)
+    {:noreply, assign(socket, :gift_scan_debug, enabled?)}
+  end
+
   def handle_event("toggle_battle_debug", _, socket) do
     enabled? = not socket.assigns.battle_debug
     AppSettings.put_battle_debug(enabled?)

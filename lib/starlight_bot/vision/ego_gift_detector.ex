@@ -1,6 +1,7 @@
 defmodule StarlightBot.Vision.EgoGiftDetector do
   use GenServer
   require Logger
+  alias StarlightBot.GiftScanDebug
   alias StarlightBot.Vision.Frame
 
   @border_constant 0  # cv_BORDER_CONSTANT
@@ -28,7 +29,9 @@ defmodule StarlightBot.Vision.EgoGiftDetector do
   Opts: `:imgsz`, `:conf`, `:iou` (detector), `:topk`, `:classifier_conf` (classifier).
   """
   def detect(frame_mat, region, opts \\ []) do
-    GenServer.call(__MODULE__, {:detect, frame_mat, region, opts}, 30_000)
+    result = GenServer.call(__MODULE__, {:detect, frame_mat, region, opts}, 30_000)
+    with {:ok, gifts} <- result, do: GiftScanDebug.record(frame_mat, region, gifts)
+    result
   end
 
   @impl true

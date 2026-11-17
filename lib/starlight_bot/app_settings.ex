@@ -57,6 +57,10 @@ defmodule StarlightBot.AppSettings do
 
   def put_battle_debug(enabled?) when is_boolean(enabled?), do: put("battle_debug", to_string(enabled?))
 
+  def gift_scan_debug?, do: Repo.one(from_key("gift_scan_debug")) == "true"
+
+  def put_gift_scan_debug(enabled?) when is_boolean(enabled?), do: put("gift_scan_debug", to_string(enabled?))
+
   @cursor_speed_range {0.2, 2.0}
   @hesitation_range {0.5, 2.0}
 
