@@ -1243,9 +1243,9 @@ defmodule StarlightBotWeb.Live.RunnerLive do
 
   def sin_icon(sin), do: "/images/sin/#{sin}.webp"
 
-  @enkephalin_cumulative_costs [0, 26, 78, 156, 260]
+  @enkephalin_cumulative_costs [0, 26, 78, 156, 260, 390]
 
-  def enkephalin_cumulative_cost(count) when count in 0..4, do: Enum.at(@enkephalin_cumulative_costs, count)
+  def enkephalin_cumulative_cost(count) when count in 0..5, do: Enum.at(@enkephalin_cumulative_costs, count)
 
   def total_waves(waves) do
     case Integer.parse(to_string(waves)) do

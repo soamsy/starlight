@@ -111,7 +111,7 @@ defmodule StarlightBot.AppSettings do
 
   defp parse_count(value) do
     case Integer.parse(value) do
-      {count, ""} when count in 0..4 -> count
+      {count, ""} when count in 0..5 -> count
       _ -> 0
     end
   end

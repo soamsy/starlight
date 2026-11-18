@@ -292,10 +292,10 @@
           <img src="/images/icons/lunacy.webp" title="Lunacy" class="size-6 shrink-0" />
           <span class="text-base-content/50">→</span>
           <img src="/images/icons/enkephalin.webp" title="Enkephalin" class="size-6 shrink-0" />
-          <select name="enkephalin_convert_count" class="select select-sm select-bordered w-52">
+          <select name="enkephalin_convert_count" class="select select-sm select-bordered w-64">
             <%= for n <- 0..StarlightBot.Automation.EnkephalinCharger.max_convert_count() do %>
               <option value={n} selected={n == @enkephalin_convert_count}>
-                {n}x ({StarlightBotWeb.Live.RunnerLive.enkephalin_cumulative_cost(n)} lunacy, {StarlightBotWeb.Live.RunnerLive.enkephalin_cumulative_cost(n) * 7}/week)
+                {if n == 5, do: "⚠️ "}{n}x ({StarlightBotWeb.Live.RunnerLive.enkephalin_cumulative_cost(n)} lunacy, {StarlightBotWeb.Live.RunnerLive.enkephalin_cumulative_cost(n) * 7}/week){if n == 5, do: " ⚠️"}
               </option>
             <% end %>
           </select>

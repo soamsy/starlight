@@ -28,7 +28,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
       when is_integer(exp_waves) and exp_waves >= 0 and
              is_integer(thread_waves) and thread_waves >= 0 and
              is_boolean(collect_xp?) and is_boolean(collect_enkephalin?) and
-             is_integer(enkephalin_convert_count) and enkephalin_convert_count in 0..4 do
+             is_integer(enkephalin_convert_count) and enkephalin_convert_count in 0..5 do
     RunMemory.put_context(ctx, :luxcavation)
     Ctx.log(ctx, :info, "Localizing…")
 
@@ -41,7 +41,7 @@ defmodule StarlightBot.Automation.Scripts.LuxcavationRunner do
     Ctx.log(
       ctx,
       :error,
-      "exp/thread wave counts must be non-negative, enkephalin_convert_count must be 0-4"
+      "exp/thread wave counts must be non-negative, enkephalin_convert_count must be 0-5"
     )
 
     {:error, :invalid_counts}

@@ -3,21 +3,23 @@ defmodule StarlightBot.Automation.EnkephalinCharger do
   alias StarlightBot.Automation.Engine
   alias StarlightBot.{Ctx, EnkephalinSchedule}
 
-  @max_convert_count 4
+  @max_convert_count 5
 
   @spend_state_hooks [
     :charge_enkephalin_tab_lunacy_0_10,
     :charge_enkephalin_tab_lunacy_1_10,
     :charge_enkephalin_tab_lunacy_2_10,
     :charge_enkephalin_tab_lunacy_3_10,
-    :charge_enkephalin_tab_lunacy_4_10
+    :charge_enkephalin_tab_lunacy_4_10,
+    :charge_enkephalin_tab_lunacy_5_10
   ]
 
   @spend_cost_hooks [
     :charge_enkephalin_tab_lunacy_cost_26,
     :charge_enkephalin_tab_lunacy_cost_52,
     :charge_enkephalin_tab_lunacy_cost_78,
-    :charge_enkephalin_tab_lunacy_cost_104
+    :charge_enkephalin_tab_lunacy_cost_104,
+    :charge_enkephalin_tab_lunacy_cost_130,
   ]
 
   def max_convert_count, do: @max_convert_count
