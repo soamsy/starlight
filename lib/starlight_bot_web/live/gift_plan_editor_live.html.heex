@@ -505,6 +505,8 @@
                           </div>
                         </details>
                         <button type="button" phx-click="list_add_action" phx-value-action="heal_all" class="btn btn-xs btn-outline">+ Heal all</button>
+                        <button type="button" phx-click="list_add_action" phx-value-action="team_replace" disabled={Enum.any?(section["entries"], &GiftPlans.team_replace_entry?/1)}
+                                title={"Swap sinners' identities in the shop's team replace, up to #{GiftPlans.team_replace_max()} per shop"} class="btn btn-xs btn-outline">+ Team replace</button>
                       </div>
                       <% offers = if @pack_edit, do: [], else: loadout_offers(@plan_data, section) %>
                       <div class="flex items-center gap-1 flex-wrap justify-end">

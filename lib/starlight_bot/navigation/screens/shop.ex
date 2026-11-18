@@ -30,6 +30,14 @@ defmodule StarlightBot.Navigation.Screens.Shop do
     transition to: :shop, do: back_to_shop()
   end
 
+  screen :team_select_replace, identity: :team_select_replace do
+    transition to: :shop, do: back_to_shop()
+  end
+
+  screen :team_select_replace_catalog, identity: :team_select_replace_catalog do
+    transition to: :shop, do: back_to_shop()
+  end
+
   screen :shop_leave_confirm, identity: :shop_leave_confirm do
     transition to: :shop, do: back_to_shop()
   end
@@ -60,6 +68,8 @@ defmodule StarlightBot.Navigation.Screens.Shop do
       :shop_purchase_popup,
       :shop_replace_popup,
       :shop_heal_menu,
+      :team_select_replace,
+      :team_select_replace_catalog,
       :shop_leave_confirm
     ]
 

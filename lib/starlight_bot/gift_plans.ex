@@ -6,8 +6,11 @@ defmodule StarlightBot.GiftPlans do
   @dispositions ~w(keep ignore sell)
   @skill_options ~w(s1_s3 s2_s3 s1_s2)
   @heal_cost 100
+  @team_replace_cost 100
   @heal_actions ~w(heal revive heal_all)
   @heal_all_max 7
+  @team_replace_max 3
+  @top_actions @heal_actions ++ ["team_replace"]
   @refresh_actions ~w(refresh affinity_refresh leave)
   @default_min_cost 250
   @skill_option_costs %{"s1_s2" => 45, "s2_s3" => 75, "s1_s3" => 120}
@@ -379,7 +382,7 @@ defmodule StarlightBot.GiftPlans do
     with root when is_map(root) <- find_section(data, root_id),
          false <- stage?(root),
          [first | _] <- stages(data, root_id) do
-      {root_heals, root_entries} = Enum.split_with(root["entries"], &heal_entry?/1)
+      {root_heals, root_entries} = Enum.split_with(root["entries"], &top_entry?/1)
 
       data
       |> update_section(root_id, &Map.merge(&1, %{"goals" => first["goals"], "entries" => root_heals ++ first["entries"]}))
@@ -434,6 +437,8 @@ defmodule StarlightBot.GiftPlans do
   def pattern_entry?(entry), do: is_nil(subject_gift(entry))
 
   def heal_actions, do: @heal_actions
+  def team_replace_max, do: @team_replace_max
+  def team_replace_cost, do: @team_replace_cost
   def heal_all_max, do: @heal_all_max
 
   def action_cost_range("revive", %{"heal_after" => false} = segment), do: {0, length(segment["sinners"] || []) * @heal_cost}
@@ -442,6 +447,8 @@ defmodule StarlightBot.GiftPlans do
   def action_cost_range("heal", segment), do: twice(length(segment["sinners"] || []) * @heal_cost)
   def action_cost_range("heal_all", %{"repeat" => "until_full"}), do: {@heal_cost, @heal_all_max * @heal_cost}
   def action_cost_range("heal_all", segment), do: twice(heal_all_times(segment["repeat"]) * @heal_cost)
+
+  def action_cost_range("team_replace", segment), do: twice(length(segment["replacements"] || []) * @team_replace_cost)
 
   def action_cost_range("skill_replace", segment) do
     lock_s2? = segment["lock_s2"] != false
@@ -457,12 +464,15 @@ defmodule StarlightBot.GiftPlans do
   defp twice(cost), do: {cost, cost}
   def action_entry?(entry), do: match?(%{"subject" => %{"action" => _}}, entry)
   def heal_entry?(entry), do: match?(%{"subject" => %{"action" => action}} when action in @heal_actions, entry)
+  def top_entry?(entry), do: match?(%{"subject" => %{"action" => action}} when action in @top_actions, entry)
+  def team_replace_entry?(entry), do: match?(%{"subject" => %{"action" => "team_replace"}}, entry)
 
   def subject_label(%{"gift" => name}), do: name
   def subject_label(%{"action" => "heal"}), do: "Greatly Heal"
   def subject_label(%{"action" => "revive"}), do: "Revive (if dead)"
   def subject_label(%{"action" => "heal_all"}), do: "Heal Everyone"
   def subject_label(%{"action" => "skill_replace"}), do: "Skill Replace"
+  def subject_label(%{"action" => "team_replace"}), do: "Team Replace"
   def subject_label(%{"affinity" => "none", "tiers" => []}), do: "Any keywordless"
   def subject_label(%{"affinity" => "none", "tiers" => tiers}), do: "Any keywordless " <> Enum.map_join(tiers, ", ", &"T#{&1}")
   def subject_label(%{"affinity" => affinity, "tiers" => []}), do: "Any #{affinity}"
@@ -536,6 +546,7 @@ defmodule StarlightBot.GiftPlans do
       max: if(disposition == "sell" or (buy? and pattern_entry?(entry)), do: segment["max"]),
       abandoned: abandoned?,
       sinners: segment["sinners"] || [],
+      replacements: segment["replacements"] || [],
       repeat: segment["repeat"] || "once",
       heal_after: segment["heal_after"] != false,
       target: skill_target(segment["target"], segment["lock_s2"] != false),
@@ -688,6 +699,18 @@ defmodule StarlightBot.GiftPlans do
         Map.update(section, "entries", [], &(&1 ++ [entry]))
       end
     end)
+  end
+
+  def add_action(data, id, "team_replace", _sinner) do
+    case Enum.any?((find_section(data, id) || %{})["entries"] || [], &team_replace_entry?/1) do
+      true ->
+        data
+
+      false ->
+        segment = Map.merge(default_segment(), %{"disposition" => "ignore", "goal" => nil, "buy" => false, "replacements" => []})
+        entry = %{"id" => new_id("me"), "subject" => %{"action" => "team_replace"}, "fusion" => nil, "floors" => [segment]}
+        update_section(data, id, fn section -> Map.update(section, "entries", [], &(&1 ++ [entry])) end)
+    end
   end
 
   def add_action(data, id, action, sinner) when action in ["skill_replace" | @heal_actions] do
@@ -868,6 +891,20 @@ defmodule StarlightBot.GiftPlans do
   end
 
   def heal_entries(entries), do: Enum.filter(entries, &(match?(%{subject: %{"action" => action}} when action in @heal_actions, &1) and not &1.abandoned))
+  def team_replace_entries(entries), do: Enum.filter(entries, &(match?(%{subject: %{"action" => "team_replace"}}, &1) and not &1.abandoned))
+
+  def toggle_team_replacement(replacements, sinner) do
+    cond do
+      Enum.any?(replacements, &(&1["sinner"] == sinner)) -> Enum.reject(replacements, &(&1["sinner"] == sinner))
+      length(replacements) >= @team_replace_max -> replacements
+      true -> replacements ++ [%{"sinner" => sinner, "profile" => nil}]
+    end
+  end
+
+  def set_team_replacement_profile(replacements, sinner, profile) do
+    Enum.map(replacements, fn replacement -> if replacement["sinner"] == sinner, do: Map.put(replacement, "profile", profile), else: replacement end)
+  end
+
   def skill_replace_entries(entries), do: Enum.filter(entries, &(match?(%{subject: %{"action" => "skill_replace"}}, &1) and not &1.abandoned))
 
   def refresh_actions, do: @refresh_actions
@@ -1149,7 +1186,7 @@ defmodule StarlightBot.GiftPlans do
   def reorder_entries(data, id, ids) do
     update_section(data, id, fn section ->
       Map.update(section, "entries", [], fn entries ->
-        {actions, gifts} = entries |> reorder_by_keys(expand_entry_ids(entries, ids), & &1["id"]) |> Enum.split_with(&heal_entry?/1)
+        {actions, gifts} = entries |> reorder_by_keys(expand_entry_ids(entries, ids), & &1["id"]) |> Enum.split_with(&top_entry?/1)
         actions ++ gifts
       end)
     end)
@@ -1263,7 +1300,7 @@ defmodule StarlightBot.GiftPlans do
         Map.update(section, "entries", clones, fn entries ->
           index = Enum.find_index(entries, &(&1["id"] == after_id))
           {before, rest} = if index, do: Enum.split(entries, index + 1), else: {entries, []}
-          {actions, gifts} = Enum.split_with(before ++ clones ++ rest, &heal_entry?/1)
+          {actions, gifts} = Enum.split_with(before ++ clones ++ rest, &top_entry?/1)
           actions ++ gifts
         end)
       end)

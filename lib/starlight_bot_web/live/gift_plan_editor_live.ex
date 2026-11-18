@@ -826,7 +826,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
        |> Map.put("disposition", if(params["disposition"] in GiftPlans.dispositions(), do: params["disposition"], else: segment["disposition"]))
        |> apply_goal(params["goal"])
        |> Map.put("max", if(Map.has_key?(params, "max"), do: parse_optional_int(params["max"]), else: segment["max"]))
+       |> apply_team_profiles(params["team_profile"])
      end)}
+  end
+
+  @impl true
+  def handle_event("list_toggle_team_replace", %{"entry" => entry_id, "from" => from, "sinner" => sinner}, socket) do
+    {:noreply, update_segment(socket, entry_id, from, &Map.update(&1, "replacements", [], fn replacements -> GiftPlans.toggle_team_replacement(replacements, sinner) end))}
   end
 
   @impl true
@@ -1152,6 +1158,12 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       end
     end)
   end
+  def team_replace_profiles do
+    StarlightBot.SinnerProfiles.list()
+    |> Enum.filter(&(&1.hd_locator_hook not in [nil, ""] or &1.hd_base_locator_hook not in [nil, ""]))
+    |> Enum.group_by(& &1.sinner)
+  end
+
   def sinner_label(nil), do: "(none)"
   def sinner_label(sinner), do: sinner |> String.split("_") |> Enum.map_join(" ", &String.capitalize/1)
 
@@ -1702,6 +1714,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     end))
   end
 
+  defp apply_team_profiles(segment, picks) when is_map(picks) do
+    replacements = Enum.reduce(picks, segment["replacements"] || [], fn {sinner, id}, acc -> GiftPlans.set_team_replacement_profile(acc, sinner, parse_optional_int(id)) end)
+    Map.put(segment, "replacements", replacements)
+  end
+
+  defp apply_team_profiles(segment, _picks), do: segment
+
   defp apply_goal(segment, nil), do: segment
   defp apply_goal(segment, "abandon"), do: Map.put(segment, "abandoned", true)
   defp apply_goal(segment, "use"), do: Map.put(segment, "abandoned", false)
@@ -2208,7 +2227,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :editing_branch, :string, default: nil
 
   def section_entries(assigns) do
-    gifts = Enum.reject(assigns.section["entries"], &GiftPlans.heal_entry?/1)
+    gifts = Enum.reject(assigns.section["entries"], &GiftPlans.top_entry?/1)
     assigns = assign(assigns, gifts: gifts)
 
     ~H"""
@@ -2275,7 +2294,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   attr :editing_branch, :string, default: nil
 
   def heal_entries(assigns) do
-    assigns = assign(assigns, heals: Enum.filter(assigns.section["entries"], &GiftPlans.heal_entry?/1))
+    assigns = assign(assigns, heals: Enum.filter(assigns.section["entries"], &GiftPlans.top_entry?/1))
 
     ~H"""
     <div :if={@heals != []} class="flex flex-col gap-1">
@@ -2425,7 +2444,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         </div>
         <span :if={@pattern? and not @action?} class="badge badge-secondary badge-xs">any</span>
         <span :if={@action?} class={"badge badge-xs " <> if(@entry["subject"]["action"] == "skill_replace", do: "badge-info text-black", else: "badge-success")}>
-          <%= if @entry["subject"]["action"] == "skill_replace", do: "skill", else: "heal" %>
+          <%= case @entry["subject"]["action"] do
+            "skill_replace" -> "skill"
+            "team_replace" -> "team"
+            _ -> "heal"
+          end %>
         </span>
         <span data-sort-handle data-gift-popup={@gift && @gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class={"text-xs font-medium truncate select-none " <> if(@gift, do: "cursor-pointer pointer-events-auto", else: "cursor-grab")} title={GiftPlans.subject_label(@entry["subject"])}><%= GiftPlans.subject_label(@entry["subject"]) %></span>
         <span :if={@action? and not @abandoned?} class="ml-auto pr-1 text-[11px] text-base-content/60 whitespace-nowrap">
@@ -2446,6 +2469,29 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
                   class={"btn btn-xs h-5 min-h-0 px-0.5 min-w-0 flex-nowrap gap-0.5 text-[10px] " <> if(sinner in (@segment["sinners"] || []), do: if(@entry["subject"]["action"] == "skill_replace", do: "btn-info text-black", else: "btn-success"), else: "btn-outline")}>
             <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-3.5 w-3.5 shrink-0 object-contain" /><span class="truncate"><%= sinner_label(sinner) %></span>
           </button>
+        </div>
+        <div :if={@entry["subject"]["action"] == "team_replace"} class="flex flex-col gap-1">
+          <% replacements = @segment["replacements"] || [] %>
+          <% picked = Enum.map(replacements, & &1["sinner"]) %>
+          <% full? = length(replacements) >= GiftPlans.team_replace_max() %>
+          <div class="grid grid-cols-6 gap-0.5">
+            <button :for={sinner <- Teams.all_sinners()} type="button" phx-click="list_toggle_team_replace"
+                    phx-value-entry={@entry["id"]} phx-value-from={@from} phx-value-sinner={sinner}
+                    disabled={full? and sinner not in picked}
+                    title={if full? and sinner not in picked, do: "A shop replaces at most #{GiftPlans.team_replace_max()} sinners", else: sinner_label(sinner)}
+                    class={"btn btn-xs h-5 min-h-0 px-0.5 min-w-0 flex-nowrap gap-0.5 text-[10px] " <> if(sinner in picked, do: "btn-success", else: "btn-outline")}>
+              <img src={StarlightBot.SinnerProfiles.icon(sinner)} class="sinner-icon h-3.5 w-3.5 shrink-0 object-contain" /><span class="truncate"><%= sinner_label(sinner) %></span>
+            </button>
+          </div>
+          <% profiles = team_replace_profiles() %>
+          <label :for={replacement <- replacements} class="flex items-center gap-1 text-[11px]">
+            <img src={StarlightBot.SinnerProfiles.icon(replacement["sinner"])} class="sinner-icon h-3.5 w-3.5 shrink-0 object-contain" />
+            <span class="w-16 truncate"><%= sinner_label(replacement["sinner"]) %></span>
+            <select name={"segment[team_profile][#{replacement["sinner"]}]"} class="select select-bordered select-xs min-w-0 flex-1">
+              <option value="">Pick an identity</option>
+              <option :for={profile <- Map.get(profiles, replacement["sinner"], [])} value={profile.id} selected={replacement["profile"] == profile.id}><%= profile.name %></option>
+            </select>
+          </label>
         </div>
         <div :if={@skill?} class="flex items-center gap-2 text-[11px]">
           <% locked? = @segment["lock_s2"] != false %>

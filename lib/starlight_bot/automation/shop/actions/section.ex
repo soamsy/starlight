@@ -1,7 +1,7 @@
 defmodule StarlightBot.Automation.Shop.Actions.Section do
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Automation.Scripts.ShopRunner
-  alias StarlightBot.Automation.Shop.Actions.{AffinityRefresh, Fusion, Heal, Refresh, Sell, SkillReplace}
+  alias StarlightBot.Automation.Shop.Actions.{AffinityRefresh, Fusion, Heal, Refresh, Sell, SkillReplace, TeamReplace}
   alias StarlightBot.Automation.Shop.FusionReserve
   alias StarlightBot.Automation.Shop.Ops
   alias StarlightBot.GiftPlans
@@ -81,10 +81,11 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
   defp work(section, state, ctx) do
     state = Map.put(state, :fuse_blocked, false)
     {sold_lines, sold?, state} = Sell.run_entries(sells(section, state, ctx), entries(section, state, ctx), keep(section, state), state, ctx, reserved(section, state, ctx))
+    {team_lines, teamed?, state} = TeamReplace.run_entries(action_entries(section, state, ctx), state, ctx)
     {heal_lines, healed?, state} = Heal.run_entries(heal_entries(section, state, ctx), state, ctx)
     {replace_lines, replaced?, state} = SkillReplace.run_entries(GiftPlans.skill_replace_entries(entries(section, state, ctx)), state, ctx)
-    sell_lines = sold_lines ++ heal_lines ++ replace_lines
-    sold? = sold? or healed? or replaced?
+    sell_lines = sold_lines ++ team_lines ++ heal_lines ++ replace_lines
+    sold? = sold? or teamed? or healed? or replaced?
 
     if reached?(section, state, ctx) do
       detail = Enum.join(sell_lines ++ ["#{GiftPlans.section_name(section)} already reached"], "; ")
@@ -108,26 +109,36 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
     end
   end
 
-  def heals?(section, state, ctx), do: not GiftPlans.stage?(section) and heal_entries(section, state, ctx) != []
+  def heals?(section, state, ctx), do: not GiftPlans.stage?(section) and (heal_entries(section, state, ctx) != [] or team_replaces?(section, state, ctx))
+
+  def team_replaces?(section, state, ctx), do: TeamReplace.pending(action_entries(section, state, ctx), state, ctx) != []
+
+  defp action_entries(section, state, ctx), do: state.plan |> GiftPlans.root_section(section) |> GiftPlans.resolved_entries(shop_floor(state), env(state, ctx))
 
   defp heal_entries(section, state, ctx) do
     state.plan |> GiftPlans.root_section(section) |> GiftPlans.resolved_entries(shop_floor(state), env(state, ctx)) |> GiftPlans.heal_entries()
   end
 
   def heal_only(section, state, ctx) do
+    {team_lines, teamed?, state} = TeamReplace.run_entries(action_entries(section, state, ctx), state, ctx)
     {lines, healed?, state} = Heal.run_entries(heal_entries(section, state, ctx), state, ctx)
-    {if(healed?, do: :done, else: :skipped), Enum.join(lines ++ ["#{GiftPlans.section_name(section)} already reached, only healing"], "; "), state}
+    {if(teamed? or healed?, do: :done, else: :skipped), Enum.join(team_lines ++ lines ++ ["#{GiftPlans.section_name(section)} already reached, only healing"], "; "), state}
   end
 
   def heal_only_preview(section, state, ctx) do
     heals = heal_entries(section, state, ctx) |> Enum.map(&heal_label/1)
-    {:would_run, "check heals: #{Enum.join(heals, ", ")}; #{GiftPlans.section_name(section)} already reached, only healing", state}
+    teams = TeamReplace.preview_labels(action_entries(section, state, ctx), state, ctx)
+    team_part = if teams == [], do: [], else: ["check team replace for #{Enum.join(teams, ", ")}"]
+    heal_part = if heals == [], do: [], else: ["check heals: #{Enum.join(heals, ", ")}"]
+    {:would_run, Enum.join(team_part ++ heal_part ++ ["#{GiftPlans.section_name(section)} already reached, only healing"], "; "), state}
   end
 
   def preview(_step, section, state, ctx) do
     sold = Sell.plan(sells(section, state, ctx), entries(section, state, ctx), keep(section, state), state, ctx, reserved(section, state, ctx))
     selling = if sold == [], do: [], else: ["sell " <> Enum.map_join(sold, ", ", fn {gift, _entry} -> gift.name end)]
     heals = heal_entries(section, state, ctx) |> Enum.map(&heal_label/1)
+    teams = TeamReplace.preview_labels(action_entries(section, state, ctx), state, ctx)
+    selling = if(teams == [], do: selling, else: ["check team replace for " <> Enum.join(teams, ", ") | selling])
     selling = selling ++ if(heals == [], do: [], else: ["check heals: " <> Enum.join(heals, ", ")])
     replaces = section |> entries(state, ctx) |> GiftPlans.skill_replace_entries() |> Enum.flat_map(fn entry -> Enum.filter(entry.sinners, &SkillReplace.pending?(&1, entry, ctx)) end)
     selling = selling ++ if(replaces == [], do: [], else: ["check skill replace for " <> Enum.join(Enum.uniq(replaces), ", ")])

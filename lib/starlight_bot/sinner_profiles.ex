@@ -51,7 +51,7 @@ defmodule StarlightBot.SinnerProfiles do
     end
   end
 
-  def hd_scan_region, do: {340, 208, 1204, 602}
+  def hd_scan_region, do: {275, 130, 1254, 647}
 
   def ensure_hd_hook(nil), do: nil
 

@@ -70,8 +70,13 @@ defmodule StarlightBot.Automation.Scripts.ShopRunner do
     if Enum.all?(sections, &GiftPlans.section_reached?(state.plan, &1["id"], env)) do
       case heal_need(sections, state, env) do
         0 ->
-          Ctx.log(ctx, :info, "shop runner: every stage is reached and nobody needs healing, leaving without checking the inventory")
-          :leave
+          if Enum.any?(sections, &Section.team_replaces?(&1, state, ctx)) do
+            Ctx.log(ctx, :info, "shop runner: every stage is reached, doing the team replacements without checking the inventory")
+            :heal
+          else
+            Ctx.log(ctx, :info, "shop runner: every stage is reached and nobody needs healing, leaving without checking the inventory")
+            :leave
+          end
 
         needed ->
           if cost_known? and wallet(state, ctx) >= needed do

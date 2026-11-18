@@ -2,7 +2,7 @@ defmodule StarlightBot.Automation.Shop.Actions.SectionTest do
   use ExUnit.Case, async: true
 
   alias StarlightBot.Automation.RunMemory
-  alias StarlightBot.Automation.Shop.Actions.{Section, Sell}
+  alias StarlightBot.Automation.Shop.Actions.{Section, Sell, TeamReplace}
   alias StarlightBot.{Ctx, GiftPlans}
 
   defp entry(id, subject, segment, fusion \\ nil) do
@@ -79,6 +79,23 @@ defmodule StarlightBot.Automation.Shop.Actions.SectionTest do
     section = Map.update!(section, "entries", &([replace] ++ &1))
 
     assert {:would_run, "check heals: Greatly Heal yi_sang, faust; check skill replace for faust; would uptie Owned" <> _, _} = Section.preview(%{}, section, state, ctx)
+  end
+
+  test "team replace targets skip sinners already replaced, ones without an identity and anything past three", %{ctx: ctx, state: state, section: section} do
+    replacements = for {sinner, profile} <- [{"yi_sang", 1}, {"faust", 2}, {"ryoshu", nil}, {"meursault", 4}, {"outis", 5}], do: %{"sinner" => sinner, "profile" => profile}
+    team = entry("me_team", %{"action" => "team_replace"}, %{"disposition" => "ignore", "buy" => false, "goal" => nil, "replacements" => replacements})
+    entries = GiftPlans.resolved_entries(Map.update!(section, "entries", &[team | &1]), 1)
+
+    assert Enum.map(TeamReplace.pending(entries, state, ctx), & &1["sinner"]) == ["yi_sang", "faust", "meursault"]
+
+    RunMemory.put_team_replace(ctx, "yi_sang", 1)
+    assert Enum.map(TeamReplace.pending(entries, state, ctx), & &1["sinner"]) == ["faust", "meursault", "outis"]
+
+    RunMemory.put_team_replace(ctx, "faust", 9)
+    assert Enum.map(TeamReplace.pending(entries, state, ctx), & &1["sinner"]) == ["faust", "meursault", "outis"]
+
+    state = Map.put(state, :team_replaced, MapSet.new(["faust", "meursault"]))
+    assert Enum.map(TeamReplace.pending(entries, state, ctx), & &1["sinner"]) == ["outis"]
   end
 
   test "skill replace entries count toward the section until each sinner reaches the wanted distribution", %{ctx: ctx, state: state, section: section} do

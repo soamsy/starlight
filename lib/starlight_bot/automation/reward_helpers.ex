@@ -186,12 +186,12 @@ defmodule StarlightBot.Automation.RewardHelpers do
     end)
   end
 
-  def click_rect(rect, ctx), do: click_point(Leeway.in_rect(rect), ctx)
+  def click_rect(rect, ctx, opts \\ []), do: click_point(Leeway.in_rect(rect), ctx, opts)
 
-  def click_point(point, ctx) do
+  def click_point(point, ctx, opts \\ []) do
     case Runner.to_screen_point(point) do
       {:ok, {sx, sy}} ->
-        Mouse.click(sx, sy, settle_ms: 80)
+        Mouse.click(sx, sy, Keyword.merge([settle_ms: 80], opts))
         {:ok, nil}
 
       {:error, reason} ->

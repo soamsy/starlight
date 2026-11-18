@@ -42,10 +42,16 @@ defmodule StarlightBot.SinnerProfilesTest do
     regions = SinnerProfiles.hd_slot_regions()
 
     assert length(regions) == 12
-    assert Enum.at(regions, 0) == {414, 267, 75, 75}
-    assert Enum.at(regions, 5) == {1393, 267, 75, 75}
-    assert Enum.at(regions, 6) == {414, 577, 75, 75}
-    assert List.last(regions) == {1393, 577, 75, 75}
-    assert Enum.at(regions, 1) == {610, 267, 75, 75}
+    assert Enum.at(regions, 0) == {403, 267, 75, 75}
+    assert Enum.at(regions, 5) == {1395, 267, 75, 75}
+    assert Enum.at(regions, 6) == {403, 572, 75, 75}
+    assert List.last(regions) == {1395, 572, 75, 75}
+    assert Enum.at(regions, 1) == {601, 267, 75, 75}
+  end
+
+  test "new HD hooks scan the replace catalog's area" do
+    assert SinnerProfiles.hd_scan_region() == {275, 130, 1254, 647}
+    assert {"locator_new_hd", true} = SinnerProfiles.ensure_hd_hook("locator_new")
+    assert %{scan_x: 275, scan_y: 130, scan_w: 1254, scan_h: 647} = StarlightBot.Hooks.get_hook("locator_new_hd")
   end
 end

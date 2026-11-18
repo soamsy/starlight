@@ -113,6 +113,10 @@ defmodule StarlightBot.Automation.RunMemory do
     end)
   end
 
+  def team_replaces(ctx), do: get(ctx, :team_replaces, %{})
+
+  def put_team_replace(ctx, sinner, profile_id), do: update(ctx, :team_replaces, %{}, &Map.put(&1, sinner, profile_id))
+
   def unfusable_gifts(ctx), do: get(ctx, :unfusable_gifts, MapSet.new())
 
   def add_unfusable_gifts(ctx, gift_ids), do: update(ctx, :unfusable_gifts, MapSet.new(), &MapSet.union(&1, MapSet.new(gift_ids)))

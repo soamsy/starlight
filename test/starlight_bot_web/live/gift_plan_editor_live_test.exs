@@ -358,6 +358,28 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert [%{goal: "optional", lock_s2: false, target: %{"s1" => 3, "s2" => 2, "s3" => 1}}] = GiftPlans.skill_replace_entries(GiftPlans.resolved_entries(section(socket), 1))
   end
 
+  test "team replace is a single action entry that holds at most three sinners, each with an identity", %{socket: socket} do
+    [a, b, c, d | _] = StarlightBot.Teams.all_sinners()
+    socket = socket |> shop() |> event("list_add_action", %{"action" => "team_replace"}) |> event("list_add_action", %{"action" => "team_replace"})
+    [entry] = section(socket)["entries"]
+    id = entry["id"]
+    toggle = fn socket, sinner -> event(socket, "list_toggle_team_replace", %{"entry" => id, "from" => "1", "sinner" => sinner}) end
+    replacements = fn socket -> hd(hd(section(socket)["entries"])["floors"])["replacements"] end
+
+    socket = socket |> toggle.(a) |> toggle.(b) |> toggle.(c) |> toggle.(d)
+    assert Enum.map(replacements.(socket), & &1["sinner"]) == [a, b, c]
+
+    socket = toggle.(socket, b)
+    assert Enum.map(replacements.(socket), & &1["sinner"]) == [a, c]
+
+    socket = event(socket, "list_update_segment", %{"entry" => id, "from" => "1", "segment" => %{"team_profile" => %{a => "12", c => ""}}})
+    assert [%{"sinner" => ^a, "profile" => 12}, %{"sinner" => ^c, "profile" => nil}] = replacements.(socket)
+
+    assert [%{replacements: [%{"sinner" => ^a, "profile" => 12} | _]}] = GiftPlans.team_replace_entries(GiftPlans.resolved_entries(section(socket), 1))
+    assert GiftPlans.heal_entries(GiftPlans.resolved_entries(section(socket), 1)) == []
+    assert render(socket) =~ "Team Replace" and render(socket) =~ "Pick an identity"
+  end
+
   test "locking S2 keeps its target at or above the starting 2", %{socket: socket} do
     [first | _] = StarlightBot.Teams.all_sinners()
     socket = socket |> shop() |> event("list_add_action", %{"action" => "skill_replace", "sinner" => first})

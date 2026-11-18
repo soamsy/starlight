@@ -108,6 +108,18 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @replace_confirm_timeout 1_500
   @replace_close_timeout 5_000
   @replace_click_offset_px 150
+  @team_replace_hook :shop_team_replace
+  @team_replace_screen :team_select_replace
+  @catalog_hook :team_select_replace_catalog
+  @catalog_scroll_hook :team_select_replace_catalog_scroll
+  @catalog_open_timeout_ms 3_000
+  @team_replace_click_opts [settle_ms: 100, trailing_ms: 80]
+  @catalog_switch_settle_ms 500
+  @catalog_scroll_clicks 8
+  @catalog_scroll_settle_ms 600
+  @catalog_scans 3
+  @team_replace_key_every_ms 800
+  @team_replace_key_tries 4
   @new_shelf_timeout_ms 2_000
   @new_shelf_poll_ms 100
   @shelf_settle_timeout_ms 1_000
@@ -166,11 +178,13 @@ defmodule StarlightBot.Automation.Shop.Ops do
     if Engine.check(:shop) do
       {:ok, nil}
     else
-      escape_step = if rem(attempt, 2) == 0 and not click_dismissed_popup_open?(), do: key(:esc), else: click(:safe_corner)
+      escape_step = if team_replace_open?() or (rem(attempt, 2) == 0 and not click_dismissed_popup_open?()), do: key(:esc), else: click(:safe_corner)
       Engine.act([escape_step, branch([{:shop, []}], wait: @escape_settle_ms)], ctx)
       escape_to_shop(ctx, attempt + 1)
     end
   end
+
+  defp team_replace_open?, do: Engine.check(any_of([@team_replace_screen, @catalog_hook]))
 
   defp click_dismissed_popup_open?, do: Engine.check(@replace_popup_hook) or Engine.check(:shop_purchase_popup)
 
@@ -395,6 +409,68 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp sinner_replace_hook(sinner), do: :"shop_replace_#{String.replace(sinner, "_", "")}"
+
+  def team_replace_offered?, do: Engine.check(@team_replace_hook)
+
+  def open_team_replace(ctx) do
+    case Engine.act([click(@team_replace_hook), await(@team_replace_screen)], ctx) do
+      {:ok, _} -> :ok
+      {:error, _} = err -> err
+    end
+  end
+
+  def pick_team_replacement(sinner, hooks, ctx) do
+    with {:ok, _} <- open_catalog(sinner, ctx),
+         do: click_catalog_profile(hooks, 1, ctx)
+  end
+
+  def close_team_replace(ctx) do
+    steps = [
+      retry_until(@team_replace_screen, [key(:esc)], every: @team_replace_key_every_ms, tries: @team_replace_key_tries),
+      retry_until(:shop, [key(:enter)], every: @team_replace_key_every_ms, tries: @team_replace_key_tries)
+    ]
+
+    case Engine.act(steps, ctx) do
+      {:ok, _} -> :ok
+      {:error, _} -> recover_to_shop(ctx)
+    end
+  end
+
+  defp open_catalog(sinner, ctx) do
+    if Engine.check(@catalog_hook) do
+      Engine.act([click(catalog_sinner_hook(sinner), @team_replace_click_opts), sleep(@catalog_switch_settle_ms)], ctx)
+    else
+      Engine.act([click(sinner_selected_hook(sinner), @team_replace_click_opts), await(@catalog_hook, timeout: @catalog_open_timeout_ms)], ctx)
+    end
+  end
+
+  defp click_catalog_profile(hooks, scan, ctx) do
+    case find_catalog_profile(hooks) do
+      nil when scan >= @catalog_scans ->
+        {:error, :profile_not_found}
+
+      nil ->
+        steps = [move_to(@catalog_scroll_hook), scroll_down(@catalog_scroll_clicks), sleep(@catalog_scroll_settle_ms)]
+
+        case Engine.act(steps, ctx) do
+          {:ok, _} -> click_catalog_profile(hooks, scan + 1, ctx)
+          {:error, _} = err -> err
+        end
+
+      rect ->
+        with {:ok, _} <- RewardHelpers.click_rect(rect, ctx, @team_replace_click_opts), do: :ok
+    end
+  end
+
+  defp find_catalog_profile(hooks) do
+    case Capture.grab_frame() do
+      {:ok, frame} -> Enum.find_value(hooks, fn hook -> with {:ok, rect} <- Matcher.find(frame, hook), do: rect, else: (_ -> nil) end)
+      {:error, _} -> nil
+    end
+  end
+
+  defp sinner_selected_hook(sinner), do: :"sinner_selected_#{String.replace(sinner, "_", "")}"
+  defp catalog_sinner_hook(sinner), do: :"team_select_replace_catalog_#{String.replace(sinner, "_", "")}"
 
   def check_inventory(ctx, keep_open? \\ false) do
     case open_sell_popup(ctx) do
