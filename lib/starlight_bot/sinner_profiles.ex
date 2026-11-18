@@ -29,6 +29,62 @@ defmodule StarlightBot.SinnerProfiles do
     |> Enum.uniq()
   end
 
+  def hd_hook_name(nil), do: nil
+  def hd_hook_name(hook), do: hook <> "_hd"
+
+  def hd_placeholder_region, do: {402, 267, 75, 75}
+
+  @hd_slot_size 75
+  @hd_first_slot {403, 267}
+  @hd_last_slot {1395, 572}
+  @hd_cols 6
+  @hd_rows 2
+
+  def hd_slot_regions do
+    {x0, y0} = @hd_first_slot
+    {x1, y1} = @hd_last_slot
+    dx = (x1 - x0) / (@hd_cols - 1)
+    dy = (y1 - y0) / (@hd_rows - 1)
+
+    for row <- 0..(@hd_rows - 1), col <- 0..(@hd_cols - 1) do
+      {round(x0 + col * dx), round(y0 + row * dy), @hd_slot_size, @hd_slot_size}
+    end
+  end
+
+  def hd_scan_region, do: {340, 208, 1204, 602}
+
+  def ensure_hd_hook(nil), do: nil
+
+  def ensure_hd_hook(hook) do
+    name = hd_hook_name(hook)
+
+    if StarlightBot.Hooks.get_hook(name) do
+      {name, false}
+    else
+      {rx, ry, rw, rh} = hd_placeholder_region()
+      {sx, sy, sw, sh} = hd_scan_region()
+
+      {:ok, ^name} =
+        StarlightBot.Hooks.save_hook(%{
+          name: name,
+          image: @placeholder_png,
+          region_x: rx,
+          region_y: ry,
+          region_w: rw,
+          region_h: rh,
+          scan_x: sx,
+          scan_y: sy,
+          scan_w: sw,
+          scan_h: sh,
+          match_method: "gray",
+          confidence: 0.77,
+          notes: "HD"
+        })
+
+      {name, true}
+    end
+  end
+
   def user_id_floor, do: @user_id_floor
 
   def writable?(%{id: id}), do: Data.base_writable?() or id >= @user_id_floor
@@ -48,6 +104,8 @@ defmodule StarlightBot.SinnerProfiles do
         sinner: p.sinner,
         locator_hook: p.locator_hook,
         base_locator_hook: p.base_locator_hook,
+        hd_locator_hook: p.hd_locator_hook,
+        hd_base_locator_hook: p.hd_base_locator_hook,
         defense_affinity: p.defense_affinity,
         name_en: p.name_en,
         released_on: p.released_on
@@ -80,6 +138,8 @@ defmodule StarlightBot.SinnerProfiles do
       sinner: attrs[:sinner],
       locator_hook: attrs[:locator_hook],
       base_locator_hook: attrs[:base_locator_hook],
+      hd_locator_hook: attrs[:hd_locator_hook],
+      hd_base_locator_hook: attrs[:hd_base_locator_hook],
       defense_affinity: attrs[:defense_affinity]
     ]
 

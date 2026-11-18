@@ -37,4 +37,15 @@ defmodule StarlightBot.SinnerProfilesTest do
     assert {:ok, ^id} = SinnerProfiles.save(%{id: id, name: "Mine Renamed", sinner: "faust"})
     assert {:ok, ^id} = SinnerProfiles.delete(id)
   end
+
+  test "hd slot regions are 12 evenly spaced 75px cells anchored on the first and last slot" do
+    regions = SinnerProfiles.hd_slot_regions()
+
+    assert length(regions) == 12
+    assert Enum.at(regions, 0) == {414, 267, 75, 75}
+    assert Enum.at(regions, 5) == {1393, 267, 75, 75}
+    assert Enum.at(regions, 6) == {414, 577, 75, 75}
+    assert List.last(regions) == {1393, 577, 75, 75}
+    assert Enum.at(regions, 1) == {610, 267, 75, 75}
+  end
 end

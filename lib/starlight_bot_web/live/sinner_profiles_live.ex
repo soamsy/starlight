@@ -15,6 +15,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
      |> assign(:locator_names, Hooks.list_names("locator"))
      |> assign(:profile_tests, %{})
      |> assign(:capture, nil)
+     |> assign(:hd, false)
      |> assign(:search, "")
      |> assign(:picking_sinner, false)
      |> assign(:focus_id, nil)
@@ -25,6 +26,9 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
   def handle_event("search", %{"q" => q}, socket), do: {:noreply, assign(socket, :search, q)}
 
   @impl true
+  def handle_event("toggle_hd", _, socket), do: {:noreply, assign(socket, :hd, !socket.assigns.hd)}
+
+  @impl true
   def handle_event("cancel_new", _, socket), do: {:noreply, assign(socket, :picking_sinner, false)}
 
   @impl true
@@ -33,7 +37,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
     profile = Enum.find(socket.assigns.profiles, &(&1.id == id))
     hook_name = locator_name(profile, kind)
 
-    case capture_candidates(hook_name) do
+    case capture_candidates(hook_name, kind) do
       {:ok, candidates} ->
         {:noreply, assign(socket, :capture, %{profile: profile, kind: kind, hook_name: hook_name, candidates: candidates})}
 
@@ -105,13 +109,19 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
 
   @impl true
   def handle_event("save_profile", %{"profile_id" => id} = params, socket) do
+    id = String.to_integer(id)
+    current = Enum.find(socket.assigns.profiles, &(&1.id == id))
+    hook_param = fn key -> if Map.has_key?(params, key), do: blank_to_nil(String.trim(params[key])), else: current[String.to_existing_atom(key)] end
+
     attrs = %{
-      id: String.to_integer(id),
+      id: id,
       name: String.trim(params["name"] || ""),
       sinner: blank_to_nil(params["sinner"]),
       defense_affinity: blank_to_nil(params["defense_affinity"]),
-      locator_hook: blank_to_nil(String.trim(params["locator_hook"] || "")),
-      base_locator_hook: blank_to_nil(String.trim(params["base_locator_hook"] || ""))
+      locator_hook: hook_param.("locator_hook"),
+      base_locator_hook: hook_param.("base_locator_hook"),
+      hd_locator_hook: hook_param.("hd_locator_hook"),
+      hd_base_locator_hook: hook_param.("hd_base_locator_hook")
     }
 
     case SinnerProfiles.save(attrs) do
@@ -155,7 +165,13 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
 
     thumbs =
       Map.new(profiles, fn p ->
-        {p.id, %{"uptie" => thumb(p.locator_hook), "base" => thumb(p.base_locator_hook)}}
+        {p.id,
+         %{
+           "uptie" => thumb(p.locator_hook),
+           "base" => thumb(p.base_locator_hook),
+           "hd_uptie" => thumb(p.hd_locator_hook),
+           "hd_base" => thumb(p.hd_base_locator_hook)
+         }}
       end)
 
     socket
@@ -175,9 +191,21 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
 
   defp locator_name(profile, "uptie"), do: profile.locator_hook
   defp locator_name(profile, "base"), do: profile.base_locator_hook
+  defp locator_name(profile, "hd_uptie"), do: profile.hd_locator_hook
+  defp locator_name(profile, "hd_base"), do: profile.hd_base_locator_hook
 
-  defp locator_missing?(profile, locator_names) do
-    Enum.any?([profile.locator_hook, profile.base_locator_hook], &(is_nil(&1) or &1 not in locator_names))
+  defp locator_slots(profile, true) do
+    [{"hd_base", "Base", "hd_base_locator_hook", profile.hd_base_locator_hook}, {"hd_uptie", "Uptie", "hd_locator_hook", profile.hd_locator_hook}]
+  end
+
+  defp locator_slots(profile, false) do
+    [{"base", "Base", "base_locator_hook", profile.base_locator_hook}, {"uptie", "Uptie", "locator_hook", profile.locator_hook}]
+  end
+
+  defp locator_missing?(profile, locator_names, hd) do
+    profile
+    |> locator_slots(hd)
+    |> Enum.any?(fn {_, _, _, hook} -> if hd, do: hook && hook not in locator_names, else: is_nil(hook) or hook not in locator_names end)
   end
 
   defp visible_profiles(profiles, search) do
@@ -222,9 +250,27 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
   defp blank_to_nil(""), do: nil
   defp blank_to_nil(value), do: value
 
-  defp capture_candidates(hook_name) when hook_name in [nil, ""], do: {:error, "Set a locator hook first."}
+  defp capture_candidates(hook_name, _kind) when hook_name in [nil, ""], do: {:error, "Set a locator hook first."}
 
-  defp capture_candidates(hook_name) do
+  defp capture_candidates(hook_name, "hd_" <> _) do
+    with %{} <- Hooks.get_hook(hook_name) || {:error, "Hook '#{hook_name}' doesn't exist."},
+         {:ok, frame} <- Capture.grab_frame() do
+      candidates =
+        SinnerProfiles.hd_slot_regions()
+        |> Enum.with_index()
+        |> Enum.map(fn {region, column} ->
+          png = Evision.imencode(".png", Frame.crop(frame.mat, region))
+          %{column: column, region: region, png: png, png_b64: Base.encode64(png)}
+        end)
+
+      {:ok, candidates}
+    else
+      {:error, message} when is_binary(message) -> {:error, message}
+      {:error, reason} -> {:error, "Capture failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp capture_candidates(hook_name, _kind) do
     with %{} = hook <- Hooks.get_hook(hook_name) || {:error, "Hook '#{hook_name}' doesn't exist."},
          {:ok, frame} <- Capture.grab_frame(),
          {:ok, tray} <- SkillTray.scan(frame) do

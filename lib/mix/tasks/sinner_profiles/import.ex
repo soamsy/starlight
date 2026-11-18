@@ -120,6 +120,9 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
       {hook, created?} = ensure_hook(identity, name, "")
       {base_hook, base_created?} = ensure_hook(identity, "#{name} (base)", "_base")
 
+      {hd_hook, hd_created?} = SinnerProfiles.ensure_hd_hook(hook)
+      {hd_base_hook, hd_base_created?} = SinnerProfiles.ensure_hd_hook(base_hook)
+
       Repo.insert_all("sinner_profiles", [
         %{
           name: name,
@@ -130,12 +133,14 @@ defmodule Mix.Tasks.SinnerProfiles.Import do
           defense_affinity: identity.defense_affinity,
           locator_hook: hook,
           base_locator_hook: base_hook,
+          hd_locator_hook: hd_hook,
+          hd_base_locator_hook: hd_base_hook,
           inserted_at: now,
           updated_at: now
         }
       ])
 
-      %{acc | inserted: acc.inserted + 1, hooks: acc.hooks + Enum.count([created?, base_created?], & &1)}
+      %{acc | inserted: acc.inserted + 1, hooks: acc.hooks + Enum.count([created?, base_created?, hd_created?, hd_base_created?], & &1)}
     end
   end
 

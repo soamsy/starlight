@@ -9,11 +9,13 @@
       <div class="flex items-center gap-3">
         <h2 class="card-title text-lg">Sinner Profiles</h2>
         <span class="badge badge-neutral badge-sm"><%= length(@profiles) %></span>
-        <span class="min-w-0 shrink-[4] truncate text-xs text-base-content/50">A profile's uptie and base locator hooks find the sinner in the battle skill tray.</span>
+        <span class="min-w-0 shrink-[4] truncate text-xs text-base-content/50">A profile's uptie and base locator hooks find the sinner in the battle skill tray. HD mode edits the optional upscaled art captured from the team selector.</span>
         <form phx-change="search" phx-submit="search" class="ml-auto min-w-0 shrink">
           <input type="search" name="q" value={@search} placeholder="Search profiles..." phx-debounce="150"
                  autocomplete="off" class="input input-bordered input-sm w-64 min-w-0 max-w-full" />
         </form>
+        <button phx-click="toggle_hd" class={"btn btn-sm " <> if(@hd, do: "btn-primary", else: "btn-outline")}
+                title="Switch between the battle skill tray hooks and the upscaled team selector hooks">HD</button>
         <button phx-click="new_profile" class="btn btn-primary btn-sm">+ New</button>
       </div>
 
@@ -29,10 +31,10 @@
               <%= for profile <- group do %>
                 <form phx-change="save_profile" class="flex gap-1.5 rounded-md bg-base-200/40 p-1.5">
                   <div class="flex shrink-0 gap-0.5 self-stretch">
-                    <button :for={{kind, label, hook} <- [{"base", "Base", profile.base_locator_hook}, {"uptie", "Uptie", profile.locator_hook}]}
+                    <button :for={{kind, label, _field, hook} <- locator_slots(profile, @hd)}
                             type="button" phx-click="capture_locator" phx-value-id={profile.id} phx-value-kind={kind}
-                            title={"Capture #{label} png from live battle (#{hook || "no hook set"})"}
-                            class="w-9 rounded bg-base-200 hover:ring-2 hover:ring-primary overflow-hidden">
+                            title={"Capture #{label} png from #{if @hd, do: "the team selector", else: "live battle"} (#{hook || "no hook set"})"}
+                            class={"rounded bg-base-200 hover:ring-2 hover:ring-primary overflow-hidden " <> if(@hd, do: "w-14", else: "w-9")}>
                       <img :if={@profile_thumbs[profile.id][kind]} src={"data:image/png;base64,#{@profile_thumbs[profile.id][kind]}"} class="h-full w-full object-contain" />
                     </button>
                   </div>
@@ -50,12 +52,12 @@
                   </div>
                   <div class="flex items-center gap-1">
                     <details id={"locator-dropdown-#{profile.id}"} phx-hook="FloatingDropdown" class="dropdown">
-                      <summary title={"Locator hooks: " <> (profile.locator_hook || "none") <> ", " <> (profile.base_locator_hook || "none")}
-                               class={"btn btn-xs btn-square " <> if(locator_missing?(profile, @locator_names), do: "btn-error btn-outline", else: "btn-ghost")}>
+                      <summary title={"Locator hooks: " <> Enum.map_join(locator_slots(profile, @hd), ", ", fn {_, _, _, hook} -> hook || "none" end)}
+                               class={"btn btn-xs btn-square " <> if(locator_missing?(profile, @locator_names, @hd), do: "btn-error btn-outline", else: "btn-ghost")}>
                         <.icon name="lucide-settings" class="size-4" />
                       </summary>
                       <div popover="manual" class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg flex flex-col gap-2">
-                        <div :for={{kind, label, field, hook} <- [{"base", "Base", "base_locator_hook", profile.base_locator_hook}, {"uptie", "Uptie", "locator_hook", profile.locator_hook}]}
+                        <div :for={{kind, label, field, hook} <- locator_slots(profile, @hd)}
                              class="flex items-center gap-1">
                           <span class="w-10 text-xs text-base-content/60"><%= label %></span>
                           <button type="button" phx-click="reset_locator" phx-value-id={profile.id} phx-value-kind={kind}
@@ -68,7 +70,7 @@
                         </div>
                       </div>
                     </details>
-                    <button type="button" phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost px-1">Test</button>
+                    <button :if={!@hd} type="button" phx-click="test_profile" phx-value-id={profile.id} class="btn btn-xs btn-ghost px-1">Test</button>
                     <details id={"affinity-dropdown-#{profile.id}"} phx-hook="FloatingDropdown" class="dropdown ml-auto">
                       <summary title={"Defense skill 1 affinity: " <> (profile.defense_affinity || "none")}
                                class="btn btn-xs btn-ghost gap-1 px-1">
@@ -134,11 +136,11 @@
   <%= if @capture do %>
     <div class="modal modal-open">
       <div class="modal-box max-w-3xl">
-        <h3 class="font-bold">Pick <%= @capture.profile.name %> (<%= if @capture.kind == "base", do: "Base", else: "Uptie" %>)</h3>
+        <h3 class="font-bold">Pick <%= @capture.profile.name %> (<%= if @capture.kind in ["base", "hd_base"], do: "Base", else: "Uptie" %><%= if String.starts_with?(@capture.kind, "hd_"), do: ", HD" %>)</h3>
         <p class="text-xs text-base-content/60 mb-3">
-          Click the slot that shows this sinner. Its crop replaces <span class="font-mono"><%= @capture.hook_name %></span>.
+          <%= if String.starts_with?(@capture.kind, "hd_"), do: "Click the team selector slot that shows this identity.", else: "Click the slot that shows this sinner." %> Its crop replaces <span class="font-mono"><%= @capture.hook_name %></span>.
         </p>
-        <div class="flex flex-wrap gap-3">
+        <div class={if String.starts_with?(@capture.kind, "hd_"), do: "grid grid-cols-6 gap-3", else: "flex flex-wrap gap-3"}>
           <%= for candidate <- @capture.candidates do %>
             <button phx-click="pick_capture" phx-value-column={candidate.column}
                     class="flex flex-col items-center gap-1 p-2 rounded border border-base-300 hover:border-primary">
