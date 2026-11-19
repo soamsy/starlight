@@ -17,6 +17,7 @@ if [ "$TOTAL" -le "$SINCE" ]; then
 fi
 
 NEW=$(sed -n "$((SINCE + 1)),${TOTAL}p" "$LOG" \
+  | grep -v 'StarlightBotWeb.Endpoint is not available' \
   | awk '{ts=$1; $1=""; if (!seen[$0]++) order[++n]=$0; last[$0]=ts}
          END {for (i=1; i<=n; i++) {m=order[i]; printf "%s%s%s\n", last[m], m, (seen[m] > 1 ? " (x" seen[m] ")" : "")}}' \
   | tail -n 30 | cut -c1-300)
