@@ -1161,8 +1161,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     with {:ok, frame} <- Capture.grab_frame(),
          {:ok, region} <- fuse_shortcut_region(frame, ctx),
          %{} = item <- Enum.find(detect_inventory_gifts(frame, region, ctx), &(&1.gift_id == fixed_id)) do
-      click_item_rect(item, ctx)
-      Engine.act([sleep(@fuse_item_click_settle_ms)], ctx)
+      click_item_rect(item, ctx, trailing_ms: @fuse_item_click_settle_ms)
 
       if not Engine.check_within(not_hook(@fuse_item_1_empty_hook), @fuse_slots_filled_ms) do
         Ctx.log(ctx, :info, "shop fuse: clicked the #{name} shortcut but the slots stayed empty, picking ingredients by hand")
@@ -1301,8 +1300,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
     |> Enum.map(fn row -> Enum.sort_by(row, &(-&1.x)) end)
   end
 
-  defp click_item_rect(item, ctx) do
-    RewardHelpers.click_rect({round(item.x), round(item.y), round(item.w), round(item.h)}, ctx)
+  defp click_item_rect(item, ctx, opts \\ []) do
+    RewardHelpers.click_rect({round(item.x), round(item.y), round(item.w), round(item.h)}, ctx, Keyword.merge([settle_ms: 120], opts))
   end
 
   defp click_item_rising(item, index, count, prev_y, ctx) do
@@ -1310,7 +1309,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     ramp = ((count - 1) / 2 - index) * item.h / (count * 6)
     y = min(cy + ramp, (prev_y || cy + ramp) - @fuse_rise_min_px)
     y = y |> max(item.y + 1) |> min(item.y + item.h - 1)
-    RewardHelpers.click_point({cx, y}, ctx)
+    RewardHelpers.click_point({cx, y}, ctx, settle_ms: 120, trailing_ms: @fuse_item_click_settle_ms)
     y
   end
 
@@ -1330,7 +1329,6 @@ defmodule StarlightBot.Automation.Shop.Ops do
         |> Enum.reduce({acc, nil}, fn {item, index}, {acc, prev_y} ->
           if Map.get(acc, item.gift_id, 0) < Map.get(takeable, item.gift_id, 0) do
             y = click_item_rising(item, index, count, prev_y, ctx)
-            Engine.act([sleep(@fuse_item_click_settle_ms)], ctx)
             {Map.update(acc, item.gift_id, 1, &(&1 + 1)), y}
           else
             {acc, prev_y}
