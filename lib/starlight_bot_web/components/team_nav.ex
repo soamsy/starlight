@@ -338,7 +338,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
           <% else %>
             <span class="text-xs text-base-content/60 lg:text-sm">Select a team</span>
           <% end %>
-          <kbd class="kbd kbd-xs ml-auto hidden lg:inline-flex"><span class="[html[data-shell=tauri]_&]:hidden">T</span><span class="hidden [html[data-shell=tauri]_&]:inline">Ctrl+T</span></kbd>
+          <kbd class="kbd kbd-xs ml-auto hidden lg:inline-flex">T</kbd>
           <.icon name="lucide-chevron-down" class="size-4 text-primary" />
         </button>
       </div>

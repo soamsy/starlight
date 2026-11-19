@@ -2513,9 +2513,7 @@ const isTypingTarget = (target) =>
 document.addEventListener("keydown", (e) => {
   if (e.defaultPrevented || e.altKey || e.metaKey || e.repeat) return
   const target = e.target instanceof Element ? e.target : null
-  const teamSearch = inTauri
-    ? e.ctrlKey && !e.shiftKey && e.key?.toLowerCase() === "t"
-    : !e.ctrlKey && !e.shiftKey && e.key?.toLowerCase() === "t" && !isTypingTarget(target)
+  const teamSearch = !e.ctrlKey && !e.shiftKey && e.key?.toLowerCase() === "t" && !isTypingTarget(target)
   if (teamSearch) {
     const button = document.querySelector('[data-hotkey="team-search"]')
     if (!button) return
