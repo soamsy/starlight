@@ -1,6 +1,6 @@
 defmodule StarlightBotWeb.Live.RunnerLive do
   use StarlightBotWeb, :live_view
-  import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1]
+  import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1, hook_options: 1]
   import StarlightBotWeb.Components.GiftPopup, only: [gift_popup: 1]
   import StarlightBotWeb.Components.WindowGate, only: [gate: 4]
   alias StarlightBot.Automation.RunMemory
@@ -868,7 +868,6 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   attr :index, :integer, required: true
   attr :list, :string, required: true
   attr :teams, :list, required: true
-  attr :hook_groups, :list, required: true
   attr :locked, :boolean, required: true
   attr :live, :boolean, default: false
   attr :cycle_size, :integer, default: 1
@@ -906,7 +905,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
           <option value={team.id} selected={team.id == @pick.id}><%= team.name %></option>
         <% end %>
       </select>
-      <.hook_select id={"#{@prefix}-hook-#{@index}"} name={"#{@prefix}_hooks[]"} selected={@pick.hook} groups={@hook_groups} disabled={@teams == [] or @locked} />
+      <.hook_select id={"#{@prefix}-hook-#{@index}"} name={"#{@prefix}_hooks[]"} selected={@pick.hook} disabled={@teams == [] or @locked} />
       <span :if={@forecast} class="relative">
         <span title={"Expected starlight per run with #{@forecast.rest_bonus} rest bonus"}
               class={"badge badge-sm font-mono " <> if(@forecast.net >= 0, do: "badge-success", else: "badge-error")}><%= signed(@forecast.net) %></span>
@@ -1194,7 +1193,6 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   attr :event, :string, required: true
   attr :picks, :list, required: true
   attr :teams, :list, required: true
-  attr :hook_groups, :list, required: true
   attr :labels, :list, required: true
   attr :current, :integer, required: true
   attr :auto_slot, :integer, required: true
@@ -1228,7 +1226,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
             <option value="" selected={pick == nil}>None selected</option>
             <option :for={team <- @teams} value={team.id} selected={pick != nil and team.id == pick.id}>{team.name}</option>
           </select>
-          <.hook_select id={"#{@kind}-team-hook-#{index}"} name={"#{@kind}_team_hooks[]"} selected={pick && pick.hook} groups={@hook_groups} disabled={@teams == [] or pick == nil} />
+          <.hook_select id={"#{@kind}-team-hook-#{index}"} name={"#{@kind}_team_hooks[]"} selected={pick && pick.hook} disabled={@teams == [] or pick == nil} />
         </div>
       </div>
       <div class="relative flex flex-col gap-1 shrink-0">

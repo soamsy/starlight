@@ -6,11 +6,8 @@ defmodule StarlightBotWeb.Components.HookSelect do
   attr :name, :string, required: true
   attr :selected, :string, default: nil
   attr :disabled, :boolean, default: false
-  attr :groups, :list, default: nil
 
   def hook_select(assigns) do
-    assigns = assign(assigns, :groups, assigns.groups || Teams.team_hooks())
-
     ~H"""
     <div :if={@disabled} class="w-24 shrink-0">
       <input type="hidden" name={@name} value={@selected || ""} />
@@ -26,18 +23,28 @@ defmodule StarlightBotWeb.Components.HookSelect do
         <span class="truncate"><%= if @selected, do: Teams.hook_label(@selected), else: "-" %></span>
       </summary>
       <div popover="manual" class="dropdown-content z-50 max-h-[70vh] w-[32rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
-        <div class="columns-3 gap-3">
-          <div :for={{group, hooks} <- @groups} class="mb-2 break-inside-avoid">
-            <div class="px-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/50"><%= group %></div>
-            <button :for={hook <- hooks} type="button" data-value={hook}
-                    onclick="const i = this.closest('details').querySelector('input'); i.value = this.dataset.value; i.dispatchEvent(new Event('input', {bubbles: true}))"
-                    class={"btn btn-xs w-full justify-start gap-1.5 font-mono " <> if(hook == @selected, do: "btn-primary", else: "btn-ghost")}>
-              <img :if={Teams.hook_icon(hook)} src={Teams.hook_icon(hook)} class="size-4 object-contain" /><%= Teams.hook_label(hook) %>
-            </button>
-          </div>
-        </div>
+        <div id={"#{@id}-options"} phx-hook="HookOptions" phx-update="ignore"></div>
       </div>
     </details>
+    """
+  end
+
+  attr :groups, :list, required: true
+
+  def hook_options(assigns) do
+    ~H"""
+    <div id="hook-select-options" hidden>
+      <div class="columns-3 gap-3">
+        <div :for={{group, hooks} <- @groups} class="mb-2 break-inside-avoid">
+          <div class="px-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/50"><%= group %></div>
+          <button :for={hook <- hooks} type="button" data-value={hook}
+                  onclick="const i = this.closest('details').querySelector('input'); i.value = this.dataset.value; i.dispatchEvent(new Event('input', {bubbles: true}))"
+                  class="btn btn-xs btn-ghost w-full justify-start gap-1.5 font-mono">
+            <img :if={Teams.hook_icon(hook)} src={Teams.hook_icon(hook)} class="size-4 object-contain" /><%= Teams.hook_label(hook) %>
+          </button>
+        </div>
+      </div>
+    </div>
     """
   end
 end
