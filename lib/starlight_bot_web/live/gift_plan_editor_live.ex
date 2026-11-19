@@ -2525,7 +2525,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       </div>
       <%= cond do %>
       <% @abandoned? -> %>
-        <span class="text-[11px] font-semibold text-base-content/60"><%= if @from == 1, do: "Not started", else: "Abandoned" %></span>
+        <span :if={@action?} class="text-[11px] font-semibold text-base-content/60"><%= if @from == 1, do: "Not started", else: "Abandoned" %></span>
+        <span :if={not @action?} class="text-[11px] font-semibold text-base-content/60 cursor-help"
+              title="Never bought here, even if a broader entry (such as a whole affinity) would buy it">
+          <%= if @from == 1, do: "Buys refused", else: "Buys refused from here" %>
+        </span>
       <% @action? -> %>
         <div :if={@entry["subject"]["action"] in ["heal", "revive", "skill_replace"]} class="grid grid-cols-6 gap-0.5">
           <button :for={sinner <- Teams.all_sinners()} type="button" phx-click="list_toggle_heal_sinner"

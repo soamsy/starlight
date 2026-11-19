@@ -271,8 +271,8 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
     else
       case Ops.shelf_items(ctx) do
         {:ok, items} ->
-          case shelf_matches(items, wanted, state, ctx) do
-            [] -> shelf_matches(items, extras, state, ctx)
+          case shelf_matches(items, wanted, progress.entries, state, ctx) do
+            [] -> shelf_matches(items, extras, progress.entries, state, ctx)
             matches -> matches
           end
           |> Ops.buy_first_affordable(ctx)
@@ -321,17 +321,29 @@ defmodule StarlightBot.Automation.Shop.Actions.Section do
     end)
   end
 
-  defp shelf_matches(items, entries, state, ctx) do
+  defp shelf_matches(items, entries, all_entries, state, ctx) do
     items
     |> Enum.reject(&owned?(&1.gift_name, ctx))
     |> Enum.uniq_by(& &1.gift_id)
     |> Enum.map(fn item ->
       gift = Map.get(state, :gifts_by_id, %{})[item.gift_id] || %{name: item.gift_name, tier: nil}
+      {item, gift}
+    end)
+    |> Enum.reject(fn {_item, gift} -> refused?(all_entries, gift) end)
+    |> Enum.map(fn {item, gift} ->
       {item, Enum.find_index(entries, &GiftPlans.subject_matches?(&1.subject, gift))}
     end)
     |> Enum.reject(fn {_item, rank} -> is_nil(rank) end)
     |> Enum.sort_by(fn {_item, rank} -> rank end)
     |> Enum.map(fn {item, _rank} -> item end)
+  end
+
+  defp refused?(entries, gift) do
+    case GiftPlans.ruling_entry(entries, gift) do
+      %{abandoned: true} -> true
+      %{disposition: "sell"} -> true
+      _ -> false
+    end
   end
 
   defp unfinished?(section, entry, state, ctx), do: not owned?(entry.gift, ctx) and GiftPlans.status(progress(section, state, ctx), entry) != :done

@@ -237,19 +237,19 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
     socket = socket |> event("list_split", %{"entry" => glimpse, "floor" => "6"}) |> event("list_set_segment_mode", %{"entry" => glimpse, "from" => "6", "mode" => "abandon"})
     assert [%{"from" => 1}, %{"from" => 6, "abandoned" => true}] = seg.(glimpse)
-    assert render(socket) =~ "Abandoned"
+    assert render(socket) =~ "Buys refused from here"
     socket = event(socket, "list_set_segment_mode", %{"entry" => glimpse, "from" => "6", "mode" => "change"})
     assert [_, %{"abandoned" => false}] = seg.(glimpse)
-    refute render(socket) =~ "Abandoned"
+    refute render(socket) =~ "Buys refused"
 
     socket = event(socket, "list_set_segment_mode", %{"entry" => glimpse, "from" => "1", "mode" => "abandon"})
     assert [%{"from" => 1, "abandoned" => true}, _] = seg.(glimpse)
-    assert render(socket) =~ "Not started"
+    assert render(socket) =~ "Buys refused"
     assert %{disposition: "keep"} = GiftPlans.resolve(Enum.find(section(socket)["entries"], &(&1["id"] == glimpse)), 6)
 
     socket = socket |> event("list_remove_segment", %{"entry" => glimpse, "from" => "6"}) |> event("list_remove_schedule", %{"entry" => glimpse})
     assert [%{"from" => 1, "abandoned" => false, "disposition" => "keep"}] = seg.(glimpse)
-    refute render(socket) =~ "Not started"
+    refute render(socket) =~ "Buys refused"
   end
 
   test "dragging an entry into a schedule groups it, tab edits apply to the group, and dragging it out keeps a copy of the tabs", %{socket: socket} do
@@ -299,7 +299,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     socket = socket |> update.("A") |> update.("abandon")
     assert [%{"goal" => "A", "abandoned" => true}] = entry(socket, "Glimpse of Flames")["floors"]
     html = render(socket)
-    assert html =~ "Not started" and html =~ ~s(<option value="abandon" selected)
+    assert html =~ "Buys refused" and html =~ ~s(<option value="abandon" selected)
 
     socket = event(socket, "list_set_segment_mode", %{"entry" => glimpse, "from" => "1", "mode" => "change"})
     assert [%{"goal" => "A", "abandoned" => false}] = entry(socket, "Glimpse of Flames")["floors"]
