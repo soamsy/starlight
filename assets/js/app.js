@@ -1278,8 +1278,9 @@ const PriorityChips = {
     const strip = () => this.el.querySelector("[data-chip-strip]")
     const palette = () => this.el.querySelector("[data-chip-palette]")
     const order = () => Array.from(strip().querySelectorAll("[data-chip] input")).map(i => i.value).join(",")
-    const isFused = (chip) => chip.dataset.tier && chip.dataset.sin
-    const isPlainTier = (chip) => chip.dataset.tier && !chip.dataset.sin
+    const baseOf = (chip) => chip.dataset.tier || chip.dataset.dodge
+    const isFused = (chip) => baseOf(chip) && chip.dataset.sin
+    const isPlainTier = (chip) => baseOf(chip) && !chip.dataset.sin
     const isPlainSin = (chip) => chip.dataset.sin && !chip.dataset.tier
     const chips = () => Array.from(this.el.querySelectorAll("[data-chip]"))
     const fuseClasses = ["ring-2", "ring-primary"]
@@ -1303,7 +1304,7 @@ const PriorityChips = {
     }
 
     const fuse = (target, sinChip) => {
-      const value = `${target.dataset.tier}+${sinChip.dataset.sin}`
+      const value = `${baseOf(target)}+${sinChip.dataset.sin}`
       if (chips().some(c => isFused(c) && c.querySelector("input").value === value)) return
       const fused = target.cloneNode(true)
       fused.dataset.sin = sinChip.dataset.sin
@@ -1332,7 +1333,7 @@ const PriorityChips = {
     }
 
     const unfuse = (fused) => {
-      const plain = chips().find(c => isPlainTier(c) && c.dataset.tier === fused.dataset.tier)
+      const plain = chips().find(c => isPlainTier(c) && baseOf(c) === baseOf(fused))
       if (plain && plain.parentElement === palette()) place(plain, strip(), fused)
       fused.remove()
     }

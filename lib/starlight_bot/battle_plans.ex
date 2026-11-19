@@ -391,11 +391,11 @@ defmodule StarlightBot.BattlePlans do
 
   defp parse_count(_value), do: nil
 
-  def pick_row(holder, top, bottom, in_use \\ nil)
+  def pick_row(holder, top, bottom, in_use \\ nil, defense \\ nil)
 
-  def pick_row(%{"row" => "top"}, _top, _bottom, _in_use), do: :top
+  def pick_row(%{"row" => "top"}, _top, _bottom, _in_use, _defense), do: :top
 
-  def pick_row(%{"row" => "priority", "priority" => %{"order" => order}}, top, bottom, in_use) do
+  def pick_row(%{"row" => "priority", "priority" => %{"order" => order}}, top, bottom, in_use, defense) do
     Enum.find_value(order, :bottom, fn
       "in_use" ->
         in_use
@@ -409,6 +409,9 @@ defmodule StarlightBot.BattlePlans do
       "bottom" ->
         :bottom
 
+      "dodge+" <> sin when sin in @sins ->
+        if defense && Atom.to_string(defense) == sin, do: :dodge
+
       value ->
         cond do
           priority_match?(value, bottom) -> :bottom
@@ -418,7 +421,14 @@ defmodule StarlightBot.BattlePlans do
     end)
   end
 
-  def pick_row(_holder, _top, _bottom, _in_use), do: :bottom
+  def pick_row(_holder, _top, _bottom, _in_use, _defense), do: :bottom
+
+  def affinity_dodge?(holder), do: Enum.any?(List.wrap(get_in(holder, ["priority", "order"])), &affinity_dodge_term?/1)
+
+  def affinity_dodge_term?("dodge+" <> sin), do: sin in @sins
+  def affinity_dodge_term?(_value), do: false
+
+  def needs_defense?(holder), do: Enum.any?(holders(holder), &(&1["mode"] == "a_res_def" or affinity_dodge?(&1)))
 
   def cell_label(%{sin: sin, tier: tier}), do: "#{sin}/#{tier_name(tier)}"
 
@@ -796,7 +806,7 @@ defmodule StarlightBot.BattlePlans do
 
   def chip_values, do: @tiers ++ @sins
 
-  def priority_term?(value), do: value in ~w(dodge top bottom in_use) or chip_term?(value)
+  def priority_term?(value), do: value in ~w(dodge top bottom in_use) or chip_term?(value) or affinity_dodge_term?(value)
 
   def chip_term?(value) when is_binary(value) do
     case String.split(value, "+") do

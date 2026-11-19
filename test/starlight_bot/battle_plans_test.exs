@@ -446,10 +446,10 @@ defmodule StarlightBot.BattlePlansTest do
       assert BattlePlans.pick_row(order, cell(:envy, :skill1), cell(:wrath, :skill1)) == :bottom
     end
 
-    test "put_row keeps valid fused terms and drops malformed ones" do
+    test "put_row keeps valid fused terms, including affinity dodges, and drops malformed ones" do
       holder = %{"row" => "priority", "priority" => %{"order" => []}}
       result = BattlePlans.put_row(holder, "priority", ["s3+envy", "envy+s3", "s3+bogus", "s3+envy+wrath", "dodge+envy", "s3+envy"])
-      assert result["priority"] == %{"order" => ["s3+envy"]}
+      assert result["priority"] == %{"order" => ["s3+envy", "dodge+envy"]}
     end
 
     test "both rows matching or nothing matching picks bottom" do

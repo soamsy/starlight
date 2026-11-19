@@ -140,12 +140,17 @@ defmodule StarlightBot.Automation.SlotPlan do
       :error ->
         top_cell = Enum.at(top, column)
         bottom_cell = Enum.at(bottom, column)
-        row = BattlePlans.pick_row(holder, top_cell, bottom_cell, env |> Map.get(:in_use, %{}) |> Map.get(column))
+        in_use = env |> Map.get(:in_use, %{}) |> Map.get(column)
+        row = BattlePlans.pick_row(holder, top_cell, bottom_cell, in_use, defense_at(holder, env, column))
         {row, ["slot #{column + 1} #{BattlePlans.row_label(holder)}: top #{BattlePlans.cell_label(top_cell)}, bottom #{BattlePlans.cell_label(bottom_cell)} -> #{row}"]}
     end
   end
 
   defp row_for(holder, _column, _env), do: {BattlePlans.pick_row(holder, nil, nil), []}
+
+  defp defense_at(holder, env, column) do
+    if BattlePlans.affinity_dodge?(holder), do: env.defense_sins.() |> List.wrap() |> Enum.at(column)
+  end
 
   defp resolve_enemy(own, previous) do
     cond do

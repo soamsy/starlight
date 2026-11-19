@@ -95,4 +95,21 @@ defmodule StarlightBot.Automation.SlotPlanRunsTest do
 
     assert {[{0, :bottom}, {1, :top}, {2, :bottom}], _notes} = rows(Map.delete(holder("none"), "mode"), env)
   end
+
+  test "dodge+sin picks the dodge only on slots whose defense matches the sin" do
+    env = env([:wrath, :gloom, :wrath], [:lust, :envy, :sloth], [], %{defense_sins: fn -> [nil, :wrath, :lust] end})
+    holder = holder("none", %{"priority" => %{"order" => ["dodge+wrath", "top"]}})
+
+    assert {[{0, :top}, {1, :dodge}, {2, :top}], _notes} = rows(holder, env)
+  end
+
+  test "a plan needs the defense scan for a-res+def or an affinity dodge anywhere in its chain" do
+    plain = holder("none")
+    affinity = holder("none", %{"priority" => %{"order" => ["dodge+wrath"]}})
+
+    refute StarlightBot.BattlePlans.needs_defense?(plain)
+    assert StarlightBot.BattlePlans.needs_defense?(holder("a_res_def"))
+    assert StarlightBot.BattlePlans.needs_defense?(affinity)
+    assert StarlightBot.BattlePlans.needs_defense?(Map.put(plain, "rest", affinity))
+  end
 end

@@ -328,9 +328,11 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     mode = action["mode"] || "fast"
     with {:ok, frame, tray} <- turn.scan,
          {:ok, gear_rect} <- find_gear(frame, ctx),
-         forced = forced_rows(action["pins"] || [], frame, tray, ctx),
+         pins = action["pins"] || [],
+         defense = if(mode == "a_res_def" or Enum.any?(pins, &BattlePlans.needs_defense?/1), do: defense_sins(frame, tray, ctx)),
+         forced = forced_rows(pins, frame, tray, defense, ctx),
          forced = apply_forced(forced, tray, ctx),
-         :ok <- BattleChain.drag(frame, tray, gear_rect, mode, forced, ctx, chain_opts(mode, action, frame, tray, ctx)) do
+         :ok <- BattleChain.drag(frame, tray, gear_rect, mode, forced, ctx, chain_opts(mode, action, tray, defense, ctx)) do
       if await(@turn_started, @turn_start_timeout_ms), do: :started, else: log_pending(ctx, "chain drag didn't start the turn")
     else
       {:error, reason} -> log_pending(ctx, "chain drag failed: #{inspect(reason)}")
@@ -597,7 +599,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       case leaf["sinners"] do
         [_ | _] = sinners ->
           %{"who" => "only", "sinners" => sinners, "skill" => %{"pick" => "all"}}
-          |> holder_slots(frame, tray, profiles(ctx), ctx)
+          |> holder_slots(frame, tray, profiles(ctx), nil, ctx)
           |> Enum.flat_map(fn {_holder, taken} -> taken end)
 
         _anyone ->
@@ -932,15 +934,15 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp chain_opts("a_res_def", action, frame, tray, ctx) do
+  defp chain_opts("a_res_def", action, tray, defense, ctx) do
     [
-      defense_sins: defense_sins(frame, tray, ctx),
+      defense_sins: defense,
       max_defenses: action["max_defenses"],
       click_defense: fn column -> click_dodge(tray, column, ctx) end
     ]
   end
 
-  defp chain_opts(_mode, _action, _frame, _tray, _ctx), do: []
+  defp chain_opts(_mode, _action, _tray, _defense, _ctx), do: []
 
   defp defense_sins(frame, tray, ctx) do
     found = SinnerLocator.locate(frame, tray, defense_candidates(ctx))
@@ -997,15 +999,15 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp sinner_names, do: Map.new(SinnerProfiles.sinners(), &{&1, SinnerProfiles.label(&1)})
 
-  defp forced_rows(pins, frame, tray, ctx) do
+  defp forced_rows(pins, frame, tray, defense, ctx) do
     profiles = profiles(ctx)
     classified = if Enum.any?(pins, &BattlePlans.uses_priority?/1), do: SinColor.classify_tray(frame.mat, tray)
 
     Enum.reduce(pins, %{}, fn pin, acc ->
       rows =
         pin
-        |> holder_slots(frame, tray, profiles, ctx)
-        |> Enum.map(fn {holder, taken} -> pin_rows(holder, taken, classified, ctx) end)
+        |> holder_slots(frame, tray, profiles, defense, ctx)
+        |> Enum.map(fn {holder, taken} -> pin_rows(holder, taken, classified, defense, ctx) end)
         |> Enum.reduce(%{}, &Map.merge/2)
 
       Map.merge(rows, acc)
@@ -1027,14 +1029,14 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end)
   end
 
-  defp pin_rows(%{"type" => "dodge"}, columns, _classified, _ctx), do: Map.new(columns, &{&1, :dodge})
-  defp pin_rows(%{"type" => "ego"} = holder, columns, _classified, _ctx), do: Map.new(columns, &{&1, {:ego, holder}})
+  defp pin_rows(%{"type" => "dodge"}, columns, _classified, _defense, _ctx), do: Map.new(columns, &{&1, :dodge})
+  defp pin_rows(%{"type" => "ego"} = holder, columns, _classified, _defense, _ctx), do: Map.new(columns, &{&1, {:ego, holder}})
 
-  defp pin_rows(%{"row" => "priority"} = pin, columns, {top, bottom}, ctx) do
+  defp pin_rows(%{"row" => "priority"} = pin, columns, {top, bottom}, defense, ctx) do
     Map.new(columns, fn column ->
       top_cell = Enum.at(top, column)
       bottom_cell = Enum.at(bottom, column)
-      row = BattlePlans.pick_row(pin, top_cell, bottom_cell)
+      row = BattlePlans.pick_row(pin, top_cell, bottom_cell, nil, defense && Enum.at(defense, column))
 
       Ctx.log(
         ctx,
@@ -1046,28 +1048,29 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end)
   end
 
-  defp pin_rows(%{"row" => "top"}, columns, _classified, _ctx), do: Map.new(columns, &{&1, :top})
-  defp pin_rows(_pin, columns, _classified, _ctx), do: Map.new(columns, &{&1, :bottom})
+  defp pin_rows(%{"row" => "top"}, columns, _classified, _defense, _ctx), do: Map.new(columns, &{&1, :top})
+  defp pin_rows(_pin, columns, _classified, _defense, _ctx), do: Map.new(columns, &{&1, :bottom})
 
-  defp holder_slots(holder, frame, tray, profiles, ctx) do
-    {assigned, notes} = SlotPlan.assign(holder, slot_env(holder, frame, tray, profiles, ctx))
+  defp holder_slots(holder, frame, tray, profiles, defense, ctx) do
+    {assigned, notes} = SlotPlan.assign(holder, slot_env(holder, frame, tray, profiles, defense, ctx))
     log_notes(notes, ctx)
     assigned
   end
 
   defp plan_steps(holder, frame, tray, profiles, ctx) do
-    {steps, notes} = SlotPlan.plan(holder, slot_env(holder, frame, tray, profiles, ctx))
+    defense = if BattlePlans.needs_defense?(holder), do: defense_sins(frame, tray, ctx)
+    {steps, notes} = SlotPlan.plan(holder, slot_env(holder, frame, tray, profiles, defense, ctx))
     log_notes(notes, ctx)
     steps
   end
 
-  defp slot_env(holder, frame, tray, profiles, ctx) do
+  defp slot_env(holder, frame, tray, profiles, defense, ctx) do
     %{
       columns: all_columns(tray),
       tray_groups: tray_groups(tray),
       classified: if(SlotPlan.needs_classified?(holder), do: SinColor.classify_tray(frame.mat, tray)),
       bottom_columns: fn -> bottom_chosen_columns(tray, ctx) end,
-      defense_sins: fn -> defense_sins(frame, tray, ctx) end,
+      defense_sins: fn -> defense end,
       sinner_groups: fn sinner_holder -> sinner_groups(sinner_holder["who"], sinner_holder["sinners"] || [], frame, tray, profiles, ctx) end
     }
   end

@@ -1766,18 +1766,19 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         canon: Enum.find_index(BattlePlans.priority_values(), &(&1 == base)),
         kind: kind,
         tier: if(kind == :tier, do: base),
+        dodge: if(base == "dodge", do: base),
         sin: if(kind == :sin, do: base, else: List.first(rest))
       )
 
     ~H"""
-    <span data-chip={!@static || nil} data-canon={@canon} data-tier={@tier} data-sin={@sin} draggable={!@static && "true"} title={@value}
+    <span data-chip={!@static || nil} data-canon={@canon} data-tier={@tier} data-dodge={@dodge} data-sin={@sin} draggable={!@static && "true"} title={@value}
           class={["inline-flex items-center justify-center min-w-6 px-1 rounded border select-none text-[11px] font-semibold", chip_class(@kind, @tier || @value), if(@static, do: ["h-5", if(@kind == :sin, do: "align-middle", else: "align-baseline")], else: "h-6 cursor-grab")]}>
       <input :if={!@static} type="hidden" name={@name} value={@value} disabled={@disabled} />
       <%= cond do %>
         <% @kind == :sin -> %>
           <img src={"/images/sin/#{@sin}.webp"} alt={@sin} class="size-4 pointer-events-none" draggable="false" />
         <% true -> %>
-          <span class={@tier && "uppercase"}><%= @tier || chip_label(@value) %></span>
+          <span class={@tier && "uppercase"}><%= @tier || chip_label(@dodge || @value) %></span>
           <span :if={@sin} data-chip-sin class="ml-1 inline-flex rounded bg-base-200 p-px">
             <img src={"/images/sin/#{@sin}.webp"} alt={@sin} class="size-4 pointer-events-none" draggable="false" />
           </span>
@@ -1794,6 +1795,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   defp chip_kind(value) do
     cond do
       value in BattlePlans.sins() -> :sin
+      BattlePlans.affinity_dodge_term?(value) -> :other
       value in BattlePlans.tiers() or String.contains?(value, "+") -> :tier
       true -> :other
     end
