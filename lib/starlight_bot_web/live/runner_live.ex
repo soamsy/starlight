@@ -2,6 +2,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   use StarlightBotWeb, :live_view
   import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1]
   import StarlightBotWeb.Components.GiftPopup, only: [gift_popup: 1]
+  import StarlightBotWeb.Components.WindowGate, only: [gate: 4]
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Navigation.{Navigator, RunArchive, ScreenTimes}
   alias StarlightBot.{AppSettings, EgoGifts, GiftPlans, LuxSchedule, Plans, RestCycle, RunHistory, RunnerForms, SinnerProfiles, StarlightBudget, TeamBudget, Teams}
@@ -408,6 +409,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
     |> assign(:pause_requested, nav.pause_requested)
     |> assign(:run_kind, nav.run_kind)
     |> assign(:run_memory, nav.run_memory)
+    |> assign(:running_team, running_team_key(nav.run_memory))
     |> assign_sections()
     |> assign_clock(nav.run_clock)
     |> assign(:run_splits, nav.run_splits)
@@ -417,6 +419,13 @@ defmodule StarlightBotWeb.Live.RunnerLive do
     |> assign(:screen_times, nav.screen_times)
     |> assign_other_running()
     |> assign_run_groups()
+  end
+
+  defp running_team_key(run_memory) do
+    case Map.get(run_memory, :team) do
+      %{id: id, hook: hook} -> %{id: id, hook: hook}
+      _ -> nil
+    end
   end
 
   defp assign_run_groups(socket), do: assign(socket, :run_groups, run_time_groups(socket.assigns))
@@ -449,7 +458,9 @@ defmodule StarlightBotWeb.Live.RunnerLive do
 
   def live_cycle?(phase, other_running?, run_kind), do: phase != :idle and not other_running? and run_kind == :mirror_dungeon
 
-  def running_team?(run_memory, %{id: id, hook: hook}), do: match?(%{id: ^id, hook: ^hook}, Map.get(run_memory, :team))
+  def running_team?(running_team, %{id: id, hook: hook}), do: match?(%{id: ^id, hook: ^hook}, running_team)
+
+  def run_disabled?(teams, phase, countdown, other_running?, gate), do: teams == [] or phase != :idle or countdown != nil or other_running? or gate != :ready
 
   def run_progress(run_memory), do: Map.get(run_memory, :run_progress)
 

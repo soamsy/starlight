@@ -18,10 +18,6 @@
         phx-submit="run"
         phx-change="update_form"
         class="flex flex-col gap-3">
-        <% gate = StarlightBotWeb.Components.WindowGate.gate(assigns) %>
-        <% locked = cycle_locked?(@phase, @other_running?, @run_kind) %>
-        <% live = live_cycle?(@phase, @other_running?, @run_kind) %>
-        <% run_disabled = @teams == [] or @phase != :idle or @countdown != nil or @other_running? or gate != :ready %>
         <%= if @other_running? do %>
           <span class="text-xs text-warning"><%= other_running_notice(@run_kind) %></span>
         <% end %>
@@ -30,16 +26,16 @@
           <button
             type="button"
             phx-click="resume"
-            disabled={@countdown != nil or gate == :resize}
+            disabled={@countdown != nil or gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending) == :resize}
             class="btn btn-warning btn-sm">
             Resume
           </button>
-          <StarlightBotWeb.Components.WindowGate.gate_button gate={gate} busy={@game_window_busy} />
+          <StarlightBotWeb.Components.WindowGate.gate_button gate={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending)} busy={@game_window_busy} />
         <% else %>
-          <StarlightBotWeb.Components.WindowGate.gate_button :if={gate != :ready} gate={gate} busy={@game_window_busy}
+          <StarlightBotWeb.Components.WindowGate.gate_button :if={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending) != :ready} gate={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending)} busy={@game_window_busy}
             disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?} />
           <button
-            :if={gate == :ready}
+            :if={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending) == :ready}
             type="submit"
             disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
             class="btn btn-primary btn-sm">
@@ -78,14 +74,13 @@
         </div>
 
         <div class="flex flex-col gap-1">
-          <% forecast = cycle_forecast(@picks, @teams) %>
           <div class="flex items-center justify-between">
             <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">
               <%= if length(@picks) > 1, do: "Team cycle", else: "Team" %>
             </span>
-            <button :if={forecast.rows != []} type="button" phx-click="toggle_forecast_info"
-                    class={"btn btn-xs btn-outline gap-1 font-mono " <> if(forecast.total >= 0, do: "btn-success", else: "btn-error")}>
-              Max <img src={~p"/images/icons/starlight.webp"} alt="Starlight" class="h-4 w-4" /> possible: <%= signed(forecast.total) %>
+            <button :if={cycle_forecast(@picks, @teams).rows != []} type="button" phx-click="toggle_forecast_info"
+                    class={"btn btn-xs btn-outline gap-1 font-mono " <> if(cycle_forecast(@picks, @teams).total >= 0, do: "btn-success", else: "btn-error")}>
+              Max <img src={~p"/images/icons/starlight.webp"} alt="Starlight" class="h-4 w-4" /> possible: <%= signed(cycle_forecast(@picks, @teams).total) %>
             </button>
           </div>
           <input type="hidden" name="start_index" value={@start_index} />
@@ -101,7 +96,7 @@
                       </tr>
                     </thead>
                     <tbody>
-                      <tr :for={{row, index} <- Enum.with_index(forecast.rows)}>
+                      <tr :for={{row, index} <- Enum.with_index(cycle_forecast(@picks, @teams).rows)}>
                         <td class="font-sans"><.link navigate={~p"/teams?team=#{row.team_id}&pane=stats"} class="link link-primary inline-flex items-center gap-1" title="Open this team's starlight formula"><%= row.name %><.icon name="lucide-external-link" class="size-3.5" /></.link> <span class="text-base-content/50"><%= row.hook %></span></td>
                         <td class="text-right text-success"><%= row.lines.base %></td>
                         <td class="text-right text-success" title={"#{row.free_bonus} from free sinners + #{row.assigned_bonus} from assigned sinners cycling profiles"}><%= row.rest_bonus %></td>
@@ -113,15 +108,15 @@
                         <td class={"text-right font-semibold " <> if(row.net >= 0, do: "text-success", else: "text-error")}><%= signed(row.net) %></td>
                       </tr>
                       <tr class="font-semibold">
-                        <td colspan="8">Total (<%= length(forecast.rows) %> <%= if length(forecast.rows) == 1, do: "run", else: "runs" %>, <%= StarlightBudget.format(forecast.average) %> avg per run)</td>
-                        <td class={"text-right " <> if(forecast.total >= 0, do: "text-success", else: "text-error")}><%= signed(forecast.total) %></td>
+                        <td colspan="8">Total (<%= length(cycle_forecast(@picks, @teams).rows) %> <%= if length(cycle_forecast(@picks, @teams).rows) == 1, do: "run", else: "runs" %>, <%= StarlightBudget.format(cycle_forecast(@picks, @teams).average) %> avg per run)</td>
+                        <td class={"text-right " <> if(cycle_forecast(@picks, @teams).total >= 0, do: "text-success", else: "text-error")}><%= signed(cycle_forecast(@picks, @teams).total) %></td>
                       </tr>
                     </tbody>
                   </table>
                 </section>
                 <section class="flex flex-col gap-1">
                   <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Lineups</span>
-                  <div :for={{row, index} <- Enum.with_index(forecast.rows)} class="flex items-center gap-2">
+                  <div :for={{row, index} <- Enum.with_index(cycle_forecast(@picks, @teams).rows)} class="flex items-center gap-2">
                     <span class="w-44 shrink-0 truncate font-sans text-xs" title={"#{row.name} #{row.hook}"}><%= index + 1 %>. <%= row.name %> <span class="text-base-content/50"><%= row.hook %></span></span>
                     <div class="flex items-center gap-1.5">
                       <%= for slot <- row.slots do %>
@@ -150,19 +145,19 @@
             <div class="modal-backdrop" phx-click="toggle_forecast_info"></div>
           </div>
           <div id={"team-list-#{@reorder_rev}"} phx-hook="SortableList" data-sort-event="reorder_teams" class="flex flex-col gap-1">
-            <.pick_row :for={{pick, index} <- Enum.with_index(@picks)} pick={pick} index={index} list="cycle" teams={@teams} hook_groups={@hook_groups} locked={locked or (live and running_team?(@run_memory, pick))} live={live}
+            <.pick_row :for={{pick, index} <- Enum.with_index(@picks)} pick={pick} index={index} list="cycle" teams={@teams} hook_groups={@hook_groups} locked={cycle_locked?(@phase, @other_running?, @run_kind) or (live_cycle?(@phase, @other_running?, @run_kind) and running_team?(@running_team, pick))} live={live_cycle?(@phase, @other_running?, @run_kind)}
                        forecast={Enum.at(cycle_forecast(@picks, @teams).rows, index)}
-                       cycle_size={length(@picks)} start_index={@start_index} run_disabled={run_disabled} />
+                       cycle_size={length(@picks)} start_index={@start_index} run_disabled={run_disabled?(@teams, @phase, @countdown, @other_running?, gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending))} />
             <div data-sort-id="split" class="flex items-center gap-2 py-0.5 text-base-content/40">
-              <span :if={not locked} data-sort-handle class="cursor-grab px-0.5" title="Drag to change which teams are in the cycle">⠿</span>
+              <span :if={not cycle_locked?(@phase, @other_running?, @run_kind)} data-sort-handle class="cursor-grab px-0.5" title="Drag to change which teams are in the cycle">⠿</span>
               <span class="flex-1 border-t border-dashed border-base-content/30"></span>
               <span class="text-[10px] uppercase tracking-wide">Reserve below (not cycled)</span>
               <span class="flex-1 border-t border-dashed border-base-content/30"></span>
             </div>
-            <.pick_row :for={{pick, index} <- Enum.with_index(@reserve)} pick={pick} index={index} list="reserve" teams={@teams} hook_groups={@hook_groups} locked={locked or (live and running_team?(@run_memory, pick))} live={live}
-                       run_disabled={run_disabled} />
+            <.pick_row :for={{pick, index} <- Enum.with_index(@reserve)} pick={pick} index={index} list="reserve" teams={@teams} hook_groups={@hook_groups} locked={cycle_locked?(@phase, @other_running?, @run_kind) or (live_cycle?(@phase, @other_running?, @run_kind) and running_team?(@running_team, pick))} live={live_cycle?(@phase, @other_running?, @run_kind)}
+                       run_disabled={run_disabled?(@teams, @phase, @countdown, @other_running?, gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending))} />
           </div>
-          <button :if={@teams != [] and not locked} type="button" phx-click="add_team" class="btn btn-ghost btn-xs self-start">+ team</button>
+          <button :if={@teams != [] and not cycle_locked?(@phase, @other_running?, @run_kind)} type="button" phx-click="add_team" class="btn btn-ghost btn-xs self-start">+ team</button>
         </div>
 
         <div class="flex items-center gap-2">
@@ -264,28 +259,27 @@
           <span class="text-xs text-warning"><%= other_running_notice(@run_kind) %></span>
         <% end %>
 
-        <% gate = StarlightBotWeb.Components.WindowGate.gate(assigns) %>
         <%= if @phase == :paused and not @other_running? do %>
           <button
             type="button"
             phx-click="resume"
-            disabled={@countdown != nil or gate == :resize}
+            disabled={@countdown != nil or gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending) == :resize}
             class="btn btn-warning btn-sm">
             Resume
           </button>
-          <StarlightBotWeb.Components.WindowGate.gate_button gate={gate} busy={@game_window_busy} />
+          <StarlightBotWeb.Components.WindowGate.gate_button gate={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending)} busy={@game_window_busy} />
         <% else %>
-          <StarlightBotWeb.Components.WindowGate.gate_button :if={gate not in [:ready, :launch]} gate={gate} busy={@game_window_busy}
+          <StarlightBotWeb.Components.WindowGate.gate_button :if={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending) not in [:ready, :launch]} gate={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending)} busy={@game_window_busy}
             disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?} />
-          <div :if={gate in [:ready, :launch]} class="join w-full">
+          <div :if={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending) in [:ready, :launch]} class="join w-full">
             <button
-              :if={gate == :ready}
+              :if={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending) == :ready}
               type="submit"
               disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
               class={"btn btn-sm join-item flex-1 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary", else: "btn-primary")}>
               <%= if then_md?(@then_md, @md_next), do: "Run, then mirror dungeon", else: "Run" %>
             </button>
-            <StarlightBotWeb.Components.WindowGate.gate_button :if={gate == :launch} gate={gate} busy={@game_window_busy}
+            <StarlightBotWeb.Components.WindowGate.gate_button :if={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending) == :launch} gate={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending)} busy={@game_window_busy}
               disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
               class={"join-item flex-1 " <> if(then_md?(@then_md, @md_next), do: "btn-secondary", else: "btn-primary")} />
             <details id="runner-then-menu" phx-hook="FloatingDropdown" data-keep-open class="dropdown dropdown-end join-item border-0">

@@ -3,14 +3,18 @@ defmodule StarlightBotWeb.Components.WindowGate do
   alias StarlightBot.GameWindow
 
   def gate(assigns) do
-    case assigns[:game_window_rect] do
+    gate(assigns[:game_window_rect], assigns[:game_launch_label], assigns[:game_launcher_missing], assigns[:game_update_pending])
+  end
+
+  def gate(rect, launch_label, launcher_missing, update_pending) do
+    case rect do
       {_x, _y, _w, _h} = rect ->
         if GameWindow.aspect_ok?(rect), do: :ready, else: :resize
 
       _ ->
         cond do
-          !(assigns[:game_launch_label] && (assigns[:game_launcher_missing] || []) == []) -> :ready
-          assigns[:game_update_pending] -> :update
+          !(launch_label && (launcher_missing || []) == []) -> :ready
+          update_pending -> :update
           true -> :launch
         end
     end
