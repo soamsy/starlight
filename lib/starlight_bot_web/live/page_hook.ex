@@ -265,7 +265,7 @@ defmodule StarlightBotWeb.Live.PageHook do
     do: {:halt, assign(socket, :game_window_rect, rect)}
 
   defp handle_window_rect({:nav_state, state}, socket),
-    do: {:cont, socket |> assign(:run_live, Scheduler.busy?()) |> assign(:run_paused, state.phase == :paused) |> assign(:run_phase, state.phase) |> assign(:run_kind, state.run_kind)}
+    do: {:cont, socket |> assign(:run_live, EnkephalinSchedule.charging?() or state.phase != :idle or state.run_kind != nil) |> assign(:run_paused, state.phase == :paused) |> assign(:run_phase, state.phase) |> assign(:run_kind, state.run_kind)}
 
   defp handle_window_rect({:game_window_result, kind, msg}, socket),
     do: {:halt, socket |> assign(:game_window_busy, nil) |> put_flash(kind, msg)}
