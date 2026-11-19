@@ -23,7 +23,9 @@ defmodule StarlightBot.Automation.SlotPlan do
           {Enum.map(taken, &%{action: "nothing", holder: holder, column: &1, row: nil, enemy: nil, notes: []}), carried}
 
         {holder, taken}, {offset, previous} ->
-          {enemy, continued?} = resolve_enemy(holder["enemy"], previous)
+          inherited = holder["inherited_enemy"]
+          orphan? = orphan_continue?(holder, previous, inherited)
+          {enemy, continued?} = resolve_enemy(holder["enemy"], previous, inherited)
           start = if continued?, do: offset, else: 0
           holder = Map.put(holder, "enemy", enemy)
           bottom_result = if skips_target?(holder) or needs_in_use?(holder), do: env.bottom_columns.()
@@ -34,16 +36,37 @@ defmodule StarlightBot.Automation.SlotPlan do
             Enum.map_reduce(taken, start, fn column, index ->
               planned = step(holder, enemy, column, index, env)
 
-              if keeps_target?(planned, bottom_columns),
-                do: {kept_step(planned, holder, column, index, env), index},
-                else: {planned, index + 1}
+              cond do
+                untargeted_skill?(planned, enemy) ->
+                  {%{action: "nothing", holder: holder, column: column, row: nil, enemy: nil, notes: planned.notes}, index}
+
+                keeps_target?(planned, bottom_columns) ->
+                  {kept_step(planned, holder, column, index, env), index}
+
+                true ->
+                  {planned, index + 1}
+              end
             end)
 
-          {add_note(steps, run_note), {next, enemy}}
+          {steps |> add_note(run_note) |> add_note(untargeted_note(holder, enemy, orphan?)), {next, enemy}}
       end)
 
     {steps, Enum.flat_map(steps, & &1.notes)}
   end
+
+  defp orphan_continue?(%{"enemy" => %{"pick" => "continue"}}, previous, inherited), do: not is_map(previous) and not is_map(inherited)
+  defp orphan_continue?(_holder, _previous, _inherited), do: false
+
+  defp untargeted_skill?(%{action: "target", row: row}, %{"pick" => "none"}) when row in [:top, :bottom], do: true
+  defp untargeted_skill?(_planned, _enemy), do: false
+
+  defp untargeted_note(%{"type" => "target", "row" => "priority"}, %{"pick" => "none"}, true),
+    do: "no enemy to continue from or inherit, leaving top/bottom skill slots alone"
+
+  defp untargeted_note(%{"type" => "target"}, %{"pick" => "none"}, _orphan?),
+    do: "no target picked, leaving top/bottom skill slots alone (dodge still works without one)"
+
+  defp untargeted_note(_holder, _enemy, _orphan?), do: nil
 
   defp skips_target?(%{"enemy" => %{"pick" => pick}} = holder), do: pick != "none" and Map.get(holder, "skip_bottom_target", true)
   defp skips_target?(_holder), do: false
@@ -152,10 +175,11 @@ defmodule StarlightBot.Automation.SlotPlan do
     if BattlePlans.affinity_dodge?(holder), do: env.defense_sins.() |> List.wrap() |> Enum.at(column)
   end
 
-  defp resolve_enemy(own, previous) do
+  defp resolve_enemy(own, previous, inherited) do
     cond do
       is_map(own) and own["pick"] != "continue" -> {own, false}
       is_map(previous) -> {previous, true}
+      is_map(inherited) -> {inherited, false}
       true -> {%{"pick" => "none"}, false}
     end
   end
@@ -165,9 +189,22 @@ defmodule StarlightBot.Automation.SlotPlan do
   defp chain(holder, available, env, label) do
     {taken, notes} = take(holder, available, env)
     notes = if label == "rest" and taken != [], do: notes ++ ["rest takes slot(s) #{slots_text(taken)}"], else: notes
-    {rest, rest_notes} = chain(holder["rest"], available -- taken, env, "rest")
+    {rest, rest_notes} = chain(inherit_enemy(holder["rest"], holder), available -- taken, env, "rest")
     {if(taken == [], do: rest, else: [{holder, taken} | rest]), notes ++ rest_notes}
   end
+
+  defp inherit_enemy(%{} = rest, parent) do
+    rule =
+      case parent["enemy"] do
+        %{"pick" => "continue"} -> parent["inherited_enemy"]
+        %{"pick" => pick} = enemy when pick != "none" -> enemy
+        _ -> nil
+      end
+
+    if is_map(rule), do: Map.put(rest, "inherited_enemy", rule), else: rest
+  end
+
+  defp inherit_enemy(rest, _parent), do: rest
 
   defp take(%{"skill" => skill} = holder, available, env) do
     case select(holder, env) do

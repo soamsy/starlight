@@ -132,7 +132,7 @@ defmodule StarlightBot.Automation.EnvyChainPlaybookTest do
              ]
     end
 
-    test "no envy anywhere: top slots dodge without a target because nothing continued" do
+    test "no envy anywhere: dodges start from the parent entry's targeting rule because nothing continued" do
       slots = [
         {cell(:wrath, :skill1), cell(:lust, :skill1)},
         {cell(:pride, :skill1), cell(:lust, :skill1)},
@@ -140,7 +140,7 @@ defmodule StarlightBot.Automation.EnvyChainPlaybookTest do
       ]
 
       assert resolve(slots, [1]) == [
-               %{action: "dodge", column: 0, enemy: nil, row: nil},
+               %{action: "dodge", column: 0, enemy: 3, row: nil},
                %{action: "dodge", column: 1, enemy: nil, row: nil}
              ]
     end

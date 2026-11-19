@@ -87,4 +87,44 @@ defmodule StarlightBot.Automation.SlotPlanWhereTest do
   test "target retargets everything when the option is off" do
     assert columns(target("top", %{"skip_bottom_target" => false}), [1]) == [{0, "first", 0}, {1, "first", 1}, {2, "first", 2}]
   end
+
+  test "a continue entry with nothing before it leaves top and bottom skills alone but still dodges" do
+    rest = fn order -> target("priority", %{"who" => "everyone", "sinners" => [], "enemy" => %{"pick" => "continue"}, "priority" => %{"order" => order}}) end
+
+    {steps, notes} = SlotPlan.plan(rest.(["bottom"]), env([]))
+    assert Enum.all?(steps, &(&1.action == "nothing"))
+    assert Enum.any?(notes, &(&1 =~ "no enemy to continue from"))
+
+    {steps, _notes} = SlotPlan.plan(rest.(["dodge"]), env([]))
+    assert Enum.map(steps, &{&1.action, &1.row}) == List.duplicate({"target", :dodge}, 4)
+  end
+
+  test "a continue entry inherits the enemy of the entry before it" do
+    first = target("bottom", %{"who" => "only", "sinners" => ["faust"], "enemy" => %{"pick" => "first", "offset" => 0, "step" => "right"}, "rest" => target("bottom", %{"who" => "everyone", "sinners" => [], "enemy" => %{"pick" => "continue"}})})
+    {steps, _notes} = SlotPlan.plan(first, env([]))
+
+    assert Enum.all?(steps, &(&1.action == "target"))
+  end
+
+  test "a continue entry whose predecessors took no slots inherits its parent's targeting rule" do
+    rule = %{"pick" => "last", "offset" => 1, "step" => "left"}
+    leaf = target("bottom", %{"who" => "everyone", "sinners" => [], "enemy" => %{"pick" => "continue"}})
+    middle = target("bottom", %{"who" => "before", "sinners" => ["faust"], "enemy" => %{"pick" => "continue"}, "rest" => leaf})
+    entry = target("bottom", %{"who" => "only", "sinners" => ["faust"], "enemy" => rule, "rest" => middle})
+    env = Map.put(env([]), :sinner_groups, fn _holder -> :skip end)
+
+    {steps, _notes} = SlotPlan.plan(entry, env)
+
+    assert Enum.map(steps, &{&1.column, &1.action, &1.enemy["pick"], &1.enemy["index"]}) == [{0, "target", "last", 0}, {1, "target", "last", 1}, {2, "target", "last", 2}, {3, "target", "last", 3}]
+  end
+
+  test "a continue entry whose parent has no targeting rule either still leaves skill slots alone" do
+    leaf = target("bottom", %{"who" => "everyone", "sinners" => [], "enemy" => %{"pick" => "continue"}})
+    entry = target("bottom", %{"who" => "only", "sinners" => ["faust"], "enemy" => %{"pick" => "none"}, "rest" => leaf})
+    env = Map.put(env([]), :sinner_groups, fn _holder -> :skip end)
+
+    {steps, _notes} = SlotPlan.plan(entry, env)
+
+    assert Enum.all?(steps, &(&1.action == "nothing"))
+  end
 end

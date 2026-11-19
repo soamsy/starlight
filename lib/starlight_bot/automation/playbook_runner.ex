@@ -348,14 +348,6 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp target_or_dodge(:dodge, action, tray, column, ctx), do: dodge(action["enemy"], tray, column, ctx)
 
-  defp target_or_dodge(row, %{"enemy" => %{"pick" => "none"}}, tray, column, ctx) do
-    with {:ok, {sx, sy}} <- skill_point(tray, column, row, ctx) do
-      Ctx.log(ctx, :info, "playbook: choosing the #{row} skill on slot #{column + 1} without a target")
-      Mouse.click(sx, sy)
-      Mouse.dwell(@slot_click_settle_ms)
-    end
-  end
-
   defp target_or_dodge(row, action, tray, column, ctx) do
     with {:ok, grab} <- skill_point(tray, column, row, ctx) do
       Ctx.log(ctx, :info, "playbook: targeting enemy #{pick_text(action["enemy"])} with slot #{column + 1} (#{row} skill)")

@@ -28,8 +28,8 @@ defmodule StarlightBot.Automation.SlotPlanRunsTest do
         "who" => "everyone",
         "sinners" => [],
         "skill" => %{"pick" => "all"},
-        "enemy" => %{"pick" => "none"},
-        "skip_bottom_target" => true,
+        "enemy" => %{"pick" => "first", "offset" => 0, "step" => "right"},
+        "skip_bottom_target" => false,
         "row" => "priority",
         "priority" => %{"order" => ["in_use"]},
         "mode" => mode
@@ -111,5 +111,16 @@ defmodule StarlightBot.Automation.SlotPlanRunsTest do
     assert StarlightBot.BattlePlans.needs_defense?(holder("a_res_def"))
     assert StarlightBot.BattlePlans.needs_defense?(affinity)
     assert StarlightBot.BattlePlans.needs_defense?(Map.put(plain, "rest", affinity))
+  end
+
+  test "top and bottom skills with no target are left alone while a dodge still goes through" do
+    env = env([:wrath, :lust, :sloth], [:lust, :lust, :lust], [])
+    none = %{"pick" => "none"}
+
+    {steps, notes} = SlotPlan.plan(holder("none", %{"enemy" => none, "priority" => %{"order" => ["bottom"]}}), env)
+    assert Enum.all?(steps, &(&1.action == "nothing"))
+    assert Enum.any?(notes, &(&1 =~ "no target picked"))
+
+    assert {[{0, :dodge}, {1, :dodge}, {2, :dodge}], _notes} = rows(holder("none", %{"enemy" => none, "priority" => %{"order" => ["dodge"]}}), env)
   end
 end
