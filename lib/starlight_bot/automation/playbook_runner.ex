@@ -621,7 +621,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
     located =
       Enum.map(sinners, fn sinner ->
-        case locate(scan, sinner, ctx) do
+        case locate(scan, sinner) do
           {:ok, column} -> {SinnerProfiles.label(sinner), Enum.at(sinner_of_slot, column)}
           :skip -> :skip
         end
@@ -1054,15 +1054,15 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp sinner_groups("except", ids, scan, tray, ctx) do
-    excluded = located_groups(ids, scan, tray, "so everyone counts as not", ctx)
+  defp sinner_groups("except", ids, scan, tray, _ctx) do
+    excluded = located_groups(ids, scan, tray)
     names = Enum.map_join(ids, ", ", &SinnerProfiles.label/1)
     who = %{name: if(ids == [], do: "everyone", else: "everyone but #{names}")}
     {:ok, tray |> tray_groups() |> Enum.reject(&(&1 in excluded)) |> Enum.map(&{&1, who})}
   end
 
   defp sinner_groups(side, ids, scan, tray, ctx) when side in ["after", "before"] do
-    case scan |> then(&located_groups(ids, &1, tray, "so it can't anchor", ctx)) |> List.flatten() do
+    case located_groups(ids, scan, tray) |> List.flatten() do
       [] ->
         Ctx.log(ctx, :info, "playbook: none of the #{side} sinners are in the skill tray, skipping")
         :skip
@@ -1079,10 +1079,10 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     :skip
   end
 
-  defp sinner_groups(_only, ids, scan, tray, ctx) do
+  defp sinner_groups(_only, ids, scan, tray, _ctx) do
     groups =
       Enum.flat_map(ids, fn id ->
-        case locate(scan, id, ctx) do
+        case locate(scan, id) do
           {:ok, column} -> [{SkillTray.owned_columns(tray, column), %{name: SinnerProfiles.label(id)}}]
           :skip -> []
         end
@@ -1094,24 +1094,13 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp on_side?("after", columns, anchor_columns), do: Enum.min(columns) > Enum.max(anchor_columns)
   defp on_side?("before", columns, anchor_columns), do: Enum.max(columns) < Enum.min(anchor_columns)
 
-  defp located_groups(ids, scan, tray, missing_note, ctx) do
+  defp located_groups(ids, scan, tray) do
     Enum.flat_map(ids, fn id ->
-      case locate(scan, id, ctx, missing_note) do
+      case locate(scan, id) do
         {:ok, column} -> [SkillTray.owned_columns(tray, column)]
         :skip -> []
       end
     end)
-  end
-
-  defp save_tray_miss(frame, hooks, ctx) do
-    if Application.get_env(:starlight_bot, :save_timeout_frames, false) do
-      stamp = NaiveDateTime.local_now() |> NaiveDateTime.to_string() |> String.replace([" ", ":", "."], "_")
-      dir = Path.join(StarlightBot.Data.log_dir(), "timeouts")
-      File.mkdir_p!(dir)
-      path = Path.expand(Path.join(dir, "#{stamp}_tray_miss_#{hook_names(hooks, "_")}.png"))
-      Evision.imwrite(path, frame.mat)
-      Ctx.log(ctx, :info, "saved the screen at the tray miss to #{path}")
-    end
   end
 
   defp tray_groups(tray) do
@@ -1122,28 +1111,12 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     |> Enum.map(&elem(&1, 1))
   end
 
-  defp locate(scan, sinner, ctx, missing_note \\ "skipping") do
-    name = SinnerProfiles.label(sinner)
-
+  defp locate(scan, sinner) do
     case TrayScan.claim(scan, sinner) do
-      nil ->
-        hooks = TrayScan.hooks_for(scan, sinner)
-
-        if hooks == [] do
-          Ctx.log(ctx, :error, "playbook: #{name} has no sinner profile with a locator hook, #{missing_note}")
-        else
-          Ctx.log(ctx, :info, "playbook: #{name} (#{hook_names(hooks)}) not found in the skill tray, #{missing_note}")
-          save_tray_miss(scan.frame, hooks, ctx)
-        end
-
-        :skip
-
-      claim ->
-        {:ok, claim.column}
+      nil -> :skip
+      claim -> {:ok, claim.column}
     end
   end
-
-  defp hook_names(hooks, joiner \\ "/"), do: Enum.map_join(hooks, joiner, &to_string/1)
 
   defp guard(ctx) do
     cond do

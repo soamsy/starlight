@@ -49,7 +49,36 @@ defmodule StarlightBot.Automation.TrayScan do
     claims = if candidates == [], do: [], else: scan(frame, tray, candidates, wanted, ctx)
     defense = if wanted.defense, do: defense_sins(claims, tray)
     log_defense(wanted, claims, ctx)
-    %__MODULE__{frame: frame, candidates: candidates, claims: claims, defense: defense}
+    scan = %__MODULE__{frame: frame, candidates: candidates, claims: claims, defense: defense}
+    report_misses(scan, wanted.sinners, ctx)
+    scan
+  end
+
+  defp report_misses(scan, sinners, ctx) do
+    missing = Enum.filter(sinners, &is_nil(claim(scan, &1)))
+
+    for sinner <- missing do
+      case hooks_for(scan, sinner) do
+        [] ->
+          Ctx.log(ctx, :error, "playbook: #{SinnerProfiles.label(sinner)} has no sinner profile with a locator hook")
+
+        hooks ->
+          Ctx.log(ctx, :info, "playbook: #{SinnerProfiles.label(sinner)} not found in the skill tray (scanned #{length(hooks)} hook(s))")
+      end
+    end
+
+    if Enum.any?(missing, &(hooks_for(scan, &1) != [])), do: save_miss_frame(scan.frame, missing, ctx)
+  end
+
+  defp save_miss_frame(frame, sinners, ctx) do
+    if Application.get_env(:starlight_bot, :save_timeout_frames, false) do
+      stamp = NaiveDateTime.local_now() |> NaiveDateTime.to_string() |> String.replace([" ", ":", "."], "_")
+      dir = Path.join(StarlightBot.Data.log_dir(), "timeouts")
+      File.mkdir_p!(dir)
+      path = Path.expand(Path.join(dir, "#{stamp}_tray_miss_#{Enum.join(sinners, "_")}.png"))
+      Evision.imwrite(path, frame.mat)
+      Ctx.log(ctx, :info, "saved the screen at the tray miss to #{path}")
+    end
   end
 
   defp scan(frame, tray, candidates, wanted, ctx) do
