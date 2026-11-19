@@ -520,7 +520,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
   test "a stage takes its own goals and entries, new gifts go to the picked section, and entry edits follow the entry", %{socket: socket} do
     socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Glimpse of Flames"}) |> event("list_add_stage", %{})
     [_, stage] = GiftPlans.sections(socket.assigns.plan_data, socket.assigns.root_section_id)
-    assert render(socket) =~ ~s(value="Stage 2")
     socket = event(socket, "rename_stage", %{"id" => stage["id"], "value" => " Late game "})
     assert GiftPlans.find_section(socket.assigns.plan_data, stage["id"])["name"] == "Late game"
     socket = event(socket, "rename_stage", %{"id" => stage["id"], "value" => " "})

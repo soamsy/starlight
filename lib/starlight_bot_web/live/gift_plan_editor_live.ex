@@ -79,7 +79,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
-  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_select_branch list_copy_entries list_select_tab list_refresh_select_tab rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_select pack_new pack_edit pack_close)
+  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_select_branch list_copy_entries list_select_tab list_refresh_select_tab start_rename_stage cancel_rename_stage rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_select pack_new pack_edit pack_close)
 
   def read_only_events, do: @read_only_events
 
@@ -1020,8 +1020,19 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("start_rename_stage", %{"id" => id}, socket) do
+    {:noreply, assign(socket, :renaming_stage_id, id)}
+  end
+
+  @impl true
+  def handle_event("cancel_rename_stage", _params, socket) do
+    {:noreply, assign(socket, :renaming_stage_id, nil)}
+  end
+
+  @impl true
   def handle_event("rename_stage", %{"id" => id, "value" => name}, socket) do
     name = String.trim(name)
+    socket = assign(socket, :renaming_stage_id, nil)
     {:noreply, if(name == "", do: socket, else: update_plan(socket, &GiftPlans.rename_stage(&1, id, name)))}
   end
 
@@ -1512,6 +1523,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> assign(:root_section_id, nil)
     |> assign(:entry_tabs, %{})
     |> assign(:refresh_tabs, %{})
+    |> assign(:renaming_stage_id, nil)
     |> assign(:refresh_paths, %{})
     |> assign(:fusion_entry_id, nil)
     |> assign(:editing_condition_case_id, nil)
@@ -1548,6 +1560,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
             |> assign(:root_section_id, first_id(data["sections"]))
                 |> assign(:entry_tabs, %{})
         |> assign(:refresh_tabs, %{})
+        |> assign(:renaming_stage_id, nil)
         |> assign(:refresh_paths, %{})
     |> assign(:refresh_paths, %{})
         |> assign(:fusion_entry_id, nil)
@@ -1603,6 +1616,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         |> assign(:active_tab, :shop)
         |> assign(:entry_tabs, %{})
         |> assign(:refresh_tabs, %{})
+        |> assign(:renaming_stage_id, nil)
         |> assign(:refresh_paths, %{})
         |> assign(:fusion_entry_id, nil)
         |> assign(:editing_condition_case_id, nil)
@@ -1621,6 +1635,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> assign(:active_tab, parent.active_tab)
     |> assign(:entry_tabs, %{})
     |> assign(:refresh_tabs, %{})
+    |> assign(:renaming_stage_id, nil)
     |> assign(:refresh_paths, %{})
     |> assign(:fusion_entry_id, nil)
     |> assign(:gift_popup, nil)
@@ -2189,6 +2204,28 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
               disabled={Enum.max(@froms) >= GiftPlans.max_floor()} title="New tab"
               class="rounded-t-lg border border-b-0 border-dashed border-primary/60 px-2 py-0.5 text-[11px] text-primary hover:bg-primary/20 disabled:opacity-30">+</button>
     </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :name, :string, required: true
+  attr :renaming_id, :string, default: nil
+  attr :title, :string, required: true
+
+  def stage_title(assigns) do
+    ~H"""
+    <%= if @renaming_id == @id do %>
+      <input id={"stage-name-#{@id}"} type="text" value={@name} phx-blur="rename_stage" phx-value-id={@id} maxlength="40"
+             phx-keydown="cancel_rename_stage" phx-key="Escape" phx-hook="FocusSelect"
+             class="input input-bordered input-xs w-40 self-center font-semibold" />
+    <% else %>
+      <div id={"stage-title-#{@id}"} phx-hook="DblClickEvent" data-event="start_rename_stage" data-id={@id} title={@title}
+           class="group flex items-center gap-1 self-center px-1">
+        <h3 class="text-sm font-semibold"><%= @name %></h3>
+        <button type="button" phx-click="start_rename_stage" phx-value-id={@id} title="Rename this stage"
+                class="btn btn-2xs btn-ghost shrink-0 px-1 opacity-40 focus-visible:opacity-100 group-hover:opacity-100"><.icon name="lucide-pencil" class="size-3" /></button>
+      </div>
+    <% end %>
     """
   end
 

@@ -166,13 +166,17 @@
               <% else %>
               <div class="flex items-center gap-2 flex-wrap">
                 <div class="join">
-                  <button id="gift-shop-btn" type="button" phx-click="set_tab" phx-value-tab="shop" class={"btn btn-sm join-item " <> if(@active_tab == :shop, do: "btn-primary", else: "btn-outline")}>Shopping list</button>
+                  <button id="gift-shop-btn" type="button" phx-click="set_tab" phx-value-tab="shop" class={"btn btn-sm join-item gap-1 " <> if(@active_tab == :shop, do: "btn-primary", else: "btn-outline")}><.icon name="lucide-shopping-cart" class="size-4" />Shopping list</button>
                   <button id="gift-loadout-btn" type="button" phx-click="set_tab" phx-value-tab="loadout" class={"btn btn-sm join-item gap-1 " <> if(@active_tab == :loadout, do: "btn-primary", else: "btn-outline")}>
-                    Loadout
+                    <.icon name="lucide-backpack" class="size-4" />Loadout
                     <img :if={@plan_data["affinity"] not in [nil, ""]} src={gift_affinity_icon(@plan_data["affinity"])} title={@plan_data["affinity"]} class="sinner-icon w-4 h-4 object-contain shrink-0" />
                     <img :for={name <- GiftPlans.cabinet_order(@plan_data)} :if={@gifts_by_name[name]} src={@gifts_by_name[name].image_path} title={name} class="w-4 h-4 rounded object-cover shrink-0 bg-slate-500/40 ring-1 ring-slate-400/40" />
                   </button>
                 </div>
+                <div class="ml-auto flex items-center gap-3">
+                  <span :if={issues != []} class="badge badge-warning badge-sm" title={Enum.join(issues, "\n")}>
+                    <%= length(issues) %> issue(s)
+                  </span>
                 <% selected_pack = Enum.find(@starter_packs, &(&1.ref == @selected_pack)) %>
                 <div class="flex items-center gap-1">
                   <details id="starter-pack-menu" phx-hook="FloatingDropdown" data-close-on-click class="dropdown">
@@ -219,10 +223,7 @@
                     <.icon name="lucide-plus" class="size-4" />
                   </button>
                 </div>
-                <div class="ml-auto flex items-center gap-3">
-                  <span :if={issues != []} class="badge badge-warning badge-sm" title={Enum.join(issues, "\n")}>
-                    <%= length(issues) %> issue(s)
-                  </span>
+                  <div class="h-5 w-px bg-base-300"></div>
                     <.template_picker id="gift-template-picker" can_undo={@can_undo} can_redo={@can_redo} templates={@templates} editing={@editing_template} current_count={@tab_counts[:gift_plans]} status={@paste_status} selected={@template_id} plans={@plans} plan_id={@editing_id} editing_plan={@editing_plan} label="gift plan" />
                   <button type="button" phx-click="toggle_help" class="btn btn-sm btn-outline gap-0 overflow-hidden px-0" title="How gift plans work">
                     <span class="flex h-full items-center border-r border-current/30 bg-base-content/10 px-2 text-xs">guide</span>
@@ -483,11 +484,11 @@
                   <% else %>
                   <%= if section do %>
                     <.heal_entries :if={is_nil(@pack_edit)} section={section} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} plan_data={@plan_data} editing_branch={@editing_condition_case_id} />
+                    <div class="flex flex-col gap-2 rounded-xl border border-dashed border-base-content/30 p-2 shrink-0">
                     <div class="flex items-start gap-2">
                       <div class="flex items-stretch gap-2 flex-wrap flex-1 min-w-0 rounded-xl border border-base-300 bg-base-200/60 p-1">
-                        <input id={"stage-name-#{section["id"]}"} type="text" value={GiftPlans.section_name(section)} phx-blur="rename_stage" phx-value-id={section["id"]} maxlength="40"
-                               title="Name of the first stage. Shown in refresh stages and run progress."
-                               class="input input-ghost input-xs w-32 self-center font-semibold" />
+                        <.stage_title id={section["id"]} name={GiftPlans.section_name(section)} renaming_id={@renaming_stage_id}
+                                      title="Double-click to rename. Name of the first stage, shown in refresh stages and run progress." />
                         <.goal_chips section={section} views={Map.get(pack_views, section["id"], [])} />
                       </div>
                       <div class="flex flex-col items-end gap-1 shrink-0 ml-auto">
@@ -568,16 +569,16 @@
                       </div>
                     </div>
 
-                    <div data-drop-section={section["id"]} class="flex flex-col gap-1 rounded-lg shrink-0">
+                    <div data-drop-section={section["id"]} class="flex flex-col gap-1 rounded-lg shrink-0 pl-2">
                       <.section_entries section={section} packs_enabled={is_nil(@pack_edit)} views={Map.get(pack_views, section["id"], [])} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} plan_data={@plan_data} editing_branch={@editing_condition_case_id} />
                       <div :if={Enum.all?(section["entries"], &GiftPlans.heal_entry?/1) and Map.get(pack_views, section["id"], []) == []} class="text-xs text-base-content/40 italic">No entries yet. Add gifts from the search on the left.</div>
+                    </div>
                     </div>
 
                       <div :for={{stage, number} <- Enum.with_index(GiftPlans.stages(@plan_data, section["id"]), 2)} data-drop-section={stage["id"]} class="flex flex-col gap-2 rounded-xl border border-dashed border-base-content/30 p-2 shrink-0">
                         <div class="flex items-stretch gap-2 flex-wrap rounded-xl border border-base-300 bg-base-200/60 p-1">
-                          <input id={"stage-name-#{stage["id"]}"} type="text" value={stage["name"]} phx-blur="rename_stage" phx-value-id={stage["id"]} maxlength="40"
-                                 title="Worked on once everything above is done. Refreshes are shared with the shop, and everything above stays kept."
-                                 class="input input-ghost input-xs w-32 self-center font-semibold" />
+                          <.stage_title id={stage["id"]} name={stage["name"]} renaming_id={@renaming_stage_id}
+                                        title="Double-click to rename. Worked on once everything above is done. Refreshes are shared with the shop, and everything above stays kept." />
                           <.goal_chips section={stage} views={Map.get(pack_views, stage["id"], [])} />
                           <span class="ml-auto flex items-center">
                             <button type="button" phx-click="list_move_stage" phx-value-id={stage["id"]} phx-value-dir="up" class="btn btn-ghost btn-xs px-1" title={if number == 2, do: "Swap with the first section (heal entries stay there)", else: "Move this stage earlier"}><.icon name="lucide-arrow-up" class="size-3.5" /></button>
@@ -586,8 +587,10 @@
                           <button type="button" phx-click="list_remove_stage" phx-value-id={stage["id"]} data-confirm={"Remove stage #{number} and its entries?"}
                                   class="btn btn-ghost btn-xs px-1 text-error" title="Remove this stage and its entries"><.icon name="lucide-x" class="size-3.5" /></button>
                         </div>
-                        <.section_entries section={stage} packs_enabled={is_nil(@pack_edit)} views={Map.get(pack_views, stage["id"], [])} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} plan_data={@plan_data} editing_branch={@editing_condition_case_id} />
-                        <div :if={Enum.all?(stage["entries"], &GiftPlans.heal_entry?/1) and Map.get(pack_views, stage["id"], []) == []} class="text-xs text-base-content/40 italic">No entries yet. Drag gifts here from the search on the left.</div>
+                        <div class="flex flex-col gap-1 pl-2">
+                          <.section_entries section={stage} packs_enabled={is_nil(@pack_edit)} views={Map.get(pack_views, stage["id"], [])} entry_tabs={@entry_tabs} gifts_by_name={@gifts_by_name} gifts_by_id={@gifts_by_id} plan_data={@plan_data} editing_branch={@editing_condition_case_id} />
+                          <div :if={Enum.all?(stage["entries"], &GiftPlans.heal_entry?/1) and Map.get(pack_views, stage["id"], []) == []} class="text-xs text-base-content/40 italic">No entries yet. Drag gifts here from the search on the left.</div>
+                        </div>
                       </div>
                       <div :if={section["pursue_optional"] == true and is_nil(@pack_edit)} class="flex flex-col gap-1 rounded-xl border border-dashed border-base-content/30 p-2 shrink-0">
                         <div class="flex items-center gap-2">
@@ -606,9 +609,10 @@
                     <%= if is_nil(@pack_edit) do %>
                     <% refresh_from = active_refresh_from(@refresh_tabs, section) %>
                     <% refresh_scheduled = section["refresh_scheduled"] == true %>
-                    <div class="flex flex-col">
+                    <div class="flex flex-col mt-4 rounded-xl bg-base-300 p-2">
                       <div class="flex items-center gap-2 pb-1">
-                        <span class="text-xs font-semibold text-base-content/70">Refresh</span>
+                        <span class="flex items-center gap-1 text-sm font-semibold"><.icon name="lucide-refresh-cw" class="size-4" />Refresh</span>
+                        <span class="text-xs text-base-content/60">Applies to every stage</span>
                         <button phx-click="list_add_refresh_case" class="btn btn-xs btn-outline">+ Case</button>
                         <.refresh_costs section={section} from={refresh_from} path={refresh_path(assigns, section, refresh_from)} plan_data={@plan_data} />
                         <button :if={not refresh_scheduled} type="button" phx-click="list_refresh_add_schedule" class="btn btn-ghost btn-xs ml-auto">Add Schedule</button>
