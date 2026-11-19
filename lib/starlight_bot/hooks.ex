@@ -51,7 +51,7 @@ defmodule StarlightBot.Hooks do
   def list_hooks(category) when category in @categories, do: Enum.filter(effective_rows(), &(&1.category == category))
 
   def list_names(category) when category in @categories do
-    category |> list_hooks() |> Enum.map(& &1.name)
+    category |> light_rows() |> Enum.map(& &1.name)
   end
 
   def category_counts, do: category_counts(effective_rows())
@@ -62,10 +62,16 @@ defmodule StarlightBot.Hooks do
   end
 
   @doc "Map of hook name => updated_at for hooks that have a template image, used to version thumbnail URLs."
-  def hook_thumbnails(category) when category in @categories, do: thumbnails_for(list_hooks(category))
+  def hook_thumbnails(category) when category in @categories, do: thumbnails_for(light_rows(category))
 
   def thumbnails_for(rows) do
-    for row <- rows, File.exists?(image_path(row)), into: %{}, do: {row.name, row.updated_at}
+    present =
+      rows
+      |> Enum.map(&dir_for(&1[:source]))
+      |> Enum.uniq()
+      |> Map.new(fn dir -> {dir, dir |> File.ls() |> then(fn {:ok, files} -> MapSet.new(files); _ -> MapSet.new() end)} end)
+
+    for row <- rows, MapSet.member?(present[dir_for(row[:source])], row.name <> ".png"), valid_name?(row.name), into: %{}, do: {row.name, row.updated_at}
   end
 
   @doc "Template image binary for a hook, or nil if the hook or image is missing."
@@ -95,16 +101,45 @@ defmodule StarlightBot.Hooks do
     end
   end
 
+  @rows_cache {__MODULE__, :effective_rows}
+  @generation {__MODULE__, :generation}
+
   def effective_rows do
-    merge(fetch_base(nil), fetch_overrides(nil))
+    if Application.get_env(:starlight_bot, :hooks_cache?, true), do: cached_rows(), else: load_rows()
   rescue
     _ -> []
   end
+
+  def invalidate_cache, do: :persistent_term.put(@generation, System.unique_integer([:monotonic]))
+
+  defp cached_rows do
+    generation = :persistent_term.get(@generation, 0)
+
+    case :persistent_term.get(@rows_cache, nil) do
+      {^generation, rows} ->
+        rows
+
+      _ ->
+        rows = load_rows()
+        :persistent_term.put(@rows_cache, {generation, rows})
+        rows
+    end
+  end
+
+  defp load_rows, do: merge(fetch_base(nil), fetch_overrides(nil))
 
   def effective_row(name) when is_binary(name) do
     merge(fetch_base(name), fetch_overrides(name)) |> List.first()
   rescue
     _ -> nil
+  end
+
+  defp light_rows(category) do
+    base = BaseRepo.all(from h in "hooks", select: map(h, [:name, :category, :updated_at, :version]))
+    overrides = Repo.all(from h in "hook_overrides", select: map(h, [:name, :category, :updated_at, :base_version]))
+    base |> merge(overrides) |> Enum.filter(&(&1.category == category))
+  rescue
+    _ -> []
   end
 
   defp fetch_base(nil), do: BaseRepo.all(from h in "hooks", select: map(h, ^(@fields ++ [:version])))
@@ -192,7 +227,7 @@ defmodule StarlightBot.Hooks do
         File.mkdir_p!(Path.dirname(dest))
         if File.exists?(src), do: File.cp!(src, dest)
         {1, _} = Repo.insert_all("hook_overrides", [row])
-        HookRegistry.invalidate(String.to_atom(name))
+        invalidate_hook(String.to_atom(name))
         {:ok, name}
     end
   end
@@ -205,9 +240,14 @@ defmodule StarlightBot.Hooks do
       not in_layer?(t, name) -> {:error, :not_found}
       true ->
         restamp(t, name)
-        HookRegistry.invalidate(String.to_atom(name))
+        invalidate_hook(String.to_atom(name))
         {:ok, name}
     end
+  end
+
+  defp invalidate_hook(name) do
+    invalidate_cache()
+    HookRegistry.invalidate(name)
   end
 
   def bump_version(name) when is_binary(name) do
@@ -216,6 +256,7 @@ defmodule StarlightBot.Hooks do
     if t.layer == :base do
       now = DateTime.utc_now() |> DateTime.truncate(:second)
       {n, _} = BaseRepo.update_all(from(h in "hooks", where: h.name == ^name), inc: [version: 1], set: [updated_at: now])
+      invalidate_cache()
       if n > 0, do: {:ok, name}, else: {:error, :not_found}
     else
       {:error, :not_authoring}
@@ -252,7 +293,7 @@ defmodule StarlightBot.Hooks do
       n > 0 ->
         File.rm(target_path(t, name))
         :ets.delete(:hook_registry, String.to_atom(name))
-        HookRegistry.invalidate(String.to_atom(name))
+        invalidate_hook(String.to_atom(name))
         {:ok, name}
 
       read_only ->
@@ -263,6 +304,7 @@ defmodule StarlightBot.Hooks do
     end
   rescue
     e ->
+      invalidate_cache()
       Logger.error("Hooks DB error: #{Exception.message(e)}", module: __MODULE__)
       {:error, Exception.message(e)}
   end
@@ -284,7 +326,7 @@ defmodule StarlightBot.Hooks do
            ) do
       File.rename(target_path(t, old_name), new_path)
       :ets.delete(:hook_registry, String.to_atom(old_name))
-      HookRegistry.invalidate(String.to_atom(new_name))
+      invalidate_hook(String.to_atom(new_name))
       {:ok, new_name}
     else
       {:error, _} = error -> error
@@ -292,6 +334,7 @@ defmodule StarlightBot.Hooks do
     end
   rescue
     e ->
+      invalidate_cache()
       Logger.error("Hooks DB error: #{Exception.message(e)}", module: __MODULE__)
       {:error, Exception.message(e)}
   end
@@ -352,7 +395,7 @@ defmodule StarlightBot.Hooks do
       n > 0 ->
         write_image!(t, name, png_binary)
         restamp(t, name)
-        HookRegistry.invalidate(String.to_atom(name))
+        invalidate_hook(String.to_atom(name))
         {:ok, name}
 
       read_only?(t, name) ->
@@ -363,6 +406,7 @@ defmodule StarlightBot.Hooks do
     end
   rescue
     e ->
+      invalidate_cache()
       Logger.error("Hooks DB error: #{Exception.message(e)}", module: __MODULE__)
       {:error, Exception.message(e)}
   end
@@ -383,7 +427,7 @@ defmodule StarlightBot.Hooks do
     cond do
       n > 0 ->
         restamp(t, name)
-        HookRegistry.invalidate(String.to_atom(name))
+        invalidate_hook(String.to_atom(name))
         {:ok, name}
 
       read_only?(t, name) ->
@@ -394,6 +438,7 @@ defmodule StarlightBot.Hooks do
     end
   rescue
     e ->
+      invalidate_cache()
       Logger.error("Hooks DB error: #{Exception.message(e)}", module: __MODULE__)
       {:error, Exception.message(e)}
   end
@@ -447,7 +492,7 @@ defmodule StarlightBot.Hooks do
     case insert_checked(t, table, name, row) do
       {1, _} ->
         if image = attrs[:image] || attrs.image, do: write_image!(t, name, image)
-        HookRegistry.invalidate(String.to_atom(name))
+        invalidate_hook(String.to_atom(name))
         {:ok, name}
 
       {:error, _} = error ->
@@ -458,6 +503,7 @@ defmodule StarlightBot.Hooks do
     end
   rescue
     e ->
+      invalidate_cache()
       Logger.error("Hooks DB error: #{Exception.message(e)}", module: __MODULE__)
       {:error, Exception.message(e)}
   end
@@ -564,7 +610,7 @@ defmodule StarlightBot.Hooks do
       if n > 0 do
         if image = attrs[:image] || attrs.image, do: write_image!(t, name, image)
         restamp(t, name)
-        HookRegistry.invalidate(String.to_atom(name))
+        invalidate_hook(String.to_atom(name))
         {:ok, name}
       else
         {:error, :not_found}
@@ -572,6 +618,7 @@ defmodule StarlightBot.Hooks do
     end
   rescue
     e ->
+      invalidate_cache()
       Logger.error("Hooks DB error: #{Exception.message(e)}", module: __MODULE__)
       {:error, Exception.message(e)}
   end

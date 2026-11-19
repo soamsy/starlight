@@ -30,6 +30,39 @@ defmodule StarlightBot.HooksLayersTest do
     end)
   end
 
+  describe "rows cache" do
+    setup do
+      Application.put_env(:starlight_bot, :hooks_cache?, true)
+      Hooks.invalidate_cache()
+
+      on_exit(fn ->
+        Application.put_env(:starlight_bot, :hooks_cache?, false)
+        Hooks.invalidate_cache()
+      end)
+    end
+
+    test "serves cached rows until invalidated" do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      assert Enum.any?(Hooks.effective_rows(), &(&1.name == "layer_shipped"))
+
+      BaseRepo.insert_all("hooks", [
+        %{name: "layer_raw", match_method: "gray", confidence: 0.8, category: "general", mask: false, version: 1, inserted_at: now, updated_at: now}
+      ])
+
+      refute Enum.any?(Hooks.effective_rows(), &(&1.name == "layer_raw"))
+      Hooks.invalidate_cache()
+      assert Enum.any?(Hooks.effective_rows(), &(&1.name == "layer_raw"))
+    end
+
+    test "writes through Hooks invalidate the cache" do
+      assert %{source: :base} = Enum.find(Hooks.effective_rows(), &(&1.name == "layer_shipped"))
+      assert {:ok, "layer_shipped"} = Hooks.override_hook("layer_shipped")
+      assert %{source: :override} = Enum.find(Hooks.effective_rows(), &(&1.name == "layer_shipped"))
+      assert {:ok, "layer_shipped"} = Hooks.update_notes("layer_shipped", "edited")
+      assert %{notes: "edited"} = Enum.find(Hooks.effective_rows(), &(&1.name == "layer_shipped"))
+    end
+  end
+
   test "shipped hooks are read-only until overridden" do
     assert %{source: :base, retired: false} = Hooks.effective_row("layer_shipped")
     refute Hooks.editable?(Hooks.effective_row("layer_shipped"))

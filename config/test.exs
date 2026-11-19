@@ -5,6 +5,8 @@ config :starlight_bot, start_hardware?: false
 
 config :starlight_bot, :bot_log_dir, nil
 
+config :starlight_bot, :hooks_cache?, false
+
 config :starlight_bot, :hook_image_dir, "/tmp/starlight_test_hooks"
 
 config :starlight_bot, :auto_migrate, false

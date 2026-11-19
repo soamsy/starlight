@@ -28,13 +28,14 @@ defmodule StarlightBotWeb.Live.RunnerLive do
 
     nav = Navigator.status()
     teams = Teams.list_teams()
+    gifts = EgoGifts.list_gifts()
 
     {:ok,
      socket
      |> assign(:tab, socket.assigns[:live_action] || nav.run_kind || :mirror_dungeon)
-     |> assign(:gifts_by_name, Map.new(EgoGifts.list_gifts(), &{&1.name, &1}))
+     |> assign(:gifts_by_name, Map.new(gifts, &{&1.name, &1}))
      |> assign(:hook_groups, Teams.team_hooks())
-     |> assign(:gifts_by_id, Map.new(EgoGifts.list_gifts(), &{&1.id, &1}))
+     |> assign(:gifts_by_id, Map.new(gifts, &{&1.id, &1}))
      |> assign(:theme_packs_by_gift_id, StarlightBot.ThemePacks.names_by_gift_id())
      |> assign(:gift_popup, nil)
      |> assign_nav(nav)

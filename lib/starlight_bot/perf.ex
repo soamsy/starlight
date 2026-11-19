@@ -7,7 +7,7 @@ defmodule StarlightBot.Perf do
   @profile_every 5
   @long_log_cap 20
   @mailbox_threshold 50
-  @tracked [StarlightBotWeb.Live.RunnerLive, StarlightBotWeb.Live.LogLive]
+  @tracked [StarlightBotWeb.Live.RunnerLive, StarlightBotWeb.Live.LogLive, StarlightBotWeb.Live.TeamEditorLive]
   @events [
     [:phoenix, :live_view, :mount, :stop],
     [:phoenix, :live_view, :render, :stop],
