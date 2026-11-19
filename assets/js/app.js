@@ -1308,7 +1308,9 @@ const PriorityChips = {
       if (chips().some(c => isFused(c) && c.querySelector("input").value === value)) return
       const fused = target.cloneNode(true)
       fused.dataset.sin = sinChip.dataset.sin
-      fused.title = value
+      fused.title = target.dataset.dodge
+        ? `${value}: covers dodge, defend and counter, only on a slot whose sinner's defense is ${sinChip.dataset.sin}`
+        : value
       fused.classList.remove(...fuseClasses)
       const input = fused.querySelector("input")
       input.value = value

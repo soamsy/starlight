@@ -1,10 +1,10 @@
 defmodule StarlightBot.Automation.PlaybookRunner do
-  alias StarlightBot.Automation.{ActiveSkillsWatch, BattleChain, RunMemory, SlotPlan, TrayWatch}
+  alias StarlightBot.Automation.{ActiveSkillsWatch, BattleChain, RunMemory, SlotPlan, TrayScan, TrayWatch}
   alias StarlightBot.{BattleDebug, BattlePlans, Conditions, Ctx, FailureShot, SinnerProfiles}
   alias StarlightBot.BattlePlans.Resolver
   alias StarlightBot.Input.{Leeway, Mouse}
   alias StarlightBot.Navigation.{DSL, Runner}
-  alias StarlightBot.Vision.{Capture, EnemyTargets, HookRegistry, Matcher, SinColor, SinnerLocator, SkillTray}
+  alias StarlightBot.Vision.{Capture, EnemyTargets, HookRegistry, Matcher, SinColor, SkillTray}
 
   @key_gap_ms 50
   @poll_ms 100
@@ -317,7 +317,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
 
   defp run_action(%{"type" => type} = action, turn, ctx) when type in ~w(dodge ego target nothing) do
     with {:ok, frame, tray} <- turn.scan,
-         [_ | _] = steps <- plan_steps(action, frame, tray, profiles(ctx), ctx) do
+         [_ | _] = steps <- plan_steps(action, frame, tray, ctx) do
       {:steps, steps |> Enum.reject(&(&1.action == "nothing")) |> Enum.map(&slot_step(&1, frame, tray))}
     else
       _ -> :pending
@@ -329,10 +329,10 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     with {:ok, frame, tray} <- turn.scan,
          {:ok, gear_rect} <- find_gear(frame, ctx),
          pins = action["pins"] || [],
-         defense = if(mode == "a_res_def" or Enum.any?(pins, &BattlePlans.needs_defense?/1), do: defense_sins(frame, tray, ctx)),
-         forced = forced_rows(pins, frame, tray, defense, ctx),
+         scan = TrayScan.build(TrayScan.wanted(pins, defense?: mode == "a_res_def"), frame, tray, ctx),
+         forced = forced_rows(pins, frame, tray, scan, ctx),
          forced = apply_forced(forced, tray, ctx),
-         :ok <- BattleChain.drag(frame, tray, gear_rect, mode, forced, ctx, chain_opts(mode, action, tray, defense, ctx)) do
+         :ok <- BattleChain.drag(frame, tray, gear_rect, mode, forced, ctx, chain_opts(mode, action, tray, scan, ctx)) do
       if await(@turn_started, @turn_start_timeout_ms), do: :started, else: log_pending(ctx, "chain drag didn't start the turn")
     else
       {:error, reason} -> log_pending(ctx, "chain drag failed: #{inspect(reason)}")
@@ -598,8 +598,11 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     columns =
       case leaf["sinners"] do
         [_ | _] = sinners ->
-          %{"who" => "only", "sinners" => sinners, "skill" => %{"pick" => "all"}}
-          |> holder_slots(frame, tray, profiles(ctx), nil, ctx)
+          holder = %{"who" => "only", "sinners" => sinners, "skill" => %{"pick" => "all"}}
+          scan = TrayScan.build(TrayScan.wanted([holder]), frame, tray, ctx)
+
+          holder
+          |> holder_slots(frame, tray, scan, ctx)
           |> Enum.flat_map(fn {_holder, taken} -> taken end)
 
         _anyone ->
@@ -614,12 +617,13 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp position_leaf(%{"sinners" => [_ | _] = sinners} = leaf, %{scan: {:ok, frame, %SkillTray{sinner_of_slot: [_ | _] = sinner_of_slot} = tray}}, ctx) do
     count = List.last(sinner_of_slot) + 1
 
+    scan = TrayScan.build(TrayScan.sinners_wanted(sinners), frame, tray, ctx)
+
     located =
       Enum.map(sinners, fn sinner ->
-        with {:ok, profile} <- fetch_profile(profiles(ctx), sinner, ctx),
-             {:ok, hooks} <- locator_hooks(profile, ctx),
-             {:ok, column} <- locate(frame, tray, hooks, profile, ctx) do
-          {profile.name, Enum.at(sinner_of_slot, column)}
+        case locate(scan, sinner, ctx) do
+          {:ok, column} -> {SinnerProfiles.label(sinner), Enum.at(sinner_of_slot, column)}
+          :skip -> :skip
         end
       end)
 
@@ -934,80 +938,26 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp chain_opts("a_res_def", action, tray, defense, ctx) do
+  defp chain_opts("a_res_def", action, tray, scan, ctx) do
     [
-      defense_sins: defense,
+      defense_sins: scan.defense,
       max_defenses: action["max_defenses"],
       click_defense: fn column -> click_dodge(tray, column, ctx) end
     ]
   end
 
-  defp chain_opts(_mode, _action, _tray, _defense, _ctx), do: []
-
-  defp defense_sins(frame, tray, ctx) do
-    found = SinnerLocator.locate(frame, tray, defense_candidates(ctx))
-
-    sins =
-      Enum.reduce(found, List.duplicate(nil, length(tray.sinner_of_slot)), fn claim, acc ->
-        sin = String.to_existing_atom(claim.profile.defense_affinity)
-        Ctx.log(ctx, :info, "playbook: #{claim.profile.name} (#{claim.hook}) found at slot #{claim.column + 1}, defense is #{sin}")
-        Enum.reduce(claim.columns, acc, &List.replace_at(&2, &1, sin))
-      end)
-
-    if found == [], do: Ctx.log(ctx, :info, "playbook: no sinner profiles found in the skill tray, chaining without defense")
-    sins
-  end
-
-  defp defense_candidates(ctx) do
-    planned = BattlePlans.profiles(RunMemory.battle_plan(ctx))
-
-    SinnerProfiles.list()
-    |> Enum.filter(&(&1.defense_affinity in SinnerProfiles.sins()))
-    |> Enum.group_by(& &1.sinner)
-    |> Enum.flat_map(fn {sinner, all} ->
-      case Enum.filter(all, &(&1.id in Map.get(planned, sinner, []))) do
-        [] -> all
-        chosen -> chosen
-      end
-    end)
-  end
-
-  defp profiles(ctx) do
-    all = SinnerProfiles.list()
-    by_id = Map.new(all, &{&1.id, &1})
-
-    planned =
-      for {sinner, ids} <- BattlePlans.profiles(RunMemory.battle_plan(ctx)),
-          [_ | _] = chosen <- [Enum.flat_map(ids, &List.wrap(by_id[&1]))],
-          into: %{},
-          do: {sinner, merged_profile(sinner, chosen)}
-
-    fallback =
-      all
-      |> Enum.group_by(& &1.sinner)
-      |> Map.reject(fn {sinner, _} -> Map.has_key?(planned, sinner) end)
-      |> Map.new(fn {sinner, chosen} -> {sinner, merged_profile(sinner, chosen)} end)
-
-    Map.merge(fallback, planned)
-  end
-
-  defp merged_profile(sinner, [first | _] = chosen) do
-    first
-    |> Map.put(:name, SinnerProfiles.label(sinner))
-    |> Map.put(:hook_names, chosen |> Enum.flat_map(&SinnerProfiles.locator_hooks/1) |> Enum.uniq())
-  end
+  defp chain_opts(_mode, _action, _tray, _scan, _ctx), do: []
 
   defp sinner_names, do: Map.new(SinnerProfiles.sinners(), &{&1, SinnerProfiles.label(&1)})
 
-  defp forced_rows(pins, frame, tray, defense, ctx) do
-    profiles = profiles(ctx)
+  defp forced_rows(pins, frame, tray, scan, ctx) do
     classified = if Enum.any?(pins, &BattlePlans.uses_priority?/1), do: SinColor.classify_tray(frame.mat, tray)
 
     Enum.reduce(pins, %{}, fn pin, acc ->
       rows =
         pin
-        |> holder_slots(frame, tray, profiles, defense, ctx)
-        |> Enum.map(fn {holder, taken} -> pin_rows(holder, taken, classified, defense, ctx) end)
+        |> holder_slots(frame, tray, scan, ctx)
+        |> Enum.map(fn {holder, taken} -> pin_rows(holder, taken, classified, scan.defense, ctx) end)
         |> Enum.reduce(%{}, &Map.merge/2)
 
       Map.merge(rows, acc)
@@ -1051,27 +1001,27 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp pin_rows(%{"row" => "top"}, columns, _classified, _defense, _ctx), do: Map.new(columns, &{&1, :top})
   defp pin_rows(_pin, columns, _classified, _defense, _ctx), do: Map.new(columns, &{&1, :bottom})
 
-  defp holder_slots(holder, frame, tray, profiles, defense, ctx) do
-    {assigned, notes} = SlotPlan.assign(holder, slot_env(holder, frame, tray, profiles, defense, ctx))
+  defp holder_slots(holder, frame, tray, scan, ctx) do
+    {assigned, notes} = SlotPlan.assign(holder, slot_env(holder, frame, tray, scan, ctx))
     log_notes(notes, ctx)
     assigned
   end
 
-  defp plan_steps(holder, frame, tray, profiles, ctx) do
-    defense = if BattlePlans.needs_defense?(holder), do: defense_sins(frame, tray, ctx)
-    {steps, notes} = SlotPlan.plan(holder, slot_env(holder, frame, tray, profiles, defense, ctx))
+  defp plan_steps(holder, frame, tray, ctx) do
+    scan = TrayScan.build(TrayScan.wanted([holder]), frame, tray, ctx)
+    {steps, notes} = SlotPlan.plan(holder, slot_env(holder, frame, tray, scan, ctx))
     log_notes(notes, ctx)
     steps
   end
 
-  defp slot_env(holder, frame, tray, profiles, defense, ctx) do
+  defp slot_env(holder, frame, tray, scan, ctx) do
     %{
       columns: all_columns(tray),
       tray_groups: tray_groups(tray),
       classified: if(SlotPlan.needs_classified?(holder), do: SinColor.classify_tray(frame.mat, tray)),
       bottom_columns: fn -> bottom_chosen_columns(tray, ctx) end,
-      defense_sins: fn -> defense end,
-      sinner_groups: fn sinner_holder -> sinner_groups(sinner_holder["who"], sinner_holder["sinners"] || [], frame, tray, profiles, ctx) end
+      defense_sins: fn -> scan.defense end,
+      sinner_groups: fn sinner_holder -> sinner_groups(sinner_holder["who"], sinner_holder["sinners"] || [], scan, tray, ctx) end
     }
   end
 
@@ -1104,42 +1054,36 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     end
   end
 
-  defp sinner_groups("except", ids, frame, tray, profiles, ctx) do
-    with {:ok, excluded} <- located_groups(ids, frame, tray, profiles, "so everyone counts as not", ctx) do
-      names = Enum.map_join(ids, ", ", &SinnerProfiles.label/1)
-      who = %{name: if(ids == [], do: "everyone", else: "everyone but #{names}")}
-      {:ok, tray |> tray_groups() |> Enum.reject(&(&1 in excluded)) |> Enum.map(&{&1, who})}
+  defp sinner_groups("except", ids, scan, tray, ctx) do
+    excluded = located_groups(ids, scan, tray, "so everyone counts as not", ctx)
+    names = Enum.map_join(ids, ", ", &SinnerProfiles.label/1)
+    who = %{name: if(ids == [], do: "everyone", else: "everyone but #{names}")}
+    {:ok, tray |> tray_groups() |> Enum.reject(&(&1 in excluded)) |> Enum.map(&{&1, who})}
+  end
+
+  defp sinner_groups(side, ids, scan, tray, ctx) when side in ["after", "before"] do
+    case scan |> then(&located_groups(ids, &1, tray, "so it can't anchor", ctx)) |> List.flatten() do
+      [] ->
+        Ctx.log(ctx, :info, "playbook: none of the #{side} sinners are in the skill tray, skipping")
+        :skip
+
+      anchor_columns ->
+        names = Enum.map_join(ids, ", ", &SinnerProfiles.label/1)
+        who = %{name: "everyone #{side} #{names}"}
+        {:ok, tray |> tray_groups() |> Enum.filter(&on_side?(side, &1, anchor_columns)) |> Enum.map(&{&1, who})}
     end
   end
 
-  defp sinner_groups(side, ids, frame, tray, profiles, ctx) when side in ["after", "before"] do
-    with {:ok, anchors} <- located_groups(ids, frame, tray, profiles, "so it can't anchor", ctx) do
-      case List.flatten(anchors) do
-        [] ->
-          Ctx.log(ctx, :info, "playbook: none of the #{side} sinners are in the skill tray, skipping")
-          :skip
-
-        anchor_columns ->
-          names = Enum.map_join(ids, ", ", &SinnerProfiles.label/1)
-          who = %{name: "everyone #{side} #{names}"}
-          {:ok, tray |> tray_groups() |> Enum.filter(&on_side?(side, &1, anchor_columns)) |> Enum.map(&{&1, who})}
-      end
-    end
-  end
-
-  defp sinner_groups(_only, [], _frame, _tray, _profiles, ctx) do
+  defp sinner_groups(_only, [], _scan, _tray, ctx) do
     Ctx.log(ctx, :info, "playbook: no sinners picked, skipping")
     :skip
   end
 
-  defp sinner_groups(_only, ids, frame, tray, profiles, ctx) do
+  defp sinner_groups(_only, ids, scan, tray, ctx) do
     groups =
       Enum.flat_map(ids, fn id ->
-        with {:ok, profile} <- fetch_profile(profiles, id, ctx),
-             {:ok, hooks} <- locator_hooks(profile, ctx),
-             {:ok, column} <- locate(frame, tray, hooks, profile, ctx) do
-          [{SkillTray.owned_columns(tray, column), profile}]
-        else
+        case locate(scan, id, ctx) do
+          {:ok, column} -> [{SkillTray.owned_columns(tray, column), %{name: SinnerProfiles.label(id)}}]
           :skip -> []
         end
       end)
@@ -1150,24 +1094,11 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   defp on_side?("after", columns, anchor_columns), do: Enum.min(columns) > Enum.max(anchor_columns)
   defp on_side?("before", columns, anchor_columns), do: Enum.max(columns) < Enum.min(anchor_columns)
 
-  defp located_groups(ids, frame, tray, profiles, missing_note, ctx) do
-    Enum.reduce_while(ids, {:ok, []}, fn id, {:ok, acc} ->
-      with {:ok, profile} <- fetch_profile(profiles, id, ctx),
-           {:ok, hooks} <- locator_hooks(profile, ctx) do
-        case find_locator(frame, hooks) do
-          nil ->
-            Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook_names(hooks)}) not found in the skill tray, #{missing_note} #{profile.name}")
-            save_tray_miss(frame, hooks, ctx)
-            {:cont, {:ok, acc}}
-
-          {hook, rects} ->
-            {x, _y, w, _h} = Enum.min_by(rects, &elem(&1, 0))
-            column = SkillTray.column_at(tray, x + w / 2)
-            Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) found at slot #{column + 1}")
-            {:cont, {:ok, [SkillTray.owned_columns(tray, column) | acc]}}
-        end
-      else
-        :skip -> {:halt, :skip}
+  defp located_groups(ids, scan, tray, missing_note, ctx) do
+    Enum.flat_map(ids, fn id ->
+      case locate(scan, id, ctx, missing_note) do
+        {:ok, column} -> [SkillTray.owned_columns(tray, column)]
+        :skip -> []
       end
     end)
   end
@@ -1191,58 +1122,28 @@ defmodule StarlightBot.Automation.PlaybookRunner do
     |> Enum.map(&elem(&1, 1))
   end
 
-  defp fetch_profile(_profiles, nil, ctx) do
-    Ctx.log(ctx, :error, "playbook: no sinner picked, skipping")
-    :skip
-  end
+  defp locate(scan, sinner, ctx, missing_note \\ "skipping") do
+    name = SinnerProfiles.label(sinner)
 
-  defp fetch_profile(profiles, sinner, ctx) do
-    case Map.fetch(profiles, sinner) do
-      {:ok, profile} ->
-        {:ok, profile}
-
-      :error ->
-        Ctx.log(ctx, :error, "playbook: #{SinnerProfiles.label(sinner)} has no sinner profile in this battle plan, skipping")
-        :skip
-    end
-  end
-
-  defp locator_hooks(profile, ctx) do
-    names = profile.hook_names
-    loaded = Map.new(HookRegistry.all_names(), &{Atom.to_string(&1), &1})
-
-    case Enum.flat_map(names, &List.wrap(loaded[&1])) do
-      [] ->
-        Ctx.log(ctx, :error, "playbook: #{profile.name} locator hooks #{inspect(names)} aren't loaded, skipping")
-        :skip
-
-      hooks ->
-        {:ok, hooks}
-    end
-  end
-
-  defp find_locator(frame, hooks), do: Matcher.find_any(frame, hooks)
-
-  defp hook_names(hooks, joiner \\ "/"), do: Enum.map_join(hooks, joiner, &Atom.to_string/1)
-
-  defp locate(frame, tray, hooks, profile, ctx) do
-    case find_locator(frame, hooks) do
+    case TrayScan.claim(scan, sinner) do
       nil ->
-        Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook_names(hooks)}) not found in the skill tray, skipping")
-        save_tray_miss(frame, hooks, ctx)
+        hooks = TrayScan.hooks_for(scan, sinner)
+
+        if hooks == [] do
+          Ctx.log(ctx, :error, "playbook: #{name} has no sinner profile with a locator hook, #{missing_note}")
+        else
+          Ctx.log(ctx, :info, "playbook: #{name} (#{hook_names(hooks)}) not found in the skill tray, #{missing_note}")
+          save_tray_miss(scan.frame, hooks, ctx)
+        end
+
         :skip
 
-      {hook, rects} ->
-        {x, _y, w, _h} = Enum.min_by(rects, &elem(&1, 0))
-        column = SkillTray.column_at(tray, x + w / 2)
-
-        if length(rects) > 1,
-          do: Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) matched #{length(rects)} times, using the leftmost (slot #{column + 1})"),
-          else: Ctx.log(ctx, :info, "playbook: #{profile.name} (#{hook}) found at slot #{column + 1}")
-
-        {:ok, column}
+      claim ->
+        {:ok, claim.column}
     end
   end
+
+  defp hook_names(hooks, joiner \\ "/"), do: Enum.map_join(hooks, joiner, &to_string/1)
 
   defp guard(ctx) do
     cond do

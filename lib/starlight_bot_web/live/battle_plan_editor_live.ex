@@ -808,7 +808,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     do: "Press p until battle_combat_ready, then p again so Limbus assigns every choice for the most damage. If that clears the choices, cycles back around to damage."
 
   def action_tooltip("commit"), do: "Press enter to start the turn once every skill is chosen."
-  def action_tooltip("dodge"), do: "Click below the chosen skill slot to swap it to dodge. With a target, drags the slot onto an enemy instead."
+  def action_tooltip("dodge"), do: "Covers dodge, defend and counter. Click below the chosen skill slot to swap it to the defense skill. With a target, drags the slot onto an enemy instead."
   def action_tooltip("ego"), do: "Hold below the chosen skill slot to open the EGO menu, then pick the grade's card. With a target, then drags the slot onto an enemy."
   def action_tooltip("nothing"), do: "Leave the chosen slots exactly as they are. They still count as handled, so later rows and rest don't touch them."
   def action_tooltip("target"),
@@ -1622,8 +1622,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   attr :empty_label, :string, required: true
 
   def sinner_multi(assigns) do
-    choices = Enum.filter(assigns.sinner_options, &(&1.profiled? or &1.id in assigns.chosen))
-    assigns = assign(assigns, choices: choices, options_by_id: Map.new(assigns.sinner_options, &{&1.id, &1}))
+    assigns = assign(assigns, choices: assigns.sinner_options, options_by_id: Map.new(assigns.sinner_options, &{&1.id, &1}))
 
     ~H"""
     <details id={@id} phx-hook="FloatingDropdown" data-keep-open class="dropdown min-w-28">
@@ -1633,8 +1632,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
         <span :if={@chosen == []} class="truncate text-base-content/40"><%= @empty_label %></span>
         <%= for id <- @chosen do %>
             <% option = Map.get(@options_by_id, id, %{id: id, name: id, profiled?: false}) %>
-            <img src={option[:thumb] || StarlightBot.SinnerProfiles.icon(id)} title={if(option.profiled?, do: option.name, else: "#{option.name} has no profile in this plan's lineups, so this never matches them")}
-                 class={"h-5 w-auto rounded shrink-0 " <> if(option.profiled?, do: "", else: "ring-1 ring-warning")} />
+            <img src={option[:thumb] || StarlightBot.SinnerProfiles.icon(id)} title={if(option.profiled?, do: option.name, else: "#{option.name}: no profile in this plan's lineups, so this matches any #{option.name} profile")}
+                 class={"h-5 w-auto rounded shrink-0 " <> if(option.profiled?, do: "", else: "opacity-70")} />
         <% end %>
         <span class="ml-auto min-w-0 truncate pl-1 text-base-content/40">+ add</span>
       </summary>
@@ -1644,7 +1643,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                   onclick="const i = this.closest('.dropdown').querySelector('input'); const v = this.dataset.value; const ids = i.value.split(',').filter(Boolean); const at = ids.indexOf(v); if (at >= 0) ids.splice(at, 1); else ids.push(v); i.value = ids.join(','); i.dispatchEvent(new Event('input', {bubbles: true}))"
                   class={"btn btn-xs h-auto min-h-7 w-full flex-nowrap justify-start gap-1.5 py-0.5 " <> if(p.id in @chosen, do: "btn-primary", else: "btn-ghost")}>
             <img src={p[:thumb] || StarlightBot.SinnerProfiles.icon(p.id)} class="h-6 w-auto rounded shrink-0" />
-            <span class="truncate"><.icon :if={not p.profiled?} name="lucide-triangle-exclamation-point" class="size-3 inline" /> <%= p.name %></span>
+            <span class="truncate"><%= p.name %></span>
+            <span :if={not p.profiled?} class="ml-auto text-[10px] text-base-content/50" title={"No profile in this plan's lineups, so this matches any #{p.name} profile"}>any</span>
           </button>
         </div>
       </div>
@@ -1771,7 +1771,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       )
 
     ~H"""
-    <span data-chip={!@static || nil} data-canon={@canon} data-tier={@tier} data-dodge={@dodge} data-sin={@sin} draggable={!@static && "true"} title={@value}
+    <span data-chip={!@static || nil} data-canon={@canon} data-tier={@tier} data-dodge={@dodge} data-sin={@sin} draggable={!@static && "true"} title={chip_title(@value, @dodge, @sin)}
           class={["inline-flex items-center justify-center min-w-6 px-1 rounded border select-none text-[11px] font-semibold", chip_class(@kind, @tier || @value), if(@static, do: ["h-5", if(@kind == :sin, do: "align-middle", else: "align-baseline")], else: "h-6 cursor-grab")]}>
       <input :if={!@static} type="hidden" name={@name} value={@value} disabled={@disabled} />
       <%= cond do %>
@@ -1786,6 +1786,10 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
     </span>
     """
   end
+
+  defp chip_title(value, nil, _sin), do: value
+  defp chip_title(value, _dodge, nil), do: "#{value}: covers dodge, defend and counter"
+  defp chip_title(value, _dodge, sin), do: "#{value}: covers dodge, defend and counter, only on a slot whose sinner's defense is #{sin}"
 
   defp chip_label("in_use"), do: "in use"
   defp chip_label(value), do: value
@@ -1837,10 +1841,6 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       <.radio_group name="cmp" value={@node["cmp"]} options={[{"eq", "="}, {"gte", "≥"}, {"lte", "≤"}]} />
       <input type="number" name="value" min="0" value={@node["value"]} phx-debounce="300" class="input input-bordered input-xs w-16" />
     <% BattlePlans.position_leaf?(@node) -> %>
-      <div :if={not Enum.any?(@sinner_options, & &1.profiled?)} class="alert alert-warning w-full gap-1.5 px-2 py-1 text-xs">
-        <.icon name="lucide-triangle-exclamation-point" class="size-4 shrink-0" />
-        <span>No sinner profiles are assigned in this plan, so there are no sinners to pick and this condition is always false. Assign a profile to each sinner in the Lineups section first.</span>
-      </div>
       <.sinner_multi id={"sinners-pos-#{@values["action"]}-#{String.replace(@path, ~r/[^a-z0-9]+/i, "-")}"} name="sinners_csv" chosen={@node["sinners"] || []} sinner_options={@sinner_options} empty_label="(pick a sinner)" />
       <select name="pick" class="select select-bordered select-xs w-auto" title="Count positions from the first sinner or from the last">
         <option :for={pick <- ~w(first last)} value={pick} selected={@node["position"]["pick"] == pick}><%= pick_label(pick) %></option>

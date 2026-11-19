@@ -485,7 +485,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLiveTest do
 
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "only", "pick" => "first"})
     socket = event(socket, "update_action", %{"action" => ego["id"], "who" => "only", "sinners" => ["faust", "gregor"], "pick" => "first"})
-    assert render(socket) =~ "no profile in this plan"
+    assert render(socket) =~ "matches any Gregor profile"
   end
 
   test "chain pins and focused targets can pick their row by a mixed priority list", %{socket: socket, playbook_id: playbook_id} do
