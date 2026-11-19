@@ -1764,6 +1764,9 @@ defmodule StarlightBot.GiftPlans do
   def condition_warnings(nil, _data, _section), do: []
 
   def condition_warnings(condition, data, section) do
+    data = expand_packs(data)
+    section = (section && find_section(data, section["id"])) || section
+
     condition
     |> Conditions.leaves()
     |> Enum.flat_map(&leaf_warning(&1, data, section))
