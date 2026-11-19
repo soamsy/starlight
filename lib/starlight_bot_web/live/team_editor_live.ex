@@ -22,7 +22,8 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:budget_inputs, blank_budget_inputs(nil))
      |> assign(:info_pane, nil)
      |> assign(:gift_view, %{tab: nil, section: nil})
-     |> assign(:pane, "battle")}
+     |> assign(:pane, "battle")
+     |> assign(:panes_seen, MapSet.new())}
   end
 
   @impl true
@@ -34,13 +35,21 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       |> assign(:pane, if(Map.has_key?(@panes, params["pane"]) or params["pane"] in ["profiles", "stats"], do: params["pane"], else: socket.assigns.pane))
       |> assign(:gift_view, %{tab: params["tab"], section: params["section"]})
 
-    cond do
-      team_id && team_id != socket.assigns.editing_id -> {:noreply, load_team(socket, team_id)}
-      is_nil(team_id) -> {:noreply, restore_team(socket)}
-      params["pane"] == "stats" -> {:noreply, refresh_budget_sources(socket)}
-      true -> {:noreply, socket}
-    end
+    {:noreply, socket} =
+      cond do
+        team_id && team_id != socket.assigns.editing_id -> {:noreply, load_team(socket, team_id)}
+        is_nil(team_id) -> {:noreply, restore_team(socket)}
+        params["pane"] == "stats" -> {:noreply, refresh_budget_sources(socket)}
+        true -> {:noreply, socket}
+      end
+
+    {:noreply, see_pane(socket)}
   end
+
+  defp see_pane(%{assigns: %{pane: pane, panes_seen: seen}} = socket) when is_map_key(@panes, pane),
+    do: assign(socket, :panes_seen, MapSet.put(seen, pane))
+
+  defp see_pane(socket), do: socket
 
   defp refresh_budget_sources(socket) do
     socket =
@@ -119,6 +128,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       team ->
         socket
         |> assign(:editing_id, team.id)
+        |> assign(:panes_seen, MapSet.new())
         |> assign(:selected_ids, TeamBudget.selected_ids(team))
         |> assign(:budget_inputs, blank_budget_inputs(team, socket.assigns.budget_inputs.cycle_runs))
     end
