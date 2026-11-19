@@ -87,7 +87,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     html = render(socket)
     assert html =~ "Made from:" and html =~ "Added"
     assert html =~ ~s(phx-click="list_add_gift" phx-value-gift="Fiery Down")
-    refute html =~ ~s(phx-click="list_add_gift" phx-value-gift="Glimpse of Flames")
+    assert Regex.run(~r/data-added="([^"]*)"/, html) |> List.last() =~ "Glimpse of Flames"
 
     assert html =~ ~s(data-gift-popup="Glimpse of Flames")
     refute html =~ "No description available."
@@ -573,7 +573,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
 
     html = render(socket)
     assert html =~ ~s(phx-click="list_add_gift" phx-value-gift="Fiery Down")
-    refute html =~ ~s(phx-click="list_add_gift" phx-value-gift="Glimpse of Flames")
+    assert Regex.run(~r/data-added="([^"]*)"/, html) |> List.last() =~ "Glimpse of Flames"
 
     socket = socket |> event("list_add_gift", %{"gift" => "Glimpse of Flames", "section" => root_id}) |> event("list_add_gift", %{"gift" => "Glimpse of Flames", "section" => root_id})
     [root, _second, third] = GiftPlans.sections(socket.assigns.plan_data, root_id)

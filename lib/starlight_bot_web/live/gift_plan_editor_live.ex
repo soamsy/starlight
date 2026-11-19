@@ -1951,6 +1951,28 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     """
   end
 
+  attr :gifts, :list, required: true
+  attr :loadout, :boolean, required: true
+
+  def gift_rows(assigns) do
+    ~H"""
+    <div :for={gift <- @gifts} data-gift-row={gift.name} data-drag-gift={gift.name} class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-base-200">
+      <div data-gift-popup={gift.name} class="relative w-7 h-7 shrink-0 rounded overflow-hidden bg-base-200 ring-1 ring-base-300 cursor-pointer">
+        <img src={gift.image_path} loading="lazy" class="w-full h-full object-cover" draggable="false" />
+        <img :if={gift.affinity not in [nil, "none"]} src={gift_affinity_icon(gift.affinity)} title={gift.affinity} loading="lazy" draggable="false"
+             class="absolute bottom-0 right-0 w-3 h-3 object-contain drop-shadow" />
+      </div>
+      <span :if={gift.tier} class="text-[10px] text-base-content/50 w-4 shrink-0">T<%= gift.tier %></span>
+      <span data-gift-popup={gift.name} data-gift-name class="text-[11px] truncate flex-1 min-w-0 select-none cursor-grab" title={gift.name}><%= gift.name %></span>
+      <button :if={@loadout} data-gift-added phx-click="toggle_search_gift" phx-value-gift={gift.name} class="btn btn-xs btn-primary hidden" title="Remove from gift search">Added</button>
+      <button :if={not @loadout} data-gift-added class="btn btn-xs btn-primary hidden" disabled>Added</button>
+      <button data-gift-add phx-click={if @loadout, do: "toggle_search_gift", else: "list_add_gift"} phx-value-gift={gift.name} class="btn btn-xs btn-outline"
+              title={if @loadout, do: "Add to gift search", else: if(GiftPlans.fixed_recipe?(gift), do: "Also adds its ingredients")}>Add</button>
+    </div>
+    <div :if={@gifts == []} class="text-xs text-base-content/40 italic p-1">No matching gifts.</div>
+    """
+  end
+
   attr :entry, :map, required: true
   attr :from, :integer, required: true
   attr :timeline, :string, default: nil

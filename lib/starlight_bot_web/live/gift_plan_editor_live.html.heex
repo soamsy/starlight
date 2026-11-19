@@ -108,34 +108,9 @@
                     </div>
 
                     <% picks = @plan_data["gift_search"] %>
-                    <% shown = filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_fixed_filter, @gift_no_pack_filter, @gift_pack_filter, @theme_packs_by_gift_id, @gifts_by_id, @gift_sort) %>
-                    <div id="gift-drag-source" phx-hook="GiftDragSource" class="flex flex-col flex-1 min-h-0 max-lg:min-h-28 overflow-y-auto">
-                      <% added_names = if(@active_tab == :loadout, do: MapSet.new(picks), else: add_target["entries"] |> List.wrap() |> MapSet.new(&GiftPlans.subject_gift/1) |> MapSet.delete(nil)) %>
-                      <div :for={gift <- shown} data-gift-row={gift.name} data-drag-gift={if not MapSet.member?(added_names, gift.name), do: gift.name} class="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-base-200">
-                        <div data-gift-popup={gift.name} class="relative w-7 h-7 shrink-0 rounded overflow-hidden bg-base-200 ring-1 ring-base-300 cursor-pointer">
-                          <img src={gift.image_path} loading="lazy" class="w-full h-full object-cover" draggable="false" />
-                          <img :if={gift.affinity not in [nil, "none"]} src={gift_affinity_icon(gift.affinity)} title={gift.affinity} loading="lazy" draggable="false"
-                               class="absolute bottom-0 right-0 w-3 h-3 object-contain drop-shadow" />
-                        </div>
-                        <span :if={gift.tier} class="text-[10px] text-base-content/50 w-4 shrink-0">T<%= gift.tier %></span>
-                        <span data-gift-popup={gift.name} class={"text-[11px] truncate flex-1 min-w-0 select-none " <> if(MapSet.member?(added_names, gift.name), do: "cursor-pointer", else: "cursor-grab")} title={gift.name}><%= gift.name %></span>
-                        <%= if @active_tab == :loadout do %>
-                          <%= if gift.name in picks do %>
-                            <button phx-click="toggle_search_gift" phx-value-gift={gift.name} class="btn btn-xs btn-primary" title="Remove from gift search">Added</button>
-                          <% else %>
-                            <button data-gift-add phx-click="toggle_search_gift" phx-value-gift={gift.name} disabled={length(picks) >= GiftPlans.gift_search_max()}
-                                    class="btn btn-xs btn-outline" title="Add to gift search">Add</button>
-                          <% end %>
-                        <% else %>
-                        <%= if MapSet.member?(added_names, gift.name) do %>
-                          <button class="btn btn-xs btn-primary" disabled>Added</button>
-                        <% else %>
-                          <button data-gift-add phx-click="list_add_gift" phx-value-gift={gift.name} class="btn btn-xs btn-outline"
-                                  title={if GiftPlans.fixed_recipe?(gift), do: "Also adds its ingredients"}>Add</button>
-                        <% end %>
-                        <% end %>
-                      </div>
-                      <div :if={shown == []} class="text-xs text-base-content/40 italic p-1">No matching gifts.</div>
+                    <% added_names = if(@active_tab == :loadout, do: picks, else: add_target["entries"] |> List.wrap() |> Enum.map(&GiftPlans.subject_gift/1) |> Enum.reject(&is_nil/1)) %>
+                    <div id="gift-drag-source" phx-hook="GiftDragSource" data-added={Jason.encode!(added_names)} data-add-locked={to_string(@active_tab == :loadout and length(picks) >= GiftPlans.gift_search_max())} class="flex flex-col flex-1 min-h-0 max-lg:min-h-28 overflow-y-auto">
+                      <.gift_rows gifts={filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_fixed_filter, @gift_no_pack_filter, @gift_pack_filter, @theme_packs_by_gift_id, @gifts_by_id, @gift_sort)} loadout={@active_tab == :loadout} />
                     </div>
                   <% end %>
                 </div>

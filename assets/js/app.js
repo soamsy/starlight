@@ -1717,7 +1717,7 @@ const GiftDragSource = {
   mounted() {
     this.el.addEventListener("dragstart", (e) => {
       const row = eventElement(e)?.closest("[data-drag-gift]")
-      if (!row) return e.preventDefault()
+      if (!row || !row.draggable) return e.preventDefault()
       e.dataTransfer.setData(GIFT_DRAG_TYPE, row.dataset.dragGift)
       e.dataTransfer.effectAllowed = "copy"
     })
@@ -1727,7 +1727,18 @@ const GiftDragSource = {
     this.sync()
   },
   sync() {
-    this.el.querySelectorAll("[data-drag-gift]").forEach(row => { row.draggable = true })
+    const added = new Set(JSON.parse(this.el.dataset.added || "[]"))
+    const locked = this.el.dataset.addLocked === "true"
+    this.el.querySelectorAll("[data-gift-row]").forEach(row => {
+      const on = added.has(row.dataset.giftRow)
+      const add = row.querySelector("[data-gift-add]")
+      row.draggable = !on
+      row.querySelector("[data-gift-name]").classList.toggle("cursor-pointer", on)
+      row.querySelector("[data-gift-name]").classList.toggle("cursor-grab", !on)
+      row.querySelector("[data-gift-added]").classList.toggle("hidden", !on)
+      add.classList.toggle("hidden", on)
+      add.disabled = on || locked
+    })
   }
 }
 
