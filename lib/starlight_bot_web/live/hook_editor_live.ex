@@ -4,6 +4,8 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   require Logger
   alias StarlightBot.{Hooks, Vision.Capture, Vision.FrameHandoff, Vision.FrameHistory, Vision.HookRegistry, Vision.Matcher}
 
+  @hooks_page 100
+
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
@@ -11,6 +13,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
      |> assign(:category, "general")
      |> assign(:overwrite_image, true)
      |> assign(:hooks_filter, "")
+     |> assign(:hooks_limit, @hooks_page)
      |> assign(:sort_by, :inserted_at)
      |> assign(:sort_dir, :desc)
      |> assign(:screenshot_mat, nil)
@@ -617,6 +620,16 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   end
 
   @impl true
+  def handle_event("show_more_hooks", _, socket) do
+    {:noreply, update(socket, :hooks_limit, &(&1 + @hooks_page))}
+  end
+
+  @impl true
+  def handle_event("show_all_hooks", _, socket) do
+    {:noreply, assign(socket, :hooks_limit, length(socket.assigns.hooks))}
+  end
+
+  @impl true
   def handle_event("sort_hooks", %{"by" => by}, socket) do
     col =
       try do
@@ -726,6 +739,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   @impl true
   def handle_params(params, _uri, socket) do
     category = if params["cat"] in Hooks.categories(), do: params["cat"], else: "general"
+    socket = if category == socket.assigns.category, do: socket, else: assign(socket, :hooks_limit, @hooks_page)
     socket = socket |> assign(:category, category) |> refresh_hooks()
 
     {:noreply, if(connected?(socket) and params["screenshot"] == "inspector", do: load_handoff(socket), else: socket)}
@@ -1258,6 +1272,12 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   def sorted_hooks(hooks, sort_by, sort_dir) do
     Enum.sort_by(hooks, &sort_key(&1, sort_by), sort_dir)
   end
+
+  def visible_hooks(hooks, filter, sort_by, sort_dir, limit) do
+    hooks |> filtered_hooks(filter) |> sorted_hooks(sort_by, sort_dir) |> Enum.take(limit)
+  end
+
+  def hooks_total(hooks, filter), do: length(filtered_hooks(hooks, filter))
 
   def category_label("general"), do: "General"
   def category_label("sleeve"), do: "Sleeve"

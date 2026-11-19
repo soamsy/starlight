@@ -594,7 +594,7 @@
             </tr>
           </thead>
           <tbody>
-            <%= for hook <- filtered_hooks(@hooks, @hooks_filter) |> sorted_hooks(@sort_by, @sort_dir) do %>
+            <%= for hook <- visible_hooks(@hooks, @hooks_filter, @sort_by, @sort_dir, @hooks_limit) do %>
               <tr class={[@editing_name == hook.name && "bg-primary/10 border-l-2 border-primary", !Hooks.editable?(hook) && "opacity-60"]}>
                 <td>
                   <% thumb = thumb_src(hook, Map.get(@hook_thumbnails, hook.name)) %>
@@ -717,6 +717,11 @@
             <% end %>
           </tbody>
         </table>
+        <div :if={hooks_total(@hooks, @hooks_filter) > @hooks_limit} class="flex items-center gap-2 py-2 text-xs text-base-content/60">
+          <span>Showing <%= @hooks_limit %> of <%= hooks_total(@hooks, @hooks_filter) %></span>
+          <button type="button" phx-click="show_more_hooks" class="btn btn-xs btn-ghost">Show <%= min(100, hooks_total(@hooks, @hooks_filter) - @hooks_limit) %> more</button>
+          <button type="button" phx-click="show_all_hooks" class="btn btn-xs btn-ghost">Show all</button>
+        </div>
       </div>
 
       <div class="flex items-center justify-between pt-2">
