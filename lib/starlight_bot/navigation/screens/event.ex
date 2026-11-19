@@ -91,6 +91,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
     cond do
       Matcher.check(frame, :event_chicken_1) -> click_choice_hook(:event_choice_0, ctx)
       Matcher.check(frame, :event_chicken_2) -> click_choice_hook(:event_choice_1, ctx)
+      Matcher.check(frame, :event_value_disposal) -> click_choice_hook(:event_choice_1, ctx)
       true -> pick_choice(frame, ctx)
     end
   end
