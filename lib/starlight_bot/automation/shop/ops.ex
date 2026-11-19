@@ -875,8 +875,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
     Ctx.log(ctx, :info, "shop: buying #{gift_name}")
     owned_before = RunMemory.ego_gift_count(ctx, item.gift_id)
 
-    with {:ok, _} <- RewardHelpers.click_rect({round(item.x), round(item.y), round(item.w), round(item.h)}, ctx),
-         {:ok, outcome} <- await_purchase_result(ctx) do
+    with {:ok, outcome} <- click_and_await_purchase(item, ctx, 1) do
       if outcome == :confirm, do: RunMemory.update(ctx, @purchased_key, [], &[purchase_key(item) | &1])
       if outcome == :insufficient_funds, do: remember_unaffordable(item, ctx)
       result = finish_purchase(outcome, gift_name, ctx)
@@ -885,6 +884,22 @@ defmodule StarlightBot.Automation.Shop.Ops do
         do: RunMemory.set_ego_gift_count(ctx, item.gift_id, owned_before + 1)
 
       result
+    end
+  end
+
+  defp click_and_await_purchase(item, ctx, retries_left) do
+    with {:ok, _} <- RewardHelpers.click_rect({round(item.x), round(item.y), round(item.w), round(item.h)}, ctx, settle_ms: 120) do
+      case await_purchase_result(ctx) do
+        {:ok, _} = ok ->
+          ok
+
+        {:error, _} when retries_left > 0 ->
+          Ctx.log(ctx, :info, "shop: no purchase popup for #{item.gift_name}, retrying click")
+          click_and_await_purchase(item, ctx, retries_left - 1)
+
+        {:error, _} = err ->
+          err
+      end
     end
   end
 
