@@ -24,6 +24,8 @@ defmodule StarlightBot.Vision.SinnerLocator do
         else: {[claim | kept], Enum.reduce(claim.columns, taken, &MapSet.put(&2, &1))}
     end)
     |> elem(0)
+    |> Enum.reverse()
+    |> Enum.uniq_by(& &1.profile.sinner)
     |> Enum.sort_by(& &1.column)
   end
 end

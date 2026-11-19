@@ -89,7 +89,7 @@ defmodule StarlightBot.Automation.TrayScan do
 
     for claim <- claims do
       defense = if claim.profile.defense_affinity in SinnerProfiles.sins(), do: ", defense is #{claim.profile.defense_affinity}", else: ""
-      Ctx.log(ctx, :info, "playbook: #{claim.profile.name} (#{claim.hook}) found at slot #{claim.column + 1}#{defense}")
+      Ctx.log(ctx, :info, "playbook: #{claim.profile.name} (#{claim.hook}, confidence #{:erlang.float_to_binary(claim.score * 1.0, decimals: 3)}) found at slot #{claim.column + 1}#{defense}")
     end
 
     claims
@@ -111,7 +111,7 @@ defmodule StarlightBot.Automation.TrayScan do
 
   @spec claim(%__MODULE__{}, String.t()) :: map | nil
   def claim(%__MODULE__{claims: claims}, sinner) do
-    claims |> Enum.filter(&(&1.profile.sinner == sinner)) |> Enum.min_by(& &1.column, fn -> nil end)
+    claims |> Enum.filter(&(&1.profile.sinner == sinner)) |> Enum.max_by(& &1.score, fn -> nil end)
   end
 
   @spec hooks_for(%__MODULE__{}, String.t()) :: [String.t()]
