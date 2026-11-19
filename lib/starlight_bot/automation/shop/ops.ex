@@ -99,6 +99,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @max_fuse_scroll_passes 10
   @max_affinity_attempts 5
   @heal_confirm_timeout 1_200
+  @heal_sinner_settle_ms 100
   @heal_select_retry_ms 1_000
   @heal_result_timeout 5_000
   @replace_popup_hook :shop_replace_popup
@@ -220,38 +221,27 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp find_healable(sinner, ctx) do
-    if heal_confirm_offered?(sinner, ctx) do
-      sinner
-    else
-      backup = first_not_greyed_out(sinner)
+    cond do
+      heal_confirm_offered?(sinner, ctx) ->
+        sinner
 
-      if backup do
-        Ctx.log(ctx, :info, "shop heal: #{backup} isn't greyed out, using them for the backup heal")
-      end
+      retry_confirm_offered?(sinner, ctx) ->
+        sinner
 
-      if backup && heal_confirm_offered?(backup, ctx) do
-        backup
-      else
-        Ctx.log(ctx, :info, "shop heal: backup heal didn't work, trying every sinner")
-        Teams.all_sinners() |> Enum.reject(&(&1 in [sinner, backup])) |> Enum.find(&heal_confirm_offered?(&1, ctx))
-      end
+      true ->
+        Ctx.log(ctx, :info, "shop heal: #{sinner} still can't be healed, falling back to the sinners after them")
+        sinners_after(sinner) |> Enum.find(&heal_confirm_offered?(&1, ctx))
     end
   end
 
-  defp first_not_greyed_out(skip) do
-    hooks =
-      for sinner <- Teams.all_sinners(),
-          sinner != skip,
-          hook = dead_hook(sinner),
-          match?({:ok, _}, HookRegistry.find(hook)),
-          do: {sinner, hook}
+  defp retry_confirm_offered?(sinner, ctx) do
+    Ctx.log(ctx, :info, "shop heal: clicking #{sinner} once more")
+    heal_confirm_offered?(sinner, ctx)
+  end
 
-    greyed = Engine.check_all(Enum.map(hooks, &elem(&1, 1)))
-
-    case Enum.find(hooks, fn {_sinner, hook} -> not greyed[hook] end) do
-      nil -> nil
-      {sinner, _hook} -> sinner
-    end
+  defp sinners_after(sinner) do
+    {before, [_ | rest]} = Enum.split_while(Teams.all_sinners(), &(&1 != sinner))
+    rest ++ before
   end
 
   defp dead_hook(sinner), do: :"shop_dead_#{String.replace(sinner, "_", "")}"
@@ -309,7 +299,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
       finish_heal(
         [
           click(:shop_heal_revive),
-          click(sinner_heal_hook(sinner)),
+          click(sinner_heal_hook(sinner), settle_ms: @heal_sinner_settle_ms),
           await(:shop_heal_confirm, timeout: @heal_confirm_timeout)
         ],
         ctx
@@ -322,12 +312,12 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   defp heal_confirm_offered?(sinner, ctx) do
-    case Engine.act([click(sinner_heal_hook(sinner)), await(:shop_heal_confirm, timeout: @heal_confirm_timeout)], ctx) do
+    case Engine.act([click(sinner_heal_hook(sinner), settle_ms: @heal_sinner_settle_ms), await(:shop_heal_confirm, timeout: @heal_confirm_timeout)], ctx) do
       {:ok, _} ->
         true
 
       {:error, _} ->
-        Ctx.log(ctx, :info, "shop heal: #{sinner} can't be healed, trying the next sinner")
+        Ctx.log(ctx, :info, "shop heal: no confirm after clicking #{sinner}")
         false
     end
   end
