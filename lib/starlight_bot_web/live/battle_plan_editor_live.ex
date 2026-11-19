@@ -1682,7 +1682,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
                   class="btn btn-ghost text-error h-6 min-h-6 px-1"><.icon name="lucide-x" class="size-3.5" /></button>
         </div>
         <.skill_chips :if={condition["kind"] in BattlePlans.chosen_value_kinds()} values={condition["values"] || []}
-                      extras={if condition["kind"] == "using", do: BattlePlans.where_extras(), else: []}
+                      extras={BattlePlans.where_extras(condition["kind"])}
                       name={field_name(@prefix, "where_c") <> "[#{index}][values][]"}
                       anchor={field_name(@prefix, "where_c") <> "[#{index}][edit]"}
                       id={"chips-where-#{@action_id}-#{@prefix}-#{index}"} />

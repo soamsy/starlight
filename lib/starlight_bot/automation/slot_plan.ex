@@ -192,7 +192,8 @@ defmodule StarlightBot.Automation.SlotPlan do
   defp narrow(groups, filter, notes, env) do
     case env.bottom_columns.() do
       {:ok, bottom_columns} ->
-        allowed = BattlePlans.chosen_columns(filter, bottom_columns, length(env.columns), env.classified)
+        defense = if BattlePlans.filter_affinity_dodge?(filter), do: env.defense_sins.()
+        allowed = BattlePlans.chosen_columns(filter, bottom_columns, length(env.columns), env.classified, defense)
         label = BattlePlans.chosen_filter_label(filter)
 
         narrowed =

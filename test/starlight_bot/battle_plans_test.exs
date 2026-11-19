@@ -452,6 +452,17 @@ defmodule StarlightBot.BattlePlansTest do
       assert result["priority"] == %{"order" => ["s3+envy", "dodge+envy"]}
     end
 
+    test "has conditions keep dodge chips and other kinds drop them" do
+      params = %{
+        "where_c" => %{
+          "0" => %{"kind" => "has", "values" => ["dodge", "dodge+wrath", "dodge+bogus", "s3"]},
+          "1" => %{"kind" => "top_is", "values" => ["dodge", "dodge+wrath", "wrath"]}
+        }
+      }
+
+      assert %{"conditions" => [%{"values" => ["dodge", "dodge+wrath", "s3"]}, %{"values" => ["wrath"]}]} = BattlePlans.parse_chosen_filter(params)
+    end
+
     test "both rows matching or nothing matching picks bottom" do
       assert BattlePlans.pick_row(priority(["pride"]), cell(:pride, :skill1), cell(:pride, :skill3)) == :bottom
       assert BattlePlans.pick_row(priority(["wrath", "s3"]), cell(:gloom, :skill1), cell(:lust, :skill2)) == :bottom

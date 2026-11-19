@@ -428,7 +428,31 @@ defmodule StarlightBot.BattlePlans do
   def affinity_dodge_term?("dodge+" <> sin), do: sin in @sins
   def affinity_dodge_term?(_value), do: false
 
-  def needs_defense?(holder), do: Enum.any?(holders(holder), &(&1["mode"] == "a_res_def" or affinity_dodge?(&1)))
+  def needs_defense?(holder), do: defense_need(holder) != nil
+
+  def defense_need(holder), do: holder |> holders() |> Enum.map(&holder_defense_need/1) |> Enum.reduce(nil, &merge_defense_need/2)
+
+  def merge_defense_need(nil, other), do: other
+  def merge_defense_need(other, nil), do: other
+  def merge_defense_need(:all, _other), do: :all
+  def merge_defense_need(_other, :all), do: :all
+  def merge_defense_need(left, right), do: Enum.uniq(left ++ right)
+
+  defp holder_defense_need(%{"mode" => "a_res_def"}), do: :all
+
+  defp holder_defense_need(holder) do
+    cond do
+      not (affinity_dodge?(holder) or filter_affinity_dodge?(holder["where"])) -> nil
+      holder["who"] in [nil, "only"] and (holder["sinners"] || []) != [] -> holder["sinners"]
+      true -> :all
+    end
+  end
+
+  def filter_affinity_dodge?(%{"conditions" => conditions}) do
+    Enum.any?(conditions, fn condition -> condition["kind"] in ~w(has has_no) and Enum.any?(List.wrap(condition["values"]), &affinity_dodge_term?/1) end)
+  end
+
+  def filter_affinity_dodge?(_filter), do: false
 
   def cell_label(%{sin: sin, tier: tier}), do: "#{sin}/#{tier_name(tier)}"
 
@@ -790,6 +814,10 @@ defmodule StarlightBot.BattlePlans do
 
   def where_extras, do: ~w(top bottom)
 
+  def where_extras("using"), do: where_extras()
+  def where_extras("has"), do: ["dodge"]
+  def where_extras(_kind), do: []
+
   def normalize_chosen_filter(%{"conditions" => conditions} = filter), do: %{filter | "conditions" => Enum.map(conditions, &normalize_chosen_condition/1)}
 
   def normalize_chosen_condition(%{"kind" => kind}) when kind in ~w(top bottom), do: %{"kind" => "using", "values" => [kind]}
@@ -836,7 +864,7 @@ defmodule StarlightBot.BattlePlans do
   defp parse_chosen_condition(%{"kind" => kind} = condition) when kind in @chosen_value_kinds or is_map_key(@negated_kinds, kind) do
     negated? = condition["not"] in [true, "true"] or is_map_key(@negated_kinds, kind)
     kind = Map.get(@negated_kinds, kind, kind)
-    values = condition["values"] |> List.wrap() |> Enum.filter(&(chip_term?(&1) or (kind == "using" and &1 in ~w(top bottom)))) |> Enum.uniq()
+    values = condition["values"] |> List.wrap() |> Enum.filter(&(chip_term?(&1) or (kind == "using" and &1 in ~w(top bottom)) or (kind == "has" and (&1 == "dodge" or affinity_dodge_term?(&1))))) |> Enum.uniq()
     base = %{"kind" => kind, "values" => values}
     if negated?, do: Map.put(base, "not", true), else: base
   end
@@ -844,12 +872,12 @@ defmodule StarlightBot.BattlePlans do
   defp parse_chosen_condition(%{"kind" => kind}) when kind in ~w(top bottom), do: normalize_chosen_condition(%{"kind" => kind})
   defp parse_chosen_condition(_condition), do: new_chosen_condition(false)
 
-  def chosen_columns(%{"join" => join} = filter, bottom_columns, column_count, {top, bottom}) do
+  def chosen_columns(%{"join" => join} = filter, bottom_columns, column_count, {top, bottom}, defense \\ nil) do
     combine = if join == "or", do: &Enum.any?/2, else: &Enum.all?/2
     %{"conditions" => conditions} = normalize_chosen_filter(filter)
 
     Enum.filter(0..(column_count - 1)//1, fn column ->
-      cells = %{top: Enum.at(top, column), bottom: Enum.at(bottom, column), bottom?: column in bottom_columns}
+      cells = %{top: Enum.at(top, column), bottom: Enum.at(bottom, column), bottom?: column in bottom_columns, defense: defense && Enum.at(defense, column)}
       combine.(conditions, &chosen_condition_met?(&1, cells))
     end)
   end
@@ -862,7 +890,11 @@ defmodule StarlightBot.BattlePlans do
   defp condition_matches?("using", values, cells), do: using_match?(values, cells)
   defp condition_matches?("bottom_is", values, cells), do: any_match?(values, [cells.bottom])
   defp condition_matches?("top_is", values, cells), do: any_match?(values, [cells.top])
-  defp condition_matches?("has", values, cells), do: any_match?(values, [cells.top, cells.bottom])
+  defp condition_matches?("has", values, cells), do: Enum.any?(values, &has_match?(&1, cells))
+
+  defp has_match?("dodge", _cells), do: true
+  defp has_match?("dodge+" <> sin, cells), do: not is_nil(cells.defense) and Atom.to_string(cells.defense) == sin
+  defp has_match?(value, cells), do: any_match?([value], [cells.top, cells.bottom])
 
   defp using_match?(values, cells) do
     Enum.any?(values, fn

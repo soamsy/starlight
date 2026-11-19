@@ -37,6 +37,33 @@ defmodule StarlightBot.Automation.SlotPlanWhereTest do
     assert columns(bottom_only, [1]) == [{1, "first", 0}]
   end
 
+  defp has(values), do: %{"join" => "and", "conditions" => [%{"kind" => "has", "values" => values}]}
+
+  defp with_defense(defense), do: Map.put(env([]), :defense_sins, fn -> defense end)
+
+  defp where_columns(filter, defense) do
+    {steps, _notes} = SlotPlan.plan(dodge(%{"where" => filter, "skip_bottom_target" => false}), with_defense(defense))
+    Enum.map(steps, & &1.column)
+  end
+
+  test "has dodge+sin selects only slots whose sinner defends with that sin" do
+    assert where_columns(has(["dodge+wrath"]), [:pride, :wrath, :wrath, nil]) == [1, 2]
+    assert where_columns(has(["dodge+wrath", "dodge+pride"]), [:pride, :wrath, :lust, nil]) == [0, 1]
+  end
+
+  test "a bare dodge in has matches every slot" do
+    assert where_columns(has(["dodge"]), [nil, nil, nil, nil]) == [0, 1, 2]
+  end
+
+  test "has no dodge+sin inverts the match" do
+    filter = %{"join" => "and", "conditions" => [%{"kind" => "has", "values" => ["dodge+wrath"], "not" => true}]}
+    assert where_columns(filter, [:pride, :wrath, :wrath, nil]) == [0]
+  end
+
+  test "has dodge+sin can mix with tier and sin chips" do
+    assert where_columns(has(["dodge+lust", "gluttony"]), [nil, nil, :lust, nil]) == [2]
+  end
+
   test "dodge skips the target on bottom-skill slots by default and does not spend a fan index on them" do
     assert columns(dodge(%{}), [1]) == [{0, "first", 0}, {1, "none", 1}, {2, "first", 1}]
   end

@@ -5,7 +5,7 @@ defmodule StarlightBot.Automation.TrayScan do
 
   defstruct frame: nil, candidates: [], claims: [], defense: nil
 
-  @type wanted :: %{sinners: [String.t()], defense?: boolean}
+  @type wanted :: %{sinners: [String.t()], defense: nil | :all | [String.t()]}
 
   @spec wanted([map], keyword) :: wanted
   def wanted(holders, opts \\ []) do
@@ -13,20 +13,21 @@ defmodule StarlightBot.Automation.TrayScan do
 
     %{
       sinners: chain |> Enum.reject(&(&1["who"] == "everyone")) |> Enum.flat_map(&(&1["sinners"] || [])) |> Enum.uniq(),
-      defense?: Keyword.get(opts, :defense?, false) or Enum.any?(holders, &BattlePlans.needs_defense?/1)
+      defense: Enum.reduce(holders, if(Keyword.get(opts, :defense?, false), do: :all), &BattlePlans.merge_defense_need(BattlePlans.defense_need(&1), &2))
     }
   end
 
   @spec sinners_wanted([String.t()]) :: wanted
-  def sinners_wanted(sinners), do: %{sinners: Enum.uniq(sinners), defense?: false}
+  def sinners_wanted(sinners), do: %{sinners: Enum.uniq(sinners), defense: nil}
 
   @spec candidates(wanted, [map], %{String.t() => [integer]}) :: [map]
-  def candidates(%{defense?: true}, all, _planned), do: with_hooks(all)
+  def candidates(%{defense: :all}, all, _planned), do: with_hooks(all)
 
-  def candidates(%{sinners: sinners}, all, planned) do
+  def candidates(%{sinners: sinners, defense: defense}, all, planned) do
     by_sinner = Enum.group_by(all, & &1.sinner)
 
-    sinners
+    (sinners ++ List.wrap(defense))
+    |> Enum.uniq()
     |> Enum.flat_map(fn sinner ->
       profiles = Map.get(by_sinner, sinner, [])
 
@@ -46,13 +47,13 @@ defmodule StarlightBot.Automation.TrayScan do
   def build(wanted, frame, %SkillTray{} = tray, ctx) do
     candidates = candidates(wanted, SinnerProfiles.list(), BattlePlans.profiles(RunMemory.battle_plan(ctx)))
     claims = if candidates == [], do: [], else: scan(frame, tray, candidates, wanted, ctx)
-    defense = if wanted.defense?, do: defense_sins(claims, tray)
+    defense = if wanted.defense, do: defense_sins(claims, tray)
     log_defense(wanted, claims, ctx)
     %__MODULE__{frame: frame, candidates: candidates, claims: claims, defense: defense}
   end
 
   defp scan(frame, tray, candidates, wanted, ctx) do
-    reason = if wanted.defense?, do: "every sinner profile (defense needed)", else: "sinner(s) #{Enum.map_join(wanted.sinners, ", ", &SinnerProfiles.label/1)}"
+    reason = if wanted.defense == :all, do: "every sinner profile (defense needed)", else: "sinner(s) #{Enum.map_join(Enum.uniq(wanted.sinners ++ List.wrap(wanted.defense)), ", ", &SinnerProfiles.label/1)}"
     hooks = candidates |> Enum.flat_map(&SinnerProfiles.locator_hooks/1) |> Enum.uniq() |> length()
     Ctx.log(ctx, :info, "playbook: scanning the skill tray for #{reason}, #{length(candidates)} profile(s), #{hooks} hook(s)")
     claims = SinnerLocator.locate(frame, tray, candidates)
@@ -65,7 +66,7 @@ defmodule StarlightBot.Automation.TrayScan do
     claims
   end
 
-  defp log_defense(%{defense?: true}, [], ctx), do: Ctx.log(ctx, :info, "playbook: no sinner profiles found in the skill tray, no defense skills available")
+  defp log_defense(%{defense: defense}, [], ctx) when not is_nil(defense), do: Ctx.log(ctx, :info, "playbook: no sinner profiles found in the skill tray, no defense skills available")
   defp log_defense(_wanted, _claims, _ctx), do: :ok
 
   defp defense_sins(claims, tray) do
