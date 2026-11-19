@@ -3,6 +3,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
   import StarlightBotWeb.Components.ConditionTree
   import StarlightBotWeb.Components.PlanPicker
   import StarlightBotWeb.Components.PlanTemplates
+  import StarlightBotWeb.Components.HookNameSelect, only: [hook_name_select: 1]
 
   alias StarlightBot.{PlanClipboard, PlanCounts, PlanTemplates, BattlePlans, Conditions, Hooks, Plans, SinnerProfiles, Teams}
   alias StarlightBotWeb.Components.PlanHistory
@@ -1847,8 +1848,7 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       </select>
       <.slot_chips skill={@node["position"]} prefix="" action_id={@values["action"]} path={@path} step_event="cond_step_chip" add_event="cond_add_chip" />
     <% true -> %>
-      <input type="text" name="hook" value={@node["hook"]} list="hook-names" phx-debounce="blur"
-             placeholder="hook name" class="input input-bordered input-xs flex-1 min-w-0 font-mono" />
+      <.hook_name_select id={"hook-select-#{@values["action"]}-#{String.replace(@path, ~r/[^a-z0-9]+/i, "-")}"} name="hook" selected={@node["hook"]} />
     <% end %>
     """
   end

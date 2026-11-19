@@ -2329,6 +2329,96 @@ const FloatingDropdown = {
   },
 }
 
+let hookNamesPromise = null
+
+const HookNameList = {
+  mounted() {
+    const details = this.el.closest("details")
+    const hidden = details.querySelector("input[type=hidden]")
+    const input = this.el.querySelector("input[type=text]")
+    const list = this.el.lastElementChild
+    const limit = 80
+    let names = []
+    let shown = []
+    let active = 0
+
+    const choose = (name) => {
+      hidden.value = name
+      hidden.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+
+    const paint = () => {
+      Array.from(list.querySelectorAll("button")).forEach((button, index) => {
+        button.classList.toggle("btn-active", index === active)
+        if (index === active) button.scrollIntoView({ block: "nearest" })
+      })
+    }
+
+    const render = () => {
+      const needle = input.value.trim().toLowerCase()
+      const matches = needle ? names.filter(name => name.includes(needle)) : names
+      shown = matches.slice(0, limit)
+      active = Math.min(active, Math.max(shown.length - 1, 0))
+      const buttons = shown.map((name, index) => {
+        const button = document.createElement("button")
+        button.type = "button"
+        button.textContent = name
+        button.className = "btn btn-xs w-full justify-start font-mono " + (name === hidden.value ? "btn-primary" : "btn-ghost")
+        button.addEventListener("click", () => choose(name))
+        button.addEventListener("mousemove", () => {
+          if (active !== index) {
+            active = index
+            paint()
+          }
+        })
+        return button
+      })
+      const note = document.createElement("span")
+      note.className = "px-1 py-1 text-xs text-base-content/50"
+      note.textContent = matches.length === 0 ? "No matching hooks" : matches.length > limit ? `Showing ${limit} of ${matches.length}, keep typing to narrow` : ""
+      list.replaceChildren(...buttons, note)
+      paint()
+    }
+
+    input.addEventListener("input", (event) => {
+      event.stopPropagation()
+      active = 0
+      render()
+    })
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault()
+        if (shown.length === 0) return
+        active = (active + (event.key === "ArrowDown" ? 1 : -1) + shown.length) % shown.length
+        paint()
+      } else if (event.key === "Enter") {
+        event.preventDefault()
+        event.stopPropagation()
+        if (shown[active] === undefined) return
+        choose(shown[active])
+        details.open = false
+      } else if (event.key === "Escape") {
+        event.preventDefault()
+        details.open = false
+        details.querySelector("summary").focus()
+      }
+    })
+
+    details.addEventListener("toggle", () => {
+      if (!details.open) return
+      hookNamesPromise ||= fetch(this.el.dataset.src).then(r => r.json()).catch(() => { hookNamesPromise = null; return [] })
+      hookNamesPromise.then(loaded => {
+        names = loaded
+        active = Math.max(names.indexOf(hidden.value), 0)
+        input.value = ""
+        render()
+        input.focus()
+      })
+    })
+  },
+}
+
 const AnchoredPopup = {
   mounted() {
     this.place = () => {
@@ -2535,7 +2625,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, ViewMemory, GiftPopup, BossPopup, CabinetBracket, FocusSelect, GiftSearchNav, TeamSearch, WindowDrag, GameStream, InfoArrow }
+  hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, HookNameList, ViewMemory, GiftPopup, BossPopup, CabinetBracket, FocusSelect, GiftSearchNav, TeamSearch, WindowDrag, GameStream, InfoArrow }
 })
 
 liveSocket.connect()

@@ -1,9 +1,4 @@
 <div id="battle-view-memory" phx-hook="ViewMemory" data-key={@editing_id && "starlight-battle-view-#{@editing_id}"} data-view={Jason.encode!(%{lineup: @lineup_id, playbook: @playbook_id, paint: @paint})} class="flex flex-col h-full gap-2 overflow-hidden">
-  <datalist id="hook-names">
-    <%= for name <- @hook_names do %>
-      <option value={name}></option>
-    <% end %>
-  </datalist>
     <div class="card bg-base-100 shadow-lg flex flex-col flex-1 min-h-0 overflow-hidden">
       <div class="card-body p-3 flex flex-col flex-1 min-h-0 gap-3 overflow-y-auto">
         <%= if @data do %>
