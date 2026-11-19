@@ -1,5 +1,5 @@
 defmodule StarlightBot.SchedulerTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias StarlightBot.{RunnerForms, Scheduler}
 

@@ -1,5 +1,5 @@
 defmodule StarlightBot.Scheduler.OverviewTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias StarlightBot.{EnkephalinSchedule, Scheduler}
   alias StarlightBot.Scheduler.Overview

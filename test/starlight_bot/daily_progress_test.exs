@@ -1,5 +1,5 @@
 defmodule StarlightBot.DailyProgressTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias StarlightBot.DailyProgress
 

@@ -1,5 +1,5 @@
 defmodule StarlightBotWeb.Live.RunnerLiveTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   import Phoenix.LiveViewTest, only: [render_component: 2]
   alias StarlightBot.RunnerForms
