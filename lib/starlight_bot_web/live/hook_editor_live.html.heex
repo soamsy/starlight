@@ -729,13 +729,18 @@
             </.link>
           <% end %>
         </div>
-        <input
-          type="text"
-          placeholder="Filter by name…"
-          value={@hooks_filter}
-          phx-keyup="filter_hooks"
-          class="input input-bordered input-sm w-48"
-        />
+        <form id="hooks-filter-form" phx-change="filter_hooks" phx-submit="filter_hooks">
+          <input
+            type="text"
+            name="value"
+            id="hooks-filter"
+            autocomplete="off"
+            placeholder="Filter by name…"
+            value={@hooks_filter}
+            phx-debounce="150"
+            class="input input-bordered input-sm w-48"
+          />
+        </form>
       </div>
     </div>
   </div>
