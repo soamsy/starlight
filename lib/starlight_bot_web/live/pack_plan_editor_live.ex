@@ -4,7 +4,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   import StarlightBotWeb.Components.PlanPicker
   import StarlightBotWeb.Components.PlanTemplates
 
-  alias StarlightBot.{PlanClipboard, PlanCounts, Plans, Teams, ThemePacks}
+  alias StarlightBot.{PlanClipboard, PlanCounts, PlanTemplates, Plans, Teams, ThemePacks}
   alias StarlightBotWeb.Components.PlanHistory
   alias StarlightBot.PackPlans.{Odds, Resolver}
 
@@ -72,7 +72,7 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
   def handle_event("copy_plan", _, socket), do: {:noreply, copy_plan(socket, :pack_plans)}
 
   @impl true
-  def handle_event("paste_plan", %{"text" => text}, socket), do: {:noreply, paste_plan(socket, :pack_plans, :pack_plan_id, text, &load_plan/2)}
+  def handle_event("paste_plan", %{"text" => text}, socket), do: {:noreply, paste_plan(socket, :pack_plans, :pack_plan_id, text, &load_plan/3)}
 
   @impl true
   def handle_event("plan_clipboard_failed", %{"message" => message}, socket), do: {:noreply, put_flash(socket, :error, message)}
@@ -583,7 +583,13 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
         end
   end
 
-  defp persist_plan(%{assigns: %{template_id: template_id}} = socket) when is_integer(template_id), do: socket
+  defp persist_plan(%{assigns: %{template_id: template_id}} = socket) when is_integer(template_id) do
+    if PlanTemplates.writable?() do
+      socket |> PlanHistory.record() |> save_template(:pack_plans, socket.assigns.plan_data)
+    else
+      socket
+    end
+  end
 
   defp persist_plan(socket) do
     socket = PlanHistory.record(socket)

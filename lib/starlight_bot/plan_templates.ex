@@ -36,6 +36,10 @@ defmodule StarlightBot.PlanTemplates do
     if writable?(), do: update_row(id, name: name), else: {:error, :read_only}
   end
 
+  def save_data(id, data) when is_integer(id) do
+    if writable?(), do: update_row(id, data: Jason.encode!(data)), else: {:error, :read_only}
+  end
+
   def delete(id) when is_integer(id) do
     if writable?() do
       {n, _} = Repo.delete_all(from t in "plan_templates", where: t.id == ^id)

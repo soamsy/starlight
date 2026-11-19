@@ -85,21 +85,33 @@ defmodule StarlightBotWeb.Components.PlanPicker do
   defp shown_plan(socket, table), do: Plans.get(table, socket.assigns.editing_id)
 
   def paste_status(socket, table, text) do
-    Phoenix.Component.assign(socket, :paste_status, status_of(socket.assigns.editing_id, table, text))
+    Phoenix.Component.assign(socket, :paste_status, status_of(shown_data(socket, table), table, text))
   end
 
-  defp status_of(_plan_id, _table, nil), do: :unknown
+  defp shown_data(%{assigns: %{editing_id: nil}}, _table), do: nil
+  defp shown_data(socket, table), do: shown_plan(socket, table).data
+
+  defp status_of(_shown, _table, nil), do: :unknown
   defp status_of(nil, _table, _text), do: :invalid
 
-  defp status_of(plan_id, table, text) do
+  defp status_of(shown, table, text) do
     case PlanClipboard.decode(text, table) do
-      {:ok, data} -> if Plans.get(table, plan_id).data == data, do: :same, else: :different
+      {:ok, data} -> if shown == data, do: :same, else: :different
       {:error, _} -> :invalid
     end
   end
 
-  def paste_plan(%{assigns: %{template_id: template_id}} = socket, _table, _field, _text, _load_plan) when is_integer(template_id) do
-    Phoenix.LiveView.put_flash(socket, :error, "Choose your own plan in the Plans menu before pasting.")
+  def paste_plan(%{assigns: %{template_id: template_id}} = socket, table, _field, text, load_plan) when is_integer(template_id) do
+    with true <- PlanTemplates.writable?(),
+         {:ok, data} <- PlanClipboard.decode(text, table),
+         {:ok, _} <- PlanTemplates.save_data(template_id, data) do
+      PlanCounts.broadcast(socket.assigns.team_id, table, data)
+      socket |> load_plan.(socket.assigns.editing_id, template_id) |> Phoenix.LiveView.put_flash(:info, "Template replaced.")
+    else
+      false -> Phoenix.LiveView.put_flash(socket, :error, "Choose your own plan in the Plans menu before pasting.")
+      {:error, message} when is_binary(message) -> Phoenix.LiveView.put_flash(socket, :error, message)
+      {:error, reason} -> Phoenix.LiveView.put_flash(socket, :error, "Replacing the template failed: #{inspect(reason)}")
+    end
   end
 
   def paste_plan(socket, table, field, text, load_plan) do
@@ -113,7 +125,7 @@ defmodule StarlightBotWeb.Components.PlanPicker do
     case Teams.paste_plan(socket.assigns.team_id, field, data) do
       {:ok, id} ->
         PlanCounts.broadcast(socket.assigns.team_id, table, data)
-        socket = socket |> load_plan.(id) |> notify_parent() |> Phoenix.LiveView.put_flash(:info, success_message)
+        socket = socket |> load_plan.(id, nil) |> notify_parent() |> Phoenix.LiveView.put_flash(:info, success_message)
 
         case PlanClipboard.warnings(table, data) do
           [] -> socket

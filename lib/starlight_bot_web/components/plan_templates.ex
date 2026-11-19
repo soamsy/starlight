@@ -5,11 +5,12 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
   alias StarlightBot.{PlanCounts, PlanTemplates, Plans, Teams}
   alias StarlightBotWeb.Components.PlanHistory
   import StarlightBotWeb.Components.PlanPicker, only: [notify_parent: 1]
+  alias StarlightBotWeb.Components.PlanPicker
 
   @selectors ~w(phx-click phx-change phx-submit phx-keyup phx-keydown phx-blur)
   @controls ~w(button input select textarea [phx-click] [phx-change] [draggable=true] [phx-hook=SortableList]>* [phx-hook=PriorityRightClick] [phx-hook=DblClickEvent] [phx-hook=RightClickEvent] [phx-hook=GiftDragSource] [phx-hook=GiftDropZone])
 
-  def template_locked?(socket), do: is_integer(socket.assigns[:template_id])
+  def template_locked?(socket), do: is_integer(socket.assigns[:template_id]) and not PlanTemplates.writable?()
 
   def blocked?(socket, event, allowed, locked? \\ &template_locked?/1) do
     locked?.(socket) and event not in allowed and not String.starts_with?(event, "template_")
@@ -46,15 +47,16 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
       |> assign(:template, Enum.find(assigns.templates, &(&1.id == assigns.template_id)))
       |> assign(:disabled, disabled)
       |> assign(:enabled, enabled)
-      |> assign(:active, not is_nil(assigns.template_id) or not is_nil(assigns.locked_label))
+      |> assign(:locked, not is_nil(assigns.template_id) and not PlanTemplates.writable?())
+      |> assign(:active, (not is_nil(assigns.template_id) and not PlanTemplates.writable?()) or not is_nil(assigns.locked_label))
 
     ~H"""
     <div :if={@active} data-read-only-banner={@container} data-disabled={@disabled} data-enabled={@enabled} role="alert"
          class="alert alert-warning sticky top-0 z-20 py-2 px-4 text-sm flex items-center gap-3 shadow-md">
       <.icon name="lucide-lock" class="size-5 shrink-0" />
       <span :if={@locked_label} class="flex-1"><%= @locked_label %></span>
-      <span :if={@template_id} class="flex-1">Read-only template <span class="font-bold"><%= @template && @template.name %></span>. Editing is locked.</span>
-      <button :if={@template_id} type="button" phx-click="template_customize" class="btn btn-sm btn-neutral"
+      <span :if={@locked} class="flex-1">Read-only template <span class="font-bold"><%= @template && @template.name %></span>. Editing is locked.</span>
+      <button :if={@locked} type="button" phx-click="template_customize" class="btn btn-sm btn-neutral"
               title={"Copy this template into a new #{@label} of your own that you can edit"}>Customize a copy</button>
     </div>
     <style :if={@active}>
@@ -94,12 +96,12 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
   def template_picker(assigns) do
     ~H"""
     <div id={@id} phx-hook="PlanClipboard" class="flex items-center gap-1">
-      <PlanHistory.buttons can_undo={@can_undo} can_redo={@can_redo} locked={not is_nil(@selected)} />
+      <PlanHistory.buttons can_undo={@can_undo} can_redo={@can_redo} locked={not is_nil(@selected) and not PlanTemplates.writable?()} />
       <button type="button" phx-click="copy_plan" class="btn btn-sm btn-square btn-outline" title={"Copy this #{@label} to the clipboard as JSON"}>
         <.icon name="lucide-copy" class="size-4" />
       </button>
       <button type="button" data-paste-plan data-confirm-text={"Replace this #{@label} with the one on the clipboard?"}
-              disabled={@status == :invalid or not is_nil(@selected)} class="btn btn-sm btn-square btn-outline relative" title={paste_title(@status, @label, @selected)}>
+              disabled={@status == :invalid or (not is_nil(@selected) and not PlanTemplates.writable?())} class="btn btn-sm btn-square btn-outline relative" title={paste_title(@status, @label, @selected && not PlanTemplates.writable?())}>
         <.icon name="lucide-clipboard-paste" class={"size-4 " <> if(@status == :different, do: "text-success", else: "")} />
         <span :if={@status == :different} class="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-success"></span>
       </button>
@@ -120,7 +122,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
                      class="input input-bordered input-xs flex-1 min-w-0 font-mono" />
               <button :if={@editing != template.id} id={"#{@id}-template-#{template.id}"} type="button" phx-click="template_select" phx-value-id={template.id}
                       phx-hook={PlanTemplates.writable?() && "DblClickEvent"} data-event="template_edit" data-id={template.id}
-                      title={if PlanTemplates.writable?(), do: "Use the template '#{template.name}' (read-only). Double-click to rename.", else: "Use the template '#{template.name}' (read-only)"}
+                      title={if PlanTemplates.writable?(), do: "Use and edit the template '#{template.name}'. Double-click to rename.", else: "Use the template '#{template.name}' (read-only)"}
                       class="flex-1 min-w-0 flex items-center gap-1.5 text-left">
                 <span class="min-w-0 truncate font-mono text-xs"><%= template.name %></span>
                 <span class="badge badge-xs badge-ghost font-mono shrink-0"><%= template.count %></span>
@@ -165,8 +167,8 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
     """
   end
 
-  defp paste_title(_status, label, selected) when not is_nil(selected), do: "Choose your own #{label} in the Plans menu to paste into it"
-  defp paste_title(status, label, _selected), do: paste_title(status, label)
+  defp paste_title(_status, label, true), do: "Choose your own #{label} in the Plans menu to paste into it"
+  defp paste_title(status, label, _locked), do: paste_title(status, label)
   defp paste_title(:invalid, label), do: "The clipboard doesn't hold a #{label} that can be pasted here"
   defp paste_title(:same, label), do: "The clipboard holds the same #{label} as this one"
   defp paste_title(:different, label), do: "The clipboard holds a different #{label}, ready to paste"
@@ -316,6 +318,16 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
     %{data: data} = Plans.get(table, plan_id)
     PlanCounts.broadcast(team_id, table, data)
     socket |> refresh_plans(table) |> load_plan.(plan_id, nil) |> notify_parent() |> assign(:paste_status, :unknown)
+  end
+
+  def save_template(socket, table, data) do
+    case PlanTemplates.save_data(socket.assigns.template_id, data) do
+      {:ok, _} ->
+        socket |> refresh(table) |> PlanPicker.broadcast_count(table, data)
+
+      {:error, reason} ->
+        flash_error(socket, "Save failed: #{inspect(reason)}")
+    end
   end
 
   defp refresh(socket, table), do: assign(socket, :templates, PlanTemplates.list(table))

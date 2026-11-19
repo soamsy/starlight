@@ -73,7 +73,8 @@ defmodule StarlightBot.PlanTemplatesTest do
 
     socket = event.(socket, "toggle_search_floor", %{"floor" => "5"})
     assert Plans.get(:pack_plans, plan_id).data == changed
-    assert PlanTemplates.get(template_id).data == original
+    assert PlanTemplates.get(template_id).data["search_floors"] == %{"normal" => [5], "hard" => []}
+    assert socket.assigns.plan_data == PlanTemplates.get(template_id).data
 
     socket = event.(socket, "template_plan", %{"id" => to_string(plan_id)})
     assert socket.assigns.template_id == nil
@@ -155,6 +156,11 @@ defmodule StarlightBot.PlanTemplatesTest do
   end
 
   test "read-only mode blocks edits and allows browsing" do
+    original = Application.get_env(:starlight_bot, :data_paths)
+    Application.put_env(:starlight_bot, :data_paths, %{original | mode: :user})
+    StarlightBot.Data.reset_cache()
+    on_exit(fn -> Application.put_env(:starlight_bot, :data_paths, original); StarlightBot.Data.reset_cache() end)
+
     allowed = Live.read_only_events()
     template = %Phoenix.LiveView.Socket{assigns: %{template_id: 4}}
     custom = %Phoenix.LiveView.Socket{assigns: %{template_id: nil}}
@@ -164,5 +170,25 @@ defmodule StarlightBot.PlanTemplatesTest do
     refute StarlightBotWeb.Components.PlanTemplates.blocked?(template, "set_view", allowed)
     refute StarlightBotWeb.Components.PlanTemplates.blocked?(template, "template_select", allowed)
     refute StarlightBotWeb.Components.PlanTemplates.blocked?(custom, "toggle_cell", allowed)
+  end
+
+  test "authoring mode lets the editor edit a template in place" do
+    allowed = Live.read_only_events()
+    template = %Phoenix.LiveView.Socket{assigns: %{template_id: 4}}
+
+    refute StarlightBotWeb.Components.PlanTemplates.blocked?(template, "toggle_cell", allowed)
+    refute StarlightBotWeb.Components.PlanTemplates.blocked?(template, "paste_plan", allowed)
+  end
+
+  test "user mode refuses to save template data" do
+    {:ok, id} = PlanTemplates.create(:pack_plans, %{"a" => 1})
+
+    original = Application.get_env(:starlight_bot, :data_paths)
+    Application.put_env(:starlight_bot, :data_paths, %{original | mode: :user})
+    StarlightBot.Data.reset_cache()
+    on_exit(fn -> Application.put_env(:starlight_bot, :data_paths, original); StarlightBot.Data.reset_cache() end)
+
+    assert PlanTemplates.save_data(id, %{"a" => 2}) == {:error, :read_only}
+    assert PlanTemplates.get(id).data == %{"a" => 1}
   end
 end
