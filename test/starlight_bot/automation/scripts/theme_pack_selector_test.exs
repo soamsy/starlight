@@ -143,7 +143,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelectorTest do
 
       favorite_a = put_in(reordered, ["packs", "thm_a", "normal", "2"], "favorite")
       assert %{id: "thm_a"} = ThemePackSelector.search_target(favorite_a, packs, "normal", 2, [], fn _ -> true end)
-      assert ThemePackSelector.search_target(favorite_a, packs, "normal", 2, ["thm_a"], fn _ -> true end) == nil
+      assert %{id: "thm_b"} = ThemePackSelector.search_target(favorite_a, packs, "normal", 2, ["thm_a"], fn _ -> true end)
     end
 
     test "skips visited packs and packs without a usable search hook", %{packs: packs, plan: plan} do

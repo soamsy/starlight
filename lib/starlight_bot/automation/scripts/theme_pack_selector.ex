@@ -262,10 +262,11 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
     end
   end
 
-  def hunt_and_backup(plan_data, theme_packs, mode, floor) do
+  def hunt_and_backup(plan_data, theme_packs, mode, floor, visited_ids \\ []) do
     {favorites, others} =
       plan_data
       |> packs_with_priority(theme_packs, mode, floor, "hunt")
+      |> Enum.reject(&(&1.id in visited_ids))
       |> Resolver.sort_hunt(plan_data, mode, floor)
       |> Enum.split_with(&Resolver.favorite?(plan_data, &1.id, mode, floor))
 
@@ -275,7 +276,7 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
   end
 
   defp select(frame, plan_data, theme_packs, mode, floor, limits, ctx) do
-    {hunt, backup} = hunt_and_backup(plan_data, theme_packs, mode, floor)
+    {hunt, backup} = hunt_and_backup(plan_data, theme_packs, mode, floor, RunMemory.visited_packs(ctx))
 
     Ctx.log(ctx, :info, "theme pack selector: floor #{floor} (#{mode}) hunting for #{pack_names(hunt)}#{backup_suffix(backup)}, expecting #{limits.packs} packs and #{limits.refreshes} refreshes")
 
@@ -394,11 +395,14 @@ defmodule StarlightBot.Automation.Scripts.ThemePackSelector do
 
   def search_target(plan_data, theme_packs, mode, floor, visited_ids, search_hook_ready?) do
     if Resolver.search_floor?(plan_data, mode, floor) do
-      hunt = plan_data |> packs_with_priority(theme_packs, mode, floor, "hunt") |> Resolver.sort_hunt(plan_data, mode, floor)
-      favorites = Enum.filter(hunt, &Resolver.favorite?(plan_data, &1.id, mode, floor))
-      candidates = if favorites == [], do: hunt, else: favorites
+      searchable =
+        plan_data
+        |> packs_with_priority(theme_packs, mode, floor, "hunt")
+        |> Resolver.sort_hunt(plan_data, mode, floor)
+        |> Enum.filter(&(&1.id not in visited_ids and search_hook_ready?.(&1)))
 
-      Enum.find(candidates, &(&1.id not in visited_ids and search_hook_ready?.(&1)))
+      {favorites, others} = Enum.split_with(searchable, &Resolver.favorite?(plan_data, &1.id, mode, floor))
+      List.first(favorites ++ others)
     end
   end
 

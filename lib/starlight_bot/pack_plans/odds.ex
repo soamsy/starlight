@@ -49,6 +49,8 @@ defmodule StarlightBot.PackPlans.Odds do
       pool_ids: MapSet.new(pool, & &1.id),
       pool_count: length(pool),
       wanted: wanted,
+      overrides: if(hunting?, do: overrides, else: []),
+      hunt: if(hunting?, do: hunt, else: []),
       backup: backup,
       hunting?: hunting?,
       shown: ThemePackSelector.expected_pack_count(grace_picks) - if(floor == @pinned_floor, do: 1, else: 0),
@@ -68,11 +70,15 @@ defmodule StarlightBot.PackPlans.Odds do
   end
 
   defp remaining(setup, taken) do
-    wanted = Enum.reject(setup.wanted, &MapSet.member?(taken, &1.id))
-    backup = Enum.reject(setup.backup, &MapSet.member?(taken, &1.id))
+    available = fn packs -> Enum.reject(packs, &MapSet.member?(taken, &1.id)) end
+    {hunt, backup} = promote(available.(setup.hunt), available.(setup.backup))
+    wanted = Enum.uniq_by(available.(setup.overrides) ++ hunt, & &1.id)
     pool = setup.pool_count - Enum.count(setup.pool_ids, &MapSet.member?(taken, &1))
     {wanted, backup, pool}
   end
+
+  defp promote([], backup), do: {backup, []}
+  defp promote(hunt, backup), do: {hunt, backup}
 
   defp search_chance(%{searching?: true, hunting?: true} = setup, taken) do
     case remaining(setup, taken) do
