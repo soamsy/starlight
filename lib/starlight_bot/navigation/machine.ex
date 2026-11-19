@@ -1,7 +1,7 @@
 defmodule StarlightBot.Navigation.Machine do
   @behaviour :gen_statem
 
-  alias StarlightBot.Automation.{Recovery, RunMemory}
+  alias StarlightBot.Automation.{Engine, Recovery, RunMemory}
   alias StarlightBot.{Ctx, EnkephalinSchedule, FailureShot, GameWindow}
   alias StarlightBot.Input.{Keyboard, Mouse, Premove}
   alias StarlightBot.Navigation.{Catalog, MachineStatus, Offload, Runner, Screen}
@@ -31,6 +31,7 @@ defmodule StarlightBot.Navigation.Machine do
     :locate_screen,
     :capture,
     :__mark__,
+    :__route__,
     :__verify__,
     :__retry_after__,
     :__refine__,
@@ -91,7 +92,13 @@ defmodule StarlightBot.Navigation.Machine do
       {:keep_state_and_data, [{:state_timeout, @resume_poll_ms, :check}]}
     else
       Ctx.log(data.ctx, :ok, "resumed")
-      {:next_state, :running, data, [{:next_event, :internal, :step}]}
+
+      if off_route?(data) do
+        Ctx.log(data.ctx, :error, "resumed on a screen off the goto route, abandoning it to re-localize")
+        fail_with({:error, :window_not_focused}, data)
+      else
+        {:next_state, :running, data, [{:next_event, :internal, :step}]}
+      end
     end
   end
 
@@ -106,6 +113,34 @@ defmodule StarlightBot.Navigation.Machine do
   end
 
   def handle_event(:info, {:EXIT, _pid, _reason}, _state, _data), do: :keep_state_and_data
+
+  defp off_route?(data) do
+    case Enum.find(data.stack, &match?({:__route__, _}, &1)) do
+      {:__route__, names} ->
+        case Runner.check_screens(Catalog.all_screens()) do
+          {:ok, screen} -> not on_route?(screen, names)
+          :unknown -> false
+        end
+
+      nil ->
+        false
+    end
+  end
+
+  defp on_route?(screen, names) do
+    screen in Enum.flat_map(names, &related_screens/1) or
+      (Engine.in_battle?(screen) and Enum.any?(names, &Engine.in_battle?/1))
+  end
+
+  defp related_screens(name),
+    do: [name | Enum.map(Catalog.refinements_of(name), & &1.name) ++ ancestors(name)]
+
+  defp ancestors(name) do
+    case Catalog.find_screen(name) do
+      %Screen{refines: parent} when not is_nil(parent) -> [parent | ancestors(parent)]
+      _ -> []
+    end
+  end
 
   defp run_step(%{stack: [step | rest]} = data) do
     data = %{data | stack: rest, current: step}
@@ -334,7 +369,8 @@ defmodule StarlightBot.Navigation.Machine do
         [{:log, :ok, "already at #{from}"}, {:__done__, {:ok, from}}]
       else
         case Catalog.plan_path(from, to) do
-          {:ok, transitions} -> Runner.plan_program(transitions) ++ [{:__mark__, nil}]
+          {:ok, transitions} ->
+            Runner.plan_program(transitions) ++ [{:__mark__, nil}, {:__route__, [from | Enum.map(transitions, & &1.to)]}]
           {:error, :no_path} ->
             FailureShot.record("no_path_#{from}_to_#{to}", data.ctx)
             [{:fail, {:no_path, from, to}}]
@@ -374,6 +410,8 @@ defmodule StarlightBot.Navigation.Machine do
     RunMemory.put(data.ctx, :step, text)
     continue(data, data.frame)
   end
+
+  defp exec_internal({:__route__, _names}, data), do: continue(data, data.frame)
 
   defp exec_internal({:__verify__, screen_name}, data) do
     case Catalog.find_screen(screen_name) do
