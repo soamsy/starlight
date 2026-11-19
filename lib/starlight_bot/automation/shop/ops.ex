@@ -618,7 +618,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   end
 
   def open_sell_popup(ctx) do
-    with {:ok, _} = ok <- Engine.act([click(@sell_open_hook, settle_ms: 100), await(@sell_popup_hook)], ctx) do
+    with {:ok, _} = ok <- Engine.act([click(@sell_open_hook, settle_ms: 150), await(@sell_popup_hook)], ctx) do
       RunMemory.put(ctx, @sell_popup_pass_key, 0)
       ok
     end
