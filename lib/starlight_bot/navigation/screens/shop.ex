@@ -30,7 +30,7 @@ defmodule StarlightBot.Navigation.Screens.Shop do
     transition to: :shop, do: back_to_shop()
   end
 
-  screen :team_select_replace, identity: :team_select_replace do
+  screen :team_select_replace, identity: :team_select_replace_3_total do
     transition to: :shop, do: back_to_shop()
   end
 
