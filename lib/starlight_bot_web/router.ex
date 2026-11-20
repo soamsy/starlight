@@ -21,7 +21,6 @@ defmodule StarlightBotWeb.Router do
       live "/events", Live.EventInspectorLive
       live "/dungeon", Live.DungeonInspectorLive
       live "/gift-inspector", Live.GiftInspectorLive
-      live "/profile-scan", Live.ProfileScanLive
       live "/theme-packs", Live.ThemePackInspectorLive
       live "/teams", Live.TeamEditorLive
       live "/luxcavation", Live.RunnerLive, :luxcavation
