@@ -43,7 +43,7 @@
     <% scheduler_on = runs_on || charger_on %>
     <% status = window_status(@game_window_rect) %>
     <% busy = @game_window_busy %>
-    <details id="window-status-menu" phx-hook="FloatingDropdown" data-keep-open class="dropdown dropdown-end">
+    <details id="window-status-menu" phx-hook="FloatingDropdown" phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])} class="dropdown dropdown-end">
       <summary class="btn btn-ghost btn-xs lg:btn-sm gap-0 overflow-hidden p-0">
         <span
           class={[
@@ -197,7 +197,7 @@
       </div>
     </details>
 
-      <details id="page-menu" phx-hook="FloatingDropdown" data-keep-open data-close-on-click class="dropdown dropdown-end">
+      <details id="page-menu" phx-hook="FloatingDropdown" phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])} data-close-on-click class="dropdown dropdown-end">
         <% profiles_on = on_teams and @team_nav != nil and @team_nav.pane == "profiles" %>
         <summary class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or @page in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :prepare_lineups, :rewards, :linux_checks, :windows_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
           <.icon name="lucide-layout-grid" class="size-4 lg:size-5" />
