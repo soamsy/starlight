@@ -41,6 +41,24 @@ window.addEventListener("unhandledrejection", (e) => {
   postToServerLog("error", [`Unhandled promise rejection: ${e.reason?.stack || e.reason}`])
 })
 
+let selectingField = null
+
+for (const proto of [HTMLInputElement.prototype, HTMLTextAreaElement.prototype]) {
+  const setSelectionRange = proto.setSelectionRange
+  proto.setSelectionRange = function (...args) {
+    if (this === selectingField) return
+    return setSelectionRange.apply(this, args)
+  }
+}
+
+window.addEventListener("pointerdown", (e) => {
+  selectingField = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement ? e.target : null
+}, true)
+
+for (const type of ["pointerup", "pointercancel", "blur"]) {
+  window.addEventListener(type, () => { selectingField = null }, true)
+}
+
 function readOnlyBlock(e) {
   if (!(e.target instanceof Element)) return
   for (const banner of document.querySelectorAll("[data-read-only-banner]")) {
