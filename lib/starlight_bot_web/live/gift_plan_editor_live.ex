@@ -840,11 +840,14 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("list_update_segment", %{"entry" => entry_id, "from" => from, "segment" => params}, socket) do
+    entry = socket.assigns.plan_data |> GiftPlans.find_section(entry_section_id(socket, entry_id)) |> GiftPlans.find_entry(entry_id)
+    pattern? = entry != nil and GiftPlans.pattern_entry?(entry)
+
     {:noreply,
      update_segment(socket, entry_id, from, fn segment ->
        segment
        |> Map.put("disposition", if(params["disposition"] in GiftPlans.dispositions(), do: params["disposition"], else: segment["disposition"]))
-       |> apply_goal(params["goal"])
+       |> apply_goal(params["goal"], pattern?)
        |> Map.put("max", if(Map.has_key?(params, "max"), do: parse_optional_int(params["max"]), else: segment["max"]))
        |> apply_team_profiles(params["team_profile"])
      end)}
@@ -1776,13 +1779,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   defp apply_team_profiles(segment, _picks), do: segment
 
-  defp apply_goal(segment, nil), do: segment
-  defp apply_goal(segment, "abandon"), do: Map.put(segment, "abandoned", true)
-  defp apply_goal(segment, "use"), do: Map.put(segment, "abandoned", false)
+  defp apply_goal(segment, nil, _pattern?), do: segment
+  defp apply_goal(segment, "abandon", _pattern?), do: Map.put(segment, "abandoned", true)
+  defp apply_goal(segment, "use", _pattern?), do: Map.put(segment, "abandoned", false)
 
-  defp apply_goal(segment, goal) do
+  defp apply_goal(segment, goal, pattern?) do
     segment = Map.merge(segment, %{"goal" => goal, "abandoned" => false})
-    if segment["disposition"] == "ignore", do: Map.put(segment, "disposition", "keep"), else: segment
+    if segment["disposition"] == "ignore" and not pattern?, do: Map.put(segment, "disposition", "keep"), else: segment
   end
 
   defp set_scheduled(socket, entry_id) do
@@ -2485,7 +2488,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         abandoned?: abandoned?,
         heal?: heal?,
         made_from: made_from || nil,
-        goal_slot?: keep? or (action? and entry["subject"]["action"] == "skill_replace") or (abandoned? and not pattern?) or (heal? and GiftPlans.scheduled?(assigns.entry)),
+        goal_slot?: keep? or (action? and entry["subject"]["action"] == "skill_replace") or (abandoned? and not pattern?) or (pattern? and not action? and GiftPlans.scheduled?(assigns.entry)) or (heal? and GiftPlans.scheduled?(assigns.entry)),
         fusable?: entry["fusion"] != nil or (gift != nil and GiftPlans.fusable?(gift)),
         uptie?: gift != nil and String.trim(gift.uptie2 || "") != "",
         surface:
@@ -2531,7 +2534,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
                   true -> @segment["goal"] || "required"
                 end, @section)}
                 class={"select select-bordered select-xs w-full " <> if(@abandoned? or @heal?, do: "", else: goal_select_color(@segment["goal"] || "required"))}>
-          <option :for={goal <- if(@heal?, do: ["use", "abandon"], else: ["required", "optional" | GiftPlans.goal_letters(@section)] ++ ["abandon"])} value={goal}
+          <option :for={goal <- cond do
+                    @heal? -> ["use", "abandon"]
+                    @pattern? -> ["required", "abandon"]
+                    true -> ["required", "optional" | GiftPlans.goal_letters(@section)] ++ ["abandon"]
+                  end} value={goal}
                   selected={if @abandoned?, do: goal == "abandon", else: if(@heal?, do: goal == "use", else: (@segment["goal"] || "required") == goal)}><%= goal_label(goal) %></option>
         </select>
       </div>
