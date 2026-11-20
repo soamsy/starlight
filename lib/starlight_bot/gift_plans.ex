@@ -667,6 +667,13 @@ defmodule StarlightBot.GiftPlans do
     update_section(data, id, &add_gift_entry(&1, name, :top, gifts_by_name, by_id, routes_for))
   end
 
+  def add_gift_to_group(data, id, key, name, gifts_by_name, routes_for) do
+    before_ids = data |> find_section(id) |> Map.get("entries", []) |> MapSet.new(& &1["id"])
+    data = add_gift(data, id, name, gifts_by_name, routes_for)
+    added = data |> find_section(id) |> Map.get("entries", []) |> Enum.map(& &1["id"]) |> Enum.reject(&(&1 in before_ids))
+    Enum.reduce(added, data, &join_group(&2, id, &1, key, []))
+  end
+
   defp add_gift_entry(section, name, role, by_name, by_id, routes_for) do
     gift = by_name[name]
 

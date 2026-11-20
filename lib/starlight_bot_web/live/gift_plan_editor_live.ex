@@ -624,7 +624,16 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("list_add_gift", %{"gift" => name} = params, socket) do
-    {:noreply, update_plan(socket, &GiftPlans.add_gift(&1, add_section_id(socket, params), name, socket.assigns.gifts_by_name, fn tier -> FusionRouteTemplates.initial(tier) end))}
+    routes = fn tier -> FusionRouteTemplates.initial(tier) end
+    root = socket.assigns.root_section_id
+
+    case params["group"] && GiftPlans.group_section_id(socket.assigns.plan_data, root, params["group"]) do
+      section_id when is_binary(section_id) ->
+        {:noreply, update_plan(socket, &GiftPlans.add_gift_to_group(&1, section_id, params["group"], name, socket.assigns.gifts_by_name, routes))}
+
+      _ ->
+        {:noreply, update_plan(socket, &GiftPlans.add_gift(&1, add_section_id(socket, params), name, socket.assigns.gifts_by_name, routes))}
+    end
   end
 
   @impl true
@@ -2420,7 +2429,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
               <% branched? = GiftPlans.branches(active_segment(@entry_tabs, lead)) != [] %>
               <.branch_strip :if={branched?} entry={lead} from={active_from(@entry_tabs, lead)} timeline={active_timeline(@entry_tabs, lead)} branch={active_branch(@entry_tabs, lead)}
                              editing={@editing_branch} plan_data={@plan_data} section={@section} />
-              <div id={"entry-group-#{key}"} phx-hook="SortableList" data-sort-event="list_reorder_entries" data-sort-move-event="list_move_entry"
+              <div id={"entry-group-#{key}"} data-drop-group={key} phx-hook="SortableList" data-sort-event="list_reorder_entries" data-sort-move-event="list_move_entry"
                    data-sort-shared={@shared} data-sort-scope={"group:#{key}"} data-sort-highlight data-sort-multi
                    class={"flex flex-col gap-1 min-h-8 p-1 border-2 border-primary rounded-b-lg transition-colors " <> if(branched?, do: "", else: "rounded-tr-lg")}>
                 <.section_entry_row :for={entry <- members} entry={entry} section={@section} from={active_from(@entry_tabs, entry)} timeline={active_timeline(@entry_tabs, entry)} branch={active_branch(@entry_tabs, entry)} in_group={true}

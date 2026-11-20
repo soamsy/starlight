@@ -1788,7 +1788,7 @@ const GiftDragSource = {
 const GiftDropZone = {
   mounted() {
     const active = (e) => this.el.dataset.dropEvent && e.dataTransfer.types.includes(GIFT_DRAG_TYPE)
-    const sectionOf = (e) => eventElement(e)?.closest("[data-drop-section]")
+    const sectionOf = (e) => eventElement(e)?.closest("[data-drop-group]") || eventElement(e)?.closest("[data-drop-section]")
     const highlight = (el) => {
       if (this.highlighted === el) return
       this.highlighted?.classList.remove("bg-primary/15")
@@ -1810,7 +1810,10 @@ const GiftDropZone = {
       const section = sectionOf(e)
       highlight(null)
       const payload = { gift: e.dataTransfer.getData(GIFT_DRAG_TYPE) }
-      if (section) payload.section = section.dataset.dropSection
+      if (section?.dataset.dropGroup) {
+        payload.group = section.dataset.dropGroup
+        payload.section = section.closest("[data-drop-section]")?.dataset.dropSection
+      } else if (section) payload.section = section.dataset.dropSection
       this.pushEvent(this.el.dataset.dropEvent, payload)
     })
   }
