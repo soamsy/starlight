@@ -1183,6 +1183,10 @@ defmodule StarlightBot.GiftPlans do
     update_section(data, id, fn section -> Map.update(section, "entries", [], &Enum.reject(&1, fn entry -> entry["id"] == entry_id end)) end)
   end
 
+  def remove_entries(data, id, entry_ids) do
+    update_section(data, id, fn section -> Map.update(section, "entries", [], &Enum.reject(&1, fn entry -> entry["id"] in entry_ids end)) end)
+  end
+
   def reorder_entries(data, id, ids) do
     update_section(data, id, fn section ->
       Map.update(section, "entries", [], fn entries ->

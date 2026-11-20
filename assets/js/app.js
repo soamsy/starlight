@@ -1501,6 +1501,15 @@ const bindSortSelectionGlobals = () => {
   })
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && sortSelection.list) clearSortSelection()
+    if ((e.key === "Delete" || e.key === "Backspace") && sortSelection.list && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      if (document.activeElement?.closest(EDITABLE)) return
+      const hook = sortHooks.get(sortSelection.list)
+      const ids = selectedSortIds(sortSelection.list)
+      if (!hook || !ids.length) return
+      e.preventDefault()
+      hook.pushEvent("list_remove_entries", { ids })
+      return
+    }
     if (!sortSelection.list || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
     const key = e.key?.toLowerCase()
     if (key !== "c" && key !== "v") return
@@ -1558,6 +1567,13 @@ const SortableList = {
             ? selectedSortIds(this.el)
             : [row.dataset.sortId]
           this.pushEvent(this.el.dataset.sortCopyEvent || "list_copy_entries", { ids, scope: this.el.dataset.sortScope || "" })
+          return
+        }
+
+        const remove = eventElement(e).closest("[data-remove-entry]")
+        if (remove && sortSelection.list === this.el && sortSelection.ids.has(row.dataset.sortId) && sortSelection.ids.size > 1) {
+          e.stopPropagation()
+          this.pushEvent("list_remove_entries", { ids: selectedSortIds(this.el) })
           return
         }
 

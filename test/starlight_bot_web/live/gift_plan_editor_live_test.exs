@@ -652,6 +652,14 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert html =~ "(not in this stage)"
   end
 
+  test "list_remove_entries removes every given entry in one step", %{socket: socket} do
+    socket = socket |> shop() |> event("list_add_gift", %{"gift" => "Fixed Thing"})
+    ids = Enum.map(["Ing A", "Fixed Thing"], &entry(socket, &1)["id"])
+    socket = event(socket, "list_remove_entries", %{"ids" => ids})
+
+    assert section(socket)["entries"] |> Enum.map(& &1["id"]) |> Enum.filter(&(&1 in ids)) == []
+  end
+
   test "gift search holds up to 3 gifts of tier 3 or under", %{socket: socket} do
     socket = event(socket, "set_tab", %{"tab" => "loadout"})
     html = render(socket)

@@ -771,6 +771,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("list_remove_entries", %{"ids" => ids}, socket) do
+    {:noreply, update_plan(socket, &GiftPlans.remove_entries(&1, entry_section_id(socket, List.first(ids)), ids))}
+  end
+
+  @impl true
   def handle_event("list_reorder_entries", %{"scope" => "group:" <> key, "ids" => ids}, socket) do
     {:noreply, update_plan(socket, &GiftPlans.reorder_group(&1, entry_section_id(socket, List.first(ids)), key, ids))}
   end
@@ -2661,8 +2666,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       </span>
       <span :if={@readonly and GiftPlans.scheduled?(@entry)} class="badge badge-outline badge-xs ml-auto whitespace-nowrap"><%= pack_row_label(@entry, @timeline, @from) %></span>
       <button :if={not @in_group and not @readonly} type="button" phx-click="list_add_schedule" phx-value-entry={@entry["id"]} class="btn btn-ghost btn-xs ml-auto in-[.ring-primary]:ml-0">Add Schedule</button>
-      <button :if={not @readonly} type="button" phx-click="list_remove_entry" phx-value-entry={@entry["id"]}
-              class={"btn btn-ghost btn-xs px-1 text-error " <> if(@in_group, do: "ml-auto in-[.ring-primary]:ml-0", else: "")} title="Remove from this stage"><.icon name="lucide-x" class="size-3.5" /></button>
+      <button :if={not @readonly} type="button" data-remove-entry phx-click="list_remove_entry" phx-value-entry={@entry["id"]}
+              class={"btn btn-ghost btn-xs px-1 text-error " <> if(@in_group, do: "ml-auto in-[.ring-primary]:ml-0", else: "")} title="Remove from this stage (every selected entry if this one is selected, or press Delete)"><.icon name="lucide-x" class="size-3.5" /></button>
     </form>
     """
   end
