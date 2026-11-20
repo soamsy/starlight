@@ -40,21 +40,11 @@ defmodule StarlightBot.RunnerForms do
   def lineup_picks do
     teams = Teams.list_teams()
     md = get("mirror_dungeon") || %{}
-    lux = get("luxcavation") || %{}
 
-    md_picks = parse_team_picks(md["team_ids"], md["team_hooks"], md["team_modes"], md["team_searches"], teams)
+    cycle = parse_team_picks(md["team_ids"], md["team_hooks"], md["team_modes"], md["team_searches"], teams)
+    reserve = parse_team_picks(md["reserve_ids"], md["reserve_hooks"], md["reserve_modes"], md["reserve_searches"], teams)
 
-    lux_picks =
-      Enum.flat_map(["exp", "thread"], fn kind ->
-        ids = List.wrap(lux["#{kind}_team_ids"])
-
-        case parse_slot_picks(ids, lux["#{kind}_team_hooks"], length(ids)) do
-          {:ok, picks} -> Enum.reject(picks, &is_nil/1)
-          :error -> []
-        end
-      end)
-
-    (md_picks ++ lux_picks)
+    (cycle ++ reserve)
     |> Enum.filter(&(&1.hook && Enum.any?(teams, fn team -> team.id == &1.id end)))
     |> Enum.uniq_by(&{&1.id, &1.hook})
   end

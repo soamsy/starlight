@@ -104,6 +104,14 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   def handle_event("toggle_forecast_info", _, socket), do: {:noreply, update(socket, :show_forecast_info, &(!&1))}
 
   @impl true
+  def handle_event("prepare_lineups", _, socket) do
+    if socket.assigns.phase == :idle and socket.assigns.countdown == nil and not socket.assigns.other_running? do
+      {:noreply, start_countdown(socket, :prepare_lineups)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_event("localize", _, socket) do
     Navigator.localize()
     {:noreply, socket}
@@ -440,7 +448,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
 
   defp assign_other_running(socket) do
     %{run_kind: run_kind, tab: tab} = socket.assigns
-    assign(socket, :other_running?, run_kind != nil and run_kind != tab)
+    assign(socket, :other_running?, run_kind != nil and run_kind != tab and not (run_kind == :prepare_lineups and tab == :mirror_dungeon))
   end
 
   def elapsed_ms(nil, _now_ms), do: nil
@@ -1178,6 +1186,8 @@ defmodule StarlightBotWeb.Live.RunnerLive do
 
   defp run_pending_action(:resume_mirror_dungeon), do: Navigator.resume_mirror_dungeon()
 
+  defp run_pending_action(:prepare_lineups), do: Navigator.prepare_lineups()
+
   def pending_action_label({:run_mirror_dungeon, picks, run_count, config}) do
     suffix =
       case config.rewards do
@@ -1199,6 +1209,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   end
 
   def pending_action_label(:resume_mirror_dungeon), do: "resume mirror dungeon"
+  def pending_action_label(:prepare_lineups), do: "prepare lineups in Lux"
 
   def pending_action_label(
         {:run_luxcavation, _team_id, exp_waves, thread_waves, collect_xp?, collect_enkephalin?, enkephalin_convert_count}

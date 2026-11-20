@@ -34,7 +34,6 @@ defmodule StarlightBotWeb.Live.PageHook do
     StarlightBotWeb.Live.RewardsLive => :rewards,
     StarlightBotWeb.Live.RunnerLive => :runner,
     StarlightBotWeb.Live.ShopRunnerLive => :shop_runner,
-    StarlightBotWeb.Live.PrepareLineupsLive => :prepare_lineups,
     StarlightBotWeb.Live.LogLive => :log,
     StarlightBotWeb.Live.LinuxChecksLive => :linux_checks,
     StarlightBotWeb.Live.DataLive => :data

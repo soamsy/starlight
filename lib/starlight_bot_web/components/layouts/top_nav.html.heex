@@ -199,7 +199,7 @@
 
       <details id="page-menu" phx-hook="FloatingDropdown" phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])} data-close-on-click class="dropdown dropdown-end">
         <% profiles_on = on_teams and @team_nav != nil and @team_nav.pane == "profiles" %>
-        <summary class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or @page in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :prepare_lineups, :rewards, :linux_checks, :windows_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
+        <summary class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or @page in [:hooks, :battle, :dungeon, :gift_inspector, :theme_packs, :events, :shop_runner, :rewards, :linux_checks, :windows_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
           <.icon name="lucide-layout-grid" class="size-4 lg:size-5" />
         </summary>
         <div popover="manual" class="dropdown-content z-50 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
@@ -212,17 +212,6 @@
       <span class="text-[10px] font-normal leading-tight text-center">{if profiles_on, do: "Back to plans", else: "Sinner Profiles"}</span>
     </.link>
     <% end %>
-    <.link navigate={~p"/prepare-lineups"}
-           onclick="document.activeElement.blur()"
-           title="Select each team in the Lux EXP team select and set its sinner order to the first lineup"
-           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :prepare_lineups, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
-      <%= if @run_kind in [:prepare_lineups, :team_survey] do %>
-        <span class="loading loading-spinner loading-xs"></span>
-      <% else %>
-        <.icon name="lucide-list-checks" class="size-4 lg:size-5" />
-      <% end %>
-      <span class="text-[10px] font-normal leading-tight text-center">Prepare Lineups</span>
-    </.link>
     <%!-- Inspectors / debug tools --%>
     <.link navigate={~p"/hooks"}
            class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :hooks, do: "btn-primary", else: "btn-ghost text-base-content/50")}>

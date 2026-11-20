@@ -2376,7 +2376,8 @@ const FloatingDropdown = {
       style.right = "auto"
       const below = window.innerHeight - r.bottom - margin
       const openUp = below < content.offsetHeight && r.top - margin > below
-      style.left = `${Math.max(margin, Math.min(r.left, window.innerWidth - content.offsetWidth - margin))}px`
+      const anchor = "alignEnd" in this.el.dataset ? r.right - content.offsetWidth : r.left
+      style.left = `${Math.max(margin, Math.min(anchor, window.innerWidth - content.offsetWidth - margin))}px`
       style.top = openUp ? "auto" : `${r.bottom + 4}px`
       style.bottom = openUp ? `${window.innerHeight - r.top + 4}px` : "auto"
     }

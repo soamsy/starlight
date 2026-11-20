@@ -35,13 +35,28 @@
         <% else %>
           <StarlightBotWeb.Components.WindowGate.gate_button :if={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending) != :ready} gate={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending)} busy={@game_window_busy}
             disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?} />
-          <button
-            :if={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending) == :ready}
-            type="submit"
-            disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
-            class="btn btn-primary btn-sm">
-            Run
-          </button>
+          <div :if={gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending) == :ready} class="join w-full">
+            <button
+              type="submit"
+              disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
+              class="btn btn-primary btn-sm join-item flex-1">
+              Run
+            </button>
+            <details id="md-run-menu" phx-hook="FloatingDropdown" data-close-on-click data-align-end class="dropdown dropdown-end join-item border-0">
+              <summary class="btn btn-primary btn-sm rounded-[inherit] border-l border-primary-content/20 px-2">
+                <.icon name="lucide-chevron-down" class="size-4" />
+              </summary>
+              <div popover="manual" class="dropdown-content z-50 w-max rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+                <button
+                  type="button"
+                  phx-click="prepare_lineups"
+                  disabled={@teams == [] or @phase != :idle or @countdown != nil or @other_running?}
+                  class="btn btn-ghost btn-sm w-full justify-start font-normal">
+                  <.icon name="lucide-list-checks" class="size-4" /> Prepare lineups in Lux
+                </button>
+              </div>
+            </details>
+          </div>
         <% end %>
 
         <%= if @phase == :running and not @other_running? do %>
