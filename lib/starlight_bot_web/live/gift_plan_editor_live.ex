@@ -80,7 +80,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
-  @read_only_events ~w(restore_view restore_browser set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter set_gift_mode_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_select_branch list_copy_entries list_select_tab list_refresh_select_tab start_rename_stage cancel_rename_stage rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_select pack_new pack_edit pack_close)
+  @read_only_events ~w(restore_view restore_browser set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter set_gift_mode_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_select_branch list_copy_entries list_select_tab list_refresh_select_tab start_rename_stage cancel_rename_stage rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_new pack_edit pack_close)
 
   def read_only_events, do: @read_only_events
 
@@ -113,7 +113,6 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:gift_popup, nil)
       |> assign(:show_help, false)
       |> assign(:view_from_url, false)
-      |> assign(:selected_pack, nil)
       |> assign(:starter_packs, GiftStarterPacks.list())
       |> reset_editor()
 
@@ -553,30 +552,23 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
-  def handle_event("pack_select", %{"ref" => ref}, socket), do: {:noreply, assign(socket, :selected_pack, ref)}
-
-  @impl true
   def handle_event("pack_new", _params, socket) do
     case GiftStarterPacks.create(GiftStarterPacks.default_name(), "any") do
-      {:ok, ref} -> {:noreply, socket |> refresh_packs() |> assign(:selected_pack, ref) |> open_pack(ref)}
+      {:ok, ref} -> {:noreply, socket |> refresh_packs() |> open_pack(ref)}
       {:error, reason} -> {:noreply, put_flash(socket, :error, "Couldn't create the starter pack: #{inspect(reason)}")}
     end
   end
 
   @impl true
   def handle_event("pack_edit", %{"ref" => ref}, socket), do: {:noreply, open_pack(socket, ref)}
-  def handle_event("pack_edit", _params, %{assigns: %{selected_pack: ref}} = socket) when is_binary(ref), do: {:noreply, open_pack(socket, ref)}
-  def handle_event("pack_edit", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("pack_close", _params, socket), do: {:noreply, close_pack(socket)}
 
   @impl true
-  def handle_event("pack_add", _params, %{assigns: %{selected_pack: ref}} = socket) when is_binary(ref) do
+  def handle_event("pack_add", %{"ref" => ref}, socket) do
     {:noreply, update_plan(socket, &GiftPlans.add_pack(&1, target_section_id(socket), ref))}
   end
-
-  def handle_event("pack_add", _params, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("pack_unpack", %{"pack" => pack_id, "section" => section_id}, socket) do
@@ -620,7 +612,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("pack_delete", _params, %{assigns: %{pack_edit: %{ref: ref}}} = socket) do
     case GiftStarterPacks.delete(ref) do
-      :ok -> {:noreply, socket |> close_pack() |> assign(:selected_pack, nil) |> refresh_packs()}
+      :ok -> {:noreply, socket |> close_pack() |> refresh_packs()}
       {:error, _} -> {:noreply, put_flash(socket, :error, "This starter pack can't be deleted.")}
     end
   end

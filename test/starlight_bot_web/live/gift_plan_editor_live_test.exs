@@ -712,7 +712,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     end
 
     test "adding a pack stores only a reference and shows its entries read-only", %{socket: socket, ref: ref} do
-      socket = socket |> event("pack_select", %{"ref" => ref}) |> event("pack_add", %{})
+      socket = socket |> event("pack_add", %{"ref" => ref})
 
       assert [%{"ref" => ^ref}] = section(socket)["packs"]
       assert section(socket)["entries"] == []
@@ -723,14 +723,14 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     end
 
     test "a stage entry overrides the pack's entry and the pack row says so", %{socket: socket, ref: ref} do
-      socket = socket |> event("pack_select", %{"ref" => ref}) |> event("pack_add", %{}) |> event("list_add_gift", %{"gift" => "Fiery Down"})
+      socket = socket |> event("pack_add", %{"ref" => ref}) |> event("list_add_gift", %{"gift" => "Fiery Down"})
 
       assert render(socket) =~ "Overridden"
       assert length(GiftPlans.for_run(saved(socket), "all_normal")["sections"] |> hd() |> Map.fetch!("entries")) == 2
     end
 
     test "dragging a pack to another stage moves the reference", %{socket: socket, ref: ref} do
-      socket = socket |> event("pack_select", %{"ref" => ref}) |> event("pack_add", %{}) |> event("list_add_stage", %{})
+      socket = socket |> event("pack_add", %{"ref" => ref}) |> event("list_add_stage", %{})
       [root, stage] = saved(socket)["sections"]
       [%{"id" => pack_id}] = root["packs"]
       socket = event(socket, "pack_move", %{"scope" => stage["id"], "from" => root["id"], "id" => pack_id, "ids" => [pack_id]})
@@ -742,7 +742,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     end
 
     test "unpacking copies the entries into the stage and drops the reference", %{socket: socket, ref: ref} do
-      socket = socket |> event("pack_select", %{"ref" => ref}) |> event("pack_add", %{})
+      socket = socket |> event("pack_add", %{"ref" => ref})
       [%{"id" => pack_id}] = section(socket)["packs"]
       socket = event(socket, "pack_unpack", %{"pack" => pack_id, "section" => section(socket)["id"]})
 
@@ -751,7 +751,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     end
 
     test "editing the pack changes every plan that uses it", %{socket: socket, ref: ref} do
-      socket = socket |> event("pack_select", %{"ref" => ref}) |> event("pack_add", %{}) |> event("pack_edit", %{"ref" => ref})
+      socket = socket |> event("pack_add", %{"ref" => ref}) |> event("pack_edit", %{"ref" => ref})
       entry_id = socket.assigns.plan_data["sections"] |> hd() |> Map.fetch!("entries") |> hd() |> Map.fetch!("id")
       socket = socket |> event("list_remove_entry", %{"entry" => entry_id}) |> event("pack_close", %{})
 

@@ -163,25 +163,45 @@
                   <span :if={issues != []} class="badge badge-warning badge-sm" title={Enum.join(issues, "\n")}>
                     <%= length(issues) %> issue(s)
                   </span>
-                <% selected_pack = Enum.find(@starter_packs, &(&1.ref == @selected_pack)) %>
+                <% added_refs = if(add_target, do: add_target |> GiftPlans.packs() |> Enum.map(& &1["ref"]), else: []) %>
+                <% recent_packs = GiftStarterPacks.recent(@starter_packs, @plan_data["affinity"], 2) %>
+                <% menu_packs = Enum.reject(@starter_packs, &(&1 in recent_packs)) %>
                 <div class="flex items-center gap-1">
+                  <span :if={recent_packs != []} class="flex items-center gap-1.5 text-sm text-base-content/70 mr-1">
+                    <.icon name="lucide-package" class="size-4 shrink-0" />Starter packs
+                  </span>
+                  <div :for={pack <- recent_packs} class="join">
+                    <button type="button" phx-click="pack_add" phx-value-ref={pack.ref} disabled={is_nil(add_target) or pack.ref in added_refs}
+                            class="btn btn-sm btn-outline join-item gap-1 max-w-64" title={"Add the starter pack " <> pack.name <> " to the current stage"}>
+                      <.icon name="lucide-plus" class="size-4 shrink-0" /><span class="truncate"><%= pack.name %></span>
+                      <span class="flex items-center gap-0.5 shrink-0">
+                        <img :for={gift <- pack_gifts(pack, @gifts_by_name)} src={gift.image_path} title={gift.name} class="w-5 h-5 rounded object-cover bg-slate-500/40" />
+                      </span>
+                    </button>
+                    <button type="button" phx-click="pack_edit" phx-value-ref={pack.ref} class="btn btn-sm btn-outline btn-square join-item"
+                            title={if pack.editable, do: "Edit this starter pack", else: "View this shipped starter pack"}>
+                      <.icon name={if pack.editable, do: "lucide-pencil", else: "lucide-eye"} class="size-4" />
+                    </button>
+                  </div>
                   <details id="starter-pack-menu" phx-hook="FloatingDropdown" data-close-on-click class="dropdown">
                     <summary class="btn btn-sm btn-outline gap-1 max-w-56 justify-between" title="Starter packs: reusable sets of entries and goals to add to a stage">
                       <span class="flex items-center gap-1.5 min-w-0">
-                        <.icon name="lucide-package" class="size-4 shrink-0" />
-                        <span class="truncate"><%= if selected_pack, do: selected_pack.name, else: "Starter pack" %></span>
+                        <.icon :if={recent_packs == []} name="lucide-package" class="size-4 shrink-0" />
+                        <span class="truncate"><%= if recent_packs == [], do: "Starter packs", else: "More" %></span>
                       </span>
                       <.icon name="lucide-chevron-down" class="size-3.5 shrink-0" />
                     </summary>
                     <div popover="manual" class="dropdown-content z-30 w-96 max-w-[90vw] max-h-96 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-1 shadow">
-                      <ul class="menu w-full p-0">
-                        <%= for {affinity, packs} <- GiftStarterPacks.grouped(@starter_packs, @plan_data["affinity"]) do %>
-                          <li class="menu-title flex-row items-center gap-1.5 text-[11px] capitalize">
+                      <div class="flex flex-col gap-0.5 w-full">
+                        <%= for {affinity, packs} <- GiftStarterPacks.grouped(menu_packs, @plan_data["affinity"]) do %>
+                          <div class="flex items-center gap-1.5 px-2 pt-2 pb-1 text-[11px] font-semibold capitalize text-base-content/60">
                             <img :if={affinity != "any"} src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
-                          </li>
-                          <li :for={pack <- packs}>
-                            <button type="button" phx-click="pack_select" phx-value-ref={pack.ref} class={"items-start " <> if(pack.ref == @selected_pack, do: "menu-active", else: "")}>
-                              <span class="flex flex-col gap-0.5 min-w-0 flex-1 text-left">
+                          </div>
+                          <div :for={pack <- packs} class="join w-full">
+                            <button type="button" phx-click="pack_add" phx-value-ref={pack.ref} disabled={is_nil(add_target) or pack.ref in added_refs}
+                                    class="btn btn-sm btn-ghost join-item h-auto min-h-8 flex-1 justify-start gap-1.5 py-1 text-left font-normal" title="Add this starter pack to the current stage">
+                              <.icon name="lucide-plus" class="size-4 shrink-0" />
+                              <span class="flex flex-col gap-0.5 min-w-0 flex-1">
                                 <span class="flex items-center gap-1.5 min-w-0">
                                   <span class="truncate"><%= pack.name %></span>
                                   <span class="flex items-center gap-0.5 shrink-0">
@@ -192,22 +212,18 @@
                                 <span :if={pack.notes != ""} class="text-[11px] text-base-content/60 line-clamp-2 whitespace-pre-line"><%= pack.notes %></span>
                               </span>
                             </button>
-                          </li>
+                            <button type="button" phx-click="pack_edit" phx-value-ref={pack.ref} class="btn btn-sm btn-ghost btn-square join-item h-auto"
+                                    title={if pack.editable, do: "Edit this starter pack", else: "View this shipped starter pack"}>
+                              <.icon name={if pack.editable, do: "lucide-pencil", else: "lucide-eye"} class="size-4" />
+                            </button>
+                          </div>
                         <% end %>
-                        <li :if={@starter_packs == []} class="px-3 py-1 text-xs text-base-content/50 italic">No starter packs yet.</li>
-                        <li class="pointer-events-none my-1 h-px bg-base-300 p-0"></li>
-                        <li><button type="button" phx-click="pack_new"><.icon name="lucide-plus" class="size-4" />New starter pack</button></li>
-                      </ul>
+                        <div :if={menu_packs == []} class="px-3 py-1 text-xs text-base-content/50 italic"><%= if recent_packs == [], do: "No starter packs yet.", else: "No other starter packs." %></div>
+                        <div class="my-1 h-px bg-base-300"></div>
+                        <button type="button" phx-click="pack_new" class="btn btn-sm btn-ghost justify-start gap-1.5 font-normal"><.icon name="lucide-plus" class="size-4" />New starter pack</button>
+                      </div>
                     </div>
                   </details>
-                  <button type="button" phx-click="pack_edit" disabled={is_nil(selected_pack)} class="btn btn-sm btn-outline btn-square"
-                          title={if selected_pack && not selected_pack.editable, do: "View this shipped starter pack", else: "Edit the selected starter pack"}>
-                    <.icon name={if selected_pack && not selected_pack.editable, do: "lucide-eye", else: "lucide-pencil"} class="size-4" />
-                  </button>
-                  <button type="button" phx-click="pack_add" disabled={is_nil(selected_pack) or is_nil(add_target) or Enum.any?(GiftPlans.packs(add_target), &(&1["ref"] == @selected_pack))}
-                          class="btn btn-sm btn-outline btn-square" title="Add the selected starter pack to the current stage">
-                    <.icon name="lucide-plus" class="size-4" />
-                  </button>
                 </div>
                   <div class="h-5 w-px bg-base-300"></div>
                     <.template_picker id="gift-template-picker" can_undo={@can_undo} can_redo={@can_redo} templates={@templates} editing={@editing_template} current_count={@tab_counts[:gift_plans]} status={@paste_status} selected={@template_id} plans={@plans} plan_id={@editing_id} editing_plan={@editing_plan} label="gift plan" />

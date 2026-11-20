@@ -99,6 +99,15 @@ defmodule StarlightBot.GiftStarterPacks do
     |> Enum.sort_by(fn {affinity, _packs} -> {affinity_rank(affinity, plan_affinity), affinity} end)
   end
 
+  def recent(_packs, affinity, _count) when affinity in [nil, ""], do: []
+
+  def recent(packs, affinity, count) do
+    packs
+    |> Enum.filter(&(&1.affinity == affinity))
+    |> Enum.sort_by(&{&1[:updated_at] || "", &1.id}, :desc)
+    |> Enum.take(count)
+  end
+
   defp affinity_rank("any", _plan_affinity), do: 1
   defp affinity_rank(affinity, affinity), do: 0
   defp affinity_rank(_affinity, _plan_affinity), do: 2
@@ -139,9 +148,11 @@ defmodule StarlightBot.GiftStarterPacks do
   defp repo_for(:user), do: {Repo, "gift_starter_packs"}
 
   defp rows(repo, source) do
-    case repo.query("SELECT id, name, affinity, data, notes FROM gift_starter_packs ORDER BY name COLLATE NOCASE", []) do
+    case repo.query("SELECT id, name, affinity, data, notes, updated_at FROM gift_starter_packs ORDER BY name COLLATE NOCASE", []) do
       {:ok, %{rows: rows}} ->
-        for [id, name, affinity, json, notes] <- rows, {:ok, data} <- [Jason.decode(json)], do: pack(source, id, name, affinity, data, notes)
+        for [id, name, affinity, json, notes, updated_at] <- rows, {:ok, data} <- [Jason.decode(json)] do
+          source |> pack(id, name, affinity, data, notes) |> Map.put(:updated_at, updated_at)
+        end
 
       {:error, _} ->
         []
