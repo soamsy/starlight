@@ -10,6 +10,10 @@
       <input type="number" id="min_area" name="min_area" value={@min_area} min="0" step="10"
              class="input input-xs input-bordered w-20" />
     </form>
+    <label :if={StarlightBot.Data.authoring?()} class="flex items-center gap-2 cursor-pointer">
+      <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@scan_debug} phx-click="toggle_scan_debug" />
+      <span class="text-sm">Save ego gift scan images</span>
+    </label>
     <%= if @error do %>
       <span class="text-xs text-error"><%= error_message(@error) %></span>
     <% end %>

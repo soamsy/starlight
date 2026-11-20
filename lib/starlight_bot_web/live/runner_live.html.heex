@@ -193,12 +193,9 @@
 
       </form>
 
-      <.battle_debug_notice enabled={@battle_debug} />
+      <.debug_notice enabled={@battle_debug} label="Saving battle debug images" to={~p"/battle/history"} link_label="Go to history" />
 
-      <label :if={StarlightBot.Data.authoring?()} class="flex items-center gap-2 cursor-pointer">
-        <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@gift_scan_debug} phx-click="toggle_gift_scan_debug" />
-        <span class="text-sm">Save ego gift scan images</span>
-      </label>
+      <.debug_notice enabled={@gift_scan_debug} label="Saving ego gift scan images" to={~p"/gift-inspector"} link_label="Go to gift inspector" />
 
       <div class="grid grid-cols-2 gap-2 items-start shrink-0">
         <details id="md-inventory" phx-mounted={JS.ignore_attributes(["open"])} class="group bg-base-300 rounded-xl p-3">
@@ -383,7 +380,7 @@
 
       </form>
 
-      <.battle_debug_notice enabled={@battle_debug} />
+      <.debug_notice enabled={@battle_debug} label="Saving battle debug images" to={~p"/battle/history"} link_label="Go to history" />
 
       <%!-- Enkephalin usage summary --%>
       <% terms = module_terms(@exp_waves, @thread_waves) %>

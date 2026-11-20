@@ -5,7 +5,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   import StarlightBotWeb.Components.WindowGate, only: [gate: 4]
   alias StarlightBot.Automation.RunMemory
   alias StarlightBot.Navigation.{Navigator, RunArchive, ScreenTimes}
-  alias StarlightBot.{AppSettings, EgoGifts, GiftPlans, LuxSchedule, Plans, RestCycle, RunHistory, RunnerForms, SinnerProfiles, StarlightBudget, TeamBudget, Teams}
+  alias StarlightBot.{EgoGifts, GiftPlans, LuxSchedule, Plans, RestCycle, RunHistory, RunnerForms, SinnerProfiles, StarlightBudget, TeamBudget, Teams}
   alias StarlightBot.PackPlans.Resolver
   alias StarlightBotWeb.Live.GiftPlanEditorLive
 
@@ -56,7 +56,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
      |> assign(:collect_enkephalin, false)
      |> assign(:collect_xp, false)
      |> assign(:battle_debug, StarlightBot.BattleDebug.enabled?())
-     |> assign(:gift_scan_debug, AppSettings.gift_scan_debug?())
+     |> assign(:gift_scan_debug, StarlightBot.GiftScanDebug.enabled?())
      |> assign(:pending_action, nil)
      |> assign(:countdown, nil)
      |> restore_form(RunnerForms.get("mirror_dungeon"))
@@ -139,13 +139,6 @@ defmodule StarlightBotWeb.Live.RunnerLive do
       {:ok, action} -> {:noreply, start_countdown(socket, action)}
       :error -> {:noreply, put_flash(socket, :error, "Pick at least one team and enter a non-negative run count.")}
     end
-  end
-
-  @impl true
-  def handle_event("toggle_gift_scan_debug", _, socket) do
-    enabled? = not socket.assigns.gift_scan_debug
-    AppSettings.put_gift_scan_debug(enabled?)
-    {:noreply, assign(socket, :gift_scan_debug, enabled?)}
   end
 
   @impl true
@@ -480,13 +473,16 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   def run_progress(run_memory), do: Map.get(run_memory, :run_progress)
 
   attr :enabled, :boolean, required: true
+  attr :label, :string, required: true
+  attr :to, :string, required: true
+  attr :link_label, :string, required: true
 
-  def battle_debug_notice(assigns) do
+  def debug_notice(assigns) do
     ~H"""
     <div :if={@enabled} class="flex items-center gap-2 shrink-0">
-      <span class="badge badge-accent badge-sm">Saving battle debug images</span>
-      <.link navigate={~p"/battle/history"} class="btn btn-xs">
-        <.icon name="lucide-history" class="size-3" /> Go to history
+      <span class="badge badge-accent badge-sm">{@label}</span>
+      <.link navigate={@to} class="btn btn-xs">
+        <.icon name="lucide-history" class="size-3" /> {@link_label}
       </.link>
     </div>
     """

@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.GiftInspectorLive do
   use StarlightBotWeb, :live_view
 
-  alias StarlightBot.{Vision.Capture, Vision.EgoGiftDetector}
+  alias StarlightBot.{AppSettings, Data, Vision.Capture, Vision.EgoGiftDetector}
 
   @tmp_jpeg "/tmp/_starlight_gift_inspector.jpg"
 
@@ -13,12 +13,24 @@ defmodule StarlightBotWeb.Live.GiftInspectorLive do
     {:ok,
      socket
      |> assign(:status, :idle)
+     |> assign(:scan_debug, AppSettings.gift_scan_debug?())
      |> assign(:frame_b64, nil)
      |> assign(:screenshot_mat, nil)
      |> assign(:region, nil)
      |> assign(:results, [])
      |> assign(:min_area, 0)
      |> assign(:error, nil)}
+  end
+
+  @impl true
+  def handle_event("toggle_scan_debug", _, socket) do
+    if Data.authoring?() do
+      enabled? = not socket.assigns.scan_debug
+      AppSettings.put_gift_scan_debug(enabled?)
+      {:noreply, assign(socket, :scan_debug, enabled?)}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
