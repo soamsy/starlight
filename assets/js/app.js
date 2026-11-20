@@ -950,6 +950,8 @@ const LOG_PIN_PX = 60
 
 const logKindClass = (kind) => LOG_KIND_CLASS[kind] || LOG_DEFAULT_CLASS
 
+const FAILURE_SHOT_RE = /(failure screenshot saved: )(?:.*[\\/])?([^\\/\n]+\.png)\s*$/
+
 const LogVirtual = {
   mounted() {
     this.onLogBottom = () => {
@@ -1146,7 +1148,19 @@ const LogVirtual = {
     time.textContent = e.at.slice(11)
     const text = document.createElement("span")
     text.className = "whitespace-pre-wrap break-all"
-    text.textContent = e.text
+    const shot = FAILURE_SHOT_RE.exec(e.text)
+    if (shot) {
+      text.append(e.text.slice(0, shot.index + shot[1].length))
+      const link = document.createElement("a")
+      link.href = `/failures/${encodeURIComponent(shot[2])}`
+      link.target = "_blank"
+      link.rel = "noopener"
+      link.className = "link link-primary"
+      link.textContent = shot[2]
+      text.append(link)
+    } else {
+      text.textContent = e.text
+    }
     row.append(time, text)
     return row
   },

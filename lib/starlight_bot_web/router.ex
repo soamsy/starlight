@@ -37,6 +37,7 @@ defmodule StarlightBotWeb.Router do
   scope "/", StarlightBotWeb do
     get "/hooks/names.json", HookNamesController, :index
     get "/hooks/:name/thumb.png", HookThumbController, :show
+    get "/failures/:name", FailureShotController, :show
     get "/stream/frame.jpg", GameFrameController, :show
   end
 

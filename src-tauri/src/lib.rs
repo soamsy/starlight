@@ -80,8 +80,27 @@ fn create_window(app_handle: &tauri::AppHandle, port: u16) {
         .title("Starlight")
         .inner_size(1400.0, 900.0)
         .enable_clipboard_access()
+        .on_new_window(|url, _features| {
+            open_in_default_browser(url.as_str());
+            tauri::webview::NewWindowResponse::Deny
+        })
         .build()
         .unwrap();
+}
+
+fn open_in_default_browser(url: &str) {
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("cmd");
+        command.args(["/C", "start", ""]);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = Command::new("xdg-open");
+
+    let _ = command.arg(url).spawn();
 }
 
 fn elixir_command(rel_dir: &Path, port: u16) -> Command {
