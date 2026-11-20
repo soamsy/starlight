@@ -33,7 +33,9 @@ defmodule StarlightBot.EgoGifts do
           uptie3: g.uptie3,
           ingredients: g.ingredients,
           sort_id: g.sort_id,
-          image_path: g.image_path
+          image_path: g.image_path,
+          hard_only: g.hard_only == 1,
+          extreme_only: g.extreme_only == 1
         }
     )
   rescue

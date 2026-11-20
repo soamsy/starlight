@@ -13,6 +13,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)
   @affinity_order ~w(burn bleed tremor rupture sinking poise charge slash pierce blunt)
   @gift_sorts ~w(default name tier affinity)
+  @gift_modes ~w(normal hard extreme)
   @uptie_views ~w(base uptie2 uptie3)
   @stat_codes %{"cp" => "Clash Power", "fc" => "Final Power", "bc" => "Base Power", "cg" => "Coin Count"}
 
@@ -79,7 +80,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
-  @read_only_events ~w(restore_view restore_browser set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_select_branch list_copy_entries list_select_tab list_refresh_select_tab start_rename_stage cancel_rename_stage rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_select pack_new pack_edit pack_close)
+  @read_only_events ~w(restore_view restore_browser set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter set_gift_mode_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_select_branch list_copy_entries list_select_tab list_refresh_select_tab start_rename_stage cancel_rename_stage rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_select pack_new pack_edit pack_close)
 
   def read_only_events, do: @read_only_events
 
@@ -282,6 +283,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   @impl true
+  def handle_event("set_gift_mode_filter", %{"value" => mode}, socket) when mode in @gift_modes do
+    {:noreply, assign(socket, :gift_mode_filter, toggle(socket.assigns.gift_mode_filter, mode))}
+  end
+
+  @impl true
   def handle_event("toggle_gift_fixed_filter", _params, socket) do
     {:noreply, assign(socket, :gift_fixed_filter, not socket.assigns.gift_fixed_filter)}
   end
@@ -297,7 +303,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   @impl true
   def handle_event("clear_gift_filters", _params, socket) do
-    {:noreply, socket |> assign(:gift_pack_filter, "") |> assign(:gift_tier_filter, []) |> assign(:gift_affinity_filter, []) |> assign(:gift_fixed_filter, false) |> assign(:gift_no_pack_filter, false)}
+    {:noreply, socket |> assign(:gift_pack_filter, "") |> assign(:gift_tier_filter, []) |> assign(:gift_affinity_filter, []) |> assign(:gift_mode_filter, []) |> assign(:gift_fixed_filter, false) |> assign(:gift_no_pack_filter, false)}
   end
 
   @impl true
@@ -310,6 +316,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     sort_by = if params["sort"] in @gift_sorts, do: params["sort"], else: "default"
     tiers = for tier <- List.wrap(params["tiers"]), tier in @gift_tiers, do: tier
     affinities = for affinity <- List.wrap(params["affinities"]), affinity in ["none" | @affinities], do: affinity
+    modes = for mode <- List.wrap(params["modes"]), mode in @gift_modes, do: mode
     pack = if is_binary(params["pack"]), do: params["pack"], else: ""
 
     {:noreply,
@@ -317,6 +324,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
      |> assign(:gift_sort, sort_by)
      |> assign(:gift_tier_filter, tiers)
      |> assign(:gift_affinity_filter, affinities)
+     |> assign(:gift_mode_filter, modes)
      |> assign(:gift_fixed_filter, params["fixed"] == true)
      |> assign(:gift_no_pack_filter, params["no_pack"] == true)
      |> assign(:gift_pack_filter, pack)}
@@ -1408,16 +1416,27 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
 
   def combo_meta(combo), do: "#{Combos.points(combo)} pts · #{Combos.keyword_odds(combo)}% keyword"
 
-  def filtered_gifts(gifts, filter, tier_filter, affinity_filter, fixed_filter, no_pack_filter, pack_filter, theme_packs_by_gift_id, gifts_by_id, sort_by) do
+  def filtered_gifts(gifts, filter, tier_filter, affinity_filter, mode_filter, fixed_filter, no_pack_filter, pack_filter, theme_packs_by_gift_id, gifts_by_id, sort_by) do
     gifts
     |> Enum.filter(&matches_text_filter?(&1, filter))
     |> Enum.filter(&(tier_filter == [] or &1.tier in tier_filter))
     |> Enum.filter(&(affinity_filter == [] or &1.affinity in affinity_filter))
+    |> Enum.filter(&(mode_filter == [] or gift_mode(&1) in mode_filter))
     |> Enum.filter(&(not fixed_filter or GiftPlans.fixed_recipe?(&1)))
     |> Enum.filter(&(not no_pack_filter or GiftPlans.theme_pack_agnostic?(&1, gifts_by_id, theme_packs_by_gift_id)))
     |> Enum.filter(&matches_pack_filter?(&1, pack_filter, gifts_by_id, theme_packs_by_gift_id))
     |> sort_gifts(sort_by)
   end
+
+  def gift_modes, do: @gift_modes
+
+  def gift_mode_label("normal"), do: "Normal"
+  def gift_mode_label("hard"), do: "Hard"
+  def gift_mode_label("extreme"), do: "Extreme"
+
+  defp gift_mode(%{extreme_only: true}), do: "extreme"
+  defp gift_mode(%{hard_only: true}), do: "hard"
+  defp gift_mode(_gift), do: "normal"
 
   def pack_only_filter, do: "__pack_only__"
 
@@ -1550,6 +1569,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> reset_search()
     |> assign(:gift_tier_filter, [])
     |> assign(:gift_affinity_filter, [])
+    |> assign(:gift_mode_filter, [])
     |> assign(:gift_fixed_filter, false)
     |> assign(:gift_no_pack_filter, false)
     |> assign(:gift_pack_filter, "")

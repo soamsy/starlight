@@ -43,6 +43,8 @@ defmodule StarlightBotWeb.Components.GiftPopup do
         <p :if={@theme_packs_by_gift_id[@gift.id]} class="text-[10px] text-base-content/60">
           Theme pack: <%= Enum.join(@theme_packs_by_gift_id[@gift.id], ", ") %>
         </p>
+        <p :if={Map.get(@gift, :extreme_only)} class="text-[10px] text-error">Extreme only</p>
+        <p :if={Map.get(@gift, :hard_only) && !Map.get(@gift, :extreme_only)} class="text-[10px] text-warning">Hard only</p>
       </div>
     </div>
     """

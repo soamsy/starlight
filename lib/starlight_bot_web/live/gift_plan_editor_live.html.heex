@@ -1,5 +1,5 @@
 <div id="gift-view-memory" phx-hook="ViewMemory" data-restore={to_string(not @view_from_url)} data-key={@editing_id && "starlight-gift-view-#{@editing_id}"} data-shared-key="starlight-gift-tab" data-shared-field="tab" data-view={Jason.encode!(%{tab: (@pack_edit && @pack_edit.parent.active_tab) || @active_tab})} class="flex flex-col h-full gap-3 overflow-hidden">
-  <div id="gift-browser-memory" phx-hook="BrowserMemory" data-view={Jason.encode!(%{sort: @gift_sort, tiers: @gift_tier_filter, affinities: @gift_affinity_filter, fixed: @gift_fixed_filter, no_pack: @gift_no_pack_filter, pack: @gift_pack_filter})} class="hidden"></div>
+  <div id="gift-browser-memory" phx-hook="BrowserMemory" data-view={Jason.encode!(%{sort: @gift_sort, tiers: @gift_tier_filter, affinities: @gift_affinity_filter, modes: @gift_mode_filter, fixed: @gift_fixed_filter, no_pack: @gift_no_pack_filter, pack: @gift_pack_filter})} class="hidden"></div>
   <div id="gift-item-clipboard" phx-hook="ItemClipboard" class="hidden"></div>
   <datalist id="gift-name-options">
     <option :for={gift <- @gifts} value={gift.name} />
@@ -29,10 +29,10 @@
                         <input id="gift-search-input" phx-hook="GiftSearchNav" type="text" placeholder="Search gifts (press /)…" value={@gift_filter} phx-keyup="filter_gifts" phx-debounce="150" class="grow min-w-0" />
                       </label>
                       <button type="button" phx-click="clear_gift_filters" title="Clear all filters"
-                              class={"btn btn-outline btn-error btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter or @gift_pack_filter != "", do: "", else: "hidden")}><.icon name="lucide-x" class="size-3.5" /></button>
+                              class={"btn btn-outline btn-error btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_mode_filter != [] or @gift_fixed_filter or @gift_no_pack_filter or @gift_pack_filter != "", do: "", else: "hidden")}><.icon name="lucide-x" class="size-3.5" /></button>
                       <details id="gift-filter-menu" phx-hook="FloatingDropdown" data-keep-open class="dropdown dropdown-end">
                         <summary title="Filter"
-                             class={"btn btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter or @gift_pack_filter != "", do: "btn-primary", else: "btn-ghost")}>
+                             class={"btn btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_mode_filter != [] or @gift_fixed_filter or @gift_no_pack_filter or @gift_pack_filter != "", do: "btn-primary", else: "btn-ghost")}>
                           <.icon name="lucide-funnel" class="size-3.5" />
                         </summary>
                         <div popover="manual" class="dropdown-content z-30 w-56 rounded-lg border border-base-300 bg-base-200 p-2 shadow-lg ring-2 ring-base-content/20 space-y-2">
@@ -55,6 +55,15 @@
                               <button type="button" phx-click="set_gift_affinity_filter" value="none"
                                       class={"btn btn-xs gap-1 " <> if("none" in @gift_affinity_filter, do: "btn-primary", else: "btn-ghost border-base-300")}>
                                 <.icon name="lucide-circle-off" class="size-3.5" />Keywordless
+                              </button>
+                            </div>
+                          </div>
+                          <div class="flex flex-col gap-1">
+                            <span class="text-[11px] text-base-content/60">Difficulty</span>
+                            <div class="flex flex-wrap gap-1">
+                              <button :for={mode <- gift_modes()} type="button" phx-click="set_gift_mode_filter" value={mode}
+                                      class={"btn btn-xs " <> if(mode in @gift_mode_filter, do: "btn-primary", else: "btn-ghost border-base-300")}>
+                                <%= gift_mode_label(mode) %>
                               </button>
                             </div>
                           </div>
@@ -112,7 +121,7 @@
                     <% picks = @plan_data["gift_search"] %>
                     <% added_names = if(@active_tab == :loadout, do: picks, else: add_target["entries"] |> List.wrap() |> Enum.map(&GiftPlans.subject_gift/1) |> Enum.reject(&is_nil/1)) %>
                     <div id="gift-drag-source" phx-hook="GiftDragSource" data-added={Jason.encode!(added_names)} data-add-locked={to_string(@active_tab == :loadout and length(picks) >= GiftPlans.gift_search_max())} class="flex flex-col flex-1 min-h-0 max-lg:min-h-28 overflow-y-auto">
-                      <.gift_rows gifts={filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_fixed_filter, @gift_no_pack_filter, @gift_pack_filter, @theme_packs_by_gift_id, @gifts_by_id, @gift_sort)} loadout={@active_tab == :loadout} />
+                      <.gift_rows gifts={filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_mode_filter, @gift_fixed_filter, @gift_no_pack_filter, @gift_pack_filter, @theme_packs_by_gift_id, @gifts_by_id, @gift_sort)} loadout={@active_tab == :loadout} />
                     </div>
                   <% end %>
                 </div>
