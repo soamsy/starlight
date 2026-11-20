@@ -1950,7 +1950,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <span class="hidden items-center h-6 px-1.5 rounded bg-error text-[11px] font-semibold text-error-content select-none peer-checked:inline-flex">NOT</span>
     </label>
     <StarlightBotWeb.Live.BattlePlanEditorLive.radio_group name="op" value={@node["op"]}
-      options={if(Map.get(assigns, :branch?), do: [{"cost", "cost"}, {"refreshes", "refreshes"}, {"owns", "owns"}, {"goal", "goal done"}], else: [{"cost", "cost"}, {"refreshes", "refreshes"}, {"owns", "owns"}, {"stage", "stage done"}, {"goal", "goal done"}, {"run_kind", "run type"}])} />
+      options={if(Map.get(assigns, :branch?), do: [{"cost", "cost"}, {"refreshes", "refreshes"}, {"owns", "owns"}, {"goal", "goal done"}], else: [{"cost", "cost"}, {"refreshes", "refreshes"}, {"owns", "owns"}, {"stage", "on stage"}, {"goal", "goal done"}, {"run_kind", "run type"}])} />
     <%= cond do %>
       <% @node["op"] in ["cost", "refreshes"] -> %>
         <StarlightBotWeb.Live.BattlePlanEditorLive.radio_group :if={@node["op"] == "cost"} name="when" value={@node["when"] || "before"} options={[{"before", "before refresh"}, {"after", "after refresh"}]} />
@@ -1959,7 +1959,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <% @node["op"] == "stage" -> %>
         <select name="stage" class="select select-bordered select-xs flex-1 min-w-0">
           <option value="">pick one</option>
-          <option :for={section <- @plan_data["sections"]} value={section["id"]} selected={@node["stage"] == section["id"]}><%= GiftPlans.section_name(section) %></option>
+          <option :for={section <- GiftPlans.sections(@plan_data, GiftPlans.root_id(@plan_data, @section["id"]))} value={section["id"]} selected={@node["stage"] == section["id"]}><%= GiftPlans.section_name(section) %></option>
+          <option value="done" selected={@node["stage"] == "done"}>All stages done</option>
         </select>
       <% @node["op"] == "goal" -> %>
         <select name="goal" class="select select-bordered select-xs">

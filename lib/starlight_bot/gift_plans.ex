@@ -1710,10 +1710,25 @@ defmodule StarlightBot.GiftPlans do
   defp eval_base(%{"op" => "cost"}, _env), do: false
   defp eval_base(%{"op" => "refreshes"} = leaf, env), do: compare(Map.get(env, :refreshes, 0), leaf["cmp"], leaf["value"])
   defp eval_base(%{"op" => "owns", "gift" => gift}, env), do: owns?(env, gift)
-  defp eval_base(%{"op" => "stage"} = leaf, %{plan: plan} = env), do: section_reached?(plan, leaf["stage"], env)
+  defp eval_base(%{"op" => "stage"} = leaf, %{plan: plan} = env), do: on_stage?(plan, leaf["stage"], env)
   defp eval_base(%{"op" => "goal"} = leaf, %{plan: plan} = env), do: goal_reached?(plan, leaf["stage"] || env[:current_section], leaf["goal"], env)
   defp eval_base(%{"op" => "run_kind"} = leaf, %{plan: %{"run_kind" => run_kind}}), do: run_kind_matches?(leaf["kind"], run_kind)
   defp eval_base(%{"op" => "run_kind"}, _env), do: false
+
+  defp on_stage?(_plan, nil, _env), do: false
+
+  defp on_stage?(plan, "done", %{current_section: current} = env) when is_binary(current) do
+    plan |> sections(root_id(plan, current)) |> Enum.all?(&section_reached?(plan, &1["id"], env))
+  end
+
+  defp on_stage?(_plan, "done", _env), do: false
+
+  defp on_stage?(plan, id, env) do
+    case plan |> sections(root_id(plan, id)) |> Enum.find(&(not section_reached?(plan, &1["id"], env))) do
+      %{"id" => ^id} -> true
+      _ -> false
+    end
+  end
 
   defp refresh_spend(%{"when" => "after"}, %{case_action: action, refresh_costs: costs}), do: Map.get(costs, action, 0)
   defp refresh_spend(_leaf, _env), do: 0
@@ -1824,7 +1839,8 @@ defmodule StarlightBot.GiftPlans do
   end
 
   defp leaf_label(%{"op" => "owns"} = leaf, _data), do: "#{if leaf["not"], do: "missing", else: "owns"} #{leaf["gift"]}"
-  defp leaf_label(%{"op" => "stage"} = leaf, data), do: "#{section_title(data, leaf["stage"])} #{if leaf["not"], do: "not "}done"
+  defp leaf_label(%{"op" => "stage", "stage" => "done"} = leaf, _data), do: "#{if leaf["not"], do: "not "}all stages done"
+  defp leaf_label(%{"op" => "stage"} = leaf, data), do: "#{if leaf["not"], do: "not "}on #{section_title(data, leaf["stage"])}"
   defp leaf_label(%{"op" => "goal", "stage" => id} = leaf, data) when is_binary(id), do: "#{goal_display(leaf["goal"])} of #{section_title(data, id)} #{if leaf["not"], do: "not "}done"
   defp leaf_label(%{"op" => "goal"} = leaf, _data), do: "goal #{goal_display(leaf["goal"])} #{if leaf["not"], do: "not "}done"
   defp leaf_label(%{"op" => "run_kind"} = leaf, _data), do: "run #{if leaf["not"], do: "is not", else: "is"} #{run_kind_label(leaf["kind"])}"

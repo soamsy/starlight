@@ -429,15 +429,24 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.condition_label(%{"op" => "cost", "cmp" => "eq", "value" => 250, "not" => true}) == "not cost = 250"
     end
 
-    test "section leaves check the section on the env's floor" do
+    test "stage leaves check which stage the shop is on" do
       {data, id} = with_gifts(["Glimpse"])
       leaf = %{"op" => "stage", "stage" => id}
+      done = %{"op" => "stage", "stage" => "done"}
+      owned = env(data, %{"Glimpse" => 0})
+      missing = env(data, %{})
 
-      refute GiftPlans.eval_condition(leaf, env(data, %{}))
-      assert GiftPlans.eval_condition(leaf, env(data, %{"Glimpse" => 0}))
-      assert GiftPlans.eval_condition(%{"op" => "stage", "stage" => id, "not" => true}, env(data, %{}))
-      assert GiftPlans.condition_label(leaf, data) == "Stage 1 done"
-      assert GiftPlans.condition_label(%{"op" => "stage", "stage" => "ms_gone"}, data) == "(deleted) done"
+      assert GiftPlans.eval_condition(leaf, missing)
+      refute GiftPlans.eval_condition(leaf, owned)
+      refute GiftPlans.eval_condition(Map.put(leaf, "not", true), missing)
+      refute GiftPlans.eval_condition(done, Map.put(missing, :current_section, id))
+      assert GiftPlans.eval_condition(done, Map.put(owned, :current_section, id))
+      refute GiftPlans.eval_condition(done, owned)
+      refute GiftPlans.eval_condition(%{"op" => "stage", "stage" => nil}, missing)
+      assert GiftPlans.condition_label(leaf, data) == "on Stage 1"
+      assert GiftPlans.condition_label(Map.put(leaf, "not", true), data) == "not on Stage 1"
+      assert GiftPlans.condition_label(done, data) == "all stages done"
+      assert GiftPlans.condition_label(%{"op" => "stage", "stage" => "ms_gone"}, data) == "on (deleted)"
     end
 
     test "goal leaves check one goal of the section" do
@@ -826,8 +835,8 @@ defmodule StarlightBot.GiftPlansTest do
       assert GiftPlans.condition_label(leaf, data) == "Required of Stage 2 done"
 
       stage_leaf = %{"op" => "stage", "stage" => stage["id"]}
-      assert GiftPlans.eval_condition(stage_leaf, owned)
-      refute GiftPlans.eval_condition(stage_leaf, empty)
+      refute GiftPlans.eval_condition(stage_leaf, owned)
+      assert GiftPlans.eval_condition(stage_leaf, empty)
 
       extreme = GiftPlans.condition_leaf(%{"op" => "run_kind", "kind" => "extreme"})
       hard = GiftPlans.condition_leaf(%{"op" => "run_kind", "kind" => "all_hard"})
