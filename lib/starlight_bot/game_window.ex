@@ -110,6 +110,22 @@ defmodule StarlightBot.GameWindow do
   defp start("gamescope", argv, env, cwd), do: NestedGamescope.spawn("headless", argv, env, cwd)
   defp start("gamescope_window", argv, env, cwd), do: NestedGamescope.spawn("wayland", argv, env, cwd)
 
+  def command_preview(%{launch_mode: "none"}, _launcher), do: nil
+  def command_preview(%{launch_mode: "exe", exe_path: ""}, _launcher), do: nil
+  def command_preview(%{launch_mode: "exe", exe_path: path}, "direct"), do: path
+  def command_preview(%{launch_mode: "exe", exe_path: path}, launcher), do: wrapped_preview(launcher, [path], [])
+  def command_preview(%{launch_mode: "steam", steam_app_id: app_id}, "direct"), do: "steam steam://rungameid/#{app_id}"
+
+  def command_preview(%{launch_mode: "steam", steam_app_id: app_id}, launcher) do
+    case SteamLaunch.command(app_id, args: game_args(launcher), log: false) do
+      {:ok, %{argv: argv, env: env}} -> wrapped_preview(launcher, argv, env)
+      {:error, reason} -> "unavailable: #{inspect(reason)}"
+    end
+  end
+
+  defp wrapped_preview("gamescope", argv, env), do: NestedGamescope.preview("headless", argv, env)
+  defp wrapped_preview("gamescope_window", argv, env), do: NestedGamescope.preview("wayland", argv, env)
+
   defp launcher_label("direct"), do: "a native window"
   defp launcher_label("gamescope"), do: "a headless gamescope"
   defp launcher_label("gamescope_window"), do: "a gamescope window"

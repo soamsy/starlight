@@ -1,6 +1,7 @@
 defmodule StarlightBotWeb.Components.LaunchFields do
   use Phoenix.Component
   import StarlightBotWeb.Components.Icon, only: [icon: 1]
+  alias Phoenix.LiveView.JS
   alias StarlightBot.Scheduler
 
   attr :launch_mode, :string, required: true
@@ -12,31 +13,30 @@ defmodule StarlightBotWeb.Components.LaunchFields do
   attr :gamescope_resolution, :string, default: "1920x1080"
   attr :gamescope_flags, :string, default: ""
   attr :requirements, :list, default: []
+  attr :command_preview, :string, default: nil
 
   def launch_fields(assigns) do
     ~H"""
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-      <span class="text-base-content/50">Needs:</span>
-      <span :if={@requirements == []} class="text-base-content/60">nothing extra</span>
-      <span :for={req <- @requirements} class={["font-mono", req.found? && "text-success", !req.found? && "text-error"]}>
-        {req.name} {if req.found?, do: "detected", else: "not found"}
-      </span>
-    </div>
     <div class="flex flex-wrap items-end gap-3">
       <label class="flex flex-col gap-1">
-        <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Limbus launcher</span>
-        <select name="launcher" phx-change="game_launcher_set" class="select select-sm select-bordered">
-          <option :for={{id, label} <- StarlightBot.LauncherDeps.launchers()} value={id} selected={@launcher == id}>{label}</option>
+        <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Game source</span>
+        <select name="launch_mode" class="select select-sm select-bordered">
+          <option value="steam" selected={@launch_mode == "steam"}>Steam (Proton)</option>
+          <option value="exe" selected={@launch_mode == "exe"}>Custom command</option>
+          <option value="none" selected={@launch_mode == "none"}>I'll start it myself</option>
         </select>
       </label>
 
-      <label class="flex flex-col gap-1">
-        <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">If Limbus isn't open</span>
-        <select name="launch_mode" class="select select-sm select-bordered">
-          <option value="steam" selected={@launch_mode == "steam"}>Launch through Steam</option>
-          <option value="exe" selected={@launch_mode == "exe"}>Launch an executable</option>
-          <option value="none" selected={@launch_mode == "none"}>Don't launch, wait for it</option>
-        </select>
+      <label :if={@launch_mode != "none"} class="flex flex-col gap-1">
+        <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Limbus launcher</span>
+        <div class="flex items-center gap-1">
+          <select name="launcher" phx-change="game_launcher_set" class="select select-sm select-bordered">
+            <option :for={{id, label} <- StarlightBot.LauncherDeps.launchers()} value={id} selected={@launcher == id}>{label}</option>
+          </select>
+          <span class="tooltip tooltip-bottom before:max-w-72 before:whitespace-normal before:text-left" data-tip={StarlightBot.LauncherDeps.description(@launcher)}>
+            <.icon name="lucide-info" class="size-4 text-base-content/60" />
+          </span>
+        </div>
       </label>
 
       <%= if @launch_mode == "steam" do %>
@@ -53,33 +53,57 @@ defmodule StarlightBotWeb.Components.LaunchFields do
         <input type="hidden" name="steam_app_id" value={@steam_app_id} />
       <% end %>
 
-      <%= if @launch_mode == "exe" do %>
+      <%= if @launch_mode != "none" do %>
         <label class="flex flex-col gap-1">
-          <span class="text-xs text-base-content/40">Executable path</span>
-          <input type="text" name="exe_path" phx-debounce="500" value={@exe_path} class="input input-sm input-bordered font-mono" />
+          <span class="text-xs text-base-content/40">Timeout (seconds)</span>
+          <input type="number" name="launch_timeout_s" phx-debounce="500" min="1" value={@launch_timeout_s} class="input input-sm input-bordered w-24" />
         </label>
       <% else %>
-        <input type="hidden" name="exe_path" value={@exe_path} />
+        <input type="hidden" name="launch_timeout_s" value={@launch_timeout_s} />
       <% end %>
-
-      <label class="flex flex-col gap-1">
-        <span class="text-xs text-base-content/40">Timeout (seconds)</span>
-        <input type="number" name="launch_timeout_s" phx-debounce="500" min="1" value={@launch_timeout_s} class="input input-sm input-bordered w-24" />
-      </label>
     </div>
-    <div :if={@launcher in ["gamescope", "gamescope_window"]} class="flex flex-wrap items-end gap-3">
+    <%= if @launch_mode == "exe" do %>
       <label class="flex flex-col gap-1">
-        <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Gamescope internal resolution</span>
-        <select name="gamescope_resolution" phx-change="gamescope_resolution_set" class="select select-sm select-bordered">
-          <option :for={resolution <- StarlightBot.AppSettings.gamescope_resolutions()} value={resolution} selected={@gamescope_resolution == resolution}>{resolution}</option>
-        </select>
+        <span class="text-xs text-base-content/40">Command or script (runs as is, without Proton)</span>
+        <input type="text" name="exe_path" phx-debounce="500" value={@exe_path} class="input input-sm input-bordered w-full font-mono" />
       </label>
-      <label class="flex min-w-72 flex-1 flex-col gap-1">
-        <span class="text-xs text-base-content/40">Extra gamescope flags</span>
-        <input type="text" name="gamescope_flags" phx-change="gamescope_flags_set" phx-debounce="500" value={@gamescope_flags} placeholder="--debug-hud -r 60" class="input input-sm input-bordered w-full font-mono" />
-      </label>
-    </div>
-    <p class="max-w-prose text-xs text-base-content/60">{StarlightBot.LauncherDeps.description(@launcher)}</p>
+    <% else %>
+      <input type="hidden" name="exe_path" value={@exe_path} />
+    <% end %>
+    <%= if @launch_mode == "none" do %>
+      <p class="max-w-prose text-xs text-base-content/60">Starlight waits for a Limbus window on any display. If you run gamescope yourself, set it to 1920x1080.</p>
+    <% else %>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+        <span class="text-base-content/50">Needs:</span>
+        <span :if={@requirements == []} class="text-base-content/60">nothing extra</span>
+        <span :for={req <- @requirements} class={["font-mono", req.found? && "text-success", !req.found? && "text-error"]}>
+          {req.name} {if req.found?, do: "detected", else: "not found"}
+        </span>
+      </div>
+      <div :if={@launcher in ["gamescope", "gamescope_window"]} class="flex flex-wrap items-end gap-3">
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Gamescope internal resolution</span>
+          <select name="gamescope_resolution" phx-change="gamescope_resolution_set" class="select select-sm select-bordered">
+            <option :for={resolution <- StarlightBot.AppSettings.gamescope_resolutions()} value={resolution} selected={@gamescope_resolution == resolution}>{resolution}</option>
+          </select>
+        </label>
+        <label class="flex min-w-72 flex-1 flex-col gap-1">
+          <span class="text-xs text-base-content/40">Extra gamescope flags</span>
+          <div class="flex items-center gap-1">
+            <input type="text" name="gamescope_flags" phx-change="gamescope_flags_set" phx-debounce="500" value={@gamescope_flags} placeholder="--debug-hud -r 60" class="input input-sm input-bordered w-full font-mono" />
+            <button type="button" phx-click="gamescope_flags_reset" disabled={@gamescope_flags == StarlightBot.AppSettings.default_gamescope_flags()} class="tooltip tooltip-left btn btn-ghost btn-square btn-sm text-base-content/60" data-tip="Reset to default">
+              <.icon name="lucide-refresh-cw" class="size-4" />
+            </button>
+          </div>
+        </label>
+      </div>
+      <div :if={@command_preview} class="flex flex-col gap-1">
+        <button type="button" phx-click={JS.toggle_class("hidden", to: "#launch-command-box") |> JS.toggle_class("rotate-90", to: "#launch-command-chevron")} class="flex w-fit items-center gap-1 text-xs text-base-content/50 hover:text-base-content">
+          <.icon id="launch-command-chevron" name="lucide-chevron-right" class="size-3 transition-transform" /> Show full command
+        </button>
+        <code id="launch-command-box" class="hidden rounded bg-base-200 px-2 py-1 font-mono text-xs break-all">{@command_preview}</code>
+      </div>
+    <% end %>
     """
   end
 end

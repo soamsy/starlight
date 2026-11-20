@@ -49,6 +49,10 @@ defmodule StarlightBot.AppSettings do
 
   def put_gamescope_resolution(resolution) when resolution in @gamescope_resolutions, do: put("gamescope_resolution", resolution)
 
+  @default_gamescope_flags "--force-grab-cursor"
+
+  def default_gamescope_flags, do: @default_gamescope_flags
+
   def gamescope_flags, do: Repo.one(from_key("gamescope_flags")) || ""
 
   def put_gamescope_flags(flags) when is_binary(flags), do: put("gamescope_flags", String.trim(flags))

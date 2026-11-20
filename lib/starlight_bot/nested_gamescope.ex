@@ -21,17 +21,40 @@ defmodule StarlightBot.NestedGamescope do
     File.chmod!(dir, 0o700)
     log_path = Path.join(dir, "gamescope.log")
     before = ei_sockets()
-    [inner_w, inner_h] = String.split(AppSettings.gamescope_resolution(), "x")
-    args = ["--backend", backend, "-w", inner_w, "-h", inner_h, "-W", "#{@width}", "-H", "#{@height}"] ++ @cursor_flags ++ extra_flags() ++ ["--"] ++ argv
+    [inner_w, inner_h] = inner_size()
+    args = args(backend, argv)
     log("starting gamescope #{backend} at #{inner_w}x#{inner_h} inside #{@width}x#{@height}, its log is #{log_path}")
     log("spawning detached: #{Enum.join(args, " ")}")
 
     # WSI must stay off: with it on, MIT-SHM captures come back as black frames
-    case System.cmd("sh", ["-c", ~s(setsid -f "$@" </dev/null >"$0" 2>&1), log_path, gamescope | args], stderr_to_stdout: true, env: backend_env(backend) ++ [{"ENABLE_GAMESCOPE_WSI", "0"} | extra_env], cd: cwd) do
+    case System.cmd("sh", ["-c", ~s(setsid -f "$@" </dev/null >"$0" 2>&1), log_path, gamescope | args], stderr_to_stdout: true, env: env(backend, extra_env), cd: cwd) do
       {_, 0} -> await_ei_socket(before, System.monotonic_time(:millisecond) + @ready_timeout_ms)
       {out, code} -> {:error, {:launch_failed, code, String.trim(out)}}
     end
   end
+
+  def preview(backend, argv, extra_env \\ []) when backend in ["headless", "wayland"] do
+    env_words =
+      Enum.map(env(backend, extra_env), fn
+        {name, nil} -> "-u #{name}"
+        {name, value} -> shell_word("#{name}=#{value}")
+      end)
+
+    Enum.join(["env"] ++ env_words ++ ["gamescope" | Enum.map(args(backend, argv), &shell_word/1)], " ")
+  end
+
+  defp shell_word(word) do
+    if Regex.match?(~r/^[\w@%+=:,.\/-]+$/, word), do: word, else: "'" <> String.replace(word, "'", "'\\''") <> "'"
+  end
+
+  defp inner_size, do: String.split(AppSettings.gamescope_resolution(), "x")
+
+  defp args(backend, argv) do
+    [inner_w, inner_h] = inner_size()
+    ["--backend", backend, "-w", inner_w, "-h", inner_h, "-W", "#{@width}", "-H", "#{@height}"] ++ @cursor_flags ++ extra_flags() ++ ["--"] ++ argv
+  end
+
+  defp env(backend, extra_env), do: backend_env(backend) ++ [{"ENABLE_GAMESCOPE_WSI", "0"} | extra_env]
 
   defp state_dir, do: Path.join(System.get_env("XDG_RUNTIME_DIR") || System.tmp_dir!(), "starlight-nested")
 

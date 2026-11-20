@@ -43,23 +43,29 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
      |> assign(:gamescope_resolution, AppSettings.gamescope_resolution())
      |> assign(:gamescope_flags, AppSettings.gamescope_flags())
      |> assign(:cursor_speed, AppSettings.cursor_speed())
-     |> assign(:hesitation_mult, AppSettings.hesitation_mult())}
+     |> assign(:hesitation_mult, AppSettings.hesitation_mult())
+     |> assign_command_preview()}
   end
 
   @impl true
   def handle_event("game_launcher_set", %{"launcher" => launcher}, socket) when launcher in ["direct", "gamescope", "gamescope_window"] do
     AppSettings.put_launcher(launcher)
-    {:noreply, assign(socket, :game_launcher, launcher)}
+    {:noreply, socket |> assign(:game_launcher, launcher) |> assign_command_preview()}
   end
 
   def handle_event("gamescope_resolution_set", %{"gamescope_resolution" => resolution}, socket) when resolution in ["1920x1080", "1280x720"] do
     AppSettings.put_gamescope_resolution(resolution)
-    {:noreply, assign(socket, :gamescope_resolution, resolution)}
+    {:noreply, socket |> assign(:gamescope_resolution, resolution) |> assign_command_preview()}
   end
 
   def handle_event("gamescope_flags_set", %{"gamescope_flags" => flags}, socket) do
     AppSettings.put_gamescope_flags(flags)
-    {:noreply, assign(socket, :gamescope_flags, AppSettings.gamescope_flags())}
+    {:noreply, socket |> assign(:gamescope_flags, AppSettings.gamescope_flags()) |> assign_command_preview()}
+  end
+
+  def handle_event("gamescope_flags_reset", _params, socket) do
+    AppSettings.put_gamescope_flags(AppSettings.default_gamescope_flags())
+    {:noreply, socket |> assign(:gamescope_flags, AppSettings.gamescope_flags()) |> assign_command_preview()}
   end
 
   def handle_event("cursor_speed_set", %{"cursor_speed" => value}, socket) do
@@ -126,13 +132,20 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
       close_game_when_done: form["close_game_when_done"] == "true"
     }
 
-    socket = assign(socket, :form, form)
+    socket = socket |> assign(:form, form) |> assign_command_preview()
 
     case Scheduler.save_settings(attrs) do
       {:ok, settings} -> {:noreply, socket |> assign(:settings, settings) |> assign(:save_error, nil)}
       {:error, message} -> {:noreply, assign(socket, :save_error, message)}
     end
   end
+
+  defp assign_command_preview(%{assigns: %{part: "launch", form: form, game_launcher: launcher}} = socket) do
+    settings = %{launch_mode: form["launch_mode"], steam_app_id: String.trim(form["steam_app_id"]), exe_path: String.trim(form["exe_path"])}
+    assign(socket, :command_preview, StarlightBot.GameWindow.command_preview(settings, launcher))
+  end
+
+  defp assign_command_preview(socket), do: assign(socket, :command_preview, nil)
 
   defp form_keys("launch"), do: @launch_keys
   defp form_keys(_part), do: @runner_keys

@@ -9,6 +9,7 @@
     gamescope_resolution={@gamescope_resolution}
     gamescope_flags={@gamescope_flags}
     requirements={StarlightBot.LauncherDeps.requirements(@game_launcher, @form["launch_mode"])}
+    command_preview={@command_preview}
   />
 
   <span :if={@save_error} class="text-xs text-error">Not saved: {@save_error}</span>

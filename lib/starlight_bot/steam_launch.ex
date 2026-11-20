@@ -13,11 +13,11 @@ defmodule StarlightBot.SteamLaunch do
          {:ok, library, install_dir} <- find_app(libraries, app_id),
          {:ok, tool_name} <- tool_name(root, app_id),
          {:ok, tool_dir} <- find_tool(root, libraries, tool_name),
-         _ = log("steam root #{root}, libraries #{Enum.join(libraries, ", ")}"),
-         _ = log("app #{app_id} installed in #{library} as #{inspect(install_dir)}, compat tool #{tool_name} at #{tool_dir}"),
+         _ = log(opts, "steam root #{root}, libraries #{Enum.join(libraries, ", ")}"),
+         _ = log(opts, "app #{app_id} installed in #{library} as #{inspect(install_dir)}, compat tool #{tool_name} at #{tool_dir}"),
          {:ok, tool_manifest} <- Vdf.parse_file(Path.join(tool_dir, "toolmanifest.vdf")),
          {:ok, runtime} <- runtime(libraries, tool_manifest),
-         _ = log("container runtime: #{inspect(runtime && runtime.path)}") do
+         _ = log(opts, "container runtime: #{inspect(runtime && runtime.path)}") do
       exe = Path.join([library, "steamapps", "common", install_dir, @exe])
       tool_cmd = expand_commandline(Vdf.get(tool_manifest, ["manifest", "commandline"]), tool_dir)
       runtime_cmd = runtime_commandline(runtime)
@@ -46,7 +46,7 @@ defmodule StarlightBot.SteamLaunch do
         {"STEAM_COMPAT_MOUNTS", Enum.join(runtime_paths(runtime), ":")}
       ] ++ user_env()
 
-      log("command: #{Enum.join(argv, " ")}")
+      log(opts, "command: #{Enum.join(argv, " ")}")
       {:ok, %{argv: argv, env: env, exe: exe, cwd: Path.dirname(exe)}}
     end
   end
@@ -167,5 +167,5 @@ defmodule StarlightBot.SteamLaunch do
     end
   end
 
-  defp log(text), do: LogStore.append(:info, "launch: " <> text)
+  defp log(opts, text), do: if(Keyword.get(opts, :log, true), do: LogStore.append(:info, "launch: " <> text))
 end

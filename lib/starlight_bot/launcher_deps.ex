@@ -22,6 +22,7 @@ defmodule StarlightBot.LauncherDeps do
     for %{name: name, found?: false} <- requirements(launcher, launch_mode), do: name
   end
 
+  defp executables(_launcher, "none"), do: []
   defp executables("direct", "steam"), do: ["steam"]
   defp executables("direct", _mode), do: []
   defp executables(_gamescope, _mode), do: ["gamescope"]
