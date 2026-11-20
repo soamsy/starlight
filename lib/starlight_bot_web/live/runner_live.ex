@@ -207,7 +207,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   @impl true
   def handle_event(event, _params, socket)
       when (event in ~w(set_cycle_start single_run) or
-              (event in ~w(add_team remove_cycle_team reorder_teams set_pick_option remove_reserve_team) and socket.assigns.run_kind != :mirror_dungeon)) and
+              (event in ~w(add_team duplicate_pick remove_cycle_team reorder_teams set_pick_option remove_reserve_team) and socket.assigns.run_kind != :mirror_dungeon)) and
              socket.assigns.phase != :idle and not socket.assigns.other_running? do
     {:noreply, socket}
   end
@@ -258,6 +258,26 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   @impl true
   def handle_event("reorder_teams", %{"ids" => ids}, socket) do
     {:noreply, apply_team_layout(socket, ids)}
+  end
+
+  @impl true
+  def handle_event("duplicate_pick", %{"list" => "cycle", "index" => index}, socket) do
+    %{picks: picks, start_index: start} = socket.assigns
+
+    case Enum.at(picks, index) do
+      nil -> {:noreply, socket}
+      pick -> {:noreply, socket |> assign(:picks, List.insert_at(picks, index + 1, pick)) |> assign(:start_index, if(index < start, do: start + 1, else: start)) |> save_form()}
+    end
+  end
+
+  @impl true
+  def handle_event("duplicate_pick", %{"list" => "reserve", "index" => index}, socket) do
+    reserve = socket.assigns.reserve
+
+    case Enum.at(reserve, index) do
+      nil -> {:noreply, socket}
+      pick -> {:noreply, socket |> assign(:reserve, List.insert_at(reserve, index + 1, pick)) |> save_form()}
+    end
   end
 
   @impl true
@@ -920,7 +940,17 @@ defmodule StarlightBotWeb.Live.RunnerLive do
         <button type="button" phx-click={Phoenix.LiveView.JS.toggle(to: "##{@list}-options-#{@index}", display: "flex")} disabled={@locked}
                 title={"Pack plan: " <> mode_override_label(@pick.mode) <> ", " <> search_override_label(@pick.search)}
                 class={"btn btn-ghost btn-sm px-2 text-xl " <> if(@pick.mode == "default" and @pick.search == "default", do: "text-base-content/70", else: "text-primary")}><.icon name="lucide-settings" class="size-5" /></button>
-        <div id={"#{@list}-options-#{@index}"} style="display: none" class="absolute right-0 z-20 mt-1 w-max rounded-box border border-base-300 bg-base-100 p-3 shadow flex flex-row gap-6">
+        <div id={"#{@list}-options-#{@index}"} style="display: none" class="absolute right-0 z-20 mt-1 w-max rounded-box border border-base-300 bg-base-100 p-3 shadow flex flex-col gap-3">
+          <div :if={@pick.id} class="flex items-center gap-2">
+            <.link navigate={~p"/teams?team=#{@pick.id}"} class="btn btn-outline btn-xs">
+              <.icon name="lucide-pencil" class="size-3.5" /> Edit
+            </.link>
+            <button type="button" phx-click={Phoenix.LiveView.JS.push("duplicate_pick", value: %{list: @list, index: @index}) |> Phoenix.LiveView.JS.hide(to: "##{@list}-options-#{@index}")}
+                    class="btn btn-outline btn-xs">
+              <.icon name="lucide-copy" class="size-3.5" /> Duplicate
+            </button>
+          </div>
+          <div class="flex flex-row gap-6">
           <div class="flex flex-col gap-1">
             <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Pack mode</span>
             <%= for mode <- Resolver.mode_overrides() do %>
@@ -950,6 +980,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
                     class="btn btn-primary btn-outline btn-xs">
               1 Rewards run
             </button>
+          </div>
           </div>
         </div>
       </div>

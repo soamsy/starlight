@@ -1624,7 +1624,8 @@ const SortableList = {
       const multiple = multi && sortSelection.list === this.el && sortSelection.ids.has(item.dataset.sortId) && sortSelection.ids.size > 1
       const items = multiple ? sortRows(this.el).filter(r => sortSelection.ids.has(r.dataset.sortId)) : [item]
       if (multi && !multiple) setSortSelection(this.el, new Set([item.dataset.sortId]), item.dataset.sortId)
-      sortDrag = { item, items, source: this.el, packed: false }
+      sortDrag = { item, items, source: this.el, packed: false, frozen: new Set() }
+      freezeList(this.el)
       e.dataTransfer.effectAllowed = "move"
       if (items.length > 1) {
         const stack = document.createElement("div")
@@ -1641,6 +1642,12 @@ const SortableList = {
       }
       requestAnimationFrame(() => items.forEach(i => i.classList.add("opacity-40")))
     })
+
+    const freezeList = (list) => {
+      if (sortDrag.frozen.has(list)) return
+      sortDrag.frozen.add(list)
+      list.setAttribute("phx-update", "ignore")
+    }
 
     const place = (parent, ref) => {
       const drag = sortDrag
@@ -1672,6 +1679,7 @@ const SortableList = {
       if (!sortDrag || !this.accepts(sortDrag)) return
       e.preventDefault()
       e.stopPropagation()
+      freezeList(this.el)
       const highlight = sortDrag.source !== this.el && "sortHighlight" in this.el.dataset ? this.el : null
       if (sortDrag.highlight !== highlight) {
         sortDrag.highlight?.classList.remove("bg-primary/15")
@@ -1695,7 +1703,8 @@ const SortableList = {
 
     this.el.addEventListener("dragend", () => {
       if (!sortDrag || sortDrag.item.parentElement !== this.el) return
-      const { item, items, source, highlight, spacer } = sortDrag
+      const { item, items, source, highlight, spacer, frozen } = sortDrag
+      frozen.forEach(list => list.removeAttribute("phx-update"))
       spacer?.remove()
       highlight?.classList.remove("bg-primary/15")
       sortDrag = null
