@@ -79,7 +79,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
-  @read_only_events ~w(restore_view set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_select_branch list_copy_entries list_select_tab list_refresh_select_tab start_rename_stage cancel_rename_stage rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_select pack_new pack_edit pack_close)
+  @read_only_events ~w(restore_view restore_browser set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_select_branch list_copy_entries list_select_tab list_refresh_select_tab start_rename_stage cancel_rename_stage rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_select pack_new pack_edit pack_close)
 
   def read_only_events, do: @read_only_events
 
@@ -303,6 +303,23 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("set_gift_sort", %{"value" => sort_by}, socket) when sort_by in @gift_sorts do
     {:noreply, assign(socket, :gift_sort, sort_by)}
+  end
+
+  @impl true
+  def handle_event("restore_browser", params, socket) do
+    sort_by = if params["sort"] in @gift_sorts, do: params["sort"], else: "default"
+    tiers = for tier <- List.wrap(params["tiers"]), tier in @gift_tiers, do: tier
+    affinities = for affinity <- List.wrap(params["affinities"]), affinity in ["none" | @affinities], do: affinity
+    pack = if is_binary(params["pack"]), do: params["pack"], else: ""
+
+    {:noreply,
+     socket
+     |> assign(:gift_sort, sort_by)
+     |> assign(:gift_tier_filter, tiers)
+     |> assign(:gift_affinity_filter, affinities)
+     |> assign(:gift_fixed_filter, params["fixed"] == true)
+     |> assign(:gift_no_pack_filter, params["no_pack"] == true)
+     |> assign(:gift_pack_filter, pack)}
   end
 
   @impl true
@@ -1521,9 +1538,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> reset_browser()
   end
 
+  defp reset_search(socket), do: assign(socket, :gift_filter, "")
+
   defp reset_browser(socket) do
     socket
-    |> assign(:gift_filter, "")
+    |> reset_search()
     |> assign(:gift_tier_filter, [])
     |> assign(:gift_affinity_filter, [])
     |> assign(:gift_fixed_filter, false)
@@ -1553,7 +1572,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         |> assign(:refresh_paths, %{})
     |> assign(:refresh_paths, %{})
         |> assign(:fusion_entry_id, nil)
-            |> reset_browser()
+            |> reset_search()
         |> PlanHistory.reset()
     end
   end
@@ -1610,7 +1629,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
         |> assign(:fusion_entry_id, nil)
         |> assign(:editing_condition_case_id, nil)
         |> assign(:gift_popup, nil)
-        |> reset_browser()
+        |> reset_search()
         |> PlanHistory.reset()
     end
   end
@@ -1628,7 +1647,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> assign(:refresh_paths, %{})
     |> assign(:fusion_entry_id, nil)
     |> assign(:gift_popup, nil)
-    |> reset_browser()
+    |> reset_search()
     |> refresh_packs()
     |> PlanHistory.reset()
   end

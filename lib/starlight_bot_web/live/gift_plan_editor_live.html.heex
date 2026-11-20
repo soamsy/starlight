@@ -1,4 +1,5 @@
 <div id="gift-view-memory" phx-hook="ViewMemory" data-restore={to_string(not @view_from_url)} data-key={@editing_id && "starlight-gift-view-#{@editing_id}"} data-shared-key="starlight-gift-tab" data-shared-field="tab" data-view={Jason.encode!(%{tab: (@pack_edit && @pack_edit.parent.active_tab) || @active_tab})} class="flex flex-col h-full gap-3 overflow-hidden">
+  <div id="gift-browser-memory" phx-hook="BrowserMemory" data-view={Jason.encode!(%{sort: @gift_sort, tiers: @gift_tier_filter, affinities: @gift_affinity_filter, fixed: @gift_fixed_filter, no_pack: @gift_no_pack_filter, pack: @gift_pack_filter})} class="hidden"></div>
   <div id="gift-item-clipboard" phx-hook="ItemClipboard" class="hidden"></div>
   <datalist id="gift-name-options">
     <option :for={gift <- @gifts} value={gift.name} />
@@ -28,7 +29,7 @@
                         <input id="gift-search-input" phx-hook="GiftSearchNav" type="text" placeholder="Search gifts (press /)…" value={@gift_filter} phx-keyup="filter_gifts" phx-debounce="150" class="grow min-w-0" />
                       </label>
                       <button type="button" phx-click="clear_gift_filters" title="Clear all filters"
-                              class={"btn btn-ghost btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter or @gift_pack_filter != "", do: "", else: "hidden")}><.icon name="lucide-x" class="size-3.5" /></button>
+                              class={"btn btn-outline btn-error btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter or @gift_pack_filter != "", do: "", else: "hidden")}><.icon name="lucide-x" class="size-3.5" /></button>
                       <details id="gift-filter-menu" phx-hook="FloatingDropdown" data-keep-open class="dropdown dropdown-end">
                         <summary title="Filter"
                              class={"btn btn-xs btn-square " <> if(@gift_tier_filter != [] or @gift_affinity_filter != [] or @gift_fixed_filter or @gift_no_pack_filter or @gift_pack_filter != "", do: "btn-primary", else: "btn-ghost")}>
