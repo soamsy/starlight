@@ -33,7 +33,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
     socket =
       socket
       |> assign(:pane, if(Map.has_key?(@panes, params["pane"]) or params["pane"] in ["profiles", "stats"], do: params["pane"], else: socket.assigns.pane))
-      |> assign(:gift_view, %{tab: params["tab"]})
+      |> assign(:gift_view, %{tab: gift_tab(params, team_id, socket.assigns)})
 
     {:noreply, socket} =
       cond do
@@ -45,6 +45,13 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
     {:noreply, see_pane(socket)}
   end
+
+  defp gift_tab(%{"tab" => tab}, _team_id, _assigns), do: tab
+
+  defp gift_tab(_params, team_id, %{editing_id: editing_id, gift_view: %{tab: tab}}) when team_id != nil and editing_id != nil and team_id != editing_id,
+    do: tab
+
+  defp gift_tab(_params, _team_id, _assigns), do: nil
 
   defp see_pane(%{assigns: %{pane: pane, panes_seen: seen}} = socket) when is_map_key(@panes, pane),
     do: assign(socket, :panes_seen, MapSet.put(seen, pane))
