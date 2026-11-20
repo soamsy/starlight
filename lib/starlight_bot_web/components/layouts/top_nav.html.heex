@@ -68,13 +68,21 @@
         <span
           class={[
             "flex size-6 lg:size-8 items-center justify-center border-l border-base-100/40",
-            if(scheduler_on, do: "bg-success text-success-content", else: "bg-base-200 text-base-content/40")
+            if(runs_on, do: "bg-success text-success-content", else: "bg-base-200 text-base-content/40")
           ]}
-          title={if(scheduler_on, do: "Scheduler on", else: "Scheduler off")}>
+          title={if(runs_on, do: "Runs scheduled", else: "Runs not scheduled")}>
           <span :if={@run_live} class="loading loading-spinner loading-xs lg:loading-sm"></span>
           <%= unless @run_live do %>
-          <.icon name={if scheduler_on, do: "lucide-clock", else: "lucide-timer-off"} class="size-4 lg:size-5" />
+          <.icon name={if runs_on, do: "lucide-clock", else: "lucide-timer-off"} class="size-4 lg:size-5" />
           <% end %>
+        </span>
+        <span
+          class={[
+            "flex size-6 lg:size-8 items-center justify-center border-l border-base-100/40",
+            if(charger_on, do: "bg-success", else: "bg-base-200")
+          ]}
+          title={if(charger_on, do: "Enkephalin charging scheduled", else: "Enkephalin charging not scheduled")}>
+          <img src={~p"/images/icons/enkephalin.webp"} alt="" class={["size-4 lg:size-5", !charger_on && "grayscale opacity-50"]} />
         </span>
       </summary>
       <div popover="manual" class={[
