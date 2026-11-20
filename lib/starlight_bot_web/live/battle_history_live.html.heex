@@ -7,6 +7,10 @@
       <button phx-click="view" phx-value-view="bulk" class={"btn btn-sm join-item " <> if(@view == "bulk", do: "btn-primary", else: "")}>Bulk test</button>
     </div>
     <button phx-click="refresh" class="btn btn-sm">Refresh</button>
+    <label :if={StarlightBot.Data.authoring?()} class="flex items-center gap-2 cursor-pointer">
+      <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@capture_enabled} phx-click="toggle_capture" />
+      <span class="text-sm">Save battle debug images</span>
+    </label>
     <span class="text-xs text-base-content/60"><%= length(@entries) %> capture(s), <%= length(suite_entries(@entries)) %> in suite</span>
   </div>
 
@@ -83,7 +87,7 @@
           </button>
         <% end %>
         <div :if={@entries == []} class="text-sm text-base-content/40">
-          No captures yet. Turn on "Save battle debug images" on the mirror dungeon page and run a battle.
+          No captures yet. Turn on "Save battle debug images" above and run a battle.
         </div>
       </div>
 

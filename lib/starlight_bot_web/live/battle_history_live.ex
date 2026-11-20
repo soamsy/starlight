@@ -1,6 +1,6 @@
 defmodule StarlightBotWeb.Live.BattleHistoryLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.BattleDebug
+  alias StarlightBot.{AppSettings, BattleDebug, Data}
   alias StarlightBot.BattleDebug.{Detect, Verify}
 
   @sins ~w(wrath lust sloth gluttony gloom pride envy)
@@ -27,6 +27,7 @@ defmodule StarlightBotWeb.Live.BattleHistoryLive do
     {:ok,
      socket
      |> assign(:entries, BattleDebug.list())
+     |> assign(:capture_enabled, AppSettings.battle_debug?())
      |> assign(:view, "captures")
      |> assign(:kind_filter, "all")
      |> assign(:selected, nil)
@@ -38,6 +39,16 @@ defmodule StarlightBotWeb.Live.BattleHistoryLive do
 
   @impl true
   def handle_event("refresh", _, socket), do: {:noreply, assign(socket, :entries, BattleDebug.list())}
+
+  def handle_event("toggle_capture", _, socket) do
+    if Data.authoring?() do
+      enabled? = not socket.assigns.capture_enabled
+      AppSettings.put_battle_debug(enabled?)
+      {:noreply, assign(socket, :capture_enabled, enabled?)}
+    else
+      {:noreply, socket}
+    end
+  end
 
   def handle_event("view", %{"view" => view}, socket) when view in ~w(captures bulk), do: {:noreply, assign(socket, :view, view)}
 

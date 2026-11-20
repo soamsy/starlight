@@ -193,11 +193,7 @@
 
       </form>
 
-      <label :if={StarlightBot.Data.authoring?()} class="flex items-center gap-2 cursor-pointer">
-        <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@battle_debug} phx-click="toggle_battle_debug" />
-        <span class="text-sm">Save battle debug images</span>
-        <.link navigate={~p"/battle/history"} class="link text-xs text-base-content/60">history</.link>
-      </label>
+      <.battle_debug_notice enabled={@battle_debug} />
 
       <label :if={StarlightBot.Data.authoring?()} class="flex items-center gap-2 cursor-pointer">
         <input type="checkbox" class="toggle toggle-sm toggle-accent" checked={@gift_scan_debug} phx-click="toggle_gift_scan_debug" />
@@ -386,6 +382,8 @@
         </label>
 
       </form>
+
+      <.battle_debug_notice enabled={@battle_debug} />
 
       <%!-- Enkephalin usage summary --%>
       <% terms = module_terms(@exp_waves, @thread_waves) %>
