@@ -1345,7 +1345,21 @@ defmodule StarlightBot.GiftPlans do
     for tab <- tabs do
       segment = segment_at(entry, tab["from"])
       segment = if not pattern_entry?(entry) and segment["disposition"] == "ignore", do: Map.put(segment, "disposition", "keep"), else: segment
-      Map.merge(segment, %{"from" => tab["from"], "abandoned" => abandoned?(template, tab)})
+      segment
+      |> Map.merge(%{"from" => tab["from"], "abandoned" => abandoned?(template, tab)})
+      |> adopt_branches(template, tab)
+    end
+  end
+
+  defp adopt_branches(segment, template, tab) do
+    case branches(tab) do
+      [] ->
+        Map.delete(segment, "branches")
+
+      template_branches ->
+        base = segment |> branch_view(nil) |> Map.drop(["from"])
+
+        Map.put(segment, "branches", for(branch <- template_branches, do: Map.merge(base, %{"id" => branch["id"], "condition" => branch["condition"], "abandoned" => abandoned?(template, branch_view(tab, branch["id"]))})))
     end
   end
 
