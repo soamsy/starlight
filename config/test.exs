@@ -11,6 +11,8 @@ config :starlight_bot, :hook_image_dir, "/tmp/starlight_test_hooks"
 
 config :starlight_bot, :auto_migrate, false
 
+config :starlight_bot, :db_safety, false
+
 config :starlight_bot, :allow_authoring, true
 
 config :starlight_bot, :data_paths, %{

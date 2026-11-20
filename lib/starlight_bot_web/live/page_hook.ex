@@ -1,7 +1,7 @@
 defmodule StarlightBotWeb.Live.PageHook do
   import Phoenix.Component, only: [assign: 3, assign_new: 3]
   import Phoenix.LiveView, only: [attach_hook: 4, connected?: 1, put_flash: 3]
-  alias StarlightBot.{AppSettings, EnkephalinSchedule, GameWindow, LauncherDeps, LogStore, PlanCounts, Scheduler}
+  alias StarlightBot.{AppSettings, DbSafety, EnkephalinSchedule, GameWindow, LauncherDeps, LogStore, PlanCounts, Scheduler}
   import StarlightBot.Navigation.DSL, only: [click: 1]
   alias StarlightBot.Automation.{EnkephalinCharger, Engine}
   alias StarlightBot.Scheduler.Overview
@@ -48,6 +48,7 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:tab, nil)
       |> assign(:game_window_rect, nil)
       |> assign(:game_window_busy, nil)
+      |> assign(:db_problems, DbSafety.problems())
       |> assign(:run_live, false)
       |> assign(:run_paused, false)
       |> assign(:run_phase, :idle)
@@ -109,6 +110,26 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp handle_settings_event("settings_open", params, socket) do
     socket = if params["tab"] == "enkephalin", do: assign(socket, :scheduler_view, "enkephalin"), else: socket
     {:halt, socket |> assign(:settings_open, true)}
+  end
+
+  defp handle_settings_event("db_repair", %{"db" => db, "action" => action}, socket) when action in ["restore", "fresh"] do
+    problem = Enum.find(DbSafety.problems(), &(&1.name == db))
+
+    result =
+      cond do
+        is_nil(problem) -> {:error, :unknown}
+        action == "fresh" and not problem.can_fresh? -> {:error, :unknown}
+        true -> DbSafety.request_repair(db, String.to_existing_atom(action))
+      end
+
+    socket =
+      case result do
+        :ok -> put_flash(socket, :info, "Restart the app to finish repairing #{problem.label |> String.downcase()}")
+        {:error, :no_backup} -> put_flash(socket, :error, "There is no backup to restore")
+        {:error, _reason} -> put_flash(socket, :error, "Could not schedule the repair")
+      end
+
+    {:halt, assign(socket, :db_problems, DbSafety.problems())}
   end
 
   defp handle_settings_event("cursor_speed_set", %{"cursor_speed" => value}, socket) do

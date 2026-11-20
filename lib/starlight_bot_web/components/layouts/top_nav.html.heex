@@ -43,18 +43,22 @@
     <% scheduler_on = runs_on || charger_on %>
     <% status = window_status(@game_window_rect) %>
     <% busy = @game_window_busy %>
+    <% db_problems = @db_problems %>
     <details id="window-status-menu" phx-hook="FloatingDropdown" phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])} class="dropdown dropdown-end">
       <summary class="btn btn-ghost btn-xs lg:btn-sm gap-0 overflow-hidden p-0">
         <span
           class={[
             "flex size-6 lg:size-8 items-center justify-center",
-            status == :exact && "bg-success text-success-content",
-            status == :scaled && "bg-warning text-warning-content",
-            status == :bad_aspect && "bg-error text-error-content animate-pulse",
-            status == :missing && "bg-neutral text-neutral-content"
+            db_problems != [] && "bg-error text-error-content",
+            db_problems == [] && status == :exact && "bg-success text-success-content",
+            db_problems == [] && status == :scaled && "bg-warning text-warning-content",
+            db_problems == [] && status == :bad_aspect && "bg-error text-error-content animate-pulse",
+            db_problems == [] && status == :missing && "bg-neutral text-neutral-content"
           ]}
-          title={window_status_title(status)}>
+          title={if(db_problems != [], do: "A data file looks damaged", else: window_status_title(status))}>
           <%= cond do %>
+            <% db_problems != [] -> %>
+              <.icon name="lucide-database-zap" class="size-4 lg:size-5" />
             <% busy -> %>
               <span class="loading loading-spinner loading-xs"></span>
             <% status == :exact -> %>
@@ -87,11 +91,33 @@
       </summary>
       <div popover="manual" class={[
         "dropdown-content z-50 w-72 rounded-lg border bg-base-100 p-3 shadow-lg text-xs",
-        status == :exact && "border-success",
-        status == :scaled && "border-warning",
-        status == :bad_aspect && "border-error",
-        status == :missing && "border-base-300"
+        db_problems != [] && "border-error",
+        db_problems == [] && status == :exact && "border-success",
+        db_problems == [] && status == :scaled && "border-warning",
+        db_problems == [] && status == :bad_aspect && "border-error",
+        db_problems == [] && status == :missing && "border-base-300"
       ]}>
+        <div :for={problem <- db_problems} class="mb-3 rounded border border-error/50 bg-error/10 p-2">
+          <div class="font-semibold text-error">{problem.label} file looks damaged</div>
+          <div class="mt-1 text-base-content/70">
+            Some of it may be missing or wrong.
+            <%= cond do %>
+              <% problem.pending -> %>Restart the app to finish the repair.
+              <% problem.backup -> %>The newest good backup is from {Calendar.strftime(problem.backup_at, "%b %-d, %H:%M")}.
+              <% true -> %>There is no backup to restore.
+            <% end %>
+          </div>
+          <details class="mt-1">
+            <summary class="cursor-pointer text-base-content/60">Details</summary>
+            <pre class="mt-1 whitespace-pre-wrap break-all font-mono text-[10px]">{Enum.join(problem.messages, "\n")}</pre>
+          </details>
+          <div :if={!problem.pending} class="mt-2 flex flex-col gap-1">
+            <button :if={problem.backup} type="button" class="btn btn-error btn-xs w-full" phx-click="db_repair" phx-value-db={problem.name} phx-value-action="restore"
+                    data-confirm="Restore the backup on next start? Anything saved after it was made is lost. The damaged file is kept aside.">Restore backup on next start</button>
+            <button :if={problem.can_fresh?} type="button" class="btn btn-error btn-outline btn-xs w-full" phx-click="db_repair" phx-value-db={problem.name} phx-value-action="fresh"
+                    data-confirm="Start fresh on next start? This file is reset to its defaults. The damaged file is kept aside.">Start fresh on next start</button>
+          </div>
+        </div>
         <button :if={@run_live} type="button" phx-click="run_cancel" data-dismiss class="btn btn-error btn-xs w-full mb-2">Cancel</button>
         <div class="flex items-center justify-between gap-2">
           <label class="flex items-center gap-2 cursor-pointer">

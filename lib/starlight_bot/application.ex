@@ -7,6 +7,8 @@ defmodule StarlightBot.Application do
     setup_file_logger()
     Logger.info("StarlightBot starting", module: __MODULE__)
 
+    if Application.get_env(:starlight_bot, :db_safety, true), do: StarlightBot.DbSafety.boot_check()
+
     pubsub = System.get_env("ELIXIRKIT_PUBSUB")
 
     children =
