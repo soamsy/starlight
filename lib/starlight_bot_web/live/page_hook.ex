@@ -63,6 +63,8 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:settings_open, false)
       |> assign(:scheduler_view, "progress")
       |> assign(:enkephalin_convert_count, AppSettings.enkephalin_convert_count())
+      |> assign(:cursor_speed, AppSettings.cursor_speed())
+      |> assign(:hesitation_mult, AppSettings.hesitation_mult())
       |> assign_scheduler(Scheduler.get_settings())
       |> assign_enkephalin_schedule(EnkephalinSchedule.get_settings())
 
@@ -109,6 +111,16 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp handle_settings_event("settings_open", params, socket) do
     socket = if params["tab"] == "enkephalin", do: assign(socket, :scheduler_view, "enkephalin"), else: socket
     {:halt, socket |> assign(:settings_open, true)}
+  end
+
+  defp handle_settings_event("cursor_speed_set", %{"cursor_speed" => value}, socket) do
+    {:ok, speed} = AppSettings.put_cursor_speed(value)
+    {:halt, assign(socket, :cursor_speed, speed)}
+  end
+
+  defp handle_settings_event("hesitation_mult_set", %{"hesitation_mult" => value}, socket) do
+    {:ok, mult} = AppSettings.put_hesitation_mult(value)
+    {:halt, assign(socket, :hesitation_mult, mult)}
   end
 
   defp handle_settings_event("scheduler_view", %{"view" => view}, socket) when view in ["runners", "enkephalin", "progress"],

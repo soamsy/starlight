@@ -42,8 +42,6 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
      |> assign(:game_launcher, AppSettings.launcher())
      |> assign(:gamescope_resolution, AppSettings.gamescope_resolution())
      |> assign(:gamescope_flags, AppSettings.gamescope_flags())
-     |> assign(:cursor_speed, AppSettings.cursor_speed())
-     |> assign(:hesitation_mult, AppSettings.hesitation_mult())
      |> assign_command_preview()}
   end
 
@@ -66,16 +64,6 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def handle_event("gamescope_flags_reset", _params, socket) do
     AppSettings.put_gamescope_flags(AppSettings.default_gamescope_flags())
     {:noreply, socket |> assign(:gamescope_flags, AppSettings.gamescope_flags()) |> assign_command_preview()}
-  end
-
-  def handle_event("cursor_speed_set", %{"cursor_speed" => value}, socket) do
-    {:ok, speed} = AppSettings.put_cursor_speed(value)
-    {:noreply, assign(socket, :cursor_speed, speed)}
-  end
-
-  def handle_event("hesitation_mult_set", %{"hesitation_mult" => value}, socket) do
-    {:ok, mult} = AppSettings.put_hesitation_mult(value)
-    {:noreply, assign(socket, :hesitation_mult, mult)}
   end
 
   def handle_event("update_form", params, socket),

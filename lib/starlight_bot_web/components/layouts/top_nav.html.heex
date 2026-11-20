@@ -174,6 +174,26 @@
             Close Limbus
           </button>
         <% end %>
+        <div class="divider my-2"></div>
+        <form phx-change="cursor_speed_set" class="flex flex-col gap-1">
+          <span class="flex items-baseline justify-between">
+            <span class="font-semibold">Cursor speed</span>
+            <span class="font-mono">{:erlang.float_to_binary(@cursor_speed, decimals: 2)}x</span>
+          </span>
+          <input type="range" name="cursor_speed" min="0.2" max="2.0" step="0.05" value={@cursor_speed} class="range range-xs range-info w-full" />
+        </form>
+        <form phx-change="hesitation_mult_set" class="mt-2 flex flex-col gap-1">
+          <span class="flex items-baseline justify-between">
+            <span>
+              <span class="font-semibold">Hesitation duration</span>
+              <span class="tooltip tooltip-top ml-1 font-normal before:w-44 before:whitespace-normal before:text-left" data-tip="Longer pause over a target before each click.">
+                <.icon name="lucide-info" class="size-3.5 cursor-help text-base-content/50" />
+              </span>
+            </span>
+            <span class="font-mono">{:erlang.float_to_binary(@hesitation_mult, decimals: 2)}x</span>
+          </span>
+          <input type="range" name="hesitation_mult" min="0.5" max="2.0" step="0.05" value={@hesitation_mult} class="range range-xs range-info w-full" />
+        </form>
       </div>
     </details>
 
