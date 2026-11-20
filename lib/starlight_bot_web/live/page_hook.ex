@@ -47,6 +47,7 @@ defmodule StarlightBotWeb.Live.PageHook do
     socket =
       socket
       |> assign(:page, Map.get(@pages, socket.view))
+      |> assign(:tab, nil)
       |> assign(:game_window_rect, nil)
       |> assign(:game_window_busy, nil)
       |> assign(:run_live, false)

@@ -1,0 +1,273 @@
+  <nav class="flex items-start gap-2 shrink-0 px-2 py-1 bg-base-100 border-b border-base-300">
+    <% on_runner = @page == :runner %>
+    <% on_teams = @page == :teams %>
+    <% run_link = fn path -> if on_runner, do: [patch: path], else: [navigate: path] end %>
+    <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1 xl:flex-none">
+      <.link {run_link.(~p"/mirror-dungeon")} data-hotkey="1"
+             class={"btn btn-xs lg:btn-sm gap-1 " <> if(on_runner and @tab == :mirror_dungeon, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+             title="Mirror Dungeon">
+        <img src={~p"/images/icons/mirror_dungeon.webp"} alt="" class="size-4 lg:size-5" />
+        <span class="font-semibold">MD</span>
+        <kbd class="kbd kbd-xs hidden lg:inline-flex">1</kbd>
+        <span :if={@run_kind == :mirror_dungeon} class="loading loading-spinner loading-xs"></span>
+      </.link>
+      <.link {run_link.(~p"/luxcavation")} data-hotkey="2"
+             class={"btn btn-xs lg:btn-sm gap-1 " <> if(on_runner and @tab == :luxcavation, do: "btn-primary", else: "btn-ghost text-base-content/50")}
+             title="Luxcavation">
+        <img src={~p"/images/icons/luxcavation.webp"} alt="" class="size-4 lg:size-5" />
+        <span class="font-semibold">Lux</span>
+        <kbd class="kbd kbd-xs hidden lg:inline-flex">2</kbd>
+        <span :if={@run_kind == :luxcavation} class="loading loading-spinner loading-xs"></span>
+      </.link>
+      <%= if nav = @team_nav do %>
+        <TeamNav.team_selector nav={nav} on_page={on_teams} />
+        <PlanPicker.pane_tabs team_id={nav.team_id} pane={nav.pane} counts={nav.counts} on_page={on_teams} />
+      <% end %>
+    </div>
+
+    <% latest = @latest_log %>
+    <% latest_class = ["min-w-0 truncate text-left font-mono text-xs hover:underline", latest && latest.kind in [:error, "error"] && "text-error" || "text-base-content/60"] %>
+    <div class="hidden min-w-0 flex-1 items-center self-center xl:flex">
+      <%= if latest && on_runner do %>
+        <button type="button" phx-click={Phoenix.LiveView.JS.dispatch("starlight:log-bottom")} class={latest_class} title={latest.text}>{latest.text}</button>
+      <% end %>
+      <%= if latest && !on_runner do %>
+        <.link navigate={~p"/"} class={latest_class} title={latest.text}>{latest.text}</.link>
+      <% end %>
+    </div>
+
+    <div class="ml-auto flex shrink-0 items-center justify-end gap-1">
+    <% overview = @scheduler_overview %>
+    <% runs_on = overview && overview.runs_on %>
+    <% charger_on = overview && overview.charger_on %>
+    <% scheduler_on = runs_on || charger_on %>
+    <% status = window_status(@game_window_rect) %>
+    <% busy = @game_window_busy %>
+    <details id="window-status-menu" phx-hook="FloatingDropdown" data-keep-open class="dropdown dropdown-end">
+      <summary class="btn btn-ghost btn-xs lg:btn-sm gap-0 overflow-hidden p-0">
+        <span
+          class={[
+            "flex size-6 lg:size-8 items-center justify-center",
+            status == :exact && "bg-success text-success-content",
+            status == :scaled && "bg-warning text-warning-content",
+            status == :bad_aspect && "bg-error text-error-content animate-pulse",
+            status == :missing && "bg-neutral text-neutral-content"
+          ]}
+          title={window_status_title(status)}>
+          <%= cond do %>
+            <% busy -> %>
+              <span class="loading loading-spinner loading-xs"></span>
+            <% status == :exact -> %>
+              <.icon name="lucide-check" class="size-4 lg:size-5" />
+            <% status == :missing -> %>
+              <.icon name="lucide-monitor" class="size-4 lg:size-5" />
+            <% true -> %>
+              <.icon name="lucide-circle-exclamation-point" class="size-4 lg:size-5" />
+          <% end %>
+        </span>
+        <span
+          class={[
+            "flex size-6 lg:size-8 items-center justify-center border-l border-base-100/40",
+            if(scheduler_on, do: "bg-success text-success-content", else: "bg-base-200 text-base-content/40")
+          ]}
+          title={if(scheduler_on, do: "Scheduler on", else: "Scheduler off")}>
+          <span :if={@run_live} class="loading loading-spinner loading-xs lg:loading-sm"></span>
+          <%= unless @run_live do %>
+          <.icon name={if scheduler_on, do: "lucide-clock", else: "lucide-timer-off"} class="size-4 lg:size-5" />
+          <% end %>
+        </span>
+      </summary>
+      <div popover="manual" class={[
+        "dropdown-content z-50 w-72 rounded-lg border bg-base-100 p-3 shadow-lg text-xs",
+        status == :exact && "border-success",
+        status == :scaled && "border-warning",
+        status == :bad_aspect && "border-error",
+        status == :missing && "border-base-300"
+      ]}>
+        <button :if={@run_live} type="button" phx-click="run_cancel" data-dismiss class="btn btn-error btn-xs w-full mb-2">Cancel</button>
+        <div class="flex items-center justify-between gap-2">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" class="toggle toggle-xs toggle-success" checked={runs_on} phx-click="scheduler_toggle" />
+            <span class="font-semibold">Daily runs</span>
+          </label>
+          <button type="button" phx-click="settings_open" data-dismiss
+                  class="btn btn-ghost btn-square btn-xs text-base-content/60">
+            <.icon name="lucide-sliders-horizontal" class="size-4" />
+          </button>
+        </div>
+        <label class="mt-2 flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" class="toggle toggle-xs toggle-success" checked={charger_on} phx-click="enkephalin_toggle" />
+          <span class="font-semibold">Enkephalin charger</span>
+        </label>
+        <div class={["mt-2 font-mono", !scheduler_on && "text-base-content/30"]}>{overview && overview.label}</div>
+        <div :if={overview && overview.runs_text} class="mt-1 text-base-content/60"><span class="font-semibold text-base-content/80">Runs:</span> {overview.runs_text}</div>
+        <div :if={overview && overview.charge_text} class="mt-1 text-base-content/60"><span class="font-semibold text-base-content/80">Charger:</span> {overview.charge_text}</div>
+        <div class="mt-2"><StarlightBotWeb.Components.SchedulerControls.scheduler_controls blocked={overview && overview.blocked} pending={overview && overview.runs_pending} /></div>
+        <div class="divider my-2"></div>
+        <div class={[
+          "flex items-center justify-between gap-2 font-semibold mb-2",
+          status == :exact && "text-success",
+          status == :scaled && "text-warning",
+          status == :bad_aspect && "text-error"
+        ]}>
+          <span>{window_status_title(status)}</span>
+          <button :if={status != :missing} class="btn btn-xs font-normal text-base-content" phx-click="game_window_poke" disabled={busy != nil or @run_live == true}>Poke</button>
+        </div>
+        <%= if status == :missing do %>
+          <%= if launch = @game_launch_label do %>
+            <div class="text-base-content/70 mb-2">Launches <span class="font-mono break-all">{launch}</span> through {@game_launcher_label}.</div>
+            <% missing = @game_launcher_missing || [] %>
+            <div :if={missing != []} class="text-warning mb-2">Missing: <span class="font-mono">{Enum.join(missing, ", ")}</span></div>
+            <button class="btn btn-primary btn-xs w-full" phx-click="game_window_launch" disabled={busy != nil or missing != [] or @game_update_pending == true}>
+              <%= cond do %>
+                <% busy -> %>{String.capitalize(busy)}…
+                <% @game_update_pending -> %>Limbus update pending
+                <% true -> %>Open Limbus
+              <% end %>
+            </button>
+            <button type="button" phx-click="settings_open" data-dismiss class="link mt-2 block text-center">
+              Launcher settings
+            </button>
+          <% else %>
+            <div class="text-base-content/70">
+              Launching is off. Set a launch mode in the <button type="button" phx-click="settings_open" class="link">Scheduler</button> settings to open Limbus from here.
+            </div>
+          <% end %>
+        <% else %>
+          <% {_x, _y, w, h} = @game_window_rect %>
+          <table class="w-full">
+            <tbody>
+              <tr>
+                <td class="text-base-content/60 pr-2 py-0.5">Current size</td>
+                <td class="font-mono">{w} × {h}</td>
+              </tr>
+              <tr>
+                <td class="text-base-content/60 pr-2 py-0.5">Current ratio</td>
+                <td class="font-mono">{aspect_label(w, h)}</td>
+              </tr>
+              <tr>
+                <td class="text-base-content/60 pr-2 py-0.5">Expected ratio</td>
+                <td class="font-mono">16:9 (1.778)</td>
+              </tr>
+            </tbody>
+          </table>
+          <%= if status != :exact do %>
+            <div class="mt-2 text-base-content/70">
+              Resize the game window to <span class="font-mono font-semibold">1920 × 1080</span>. Detection and click coordinates assume 16:9.
+            </div>
+          <% end %>
+          <%= if status != :exact do %>
+            <button class="btn btn-xs w-full mt-2" phx-click="game_window_resize" disabled={busy != nil}>Resize to 1920 × 1080</button>
+          <% end %>
+          <%= if busy do %>
+            <div class="mt-1 text-base-content/60">{String.capitalize(busy)}…</div>
+          <% end %>
+          <button :if={!@run_live} class="btn btn-error btn-outline btn-xs w-full mt-2" phx-click="game_window_close" data-confirm="Close Limbus? Any unsaved progress in the game will be lost." disabled={busy != nil}>
+            Close Limbus
+          </button>
+        <% end %>
+      </div>
+    </details>
+
+      <details id="page-menu" phx-hook="FloatingDropdown" data-keep-open data-close-on-click class="dropdown dropdown-end">
+        <% profiles_on = on_teams and @team_nav != nil and @team_nav.pane == "profiles" %>
+        <summary class={"tooltip tooltip-bottom btn btn-square btn-xs lg:btn-sm " <> if(profiles_on or @page in [:hooks, :battle, :dungeon, :gift_inspector, :profile_scan, :theme_packs, :events, :shop_runner, :prepare_lineups, :rewards, :linux_checks, :windows_checks, :data, :log], do: "btn-primary", else: "btn-ghost text-base-content/50")} data-tip="More">
+          <.icon name="lucide-layout-grid" class="size-4 lg:size-5" />
+        </summary>
+        <div popover="manual" class="dropdown-content z-50 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+        <div class="grid grid-cols-4 gap-1">
+    <%= if nav = @team_nav do %>
+    <.link {if on_teams, do: [patch: TeamNav.team_path(nav.team_id, if(profiles_on, do: TeamNav.plan_pane(nav.pane), else: "profiles"))], else: [navigate: TeamNav.team_path(nav.team_id, "profiles")]}
+           onclick="document.activeElement.blur()"
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(profiles_on, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-users" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">{if profiles_on, do: "Back to plans", else: "Sinner Profiles"}</span>
+    </.link>
+    <% end %>
+    <.link navigate={~p"/prepare-lineups"}
+           onclick="document.activeElement.blur()"
+           title="Select each team in the Lux EXP team select and set its sinner order to the first lineup"
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :prepare_lineups, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <%= if @run_kind in [:prepare_lineups, :team_survey] do %>
+        <span class="loading loading-spinner loading-xs"></span>
+      <% else %>
+        <.icon name="lucide-list-checks" class="size-4 lg:size-5" />
+      <% end %>
+      <span class="text-[10px] font-normal leading-tight text-center">Prepare Lineups</span>
+    </.link>
+    <%!-- Inspectors / debug tools --%>
+    <.link navigate={~p"/hooks"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :hooks, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-crosshair" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Hook Editor</span>
+    </.link>
+    <%= if StarlightBot.Data.authoring?() do %>
+    <.link navigate={~p"/battle"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :battle, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-sword" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Battle Inspector</span>
+    </.link>
+    <.link navigate={~p"/dungeon"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :dungeon, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-git-branch" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Dungeon Inspector</span>
+    </.link>
+    <.link navigate={~p"/gift-inspector"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :gift_inspector, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-scan-search" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Gift Inspector</span>
+    </.link>
+    <.link navigate={~p"/profile-scan"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :profile_scan, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-scan-face" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Profile Scan</span>
+    </.link>
+    <.link navigate={~p"/theme-packs"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :theme_packs, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-layout-grid" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Theme Packs</span>
+    </.link>
+    <.link navigate={~p"/events"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :events, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-message-square" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Event Inspector</span>
+    </.link>
+    <.link navigate={~p"/shop-runner"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :shop_runner, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-shopping-bag" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Shop Runner</span>
+    </.link>
+    <.link navigate={~p"/rewards"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :rewards, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-gift" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Rewards</span>
+    </.link>
+    <%= if match?({:win32, _}, :os.type()) do %>
+    <.link navigate={~p"/windows-checks"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :windows_checks, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-monitor-check" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Windows Checks</span>
+    </.link>
+    <% else %>
+    <.link navigate={~p"/linux-checks"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :linux_checks, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-monitor-check" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Linux Checks</span>
+    </.link>
+    <% end %>
+    <% end %>
+    <.link navigate={~p"/data"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :data, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-database" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Data</span>
+    </.link>
+    <.link navigate={~p"/log"}
+           class={"btn btn-sm h-auto w-20 flex-col gap-0.5 py-1.5 " <> if(@page == :log, do: "btn-primary", else: "btn-ghost text-base-content/50")}>
+      <.icon name="lucide-scroll-text" class="size-4 lg:size-5" />
+      <span class="text-[10px] font-normal leading-tight text-center">Log</span>
+    </.link>
+        </div>
+        </div>
+      </details>
+    </div>
+  </nav>
