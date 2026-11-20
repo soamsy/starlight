@@ -180,7 +180,7 @@
                     </button>
                     <button type="button" phx-click="pack_edit" phx-value-ref={pack.ref} class="btn btn-sm btn-outline btn-square join-item"
                             title={if pack.editable, do: "Edit this starter pack", else: "View this shipped starter pack"}>
-                      <.icon name={if pack.editable, do: "lucide-pencil", else: "lucide-eye"} class="size-4" />
+                      <.icon name={if pack.editable, do: "lucide-square-pen", else: "lucide-eye"} class="size-4" />
                     </button>
                   </div>
                   <details id="starter-pack-menu" phx-hook="FloatingDropdown" data-close-on-click class="dropdown">
@@ -193,16 +193,14 @@
                     </summary>
                     <div popover="manual" class="dropdown-content z-30 w-96 max-w-[90vw] max-h-96 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-1 shadow">
                       <div class="flex flex-col gap-0.5 w-full">
-                        <%= for {affinity, packs} <- GiftStarterPacks.grouped(menu_packs, @plan_data["affinity"]) do %>
-                          <div class="flex items-center gap-1.5 px-2 pt-2 pb-1 text-[11px] font-semibold capitalize text-base-content/60">
-                            <img :if={affinity != "any"} src={gift_affinity_icon(affinity)} class="w-3.5 h-3.5 object-contain" /><%= affinity %>
-                          </div>
-                          <div :for={pack <- packs} class="join w-full">
+                        <%= for {_affinity, packs} <- GiftStarterPacks.grouped(menu_packs, @plan_data["affinity"]), pack <- packs do %>
+                          <div class="join w-full">
                             <button type="button" phx-click="pack_add" phx-value-ref={pack.ref} disabled={is_nil(add_target) or pack.ref in added_refs}
                                     class="btn btn-sm btn-ghost join-item h-auto min-h-8 flex-1 justify-start gap-1.5 py-1 text-left font-normal" title="Add this starter pack to the current stage">
                               <.icon name="lucide-plus" class="size-4 shrink-0" />
                               <span class="flex flex-col gap-0.5 min-w-0 flex-1">
                                 <span class="flex items-center gap-1.5 min-w-0">
+                                  <img :if={pack.affinity != "any"} src={gift_affinity_icon(pack.affinity)} title={pack.affinity} class="w-4 h-4 object-contain shrink-0" />
                                   <span class="truncate"><%= pack.name %></span>
                                   <span class="flex items-center gap-0.5 shrink-0">
                                     <img :for={gift <- pack_gifts(pack, @gifts_by_name)} src={gift.image_path} title={gift.name} class="w-5 h-5 rounded object-cover bg-slate-500/40" />
@@ -212,9 +210,9 @@
                                 <span :if={pack.notes != ""} class="text-[11px] text-base-content/60 line-clamp-2 whitespace-pre-line"><%= pack.notes %></span>
                               </span>
                             </button>
-                            <button type="button" phx-click="pack_edit" phx-value-ref={pack.ref} class="btn btn-sm btn-ghost btn-square join-item h-auto"
+                            <button type="button" phx-click="pack_edit" phx-value-ref={pack.ref} class="btn btn-sm btn-ghost join-item h-auto gap-1 px-2 font-normal"
                                     title={if pack.editable, do: "Edit this starter pack", else: "View this shipped starter pack"}>
-                              <.icon name={if pack.editable, do: "lucide-pencil", else: "lucide-eye"} class="size-4" />
+                              <.icon name={if pack.editable, do: "lucide-square-pen", else: "lucide-eye"} class="size-4" /><%= if pack.editable, do: "Edit", else: "View" %>
                             </button>
                           </div>
                         <% end %>
