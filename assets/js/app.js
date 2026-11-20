@@ -1915,20 +1915,29 @@ const ViewMemory = {
   },
   sync() {
     const key = this.el.dataset.key || null
+    const sharedKey = this.el.dataset.sharedKey || null
+    const sharedField = this.el.dataset.sharedField || null
     if (key !== this.key) {
       this.key = key
       let saved = null
+      let shared = null
       try {
         saved = key && localStorage.getItem(key)
+        shared = sharedKey && localStorage.getItem(sharedKey)
       } catch (e) {}
-      if (saved && this.el.dataset.restore !== "false") {
+      if ((saved || shared) && this.el.dataset.restore !== "false") {
         try {
-          this.pushEvent("restore_view", JSON.parse(saved))
+          const view = saved ? JSON.parse(saved) : {}
+          if (shared) view[sharedField] = JSON.parse(shared)
+          this.pushEvent("restore_view", view)
           return
         } catch (e) {}
       }
     }
-    if (this.key && this.el.dataset.view) localStorage.setItem(this.key, this.el.dataset.view)
+    if (this.key && this.el.dataset.view) {
+      localStorage.setItem(this.key, this.el.dataset.view)
+      if (sharedKey) localStorage.setItem(sharedKey, JSON.stringify(JSON.parse(this.el.dataset.view)[sharedField]))
+    }
   }
 }
 
