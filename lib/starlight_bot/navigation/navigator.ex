@@ -571,6 +571,9 @@ defmodule StarlightBot.Navigation.Navigator do
 
   defp crash_retry(_state, _reason), do: nil
 
+  defp code_bug?({%UndefinedFunctionError{module: module}, _stacktrace}) when is_atom(module) and not is_nil(module),
+    do: Code.ensure_loaded?(module)
+
   defp code_bug?({%{__exception__: true}, _stacktrace}), do: true
   defp code_bug?({error, _stacktrace}) when error in @code_bug_errors, do: true
   defp code_bug?({{error, _detail}, _stacktrace}) when error in @code_bug_errors, do: true
