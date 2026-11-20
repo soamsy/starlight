@@ -798,39 +798,94 @@
         <h2 class="font-bold text-base">How gift plans work</h2>
         <div class="overflow-y-auto flex flex-col gap-3 pr-1">
           <section>
-            <h4 class="font-semibold mb-1">Two parts</h4>
-            <p><span class="font-medium">Loadout</span> is everything set up before the first shop: the starting gift, gift search, graces and mounting trials. It applies to every run. <span class="font-medium">Shopping list</span> drives what the bot buys, keeps, fuses and refreshes in each shop. Switch between them with the buttons at the top.</p>
+            <h4 class="font-semibold mb-1">Buy</h4>
+            <p>If the gift shows up on the shelf, the bot buys it. Turn it off to never buy the gift but still keep it if you get it another way (a fusion, an event, your starting gift). On an any-tier or any-affinity entry, Buy takes matches only when nothing you want is on the shelf, and Max per floor caps how many.</p>
           </section>
           <section>
-            <h4 class="font-semibold mb-1">Shopping list</h4>
-            <p>The bot works on the shopping list until its goals are met. Drag gifts from the search on the left into it, or use Add.</p>
-            <ul class="mt-1 list-disc pl-5 flex flex-col gap-1">
-              <li><span class="font-medium">Run timelines</span>: on a gift with a schedule, the swords button after the last tab adds a separate set of tabs that only applies to the run types you tick (normal F1-F5, hard starting F2-F5, hard from F1, extreme planned). Runs of any other type use the first set of tabs. To keep a gift out of some runs, abandon it in the first tab set and give the runs that want it their own timeline.</li>
-              <li><span class="font-medium">Required</span> entries must all be owned. Extra goals ("at least N of") let a group of entries count as one requirement.</li>
-              <li><span class="font-medium">+ Add stage</span> adds another Required and goals stage below the entries. The bot finishes everything above it first, then works on the stage, with the same refresh cases. Earlier gifts stay kept. The Add button on the search adds to the last stage; drag a gift onto any stage to add it there. A gift can be in several stages, and the later stage's definition applies once the earlier one is done. Optional gifts from earlier stages stay in the pool while working later stages, since the pool only grows. Any tier and any affinity entries and required entries do not carry over; if one goes missing, the bot goes back to its stage.</li>
-              <li><span class="font-medium">Any-tier and any-affinity</span> entries never count toward goals and never keep anything. Buy buys matches when no wanted gift is on the shelf, and Sell sells matches at the start of the shop. A specific gift entry overrides them.</li>
-              <li><span class="font-medium">Fixed fusions</span> add their ingredients too. Open a fusion entry to choose its routes. See <span class="font-mono text-xs">docs/fusion.md</span> for the fusion rules.</li>
-              <li><span class="font-medium">Greatly heal</span> and <span class="font-medium">Revive</span> pick sinners to restore while working on the shop.</li>
-              <li><span class="font-medium">+ Keep shopping</span> adds a section at the end. With it, the bot keeps buying and refreshing after the last stage is done, until a refresh case leaves the shop. It buys optional gifts from every stage plus whatever the last stage's Ignore + Buy entries match, up to their caps. Remove it with the X to turn that off.</li>
-            </ul>
+            <h4 class="font-semibold mb-1">Sell</h4>
+            <p>The bot sells this gift from your inventory at the start of the stage. Sell wins over Buy. A specific gift entry overrides an any-tier or any-affinity Sell, so you can sell a whole tier except the gifts you list.</p>
+          </section>
+          <section>
+            <h4 class="font-semibold mb-1">Fuse</h4>
+            <p>Lets the bot fuse this gift when it can't buy it. It only works on a gift that can be fused and is kept (Required, Optional or in a goal). The cog opens the fusion settings. For a fixed recipe each ingredient is its own entry: a missing one is bought if its Buy is on, otherwise fused if its Fuse is on. Ingredients that aren't in the stage are never bought or fused for it. See <span class="font-mono text-xs">docs/fusion.md</span> for routes.</p>
+          </section>
+          <section>
+            <h4 class="font-semibold mb-2">Required, Optional and Goals</h4>
+            <p class="mb-2">Each entry has a dropdown on the left that decides how much the stage cares about it.</p>
+            <div class="flex flex-col gap-2 text-xs">
+              <div class="flex items-center gap-1 flex-wrap">
+                <div class="rounded-lg border border-base-content/20 bg-base-content/10 px-2 py-1 flex flex-col justify-center">
+                  <span class="text-[11px] font-semibold">Required</span>
+                  <span class="text-[10px] text-base-content/50">all of 1</span>
+                </div>
+                <div class="rounded-lg border border-sky-500/50 bg-sky-500/15 px-2 py-1 flex items-center gap-1">
+                  <span class="text-[11px] font-semibold">A:</span>
+                  <span class="text-[11px]">at least 1 of 2</span>
+                </div>
+                <span class="text-base-content/60">Stage header: what must be owned to move on</span>
+              </div>
+              <div class="grid grid-cols-[22rem_1fr] items-center gap-2">
+                <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1 pointer-events-none">
+                  <span class="flex w-24 shrink-0 items-center justify-between rounded border border-neutral bg-neutral px-1.5 py-0.5 text-[11px] text-neutral-content">Required<.icon name="lucide-chevron-down" class="size-3" /></span>
+                  <img src="/images/ego_gifts/gift_309.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+                  <span class="truncate font-medium flex-1">Combustion Gloves</span>
+                  <span class="join">
+                    <span class="btn btn-xs join-item btn-secondary">Buy</span>
+                    <span class="btn btn-xs join-item btn-outline">Sell</span>
+                  </span>
+                </div>
+                <span><span class="font-semibold">Required.</span> The stage is not done until you own it. The bot buys it on sight and keeps refreshing for it. Turn Fuse on and it fuses it when it can't buy it.</span>
+              </div>
+              <div class="grid grid-cols-[22rem_1fr] items-center gap-2">
+                <div class="flex items-center gap-2 rounded border border-base-content/10 bg-base-300 px-1 py-1 pointer-events-none" style="background-image: radial-gradient(color-mix(in oklab, var(--color-base-content) 16%, transparent) 0.9px, transparent 1.2px), radial-gradient(color-mix(in oklab, var(--color-base-content) 16%, transparent) 0.9px, transparent 1.2px); background-size: 8px 8px; background-position: -2px -2px, 2px 2px; background-clip: padding-box">
+                  <span class="flex w-24 shrink-0 items-center justify-between rounded border border-base-300 bg-base-100 px-1.5 py-0.5 text-[11px]">Optional<.icon name="lucide-chevron-down" class="size-3" /></span>
+                  <img src="/images/ego_gifts/gift_104.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+                  <span class="truncate font-medium flex-1">Ardent Flower</span>
+                  <span class="join">
+                    <span class="btn btn-xs join-item btn-secondary">Buy</span>
+                    <span class="btn btn-xs join-item btn-outline">Sell</span>
+                  </span>
+                </div>
+                <span><span class="font-semibold">Optional.</span> Dotted background. Bought on sight if it shows up, but never blocks the stage and the bot won't refresh for it. Stays kept in later stages.</span>
+              </div>
+              <div class="grid grid-cols-[22rem_1fr] gap-2">
+                <div class="flex flex-col gap-1">
+                  <div class="flex items-center gap-2 rounded border border-sky-500/50 bg-sky-500/15 px-1 py-1 pointer-events-none">
+                    <span class="flex w-24 shrink-0 items-center justify-between rounded border border-sky-700 bg-sky-600 px-1.5 py-0.5 text-[11px] text-white">Goal A<.icon name="lucide-chevron-down" class="size-3" /></span>
+                    <img src="/images/ego_gifts/gift_313.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+                    <span class="truncate font-medium flex-1">Embers</span>
+                    <span class="join">
+                      <span class="btn btn-xs join-item btn-secondary">Buy</span>
+                      <span class="btn btn-xs join-item btn-outline">Sell</span>
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-2 rounded border border-sky-500/50 bg-sky-500/15 px-1 py-1 pointer-events-none">
+                    <span class="flex w-24 shrink-0 items-center justify-between rounded border border-sky-700 bg-sky-600 px-1.5 py-0.5 text-[11px] text-white">Goal A<.icon name="lucide-chevron-down" class="size-3" /></span>
+                    <img src="/images/ego_gifts/gift_92.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+                    <span class="truncate font-medium flex-1">Charred Disk</span>
+                    <span class="join">
+                      <span class="btn btn-xs join-item btn-secondary">Buy</span>
+                      <span class="btn btn-xs join-item btn-outline">Sell</span>
+                    </span>
+                  </div>
+                </div>
+                <span class="self-center"><span class="font-semibold">Goal.</span> Entries sharing a letter count as a group, and the stage needs at least N of them (here 1 of 2). Whichever the bot finds first counts, and it stops chasing the rest once N are owned. Add one with + Goal, then pick the letter in each member's dropdown. Removing a goal turns its entries back into Required.</span>
+              </div>
+            </div>
           </section>
           <section>
             <h4 class="font-semibold mb-1">Refresh</h4>
-            <p>Cases are checked top to bottom, like if / else if. The first case whose condition is true runs its action: Refresh, Keyword Refresh or Leave Shop, optionally up to a maximum count, and only while the cost left after the refresh stays at or above the minimum (250 by default, 0 to ignore). If no case matches, the bot stops working on the shop.</p>
+            <p>Cases are checked top to bottom, like if / else if. The first case whose condition is true runs: Refresh, Keyword (refresh to a chosen keyword), or Leave. Refresh and Keyword can have a max count and a minimum cost left after refreshing (250 by default, 0 to ignore). With no matching case the bot leaves the shop. Cases apply to every stage.</p>
           </section>
           <section>
-            <h4 class="font-semibold mb-1">Loadout</h4>
-            <ul class="list-disc pl-5 flex flex-col gap-1">
-              <li><span class="font-medium">Affinity and cabinet order</span>: the starting gift picks, in order. The cabinet only allows as many picks as your graces give.</li>
-              <li><span class="font-medium">Gift search</span>: gifts to pick on the gift search screen after the cabinet, Tier 3 and under. Each slot costs <span class="inline-flex items-center gap-1 rounded-full bg-base-300 px-1.5 py-0.5 text-[10px] font-medium align-middle"><img src="/images/icons/starlight.webp" alt="Starlight" class="h-3 w-3" />starlight</span>. Leave it empty to skip gift search.</li>
-              <li><span class="font-medium">Graces</span>: starter buffs, each with two enhancement tiers. Pick the ones to select on every run; the total Starlight cost is shown.</li>
-              <li><span class="font-medium">Mounting trials</span>: from a floor onward, either avoid boosting enemy HP or take the best gift. With no rows every floor takes the best gift.</li>
-              <li><span class="font-medium">Encounter rewards</span>: from a floor onward, the order of reward types. The first one visible on screen is taken; if none is, the highest tier available.</li>
-            </ul>
+            <h4 class="font-semibold mb-1">Schedules</h4>
+            <p>Entry settings can change by floor. The + after the last tab on an entry adds a tab that applies from the floor you pick; each tab can have different Buy, Sell, Fuse and goal settings. In a tab's menu, Change at moves it to another floor and Abandon at stops the bot from pursuing or buying the gift from that floor on. Refresh has its own schedule with Add Schedule.</p>
+            <p class="mt-1">The swords button adds a separate set of tabs for specific run types (normal F1-F5, hard starting F2-F5, hard from F1, extreme planned). Other run types use the first set of tabs. To keep a gift out of some runs, abandon it in the first set and give the runs that want it their own timeline.</p>
           </section>
           <section>
-            <h4 class="font-semibold mb-1">Issues</h4>
-            <p>The badge in the corner lists problems found in the plan. Hover it for the details.</p>
+            <h4 class="font-semibold mb-1">Stages</h4>
+            <p>The bot finishes everything in the first stage, then moves to the next. + Add stage adds one below. Gifts already kept stay kept, and a gift can appear in several stages, with the later stage's settings applying once the earlier one is done. Required entries and any-tier or any-affinity entries don't carry over, and if one goes missing the bot goes back to its stage. Drag a gift onto a stage to add it there; the search's Add button uses the last stage.</p>
+            <p class="mt-1">+ Keep shopping adds a final section. Once the last stage is done, the bot keeps buying and refreshing until a refresh case leaves the shop. It buys Optional gifts from every stage plus whatever the last stage's any-tier and any-affinity Buy entries match, up to their caps.</p>
           </section>
         </div>
         <div class="modal-action mt-0">
