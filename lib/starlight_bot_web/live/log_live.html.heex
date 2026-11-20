@@ -10,6 +10,10 @@
       <input type="checkbox" class="toggle toggle-xs toggle-error" checked={@errors_only} phx-click="toggle_errors" /> errors only
     </label>
 
+    <label :if={not @embedded?} class="flex items-center gap-1.5 text-sm cursor-pointer select-none">
+      <input type="checkbox" class="toggle toggle-xs toggle-accent" checked={@failure_screenshots} phx-click="toggle_failure_screenshots" /> failure screenshots
+    </label>
+
     <form :if={not @embedded?} phx-change="select_log">
       <select name="path" class="select select-xs font-mono">
         <option value="" selected={@viewing == nil}>current session</option>

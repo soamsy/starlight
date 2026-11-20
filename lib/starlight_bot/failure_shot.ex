@@ -1,12 +1,12 @@
 defmodule StarlightBot.FailureShot do
-  alias StarlightBot.{Ctx, Data}
+  alias StarlightBot.{AppSettings, Ctx, Data}
   alias StarlightBot.Vision.Capture
 
   @retention_days 7
   @max_label_length 80
 
   def record(label, %Ctx{} = ctx, frame \\ nil) do
-    if Data.authoring?() do
+    if AppSettings.failure_screenshots?() do
       with {:ok, frame} <- frame_or_grab(frame),
            path = path(label),
            :ok <- File.mkdir_p(Path.dirname(path)),

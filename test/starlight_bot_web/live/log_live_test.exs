@@ -6,6 +6,10 @@ defmodule StarlightBotWeb.Live.LogLiveTest do
 
   @moduletag :capture_log
 
+  setup do
+    :ok = StarlightBot.TestDB.checkout()
+  end
+
   defp socket do
     %Phoenix.LiveView.Socket{
       assigns: %{__changed__: %{}, flash: %{}},
@@ -79,5 +83,19 @@ defmodule StarlightBotWeb.Live.LogLiveTest do
 
     {:noreply, socket} = LogLive.handle_info({:nav_state, %{}}, socket)
     assert socket.assigns.embedded?
+  end
+
+  test "failure screenshots toggle persists the setting" do
+    {:ok, socket} = LogLive.mount(%{}, %{}, socket())
+    refute socket.assigns.failure_screenshots
+    refute StarlightBot.AppSettings.failure_screenshots?()
+
+    {:noreply, socket} = LogLive.handle_event("toggle_failure_screenshots", %{}, socket)
+    assert socket.assigns.failure_screenshots
+    assert StarlightBot.AppSettings.failure_screenshots?()
+
+    {:noreply, socket} = LogLive.handle_event("toggle_failure_screenshots", %{}, socket)
+    refute socket.assigns.failure_screenshots
+    refute StarlightBot.AppSettings.failure_screenshots?()
   end
 end

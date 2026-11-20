@@ -1,6 +1,6 @@
 defmodule StarlightBotWeb.Live.LogLive do
   use StarlightBotWeb, :live_view
-  alias StarlightBot.LogStore
+  alias StarlightBot.{AppSettings, LogStore}
   alias StarlightBot.Navigation.MachineStatus
 
   @machine_refresh_ms 500
@@ -34,6 +34,7 @@ defmodule StarlightBotWeb.Live.LogLive do
      |> assign(:oldest_seq, nil)
      |> assign(:show_steps, false)
      |> assign(:errors_only, false)
+     |> assign(:failure_screenshots, AppSettings.failure_screenshots?())
      |> assign(:machine_filter, nil)
      |> assign(:machine_filter_label, nil)}
   end
@@ -51,6 +52,12 @@ defmodule StarlightBotWeb.Live.LogLive do
   def handle_event("toggle_steps", _, socket), do: {:noreply, update(socket, :show_steps, &(not &1))}
 
   def handle_event("toggle_errors", _, socket), do: {:noreply, update(socket, :errors_only, &(not &1))}
+
+  def handle_event("toggle_failure_screenshots", _, socket) do
+    enabled? = not socket.assigns.failure_screenshots
+    AppSettings.put_failure_screenshots(enabled?)
+    {:noreply, assign(socket, :failure_screenshots, enabled?)}
+  end
 
   def handle_event("filter_machine", %{"pid" => pid_text}, socket) do
     case Enum.find(socket.assigns.machines, &(pid_text(&1.pid) == pid_text)) do

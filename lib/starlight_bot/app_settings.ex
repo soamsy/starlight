@@ -65,6 +65,10 @@ defmodule StarlightBot.AppSettings do
 
   def put_gift_scan_debug(enabled?) when is_boolean(enabled?), do: put("gift_scan_debug", to_string(enabled?))
 
+  def failure_screenshots?, do: Repo.one(from_key("failure_screenshots")) == "true"
+
+  def put_failure_screenshots(enabled?) when is_boolean(enabled?), do: put("failure_screenshots", to_string(enabled?))
+
   @cursor_speed_range {0.2, 2.0}
   @hesitation_range {0.5, 2.0}
 
