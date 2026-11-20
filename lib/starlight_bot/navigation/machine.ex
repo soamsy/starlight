@@ -635,13 +635,13 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp expire({:await, hook}, _frame, data) do
     Ctx.log(data.ctx, :error, "await #{inspect(hook)}: timeout")
-    save_timeout_frame(hook, data.ctx)
+    FailureShot.record("await_timeout_#{inspect(hook)}", data.ctx)
     fail_with({:error, {:timeout, hook}}, data)
   end
 
   defp expire({:await_any, hooks}, _frame, data) do
     Ctx.log(data.ctx, :error, "await_any #{inspect(hooks)}: timeout")
-    save_timeout_frame(hooks, data.ctx)
+    FailureShot.record("await_any_timeout_#{inspect(hooks)}", data.ctx)
     fail_with({:error, {:timeout, hooks}}, data)
   end
 
@@ -671,7 +671,7 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp expire({:verify, screen_name, hook}, _frame, data) do
     Ctx.log(data.ctx, :error, "verification failed: #{screen_name} identity hook not found")
-    save_timeout_frame(hook, data.ctx)
+    FailureShot.record("verify_failed_#{screen_name}_#{inspect(hook)}", data.ctx)
     fail_with({:error, {:verification_failed, screen_name}}, data)
   end
 
@@ -707,7 +707,7 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp retry_gave_up(loop, attempt, data) do
     Ctx.log(data.ctx, :error, "#{retry_verb(loop.steps)} #{inspect(loop.hook)}: gave up after #{attempt} attempt(s), #{mono() - loop.started_at}ms")
-    save_timeout_frame(loop.hook, data.ctx)
+    FailureShot.record("#{retry_verb(loop.steps)}_gave_up_#{inspect(loop.hook)}", data.ctx)
     fail_with({:error, {:retry_exhausted, loop.hook}}, data)
   end
 
@@ -869,19 +869,6 @@ defmodule StarlightBot.Navigation.Machine do
 
   defp retry_verb([]), do: "wait_until"
   defp retry_verb(_steps), do: "retry_until"
-
-  defp save_timeout_frame(hook, ctx) do
-    with true <- Application.get_env(:starlight_bot, :save_timeout_frames, false),
-         {:ok, frame} <- Runner.grab_frame() do
-      stamp = NaiveDateTime.local_now() |> NaiveDateTime.to_string() |> String.replace([" ", ":", "."], "_")
-      name = hook |> inspect() |> String.replace(~r/[^A-Za-z0-9_]+/, "_") |> String.trim("_") |> String.slice(0, 80)
-      dir = Path.join(StarlightBot.Data.log_dir(), "timeouts")
-      File.mkdir_p!(dir)
-      path = Path.expand(Path.join(dir, "#{stamp}_#{name}.png"))
-      Evision.imwrite(path, frame.mat)
-      Ctx.log(ctx, :info, "saved the screen at the timeout to #{path}")
-    end
-  end
 
   defp retry_allowed?(nil), do: true
   defp retry_allowed?(retry_if), do: elem(hook_visible?(retry_if, nil), 0)

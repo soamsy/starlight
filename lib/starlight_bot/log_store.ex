@@ -106,6 +106,7 @@ defmodule StarlightBot.LogStore do
   @impl true
   def handle_info(:prune, state) do
     prune(state.dir, state.path)
+    StarlightBot.FailureShot.prune()
     Process.send_after(self(), :prune, @prune_every_ms)
     {:noreply, state}
   end
@@ -115,8 +116,8 @@ defmodule StarlightBot.LogStore do
   def prune(dir, current_path) do
     cutoff = System.os_time(:second) - @retention_days * 24 * 60 * 60
 
-    [Path.join(dir, "starlight_*.log"), Path.join([dir, "timeouts", "*.png"])]
-    |> Enum.flat_map(&Path.wildcard/1)
+    Path.join(dir, "starlight_*.log")
+    |> Path.wildcard()
     |> Enum.reject(&(Path.expand(&1) == current_path))
     |> Enum.filter(&older_than?(&1, cutoff))
     |> Enum.each(&File.rm/1)

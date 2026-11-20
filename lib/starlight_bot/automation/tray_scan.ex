@@ -1,6 +1,6 @@
 defmodule StarlightBot.Automation.TrayScan do
   alias StarlightBot.Automation.RunMemory
-  alias StarlightBot.{BattlePlans, Ctx, SinnerProfiles}
+  alias StarlightBot.{BattlePlans, Ctx, FailureShot, SinnerProfiles}
   alias StarlightBot.Vision.{SinnerLocator, SkillTray}
 
   defstruct frame: nil, candidates: [], claims: [], defense: nil
@@ -67,18 +67,7 @@ defmodule StarlightBot.Automation.TrayScan do
       end
     end
 
-    if Enum.any?(missing, &(hooks_for(scan, &1) != [])), do: save_miss_frame(scan.frame, missing, ctx)
-  end
-
-  defp save_miss_frame(frame, sinners, ctx) do
-    if Application.get_env(:starlight_bot, :save_timeout_frames, false) do
-      stamp = NaiveDateTime.local_now() |> NaiveDateTime.to_string() |> String.replace([" ", ":", "."], "_")
-      dir = Path.join(StarlightBot.Data.log_dir(), "timeouts")
-      File.mkdir_p!(dir)
-      path = Path.expand(Path.join(dir, "#{stamp}_tray_miss_#{Enum.join(sinners, "_")}.png"))
-      Evision.imwrite(path, frame.mat)
-      Ctx.log(ctx, :info, "saved the screen at the tray miss to #{path}")
-    end
+    if Enum.any?(missing, &(hooks_for(scan, &1) != [])), do: FailureShot.record("tray_miss_#{Enum.join(missing, "_")}", ctx, scan.frame)
   end
 
   defp scan(frame, tray, candidates, wanted, ctx) do
