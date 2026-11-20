@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
+use std::os::unix::fs::MetadataExt;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -64,10 +65,20 @@ pub fn host_display_name() -> Option<String> {
 }
 
 fn display_names() -> Vec<String> {
+    let my_uid = std::fs::metadata("/proc/self")
+        .map(|m| m.uid())
+        .ok()
+        .filter(|&uid| uid != 0);
     let mut numbers: Vec<u32> = std::fs::read_dir("/tmp/.X11-unix")
         .map(|entries| {
             entries
-                .filter_map(|e| e.ok()?.file_name().to_str()?.strip_prefix('X')?.parse().ok())
+                .filter_map(|e| {
+                    let e = e.ok()?;
+                    if my_uid.is_some_and(|uid| e.metadata().is_ok_and(|m| m.uid() != uid)) {
+                        return None;
+                    }
+                    e.file_name().to_str()?.strip_prefix('X')?.parse().ok()
+                })
                 .collect()
         })
         .unwrap_or_default();
