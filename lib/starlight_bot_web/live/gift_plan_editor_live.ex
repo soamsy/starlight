@@ -122,13 +122,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   end
 
   defp apply_url_view(socket, session) do
-    section_id = session["section"]
-
-    cond do
-      session["tab"] == "loadout" -> socket |> assign(:active_tab, :loadout) |> assign(:view_from_url, true)
-      section_id && GiftPlans.find_root(socket.assigns.plan_data, section_id) -> socket |> assign(:root_section_id, section_id) |> assign(:view_from_url, true)
-      true -> socket
-    end
+    if session["tab"] == "loadout", do: socket |> assign(:active_tab, :loadout) |> assign(:view_from_url, true), else: socket
   end
 
   def plan_locked?(%{assigns: %{pack_edit: %{}}} = socket), do: socket.assigns.pack_locked
@@ -148,15 +142,11 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   defp publish_view(%{assigns: %{pack_edit: %{}}} = socket), do: socket
 
   defp publish_view(%{parent_pid: parent, assigns: %{editing_id: id, team_id: team_id}} = socket) when is_pid(parent) and id != nil do
-    view = {socket.assigns.active_tab, socket.assigns.root_section_id}
+    tab = socket.assigns.active_tab
 
-    if Process.get(:gift_view_published) != view do
-      Process.put(:gift_view_published, view)
-
-      case view do
-        {:loadout, _} -> send(parent, {:gift_view, team_id, "loadout", nil})
-        {_, section_id} -> send(parent, {:gift_view, team_id, nil, section_id})
-      end
+    if Process.get(:gift_view_published) != tab do
+      Process.put(:gift_view_published, tab)
+      send(parent, {:gift_view, team_id, if(tab == :loadout, do: "loadout")})
     end
 
     socket
@@ -262,8 +252,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @impl true
   def handle_event("restore_view", params, %{assigns: %{editing_id: id}} = socket) when id != nil do
     tab = if params["tab"] == "loadout", do: :loadout, else: :shop
-    section_id = if GiftPlans.find_root(socket.assigns.plan_data, params["section"]), do: params["section"], else: socket.assigns.root_section_id
-    {:noreply, socket |> assign(:active_tab, tab) |> assign(:root_section_id, section_id)}
+    {:noreply, assign(socket, :active_tab, tab)}
   end
 
   @impl true
