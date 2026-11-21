@@ -44,21 +44,30 @@
     <% status = window_status(@game_window_rect) %>
     <% busy = @game_window_busy %>
     <% db_problems = @db_problems %>
+    <% input_error = @input_error %>
+    <% healthy = db_problems == [] and input_error == nil %>
     <details id="window-status-menu" phx-hook="FloatingDropdown" phx-mounted={Phoenix.LiveView.JS.ignore_attributes(["open"])} class="dropdown dropdown-end">
       <summary class="btn btn-ghost btn-xs lg:btn-sm gap-0 overflow-hidden p-0">
         <span
           class={[
             "flex size-6 lg:size-8 items-center justify-center",
             db_problems != [] && "bg-error text-error-content",
-            db_problems == [] && status == :exact && "bg-success text-success-content",
-            db_problems == [] && status == :scaled && "bg-warning text-warning-content",
-            db_problems == [] && status == :bad_aspect && "bg-error text-error-content animate-pulse",
-            db_problems == [] && status == :missing && "bg-neutral text-neutral-content"
+            db_problems == [] && input_error != nil && "bg-error text-error-content",
+            healthy && status == :exact && "bg-success text-success-content",
+            healthy && status == :scaled && "bg-warning text-warning-content",
+            healthy && status == :bad_aspect && "bg-error text-error-content animate-pulse",
+            healthy && status == :missing && "bg-neutral text-neutral-content"
           ]}
-          title={if(db_problems != [], do: "A data file looks damaged", else: window_status_title(status))}>
+          title={cond do
+            db_problems != [] -> "A data file looks damaged"
+            input_error != nil -> "Mouse and keyboard control is not working"
+            true -> window_status_title(status)
+          end}>
           <%= cond do %>
             <% db_problems != [] -> %>
               <.icon name="lucide-database-zap" class="size-4 lg:size-5" />
+            <% input_error != nil -> %>
+              <.icon name="lucide-mouse-off" class="size-4 lg:size-5" />
             <% busy -> %>
               <span class="loading loading-spinner loading-xs"></span>
             <% status == :exact -> %>
@@ -92,11 +101,24 @@
       <div popover="manual" class={[
         "dropdown-content z-50 w-72 rounded-lg border bg-base-100 p-3 shadow-lg text-xs",
         db_problems != [] && "border-error",
-        db_problems == [] && status == :exact && "border-success",
-        db_problems == [] && status == :scaled && "border-warning",
-        db_problems == [] && status == :bad_aspect && "border-error",
-        db_problems == [] && status == :missing && "border-base-300"
+        db_problems == [] && input_error != nil && "border-error",
+        healthy && status == :exact && "border-success",
+        healthy && status == :scaled && "border-warning",
+        healthy && status == :bad_aspect && "border-error",
+        healthy && status == :missing && "border-base-300"
       ]}>
+        <div :if={input_error != nil} class="mb-3 rounded border border-error/50 bg-error/10 p-2">
+          <div class="font-semibold text-error">
+            {if input_error == :portal_denied, do: "Mouse and keyboard permission was denied", else: "Mouse and keyboard control is not working"}
+          </div>
+          <div class="mt-1 text-base-content/70">
+            <%= if input_error == :portal_denied do %>
+              Runs cannot click or type without it. Restart the app and approve the permission dialog when it appears.
+            <% else %>
+              Runs cannot click or type. Open the Linux Checks page to find out why, then restart the app.
+            <% end %>
+          </div>
+        </div>
         <div :for={problem <- db_problems} class="mb-3 rounded border border-error/50 bg-error/10 p-2">
           <div class="font-semibold text-error">{problem.label} file looks damaged</div>
           <div class="mt-1 text-base-content/70">

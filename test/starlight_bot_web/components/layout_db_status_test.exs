@@ -40,7 +40,8 @@ defmodule StarlightBotWeb.LayoutDbStatusTest do
       cursor_speed: 1.0,
       hesitation_mult: 1.0,
       settings_open: false,
-      db_problems: db_problems
+      db_problems: db_problems,
+      input_error: nil
     }
   end
 

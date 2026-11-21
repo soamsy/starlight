@@ -49,6 +49,7 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:game_window_rect, nil)
       |> assign(:game_window_busy, nil)
       |> assign(:db_problems, DbSafety.problems())
+      |> assign(:input_error, StarlightBot.Input.Mouse.init_error())
       |> assign(:run_live, false)
       |> assign(:run_paused, false)
       |> assign(:run_phase, :idle)

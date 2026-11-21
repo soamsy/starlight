@@ -7,6 +7,7 @@ rustler::atoms! {
     window_not_found,
     eis_not_available,
     eis_connect_failed,
+    portal_denied,
     eis_handshake_failed,
     eis_no_device,
     capture_failed,
@@ -30,6 +31,10 @@ pub enum NativeError {
     #[cfg(target_os = "linux")]
     #[error("EIS connection failed: {0}")]
     EisConnectFailed(String),
+
+    #[cfg(target_os = "linux")]
+    #[error("input permission denied: {0}")]
+    PortalDenied(String),
 
     #[cfg(target_os = "linux")]
     #[error("EIS handshake failed: {0}")]
@@ -73,6 +78,8 @@ impl NativeError {
             Self::EisNotAvailable => eis_not_available(),
             #[cfg(target_os = "linux")]
             Self::EisConnectFailed(_) => eis_connect_failed(),
+            #[cfg(target_os = "linux")]
+            Self::PortalDenied(_) => portal_denied(),
             #[cfg(target_os = "linux")]
             Self::EisHandshakeFailed(_) => eis_handshake_failed(),
             #[cfg(target_os = "linux")]

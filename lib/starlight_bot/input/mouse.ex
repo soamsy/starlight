@@ -86,14 +86,18 @@ defmodule StarlightBot.Input.Mouse do
     GenServer.cast(__MODULE__, :release_all)
   end
 
+  def init_error, do: :persistent_term.get({__MODULE__, :init_error}, nil)
+
   @impl true
   def init(_opts) do
     Logger.info("Input.Mouse starting — initializing input", module: __MODULE__)
 
     case Native.init_input(Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany"), StarlightBot.Data.portal_token_path()) do
       :ok ->
+        :persistent_term.erase({__MODULE__, :init_error})
         Logger.info("Input device ready (#{Native.input_backend()})", module: __MODULE__)
       {:error, reason} ->
+        :persistent_term.put({__MODULE__, :init_error}, reason)
         Logger.error(
           "Input initialization failed: #{inspect(reason)}. " <>
           "Neither libei (KWin EIS, RemoteDesktop portal) nor the Wayland virtual pointer and keyboard is available; run the Linux Checks page. " <>

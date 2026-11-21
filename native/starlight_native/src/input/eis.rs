@@ -237,7 +237,7 @@ pub mod linux {
             .await
             .map_err(|e| NativeError::EisConnectFailed(format!("Start: {e}")))?
             .response()
-            .map_err(|e| NativeError::EisConnectFailed(format!("Start denied: {e}")))?;
+            .map_err(|e| NativeError::PortalDenied(e.to_string()))?;
         crate::elog!("[eis] Start approved");
 
         if let Some(token) = selected.restore_token() {
