@@ -41,7 +41,7 @@ defmodule StarlightBot.Navigation.Screens.Event do
                   every: 200,
                   tries: 20
                 )
-              ] ++ [await(:event_commence, timeout: 1000), reclick_until_gone(:event_commence, every: 60, timeout: 3000)]},
+              ] ++ [attempt([await(:event_commence, timeout: 3_000)], else: []), reclick_until_gone(:event_commence, every: 60, timeout: 3000)]},
             {:event_choices, [call(__MODULE__, :choose)]},
             {any_of(@skips), [retry_until(any_of([not_hook(any_of(@skips)) | @actionable]), [key(:space)], every: 60, timeout: @skip_timeout_ms)]},
             {:default, [key(:space), branch([{any_of(@actionable), []}], wait: 60)]}
