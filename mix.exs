@@ -105,6 +105,8 @@ defmodule StarlightBot.MixProject do
       "theme_packs.setup": ["theme_packs.import", "theme_packs.hooks"],
       "assets.build": ["tailwind starlight_bot", "esbuild starlight_bot"],
       "assets.deploy": ["tailwind starlight_bot --minify", "esbuild starlight_bot --minify"],
+      "tauri.dev": ["cmd cargo tauri dev"],
+      "tauri.build": ["cmd env NO_STRIP=true cargo tauri build"],
     ]
   end
 end
