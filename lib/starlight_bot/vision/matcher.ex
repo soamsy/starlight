@@ -365,11 +365,10 @@ defmodule StarlightBot.Vision.Matcher do
 
       :binary_thresh ->
         gray = Evision.cvtColor(image_mat, @color_bgr2gray)
-        tmpl_gray = Evision.cvtColor(tmpl_mat, @color_bgr2gray)
         {_, bin_img} = Evision.threshold(gray, 127, 255, @thresh_binary)
-        {_, bin_tmpl} = Evision.threshold(tmpl_gray, 127, 255, @thresh_binary)
+        {_, bin_tmpl} = Evision.threshold(tmpl_gray_mat, 127, 255, @thresh_binary)
         result = match_template(bin_img, bin_tmpl, @tm_ccorr_normed, mask_mat)
-        extract_matches(result, tmpl_gray, confidence, mode)
+        extract_matches(result, tmpl_gray_mat, confidence, mode)
 
       method when method in @feature_methods ->
         feature_matches(image_mat, keypoints, descriptors, tmpl_gray_mat, method, confidence)
@@ -626,9 +625,8 @@ defmodule StarlightBot.Vision.Matcher do
 
         :binary_thresh ->
           gray = Evision.cvtColor(image_mat, @color_bgr2gray)
-          tg = Evision.cvtColor(tmpl, @color_bgr2gray)
           {_, bin_img} = Evision.threshold(gray, 127, 255, @thresh_binary)
-          {_, bin_tmpl} = Evision.threshold(tg, 127, 255, @thresh_binary)
+          {_, bin_tmpl} = Evision.threshold(tmpl_gray, 127, 255, @thresh_binary)
           match_template(bin_img, bin_tmpl, @tm_ccorr_normed, mask_mat)
 
         _ ->

@@ -2,7 +2,7 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   use StarlightBotWeb, :live_view
 
   require Logger
-  alias StarlightBot.{Hooks, Vision.Capture, Vision.FrameHandoff, Vision.FrameHistory, Vision.HookRegistry, Vision.Matcher}
+  alias StarlightBot.{Hooks, Vision.Capture, Vision.FrameHandoff, Vision.FrameHistory, Vision.Matcher}
 
   @hooks_page 100
 
@@ -1171,8 +1171,10 @@ defmodule StarlightBotWeb.Live.HookEditorLive do
   defp assign_template(socket, nil), do: assign(socket, :template_b64, nil)
 
   defp assign_template(socket, hook_atom) do
-    with {:ok, hook} <- HookRegistry.find(hook_atom),
-         {:ok, jpeg} <- encode_jpeg(hook.mat) do
+    with path when is_binary(path) <- Hooks.image_path(Atom.to_string(hook_atom)),
+         true <- File.exists?(path),
+         %Evision.Mat{} = mat <- Evision.imread(path),
+         {:ok, jpeg} <- encode_jpeg(mat) do
       assign(socket, :template_b64, Base.encode64(jpeg))
     else
       _ -> assign(socket, :template_b64, nil)

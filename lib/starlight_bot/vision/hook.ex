@@ -4,7 +4,7 @@ defmodule StarlightBot.Vision.Hook do
   @enforce_keys [:name, :mat, :gray_mat, :method, :confidence]
   defstruct [
     :name,           # atom
-    :mat,            # Evision.Mat — BGR, loaded from images table
+    :mat,            # nil | Evision.Mat — BGR; only kept for :rgb hooks, other methods use gray_mat
     :gray_mat,       # Evision.Mat — grayscale version, precomputed at load time
     :region,         # nil | {x, y, w, h} — crop the template was captured from;
                       # also the default search crop when scan_region is nil
@@ -53,7 +53,7 @@ defmodule StarlightBot.Vision.Hook do
 
     %__MODULE__{
       name: String.to_atom(row.name),
-      mat: mat,
+      mat: if(method == :rgb, do: mat),
       gray_mat: gray_mat,
       region: decode_region(row),
       click_region: decode_click_region(row),
