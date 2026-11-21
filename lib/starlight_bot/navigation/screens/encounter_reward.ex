@@ -17,7 +17,7 @@ defmodule StarlightBot.Navigation.Screens.EncounterReward do
     transition to: :encounter_reward_over do
       [
         branch([{any_of(@ready_hooks), [sleep(@ready_settle_ms)]}], wait: @ready_wait_ms),
-        retry_until(:encounter_reward_1_of_1, [call(__MODULE__, :select_priority_gift)], timeout: @select_timeout_ms, every: @select_every_ms),
+        attempt([select_gift_step()], else: [click(:safe_corner), select_gift_step()]),
         click(:encounter_reward_confirm),
         await_reward_closed()
       ]
@@ -25,6 +25,10 @@ defmodule StarlightBot.Navigation.Screens.EncounterReward do
   end
 
   screen :encounter_reward_over, identity: nil, catch_all: true
+
+  defp select_gift_step do
+    retry_until(:encounter_reward_1_of_1, [call(__MODULE__, :select_priority_gift)], timeout: @select_timeout_ms, every: @select_every_ms)
+  end
 
   defp await_reward_closed do
     branch(
