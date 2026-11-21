@@ -116,6 +116,8 @@ defmodule StarlightBot.Vision.HookRegistry do
       {:error, :not_found}
   end
 
+  defp pixel_count(%Hook{gray_mat: nil}), do: 0
+
   defp pixel_count(%Hook{gray_mat: gray_mat, mat: mat}) do
     pixels = gray_mat |> Evision.Mat.shape() |> Tuple.to_list() |> Enum.product()
     if mat, do: pixels * 4, else: pixels

@@ -5,7 +5,7 @@ defmodule StarlightBot.Vision.Hook do
   defstruct [
     :name,           # atom
     :mat,            # nil | Evision.Mat — BGR; only kept for :rgb hooks, other methods use gray_mat
-    :gray_mat,       # Evision.Mat — grayscale version, precomputed at load time
+    :gray_mat,       # nil | Evision.Mat — grayscale version, precomputed at load time; nil for :hsv_range and :grayscale_detector, whose image is only an editor reference
     :region,         # nil | {x, y, w, h} — crop the template was captured from;
                       # also the default search crop when scan_region is nil
     :click_region,   # nil | {x, y, w, h} — target for click automation; nil = use match center
@@ -44,16 +44,13 @@ defmodule StarlightBot.Vision.Hook do
   @clahe_tile_grid_size {8, 2}
 
   def from_db_row(row) do
-    mat = Evision.imread(StarlightBot.Hooks.image_path(row))
-    gray_mat = Evision.cvtColor(mat, @color_bgr2gray)
-    mask? = truthy?(row.mask)
-    mask_mat = if(mask?, do: build_mask(gray_mat), else: nil)
     method = decode_match_method(row.match_method)
-    {keypoints, descriptors} = compute_keypoints_descriptors(method, mat, mask_mat)
+    mask? = truthy?(row.mask)
+    {mat, gray_mat, mask_mat, keypoints, descriptors} = decode_image(row, method, mask?)
 
     %__MODULE__{
       name: String.to_atom(row.name),
-      mat: if(method == :rgb, do: mat),
+      mat: mat,
       gray_mat: gray_mat,
       region: decode_region(row),
       click_region: decode_click_region(row),
@@ -70,6 +67,18 @@ defmodule StarlightBot.Vision.Hook do
       keypoints: keypoints,
       descriptors: descriptors,
     }
+  end
+
+  defp decode_image(_row, method, _mask?) when method in [:hsv_range, :grayscale_detector] do
+    {nil, nil, nil, nil, nil}
+  end
+
+  defp decode_image(row, method, mask?) do
+    mat = Evision.imread(StarlightBot.Hooks.image_path(row))
+    gray_mat = Evision.cvtColor(mat, @color_bgr2gray)
+    mask_mat = if(mask?, do: build_mask(gray_mat), else: nil)
+    {keypoints, descriptors} = compute_keypoints_descriptors(method, mat, mask_mat)
+    {if(method == :rgb, do: mat), gray_mat, mask_mat, keypoints, descriptors}
   end
 
   defp truthy?("true"), do: true
