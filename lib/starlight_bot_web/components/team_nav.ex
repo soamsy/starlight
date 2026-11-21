@@ -310,6 +310,11 @@ defmodule StarlightBotWeb.Components.TeamNav do
 
   def open_team_menu(js), do: js |> JS.push("team_nav_search_open") |> JS.focus(to: "#team-search-input")
 
+  def team_icons(%{profile_ids: [], affinity: affinity}, _profiles_by_id, _locator_thumbs) when is_binary(affinity),
+    do: [%{name: affinity, src: "/images/affinity/#{affinity}.webp"}]
+
+  def team_icons(team, profiles_by_id, locator_thumbs), do: profile_icons(team.profile_ids, profiles_by_id, locator_thumbs)
+
   def profile_icons(profile_ids, profiles_by_id, locator_thumbs) do
     for id <- profile_ids, profile = profiles_by_id[id] do
       src =
@@ -363,7 +368,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
             </span>
           <% end %>
           <span class="flex w-28 shrink-0 flex-nowrap items-center gap-1.5 overflow-hidden">
-            <img :for={icon <- profile_icons(@team.profile_ids, @nav.profiles_by_id, @nav.locator_thumbs)} src={icon.src} title={icon.name} class="h-4 w-auto shrink-0 rounded object-contain" />
+            <img :for={icon <- team_icons(@team, @nav.profiles_by_id, @nav.locator_thumbs)} src={icon.src} title={icon.name} class="h-4 w-auto shrink-0 rounded object-contain" />
             <span :if={@team.missing != []} class="badge badge-warning badge-xs shrink-0" title={"Missing: " <> Enum.map_join(@team.missing, ", ", &missing_label/1)}>!</span>
           </span>
           <%= if @nav.editing_notes_id == @team.id and editable?(@team) do %>
@@ -408,7 +413,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
           <%= if @current do %>
             <span class="text-xs font-semibold lg:text-sm"><%= @current.name %></span>
             <span class="inline-flex items-center gap-1">
-              <img :for={icon <- profile_icons(@current.profile_ids, @nav.profiles_by_id, @nav.locator_thumbs)} src={icon.src} title={icon.name} class="h-4 w-auto rounded object-contain" />
+              <img :for={icon <- team_icons(@current, @nav.profiles_by_id, @nav.locator_thumbs)} src={icon.src} title={icon.name} class="h-4 w-auto rounded object-contain" />
             </span>
             <span :if={@current.missing != []} class="badge badge-warning badge-xs" title={"Missing: " <> Enum.map_join(@current.missing, ", ", &missing_label/1)}>!</span>
           <% else %>

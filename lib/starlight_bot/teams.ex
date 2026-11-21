@@ -48,6 +48,7 @@ defmodule StarlightBot.Teams do
           notes: t.notes,
           gift_plan_id: t.gift_plan_id,
           gift_plan_name: g.name,
+          gift_plan_data: g.data,
           battle_plan_id: t.battle_plan_id,
           battle_plan_name: b.name,
           battle_plan_data: b.data,
@@ -462,6 +463,16 @@ defmodule StarlightBot.Teams do
 
   defp decorate(team) do
     {data, team} = Map.pop(team, :battle_plan_data)
+    {gift_json, team} = Map.pop(team, :gift_plan_data)
+
+    gift_data =
+      case template_data(:gift_plans, team.gift_template_id) || (gift_json && Jason.decode(gift_json)) do
+        {:ok, %{} = gift_data} -> gift_data
+        %{} = gift_data -> gift_data
+        _ -> %{}
+      end
+
+    team = Map.put(team, :affinity, if(is_binary(gift_data["affinity"]) and gift_data["affinity"] != "", do: gift_data["affinity"]))
 
     decoded =
       case template_data(:battle_plans, team.battle_template_id) || (data && Jason.decode(data)) do

@@ -58,7 +58,7 @@ defmodule StarlightBotWeb.Components.TeamSelect do
 
   defp label(assigns) do
     assigns =
-      assign(assigns, :icons, if(assigns.current, do: TeamNav.profile_icons(assigns.current.profile_ids, assigns.nav.profiles_by_id, assigns.nav.locator_thumbs), else: []))
+      assign(assigns, :icons, if(assigns.current, do: TeamNav.team_icons(assigns.current, assigns.nav.profiles_by_id, assigns.nav.locator_thumbs), else: []))
 
     ~H"""
     <%= if @current do %>
