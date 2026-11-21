@@ -2531,9 +2531,10 @@ const HookOptions = {
     const details = this.el.closest("details")
     const input = details.querySelector("input[type=hidden]")
     details.querySelector("summary").addEventListener("click", () => {
-      const source = document.getElementById("hook-select-options")
+      const source = document.getElementById(this.el.dataset.source || "hook-select-options")
       if (!source) return
       this.el.replaceChildren(...source.cloneNode(true).children)
+      if (!this.el.dataset.allowNone) this.el.querySelectorAll("[data-optional]").forEach(button => button.remove())
       this.el.querySelectorAll("button[data-value]").forEach(button => {
         const selected = button.dataset.value === input.value
         button.classList.toggle("btn-primary", selected)

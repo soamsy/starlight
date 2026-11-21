@@ -1,6 +1,7 @@
 defmodule StarlightBotWeb.Live.RunnerLive do
   use StarlightBotWeb, :live_view
   import StarlightBotWeb.Components.HookSelect, only: [hook_select: 1, hook_options: 1]
+  import StarlightBotWeb.Components.TeamSelect, only: [team_select: 1, team_options: 1]
   import StarlightBotWeb.Components.GiftPopup, only: [gift_popup: 1]
   import StarlightBotWeb.Components.WindowGate, only: [gate: 4]
   alias StarlightBot.Automation.RunMemory
@@ -898,6 +899,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   attr :index, :integer, required: true
   attr :list, :string, required: true
   attr :teams, :list, required: true
+  attr :nav, :map, required: true
   attr :locked, :boolean, required: true
   attr :live, :boolean, default: false
   attr :cycle_size, :integer, default: 1
@@ -930,11 +932,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
       <span :if={not @reserve? and @cycle_size > 1} class="text-xs text-base-content/50 w-5 text-right"><%= @index + 1 %>.</span>
       <input :if={@locked} type="hidden" name={"#{@prefix}_ids[]"} value={@pick.id} />
       <input :if={@locked} type="hidden" name={"#{@prefix}_hooks[]"} value={@pick.hook} />
-      <select name={"#{@prefix}_ids[]"} class="select select-sm select-bordered flex-1 min-w-0" disabled={@teams == [] or @locked}>
-        <%= for team <- @teams do %>
-          <option value={team.id} selected={team.id == @pick.id}><%= team.name %></option>
-        <% end %>
-      </select>
+      <.team_select id={"#{@prefix}-team-#{@index}"} name={"#{@prefix}_ids[]"} teams={@teams} selected={@pick.id} nav={@nav} disabled={@teams == [] or @locked} />
       <.hook_select id={"#{@prefix}-hook-#{@index}"} name={"#{@prefix}_hooks[]"} selected={@pick.hook} disabled={@teams == [] or @locked} />
       <span :if={@forecast} class="relative">
         <span title={"Expected starlight per run with #{@forecast.rest_bonus} rest bonus"}
@@ -1237,6 +1235,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
   attr :event, :string, required: true
   attr :picks, :list, required: true
   attr :teams, :list, required: true
+  attr :nav, :map, required: true
   attr :labels, :list, required: true
   attr :current, :integer, required: true
   attr :auto_slot, :integer, required: true
@@ -1266,10 +1265,7 @@ defmodule StarlightBotWeb.Live.RunnerLive do
       <div id={@id} phx-hook="SortableList" data-sort-event={@event} class="relative flex flex-col gap-1 flex-1 min-w-0">
         <div :for={{pick, index} <- Enum.with_index(@picks)} data-sort-id={index} class="h-8 flex items-center gap-1">
           <span data-sort-handle class="cursor-grab text-base-content/40 px-0.5" title="Drag to move this team to another day">⠿</span>
-          <select name={"#{@kind}_team_ids[]"} class="select select-sm select-bordered flex-1 min-w-0" disabled={@teams == []}>
-            <option value="" selected={pick == nil}>None selected</option>
-            <option :for={team <- @teams} value={team.id} selected={pick != nil and team.id == pick.id}>{team.name}</option>
-          </select>
+          <.team_select id={"#{@kind}-team-#{index}"} name={"#{@kind}_team_ids[]"} teams={@teams} selected={pick && pick.id} nav={@nav} allow_none disabled={@teams == []} />
           <.hook_select id={"#{@kind}-team-hook-#{index}"} name={"#{@kind}_team_hooks[]"} selected={pick && pick.hook} disabled={@teams == [] or pick == nil} />
         </div>
       </div>

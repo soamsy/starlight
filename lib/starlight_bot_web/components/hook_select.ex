@@ -34,6 +34,7 @@ defmodule StarlightBotWeb.Components.HookSelect do
   def hook_options(assigns) do
     ~H"""
     <div id="hook-select-options" hidden>
+      <div class="px-1 pb-2 text-xs font-semibold text-base-content/70">Keyword in Limbus Team Select</div>
       <div class="columns-3 gap-3">
         <div :for={{group, hooks} <- @groups} class="mb-2 break-inside-avoid">
           <div class="px-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/50"><%= group %></div>
