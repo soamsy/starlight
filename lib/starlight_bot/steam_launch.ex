@@ -11,8 +11,7 @@ defmodule StarlightBot.SteamLaunch do
     with {:ok, root} <- steam_root(),
          {:ok, libraries} <- libraries(root),
          {:ok, library, install_dir} <- find_app(libraries, app_id),
-         {:ok, tool_name} <- tool_name(root, app_id),
-         {:ok, tool_dir} <- find_tool(root, libraries, tool_name),
+         {:ok, tool_name, tool_dir} <- resolve_tool(root, libraries, app_id),
          _ = log(opts, "steam root #{root}, libraries #{Enum.join(libraries, ", ")}"),
          _ = log(opts, "app #{app_id} installed in #{library} as #{inspect(install_dir)}, compat tool #{tool_name} at #{tool_dir}"),
          {:ok, tool_manifest} <- Vdf.parse_file(Path.join(tool_dir, "toolmanifest.vdf")),
@@ -129,14 +128,29 @@ defmodule StarlightBot.SteamLaunch do
     end
   end
 
-  defp find_tool(root, libraries, name) do
+  defp resolve_tool(root, libraries, app_id) do
+    case tool_name(root, app_id) do
+      {:ok, name} ->
+        with {:ok, dir} <- find_tool(root, libraries, name), do: {:ok, name, dir}
+
+      {:error, {:no_compat_tool, _}} = error ->
+        default_tool(root, libraries) || error
+
+      error ->
+        error
+    end
+  end
+
+  defp tool_vdf_paths(root, libraries) do
     roots =
       [Path.join(root, "compatibilitytools.d") | @system_tool_dirs] ++
         Enum.map(libraries, &Path.join([&1, "steamapps", "common"]))
 
-    candidates = Enum.flat_map(roots, fn dir -> Path.wildcard(Path.join([dir, "*", "compatibilitytool.vdf"])) end)
+    Enum.flat_map(roots, fn dir -> Path.wildcard(Path.join([dir, "*", "compatibilitytool.vdf"])) end)
+  end
 
-    Enum.find_value(candidates, {:error, {:compat_tool_not_found, name}}, fn vdf_path ->
+  defp find_tool(root, libraries, name) do
+    Enum.find_value(tool_vdf_paths(root, libraries), {:error, {:compat_tool_not_found, name}}, fn vdf_path ->
       with {:ok, vdf} <- Vdf.parse_file(vdf_path),
            %{} = tool <- Vdf.get(vdf, ["compatibilitytools", "compat_tools", name]) do
         {:ok, vdf_path |> Path.dirname() |> Path.join(Map.get(tool, "install_path", ".")) |> Path.expand()}
@@ -144,6 +158,35 @@ defmodule StarlightBot.SteamLaunch do
         _ -> nil
       end
     end)
+  end
+
+  defp default_tool(root, libraries) do
+    root
+    |> tool_vdf_paths(libraries)
+    |> Enum.flat_map(fn vdf_path ->
+      with {:ok, vdf} <- Vdf.parse_file(vdf_path),
+           %{} = tools <- Vdf.get(vdf, ["compatibilitytools", "compat_tools"]) do
+        for {name, tool} <- tools, rank = valve_proton_rank(name), is_map(tool) do
+          {rank, name, vdf_path |> Path.dirname() |> Path.join(Map.get(tool, "install_path", ".")) |> Path.expand()}
+        end
+      else
+        _ -> []
+      end
+    end)
+    |> Enum.max_by(&elem(&1, 0), fn -> nil end)
+    |> case do
+      nil -> nil
+      {_rank, name, dir} -> {:ok, name, dir}
+    end
+  end
+
+  defp valve_proton_rank("proton_experimental"), do: 0
+
+  defp valve_proton_rank(name) do
+    case Regex.run(~r/^proton_(\d+)$/, name) do
+      [_, major] -> String.to_integer(major)
+      _ -> nil
+    end
   end
 
   defp runtime(libraries, tool_manifest) do
