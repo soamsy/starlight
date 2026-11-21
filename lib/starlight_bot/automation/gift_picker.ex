@@ -213,8 +213,6 @@ defmodule StarlightBot.Automation.GiftPicker do
          region when not is_nil(region) <- hook.scan_region || hook.region,
          {:ok, frame} <- Capture.grab_frame(),
          {:ok, results} <- EgoGiftDetector.detect(frame.mat, region) do
-      Enum.each(results, &log_raw_detection(&1, scan_hook, ctx))
-
       detections =
         results
         |> Enum.filter(&(&1.w * &1.h >= @min_item_area_px))
@@ -227,20 +225,6 @@ defmodule StarlightBot.Automation.GiftPicker do
         {nil, []}
     end
   end
-
-  defp log_raw_detection(result, scan_hook, ctx) do
-    top = with [top | _] <- result.topk, do: "#{top.name} #{pct(top.confidence)}", else: (_ -> "none")
-    kept = if result.w * result.h >= @min_item_area_px and result.gift_id, do: "kept", else: "dropped"
-
-    Ctx.log(
-      ctx,
-      :info,
-      "gift picker raw #{scan_hook}: x=#{result.x} y=#{result.y} #{result.w}x#{result.h} (#{result.w * result.h}px) " <>
-        "det=#{pct(result.detector_confidence)} top=#{top} #{kept}"
-    )
-  end
-
-  defp pct(v), do: "#{round(v * 100)}%"
 
   defp same_slot?(%{center: {sx, sy}}, item) do
     {cx, cy} = center(item)
