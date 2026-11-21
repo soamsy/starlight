@@ -7,6 +7,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   @hold_start_jitter_ms 500
   @await_playing_tries 5
   @await_playing_every_ms 1_500
+  @turn_opener_gone_ms 5_000
 
   screen :battle, identity: any_of([:battle_settings, :battle_turn]) do
     transition to: :battle_turn_or_over do
@@ -116,7 +117,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
     [
       {:battle_turn,
         [
-          branch([{:turn_opener, [wait_until(not_hook(:turn_opener), timeout: 500)]}, {:default, []}], wait: 300),
+          branch([{:turn_opener, [attempt([wait_until(not_hook(:turn_opener), timeout: @turn_opener_gone_ms)], else: [log(:info, "turn opener still showing, continuing anyway")])]}, {:default, []}], wait: 300),
           sleep(200)
         ]},
       {:loading_stage_1, loading() ++ after_loading()},
