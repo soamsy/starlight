@@ -621,6 +621,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
       screen == :back_available ->
         [goto(:back_available, :any?, then: resume_after(run, run_state))]
 
+      screen == :dungeon_progress ->
+        [goto(:dungeon_progress, :dungeon_graph, then: resume_at(run, run_state))]
+
       true ->
         [branch([{:exploration_reward, exploration_steps(run, run_state, config)}, default: [call(__MODULE__, :unhandled, [run, screen])]], wait: @settle_check_ms)]
     end
