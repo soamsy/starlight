@@ -161,6 +161,37 @@ defmodule StarlightBot.SteamLaunch do
   end
 
   defp default_tool(root, libraries) do
+    (vdf_tools(root, libraries) ++ builtin_tools(libraries))
+    |> Enum.max_by(&elem(&1, 0), fn -> nil end)
+    |> case do
+      nil -> nil
+      {_rank, name, dir} -> {:ok, name, dir}
+    end
+  end
+
+  defp builtin_tools(libraries) do
+    libraries
+    |> Enum.flat_map(&Path.wildcard(Path.join([&1, "steamapps", "common", "Proton*", "toolmanifest.vdf"])))
+    |> Enum.flat_map(fn manifest ->
+      dir = Path.dirname(manifest)
+
+      case builtin_rank(Path.basename(dir)) do
+        nil -> []
+        rank -> [{rank, Path.basename(dir), dir}]
+      end
+    end)
+  end
+
+  defp builtin_rank("Proton - Experimental"), do: 1_000_000
+
+  defp builtin_rank(dir) do
+    case Regex.run(~r/^Proton (\d+)\.\d+$/, dir) do
+      [_, major] -> String.to_integer(major)
+      _ -> nil
+    end
+  end
+
+  defp vdf_tools(root, libraries) do
     root
     |> tool_vdf_paths(libraries)
     |> Enum.flat_map(fn vdf_path ->
@@ -173,14 +204,9 @@ defmodule StarlightBot.SteamLaunch do
         _ -> []
       end
     end)
-    |> Enum.max_by(&elem(&1, 0), fn -> nil end)
-    |> case do
-      nil -> nil
-      {_rank, name, dir} -> {:ok, name, dir}
-    end
   end
 
-  defp valve_proton_rank("proton_experimental"), do: 0
+  defp valve_proton_rank("proton_experimental"), do: 1_000_000
 
   defp valve_proton_rank(name) do
     case Regex.run(~r/^proton_(\d+)$/, name) do
