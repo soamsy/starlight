@@ -22,7 +22,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @overclock_timeout_ms 3_000
   @overclock_release_settle_ms 50
   @ego_close_timeout_ms 1_500
-  @ego_reclick_wait_ms 100
+  @ego_reclick_wait_ms 1000
   @target_tries 2
   @bad_target_radius_px 50
   @drop_ready_timeout_ms 1_000
