@@ -89,7 +89,13 @@ defmodule StarlightBotWeb.Components.PlanPicker do
   end
 
   defp shown_data(%{assigns: %{editing_id: nil}}, _table), do: nil
-  defp shown_data(socket, table), do: shown_plan(socket, table).data
+
+  defp shown_data(socket, table) do
+    case shown_plan(socket, table) do
+      %{data: data} -> data
+      _ -> nil
+    end
+  end
 
   defp status_of(_shown, _table, nil), do: :unknown
   defp status_of(nil, _table, _text), do: :invalid

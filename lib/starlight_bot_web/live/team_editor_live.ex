@@ -18,6 +18,8 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
      |> assign(:pack_plans, Plans.list(:pack_plans))
      |> assign(:theme_packs, ThemePacks.list_theme_packs())
      |> assign(:editing_id, nil)
+     |> assign(:editing_template, false)
+     |> assign(:editor_rev, 0)
      |> assign(:selected_ids, blank_selected_ids())
      |> assign(:budget_inputs, blank_budget_inputs(nil))
      |> assign(:info_pane, nil)
@@ -85,6 +87,9 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   end
 
   @impl true
+  def handle_info(:remount_editors, socket), do: {:noreply, socket |> update(:editor_rev, &(&1 + 1)) |> assign(:panes_seen, MapSet.new()) |> see_pane()}
+
+  @impl true
   def handle_info(:team_plans_changed, socket) do
     socket =
       socket
@@ -93,7 +98,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
 
     case socket.assigns.editing_id && Teams.get_team(socket.assigns.editing_id) do
       nil -> {:noreply, socket}
-      team -> {:noreply, assign(socket, :selected_ids, TeamBudget.selected_ids(team))}
+      team -> {:noreply, socket |> assign(:editing_template, team.template) |> assign(:selected_ids, TeamBudget.selected_ids(team))}
     end
   end
 
@@ -135,6 +140,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
       team ->
         socket
         |> assign(:editing_id, team.id)
+        |> assign(:editing_template, team.template)
         |> assign(:panes_seen, MapSet.new())
         |> assign(:selected_ids, TeamBudget.selected_ids(team))
         |> assign(:budget_inputs, blank_budget_inputs(team, socket.assigns.budget_inputs.cycle_runs))
@@ -153,6 +159,7 @@ defmodule StarlightBotWeb.Live.TeamEditorLive do
   defp reset_editor(socket) do
     socket
     |> assign(:editing_id, nil)
+    |> assign(:editing_template, false)
     |> assign(:selected_ids, blank_selected_ids())
   end
 

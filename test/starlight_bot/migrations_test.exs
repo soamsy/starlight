@@ -5,7 +5,7 @@ defmodule StarlightBot.MigrationsTest do
     StarlightBot.Repo =>
       ~w[app_settings battle_plans fusion_route_user_templates gift_plans gift_starter_packs hook_overrides pack_plans runner_forms scheduler_settings sinner_profiles teams],
     StarlightBot.BaseRepo =>
-      ~w[ego_gifts fusion_route_templates gift_starter_packs hooks plan_templates sinner_profiles team_templates theme_pack_gifts theme_packs],
+      ~w[ego_gifts fusion_route_templates gift_starter_packs hooks plan_templates sinner_profiles teams theme_pack_gifts theme_packs],
     StarlightBot.RunsRepo => ~w[daily_progress run_events run_logs]
   }
 

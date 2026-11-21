@@ -145,7 +145,7 @@
               <.lineup_list data={@data} lineup_id={@lineup_id} renaming_lineup_id={@renaming_lineup_id} reorder_rev={@reorder_rev} />
             <% end %>
           </div>
-            <div class="order-first ml-auto flex shrink-0 items-center gap-3 lg:absolute lg:right-0 lg:top-0 lg:z-10 lg:order-none">
+            <div class="order-first ml-auto flex shrink-0 items-center gap-3 lg:absolute lg:right-0 lg:top-0 lg:z-30 lg:order-none">
             <label class="flex items-center gap-1.5 cursor-pointer" title="Show the floors 6-15 columns">
               <input type="checkbox" checked={@extreme?} phx-click="toggle_extreme" class="toggle toggle-sm toggle-primary" />
               <span class={"badge badge-sm font-bold " <> if(@extreme?, do: "badge-primary", else: "badge-ghost text-base-content/50")}>F6-F15</span>
@@ -160,7 +160,7 @@
             </div>
           </div>
 
-          <.read_only_banner container="battle-view-memory" allowed={read_only_events()} template_id={@template_id} templates={@templates} label="battle plan" />
+          <.read_only_banner container="battle-view-memory" allowed={read_only_events()} template_id={@template_id} templates={@templates} label="battle plan" locked_label={team_locked_label(@team_locked)} info_label={team_template_label(@team_template and not @team_locked)} />
 
           <% lineup_issues = StarlightBot.BattlePlans.lineup_issues(@data) %>
           <div :if={lineup_issues != []} role="alert" class="alert alert-warning alert-soft py-1.5 px-3 text-xs">

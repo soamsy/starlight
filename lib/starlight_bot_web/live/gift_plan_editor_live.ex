@@ -96,6 +96,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:team_id, team && team.id)
       |> assign(:paste_status, :unknown)
       |> assign(:template_id, nil)
+      |> assign(:team_locked, !!(team && Teams.locked?(team)))
+      |> assign(:team_template, !!(team && team.template))
       |> read_only_guard(@read_only_events, &plan_locked?/1)
       |> pack_entry_guard()
       |> PlanHistory.attach(:plan_data, persist: &persist_plan/1, reconcile: &reconcile_selection/1)

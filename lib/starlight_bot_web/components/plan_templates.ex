@@ -10,12 +10,27 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
   @selectors ~w(phx-click phx-change phx-submit phx-keyup phx-keydown phx-blur)
   @controls ~w(button input select textarea [phx-click] [phx-change] [draggable=true] [phx-hook=SortableList]>* [phx-hook=PriorityRightClick] [phx-hook=DblClickEvent] [phx-hook=RightClickEvent] [phx-hook=GiftDragSource] [phx-hook=GiftDropZone])
 
-  def template_locked?(socket), do: is_integer(socket.assigns[:template_id]) and not PlanTemplates.writable?()
+  def template_locked?(socket), do: team_locked?(socket) or (is_integer(socket.assigns[:template_id]) and not PlanTemplates.writable?())
+
+  def team_locked?(socket), do: socket.assigns[:team_locked] == true
+
+  @template_team_blocked ~w(new_plan template_new template_plan template_plan_new template_plan_edit template_plan_rename template_plan_delete template_customize)
 
   def blocked?(socket, event, allowed, locked? \\ &template_locked?/1) do
-    locked?.(socket) and event not in allowed and not String.starts_with?(event, "template_")
+    (locked?.(socket) and event not in allowed and (team_locked?(socket) or not String.starts_with?(event, "template_"))) or
+      (socket.assigns[:team_template] == true and event in @template_team_blocked)
   end
 
+  @team_template_label "Editing the template team in base.db. Changes apply to everyone who creates a team from it."
+  def team_template_label(true), do: @team_template_label
+  def team_template_label(_), do: nil
+
+  @team_locked_label "This team is a template. Its plans are read-only. Use Create From in the team menu to get an editable copy."
+  def team_locked_label(true), do: @team_locked_label
+  def team_locked_label(_), do: nil
+
+  defp read_only_message(%{assigns: %{team_locked: true}}), do: @team_locked_label
+  defp read_only_message(%{assigns: %{team_template: true}}), do: "Template teams only use shared plan templates. Choose one from the Plans menu."
   defp read_only_message(_socket), do: "This team is using a template, which is read-only. Pick your own plan in the Plans menu to edit."
 
   def read_only_guard(socket, allowed, locked? \\ &template_locked?/1) do
@@ -38,6 +53,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
   attr :templates, :list, required: true
   attr :label, :string, required: true
   attr :locked_label, :string, default: nil
+  attr :info_label, :string, default: nil
 
   def read_only_banner(assigns) do
     {disabled, enabled} = read_only_selectors(assigns.container, assigns.allowed)
@@ -58,6 +74,10 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
       <span :if={@locked} class="flex-1">Read-only template <span class="font-bold"><%= @template && @template.name %></span>. Editing is locked.</span>
       <button :if={@locked} type="button" phx-click="template_customize" class="btn btn-sm btn-neutral"
               title={"Copy this template into a new #{@label} of your own that you can edit"}>Customize a copy</button>
+    </div>
+    <div :if={@info_label && not @active} role="alert" class="alert alert-info sticky top-0 z-20 py-2 px-4 text-sm flex items-center gap-3 shadow-md">
+      <.icon name="lucide-info" class="size-5 shrink-0" />
+      <span class="flex-1"><%= @info_label %></span>
     </div>
     <style :if={@active}>
       <%= Phoenix.HTML.raw(read_only_css(@container, @disabled, @enabled)) %>
@@ -95,7 +115,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
 
   def template_picker(assigns) do
     ~H"""
-    <div id={@id} phx-hook="PlanClipboard" class="flex items-center gap-1">
+    <div id={@id} phx-hook="PlanClipboard" class="relative z-30 flex items-center gap-1">
       <PlanHistory.buttons can_undo={@can_undo} can_redo={@can_redo} locked={not is_nil(@selected) and not PlanTemplates.writable?()} />
       <button type="button" phx-click="copy_plan" class="btn btn-sm btn-square btn-outline" title={"Copy this #{@label} to the clipboard as JSON"}>
         <.icon name="lucide-copy" class="size-4" />
@@ -132,7 +152,7 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
                       class={["btn btn-2xs btn-ghost shrink-0 px-1 opacity-0 focus-visible:opacity-100 group-hover:opacity-100", @selected == template.id && "opacity-100"]}><.icon name="lucide-pencil" class="size-3" /></button>
               <span :if={@selected == template.id} class="text-xs text-primary shrink-0">in use</span>
               <button :if={PlanTemplates.writable?()} type="button" phx-click="template_delete" phx-value-id={template.id} class="btn btn-xs btn-ghost text-error"
-                      data-confirm={"Delete the template '#{template.name}'?"}>Del</button>
+                      data-confirm={delete_confirm(template)}>Del</button>
             </div>
             <div :if={@templates == []} class="px-2 py-3 text-center text-xs text-base-content/40">No <%= @label %> templates yet.</div>
           </div>
@@ -165,6 +185,12 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
       </div>
     </div>
     """
+  end
+
+  defp delete_confirm(%{name: name, teams: 0}), do: "Delete the template '#{name}'? No teams use it."
+
+  defp delete_confirm(%{name: name, teams: teams, template_teams: template_teams}) do
+    "Delete the template '#{name}'? #{teams} #{if teams == 1, do: "team uses", else: "teams use"} it (#{template_teams} template #{if template_teams == 1, do: "team", else: "teams"}). They will lose this plan."
   end
 
   defp paste_title(_status, label, true), do: "Choose your own #{label} in the Plans menu to paste into it"
@@ -214,9 +240,11 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
     PlanTemplates.delete(id)
     socket = refresh(socket, table)
 
-    if socket.assigns[:template_id] == id,
-      do: use_plan(socket, table, field, socket.assigns.editing_id, load_plan),
-      else: socket
+    cond do
+      socket.assigns[:template_id] != id -> socket
+      Teams.template?(socket.assigns.team_id) -> detach_template(socket, field)
+      true -> use_plan(socket, table, field, socket.assigns.editing_id, load_plan)
+    end
   end
 
   def template_event(%{assigns: %{team_id: team_id, editing_id: plan_id}} = socket, "select", %{"id" => id}, table, field, load_plan) when is_integer(team_id) and is_integer(plan_id) do
@@ -310,6 +338,12 @@ defmodule StarlightBotWeb.Components.PlanTemplates do
     else
       _ -> flash_error(socket, "A team keeps at least one plan.")
     end
+  end
+
+  defp detach_template(%{assigns: %{team_id: team_id}} = socket, field) do
+    {:ok, _} = Teams.set_template(team_id, field, nil)
+    if is_pid(socket.parent_pid), do: send(socket.parent_pid, :remount_editors)
+    socket
   end
 
   defp use_plan(%{assigns: %{team_id: team_id}} = socket, table, field, plan_id, load_plan) do

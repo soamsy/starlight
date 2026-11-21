@@ -28,6 +28,8 @@ defmodule StarlightBotWeb.Live.BattlePlanEditorLive do
       |> assign(:paste_status, :unknown)
       |> assign(:show_help, false)
       |> assign(:template_id, nil)
+      |> assign(:team_locked, !!(team && Teams.locked?(team)))
+      |> assign(:team_template, !!(team && team.template))
       |> read_only_guard(@read_only_events)
       |> PlanHistory.attach(:data, persist: &persist/1, reconcile: &reconcile_selection/1)
       |> assign_templates(:battle_plans)

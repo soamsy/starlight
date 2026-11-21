@@ -11,14 +11,35 @@ defmodule StarlightBot.PlanTemplates do
     Repo.all(from t in "plan_templates", where: t.kind == ^Atom.to_string(kind), order_by: [asc: t.name], select: %{id: t.id, name: t.name, data: t.data})
     |> then(fn rows ->
       context = PlanIcons.context(kind)
+      users = usage(StarlightBot.Repo, kind)
+      templates = usage(Repo, kind)
 
       Enum.map(rows, fn %{data: json} = row ->
         data = json && Jason.decode!(json)
-        %{id: row.id, name: row.name, count: PlanCounts.count(kind, data), icons: PlanIcons.icons(kind, data || %{}, context)}
+        user_teams = Map.get(users, row.id, 0)
+        template_teams = Map.get(templates, row.id, 0)
+
+        %{
+          id: row.id,
+          name: row.name,
+          count: PlanCounts.count(kind, data),
+          icons: PlanIcons.icons(kind, data || %{}, context),
+          teams: user_teams + template_teams,
+          template_teams: template_teams
+        }
       end)
     end)
   rescue
     _ -> []
+  end
+
+  defp usage(repo, kind) do
+    column = String.to_existing_atom(String.replace_suffix(Atom.to_string(kind), "_plans", "_template_id"))
+
+    repo.all(from t in "teams", where: not is_nil(field(t, ^column)), group_by: field(t, ^column), select: {field(t, ^column), count(t.id)})
+    |> Map.new()
+  rescue
+    _ -> %{}
   end
 
   def get(id) when is_integer(id) do
@@ -28,8 +49,8 @@ defmodule StarlightBot.PlanTemplates do
     end
   end
 
-  def create(kind, data) when kind in @kinds do
-    if writable?(), do: insert(kind, new_name(kind), data), else: {:error, :read_only}
+  def create(kind, data, name \\ "New template") when kind in @kinds do
+    if writable?(), do: insert(kind, new_name(kind, name), data), else: {:error, :read_only}
   end
 
   def rename(id, name) when is_integer(id) and is_binary(name) and name != "" do
@@ -70,10 +91,10 @@ defmodule StarlightBot.PlanTemplates do
       if e.message =~ "UNIQUE", do: {:error, :name_taken}, else: reraise(e, __STACKTRACE__)
   end
 
-  defp new_name(kind) do
+  defp new_name(kind, base) do
     existing = Repo.all(from t in "plan_templates", where: t.kind == ^Atom.to_string(kind), select: t.name) |> MapSet.new()
 
-    Stream.concat(["New template"], Stream.iterate(2, &(&1 + 1)) |> Stream.map(&"New template #{&1}"))
+    Stream.concat([base], Stream.iterate(2, &(&1 + 1)) |> Stream.map(&"#{base} #{&1}"))
     |> Enum.find(&(not MapSet.member?(existing, &1)))
   end
 end

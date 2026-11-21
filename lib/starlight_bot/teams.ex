@@ -1,7 +1,8 @@
 defmodule StarlightBot.Teams do
   require Logger
   import Ecto.Query
-  alias StarlightBot.{BattlePlans, PlanTemplates, Plans, Repo, TeamTemplates}
+  alias StarlightBot.{BattlePlans, Data, PlanTemplates, Plans, Repo}
+  alias StarlightBot.BaseRepo
 
   @team_groups [
     {"Status", "affinity", ~w(burn bleed tremor rupture sinking poise charge ammo discard)},
@@ -30,7 +31,7 @@ defmodule StarlightBot.Teams do
   def all_sinners, do: @all_sinners
   def team_types, do: @team_types
 
-  @doc "List all teams, with joined-in plan names and a `:missing` field list for incomplete configs."
+  @doc "List the user's own teams (never the shipped templates), with joined-in plan names and a `:missing` field list for incomplete configs."
   def list_teams do
     Repo.all(
       from t in "teams",
@@ -62,7 +63,54 @@ defmodule StarlightBot.Teams do
     _ -> []
   end
 
+  @doc "The user's own teams followed by the shipped template teams, which carry negative ids."
+  def list_all_teams, do: list_teams() ++ list_templates()
+
+  def list_templates do
+    BaseRepo.all(from t in "teams", order_by: [asc: t.name], select: %{id: t.id})
+    |> Enum.map(&template_team(&1.id))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(&(&1 |> Map.put(:battle_plan_data, nil) |> decorate() |> Map.put(:template, true)))
+  rescue
+    _ -> []
+  end
+
+  defp template_team(base_id) do
+    BaseRepo.one(
+      from t in "teams",
+        where: t.id == ^base_id,
+        select: %{
+          id: t.id,
+          name: t.name,
+          notes: t.notes,
+          gift_template_id: t.gift_template_id,
+          battle_template_id: t.battle_template_id,
+          pack_template_id: t.pack_template_id
+        }
+    )
+    |> case do
+      nil ->
+        nil
+
+      row ->
+        row
+        |> Map.put(:id, -row.id)
+        |> Map.put(:gift_plan_id, row.gift_template_id && -row.id)
+        |> Map.put(:battle_plan_id, row.battle_template_id && -row.id)
+        |> Map.put(:pack_plan_id, row.pack_template_id && -row.id)
+    end
+  end
+
   @doc "Get a single team by id. Returns nil if not found."
+  def get_team(id) when is_integer(id) and id < 0 do
+    case template_team(-id) do
+      nil -> nil
+      team -> team |> Map.put(:gift_plan_data, nil) |> decode_affinity() |> Map.put(:template, true)
+    end
+  rescue
+    _ -> nil
+  end
+
   def get_team(id) when is_integer(id) do
     Repo.one(
       from t in "teams",
@@ -86,6 +134,21 @@ defmodule StarlightBot.Teams do
   rescue
     _ -> nil
   end
+
+  def save_team(%{id: id, name: name} = attrs) when is_integer(id) and id < 0 and is_binary(name) and name != "" do
+    if Data.base_writable?() do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      set = [name: name, updated_at: now] ++ if(Map.has_key?(attrs, :notes), do: [notes: attrs.notes], else: [])
+      {n, _} = BaseRepo.update_all(from(t in "teams", where: t.id == ^(-id)), set: set)
+      if n > 0, do: {:ok, id}, else: {:error, :not_found}
+    else
+      {:error, :template_locked}
+    end
+  rescue
+    e -> {:error, Exception.message(e)}
+  end
+
+  def save_team(%{id: id}) when is_integer(id) and id < 0, do: {:error, :template_locked}
 
   def save_team(%{name: name} = attrs) when is_binary(name) and name != "" do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -129,35 +192,80 @@ defmodule StarlightBot.Teams do
     end
   end
 
-  def create_team_from_template(template_id) when is_integer(template_id) do
-    case TeamTemplates.get(template_id) do
+  def template?(id) when is_integer(id), do: id < 0
+
+  def locked?(%{template: true}), do: not Data.base_writable?()
+  def locked?(_team), do: false
+
+  def templatize(id) when is_integer(id) and id > 0 do
+    with true <- Data.base_writable?() || {:error, :read_only},
+         %{} = team <- get_team(id) || {:error, :not_found},
+         {:ok, refs} <- move_plans_to_base(team),
+         {:ok, _} <- insert_template_team(team, refs),
+         {:ok, _} <- delete_team(id) do
+      {:ok, id}
+    end
+  end
+
+  def templatize(_id), do: {:error, :template_locked}
+
+  defp move_plans_to_base(team) do
+    Enum.reduce_while(@plan_fields, {:ok, %{}}, fn {field, table}, {:ok, refs} ->
+      column = Keyword.fetch!(@template_fields, field)
+
+      case Plans.for_team(team, table) do
+        %{template_id: template_id} when is_integer(template_id) ->
+          {:cont, {:ok, Map.put(refs, column, template_id)}}
+
+        %{data: %{} = data} ->
+          case PlanTemplates.create(table, data, team.name) do
+            {:ok, template_id} -> {:cont, {:ok, Map.put(refs, column, template_id)}}
+            {:error, _} = error -> {:halt, error}
+          end
+
+        _ ->
+          {:cont, {:ok, Map.put(refs, column, nil)}}
+      end
+    end)
+  end
+
+  defp insert_template_team(team, refs) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    existing = BaseRepo.all(from t in "teams", select: t.name) |> MapSet.new()
+    name = unique_among(team.name, existing)
+    row = Map.merge(refs, %{name: name, notes: team.notes, inserted_at: now, updated_at: now})
+
+    case BaseRepo.insert_all("teams", [row], returning: [:id]) do
+      {1, [%{id: id}]} -> {:ok, -id}
+      _ -> {:error, :insert_failed}
+    end
+  end
+
+  def create_from_template(id) when is_integer(id) and id < 0 do
+    case get_team(id) do
       nil ->
         {:error, :not_found}
 
-      template ->
-        with {:ok, id} <- save_team(%{name: unique_name(template.name)}),
-             :ok <- copy_template_plans(template, id),
-             :ok <- ensure_plans(id) do
-          {:ok, id}
+      team ->
+        with {:ok, new_id} <- save_team(%{name: unique_name(team.name), notes: team.notes}),
+             :ok <- copy_template_plans(team, new_id),
+             :ok <- ensure_plans(new_id) do
+          {:ok, new_id}
         end
     end
   end
 
-  defp copy_template_plans(template, team_id) do
+  def create_from_template(_id), do: {:error, :not_found}
+
+  defp copy_template_plans(team, new_id) do
     Enum.reduce_while(@plan_fields, :ok, fn {field, table}, :ok ->
-      column = field |> Atom.to_string() |> String.replace_suffix("_id", "") |> String.to_existing_atom()
-
-      case Map.get(template, column) do
-        nil ->
-          {:cont, :ok}
-
-        data ->
-          with {:ok, plan_id} <- Plans.save(table, %{name: Plans.new_name(table, team_id), data: data, team_id: team_id}),
-               {:ok, _} <- set_plan(team_id, field, plan_id) do
-            {:cont, :ok}
-          else
-            {:error, _} = error -> {:halt, error}
-          end
+      with %{data: %{} = data} <- Plans.for_team(team, table),
+           {:ok, plan_id} <- Plans.save(table, %{name: Plans.new_name(table, new_id), data: data, team_id: new_id}),
+           {:ok, _} <- set_plan(new_id, field, plan_id) do
+        {:cont, :ok}
+      else
+        {:error, _} = error -> {:halt, error}
+        _ -> {:cont, :ok}
       end
     end)
   end
@@ -192,15 +300,17 @@ defmodule StarlightBot.Teams do
 
   def duplicate_team(id) when is_integer(id) do
     case get_team(id) do
-      nil ->
-        {:error, :not_found}
+      nil -> {:error, :not_found}
+      %{template: true} -> {:error, :template_locked}
+      team -> copy_team(team, unique_name("#{team.name} (copy)"))
+    end
+  end
 
-      team ->
-        with {:ok, new_id} <- save_team(%{name: unique_name("#{team.name} (copy)")}) do
-          Enum.each(@plan_fields, &copy_plan(team, new_id, &1))
-          Enum.each(@template_fields, fn {field, template_field} -> set_template(new_id, field, Map.get(team, template_field)) end)
-          with :ok <- ensure_plans(new_id), do: {:ok, new_id}
-        end
+  defp copy_team(team, name) do
+    with {:ok, new_id} <- save_team(%{name: name, notes: team.notes}) do
+      Enum.each(@plan_fields, &copy_plan(team, new_id, &1))
+      Enum.each(@template_fields, fn {field, template_field} -> set_template(new_id, field, Map.get(team, template_field)) end)
+      with :ok <- ensure_plans(new_id), do: {:ok, new_id}
     end
   end
 
@@ -225,6 +335,16 @@ defmodule StarlightBot.Teams do
 
   def template_field(field), do: Keyword.fetch!(@template_fields, field)
 
+  def set_template(team_id, field, template_id) when is_integer(team_id) and team_id < 0 and field in [:gift_plan_id, :battle_plan_id, :pack_plan_id] and (is_integer(template_id) or is_nil(template_id)) do
+    if Data.base_writable?() do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+      {n, _} = BaseRepo.update_all(from(t in "teams", where: t.id == ^(-team_id)), set: [{template_field(field), template_id}, updated_at: now])
+      if n > 0, do: {:ok, team_id}, else: {:error, :not_found}
+    else
+      {:error, :template_locked}
+    end
+  end
+
   def set_template(team_id, field, template_id) when is_integer(team_id) and field in [:gift_plan_id, :battle_plan_id, :pack_plan_id] and (is_integer(template_id) or is_nil(template_id)) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     {n, _} = Repo.update_all(from(t in "teams", where: t.id == ^team_id), set: [{template_field(field), template_id}, updated_at: now])
@@ -248,7 +368,16 @@ defmodule StarlightBot.Teams do
     if n > 0, do: {:ok, team_id}, else: {:error, :not_found}
   end
 
-  @doc "Delete a team by id."
+  @doc "Delete a team by id. Shipped template teams can only be deleted while authoring."
+  def delete_team(id) when is_integer(id) and id < 0 do
+    if Data.base_writable?() do
+      {n, _} = BaseRepo.delete_all(from t in "teams", where: t.id == ^(-id))
+      if n > 0, do: {:ok, id}, else: {:error, :not_found}
+    else
+      {:error, :read_only}
+    end
+  end
+
   def delete_team(id) when is_integer(id) do
     team = get_team(id)
     {n, _} = Repo.delete_all(from t in "teams", where: t.id == ^id)
@@ -300,9 +429,9 @@ defmodule StarlightBot.Teams do
 
   def default_hook_icon, do: "/images/other/default.webp"
 
-  defp unique_name(base) do
-    existing = Repo.all(from t in "teams", select: t.name) |> MapSet.new()
+  defp unique_name(base), do: unique_among(base, Repo.all(from t in "teams", select: t.name) |> MapSet.new())
 
+  defp unique_among(base, existing) do
     if MapSet.member?(existing, base) do
       n = Stream.iterate(2, &(&1 + 1)) |> Enum.find(&(not MapSet.member?(existing, "#{base} #{&1}")))
       "#{base} #{n}"
@@ -325,6 +454,7 @@ defmodule StarlightBot.Teams do
     grace_picks = if is_list(data["grace_picks"]), do: data["grace_picks"], else: []
 
     team
+    |> Map.put(:template, false)
     |> Map.put(:affinity, affinity)
     |> Map.put(:grace_picks, grace_picks)
     |> Map.delete(:gift_plan_data)
@@ -361,6 +491,6 @@ defmodule StarlightBot.Teams do
 
     assigned = if decoded, do: BattlePlans.assigned_profiles(decoded), else: %{}
 
-    team |> Map.put(:missing, missing) |> Map.put(:profile_ids, profile_ids) |> Map.put(:assigned, assigned)
+    team |> Map.put(:template, false) |> Map.put(:missing, missing) |> Map.put(:profile_ids, profile_ids) |> Map.put(:assigned, assigned)
   end
 end

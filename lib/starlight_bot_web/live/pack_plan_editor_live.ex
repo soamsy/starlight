@@ -27,6 +27,8 @@ defmodule StarlightBotWeb.Live.PackPlanEditorLive do
       |> assign(:team_id, team && team.id)
       |> assign(:paste_status, :unknown)
       |> assign(:template_id, nil)
+      |> assign(:team_locked, !!(team && Teams.locked?(team)))
+      |> assign(:team_template, !!(team && team.template))
       |> read_only_guard(@read_only_events)
       |> PlanHistory.attach(:plan_data, persist: &persist_plan/1)
       |> assign_templates(:pack_plans)

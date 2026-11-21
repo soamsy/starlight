@@ -237,7 +237,7 @@
               <% end %>
 
               <.read_only_banner container="gift-view-memory" allowed={read_only_events()} template_id={if @pack_edit, do: nil, else: @template_id} templates={@templates} label="gift plan"
-                                 locked_label={if @pack_locked, do: "Read-only starter pack. This one ships with the app and only authors can change it."} />
+                                 locked_label={if @pack_locked, do: "Read-only starter pack. This one ships with the app and only authors can change it.", else: team_locked_label(@team_locked)} info_label={team_template_label(@team_template and not @team_locked)} />
                 <div id="gift-drop-zone" phx-hook="GiftDropZone"
                      data-drop-event={if @active_tab == :loadout, do: "toggle_search_gift", else: section && "list_add_gift"}
                      class="flex flex-col gap-3 overflow-y-auto flex-1 min-h-0 pr-1 rounded-lg transition-colors">

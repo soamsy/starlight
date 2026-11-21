@@ -5,13 +5,13 @@ defmodule StarlightBotWeb.Components.TeamNav do
 
   import Phoenix.LiveView, only: [push_navigate: 2, push_patch: 2, put_flash: 3]
   alias Phoenix.LiveView.JS
-  alias StarlightBot.{AppSettings, Hooks, PlanCounts, SinnerProfiles, TeamTemplates, Teams}
+  alias StarlightBot.{AppSettings, Data, Hooks, PlanCounts, SinnerProfiles, Teams}
 
   @plan_panes ~w(battle packs gifts stats)
   @panes @plan_panes ++ ["profiles"]
 
   def init do
-    build(stored_team_id(), stored_pane(), %{renaming_id: nil, editing_notes_id: nil, query: "", cursor: 0})
+    build(stored_team_id(), stored_pane(), %{renaming_id: nil, editing_notes_id: nil, query: "", cursor: 0, templates_open: false})
   end
 
   def reload(socket) do
@@ -67,7 +67,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
 
   def handle_event("team_nav_search_move", %{"dir" => dir}, socket) do
     nav = socket.assigns.team_nav
-    last = max(length(search_teams(nav.teams, nav.query)) - 1, 0)
+    last = max(length(visible_teams(nav)) - 1, 0)
     step = if dir == "up", do: -1, else: 1
     {:halt, put_ui(socket, :cursor, nav.cursor |> Kernel.+(step) |> max(0) |> min(last))}
   end
@@ -75,36 +75,30 @@ defmodule StarlightBotWeb.Components.TeamNav do
   def handle_event("team_nav_search_pick", %{"query" => query}, socket) do
     nav = socket.assigns.team_nav
 
-    case nav.teams |> search_teams(query) |> Enum.at(nav.cursor) do
+    case %{nav | query: query} |> visible_teams() |> Enum.at(nav.cursor) do
       nil -> {:halt, socket}
       team -> {:halt, select(socket, team.id)}
     end
   end
 
-  def handle_event("team_nav_new", params, socket) do
-    result =
-      case params do
-        %{"template" => template_id} -> Teams.create_team_from_template(to_id(template_id))
-        _ -> Teams.create_default_team()
-      end
-
-    case result do
+  def handle_event("team_nav_new", _params, socket) do
+    case Teams.create_default_team() do
       {:ok, id} -> {:halt, socket |> changed() |> select(id) |> put_flash(:info, "Team created.")}
       {:error, reason} -> {:halt, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
     end
   end
 
-  def handle_event("team_nav_new_template", %{"id" => id}, socket) do
-    case TeamTemplates.create_from_team(String.to_integer(id)) do
-      {:ok, _} -> {:halt, socket |> reload() |> put_flash(:info, "Template created.")}
-      {:error, reason} -> {:halt, put_flash(socket, :error, "Create template failed: #{inspect(reason)}")}
+  def handle_event("team_nav_create_from", %{"id" => id}, socket) do
+    case Teams.create_from_template(to_id(id)) do
+      {:ok, new_id} -> {:halt, socket |> changed() |> select(new_id) |> put_flash(:info, "Team created from template.")}
+      {:error, reason} -> {:halt, put_flash(socket, :error, "Create failed: #{inspect(reason)}")}
     end
   end
 
-  def handle_event("team_nav_delete_template", %{"id" => id}, socket) do
-    case TeamTemplates.delete(String.to_integer(id)) do
-      {:ok, _} -> {:halt, reload(socket)}
-      {:error, reason} -> {:halt, put_flash(socket, :error, "Delete failed: #{inspect(reason)}")}
+  def handle_event("team_nav_templatize", %{"id" => id}, socket) do
+    case Teams.templatize(to_id(id)) do
+      {:ok, _} -> {:halt, socket |> changed() |> put_flash(:info, "Team is now a template.")}
+      {:error, reason} -> {:halt, put_flash(socket, :error, "Templatize failed: #{inspect(reason)}")}
     end
   end
 
@@ -115,7 +109,10 @@ defmodule StarlightBotWeb.Components.TeamNav do
     end
   end
 
-  def handle_event("team_nav_start_rename", %{"id" => id}, socket), do: {:halt, put_ui(socket, :renaming_id, String.to_integer(id))}
+  def handle_event("team_nav_toggle_templates", _params, socket),
+    do: {:halt, put_ui(socket, :templates_open, not socket.assigns.team_nav.templates_open)}
+
+  def handle_event("team_nav_start_rename", %{"id" => id}, socket), do: {:halt, start_edit(socket, :renaming_id, id)}
 
   def handle_event("team_nav_cancel_rename", _params, socket), do: {:halt, put_ui(socket, :renaming_id, nil)}
 
@@ -135,7 +132,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
     end
   end
 
-  def handle_event("team_nav_start_edit_notes", %{"id" => id}, socket), do: {:halt, put_ui(socket, :editing_notes_id, String.to_integer(id))}
+  def handle_event("team_nav_start_edit_notes", %{"id" => id}, socket), do: {:halt, start_edit(socket, :editing_notes_id, id)}
 
   def handle_event("team_nav_cancel_edit_notes", _params, socket), do: {:halt, put_ui(socket, :editing_notes_id, nil)}
 
@@ -182,15 +179,26 @@ defmodule StarlightBotWeb.Components.TeamNav do
 
   def handle_event(_event, _params, socket), do: {:cont, socket}
 
+  defp start_edit(socket, key, id) do
+    id = to_id(id)
+
+    if Teams.template?(id) and not authoring?(),
+      do: put_flash(socket, :error, "Template teams can't be edited."),
+      else: put_ui(socket, key, id)
+  end
+
+  def authoring?, do: Data.base_writable?()
+
+  defp editable?(team), do: not team.template or authoring?()
+
   defp build(team_id, pane, ui) do
-    teams = Teams.list_teams()
+    teams = Teams.list_all_teams()
     team_id = if Enum.any?(teams, &(&1.id == team_id)), do: team_id, else: first_id(teams)
 
     Map.merge(ui, %{
       team_id: team_id,
       pane: pane,
       teams: teams,
-      templates: TeamTemplates.list(),
       profiles_by_id: Map.new(SinnerProfiles.list(), &{&1.id, &1}),
       locator_thumbs: Hooks.hook_thumbnails("locator"),
       counts: PlanCounts.for_team(team_id)
@@ -203,10 +211,17 @@ defmodule StarlightBotWeb.Components.TeamNav do
   defp first_id([%{id: id} | _]), do: id
   defp first_id([]), do: nil
 
-  defp ui(nav), do: Map.take(nav, [:renaming_id, :editing_notes_id, :query, :cursor])
+  defp ui(nav), do: Map.take(nav, [:renaming_id, :editing_notes_id, :query, :cursor, :templates_open])
 
   defp put_ui(socket, key, value),
     do: Phoenix.Component.assign(socket, :team_nav, Map.put(socket.assigns.team_nav, key, value))
+
+  def templates_open?(nav), do: nav.templates_open or String.trim(nav.query) != ""
+
+  def visible_teams(nav) do
+    results = search_teams(nav.teams, nav.query)
+    if templates_open?(nav), do: results, else: Enum.reject(results, & &1.template)
+  end
 
   def search_teams(teams, query) do
     needle = query |> String.trim() |> String.downcase()
@@ -318,6 +333,67 @@ defmodule StarlightBotWeb.Components.TeamNav do
   defp missing_label(:lineup), do: "lineup (set it up in the battle plan)"
   defp missing_label(:pack_plan), do: "pack plan"
 
+  attr :team, :map, required: true
+  attr :index, :integer, required: true
+  attr :nav, :map, required: true
+
+  defp team_row(assigns) do
+    assigns = assign(assigns, :selected?, assigns.nav.team_id == assigns.team.id)
+
+    ~H"""
+      <div id={"team-row-#{@team.id}"} data-sort-id={@team.id} data-sort-handle={(String.trim(@nav.query) == "" and not @team.template) || nil} data-active={@index == @nav.cursor}
+           class={"group flex min-w-0 shrink-0 overflow-hidden rounded-lg border " <> if(@selected?, do: "border-primary ", else: "border-base-300 ") <> if(@index == @nav.cursor, do: "bg-primary/25 ring-1 ring-inset ring-primary/50", else: "bg-base-100 hover:bg-base-200")}>
+        <span :if={String.trim(@nav.query) == "" and not @team.template} class="flex shrink-0 cursor-grab items-center pl-1 text-base-content/40" title="Drag to reorder"><.icon name="lucide-grip-vertical" class="size-4" /></span>
+        <div class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 p-2"
+             phx-click={JS.push("team_nav_select", value: %{id: @team.id})}>
+          <%= if @nav.renaming_id == @team.id and editable?(@team) do %>
+            <form phx-submit="team_nav_rename" phx-click={JS.dispatch("starlight:noop")} class="flex w-28 shrink-0">
+              <input type="text" id={"rename-team-#{@team.id}"} name="value" value={@team.name} phx-blur="team_nav_rename"
+                     phx-keydown="team_nav_cancel_rename" phx-key="Escape" phx-hook="FocusSelect"
+                     class="input input-bordered input-xs w-full font-semibold" />
+            </form>
+          <% else %>
+            <span class="flex w-28 shrink-0 items-center gap-1">
+              <.icon :if={@team.template} name="lucide-layout-template" class="size-3 shrink-0 text-primary" />
+              <span id={"team-name-#{@team.id}"} phx-hook={editable?(@team) && "DblClickEvent"} data-event="team_nav_start_rename" data-id={@team.id}
+                    title={if editable?(@team), do: "Double-click to rename", else: "Template team"}
+                    class={"min-w-0 flex-1 truncate font-mono text-xs select-none " <> if(@selected?, do: "font-bold", else: "")}><%= @team.name %></span>
+              <button :if={editable?(@team)} type="button" phx-click={JS.push("team_nav_start_rename", value: %{id: to_string(@team.id)})} title="Rename"
+                      class={"btn btn-2xs btn-ghost shrink-0 px-1 opacity-0 focus-visible:opacity-100 group-hover:opacity-100" <> if(@selected?, do: " opacity-100", else: "")}><.icon name="lucide-pencil" class="size-3" /></button>
+            </span>
+          <% end %>
+          <span class="flex w-28 shrink-0 flex-nowrap items-center gap-1.5 overflow-hidden">
+            <img :for={icon <- profile_icons(@team.profile_ids, @nav.profiles_by_id, @nav.locator_thumbs)} src={icon.src} title={icon.name} class="h-4 w-auto shrink-0 rounded object-contain" />
+            <span :if={@team.missing != []} class="badge badge-warning badge-xs shrink-0" title={"Missing: " <> Enum.map_join(@team.missing, ", ", &missing_label/1)}>!</span>
+          </span>
+          <%= if @nav.editing_notes_id == @team.id and editable?(@team) do %>
+            <form phx-submit="team_nav_edit_notes" phx-click={JS.dispatch("starlight:noop")} class="flex min-w-0 flex-1">
+              <input type="text" id={"edit-team-notes-#{@team.id}"} name="value" value={@team.notes} phx-blur="team_nav_edit_notes"
+                     phx-keydown="team_nav_cancel_edit_notes" phx-key="Escape" phx-hook="FocusSelect" placeholder="Notes"
+                     class="input input-bordered input-xs w-full" />
+            </form>
+          <% else %>
+            <span class="flex min-w-0 flex-1 items-center gap-1">
+              <span id={"team-notes-#{@team.id}"} phx-hook={editable?(@team) && "DblClickEvent"} data-event="team_nav_start_edit_notes" data-id={@team.id}
+                    title={if not editable?(@team) or String.trim(@team.notes || "") != "", do: @team.notes, else: "Double-click to add notes"}
+                    class="min-h-4 min-w-0 flex-1 select-none truncate text-xs text-base-content/60"><%= @team.notes %></span>
+              <button :if={editable?(@team)} type="button" phx-click={JS.push("team_nav_start_edit_notes", value: %{id: to_string(@team.id)})} title="Edit notes"
+                      class={"btn btn-2xs btn-ghost shrink-0 px-1 opacity-0 focus-visible:opacity-100 group-hover:opacity-100" <> if(@selected?, do: " opacity-100", else: "")}><.icon name="lucide-pencil" class="size-3" /></button>
+            </span>
+          <% end %>
+        </div>
+        <div class="join shrink-0 rounded-none border-l border-base-300">
+          <button type="button" phx-click={if @team.template, do: "team_nav_create_from", else: "team_nav_duplicate"} phx-value-id={@team.id}
+                  title={if @team.template, do: "Create From: make an editable copy of this template as a new team", else: "Duplicate: copy this team, keeping its plans and notes"}
+                  class="btn btn-xs join-item h-full rounded-none border-0"><.icon name="lucide-copy" class="size-3.5" /></button>
+          <button :if={not @team.template or authoring?()} type="button" phx-click="team_nav_delete" phx-value-id={@team.id}
+                  data-confirm={"Delete '#{@team.name}'?"} title="Delete this team"
+                  class="btn btn-xs join-item h-full rounded-none border-0 text-error"><.icon name="lucide-x" class="size-3.5" /></button>
+        </div>
+      </div>
+    """
+  end
+
   attr :nav, :map, required: true
   attr :on_page, :boolean, default: true
 
@@ -350,80 +426,31 @@ defmodule StarlightBotWeb.Components.TeamNav do
             <input type="text" id="team-search-input" name="query" value={@nav.query} placeholder="Search teams..."
                    class="input input-bordered input-sm w-full font-mono" />
           </form>
-          <div id="team-list" phx-hook="SortableList" data-sort-event="team_nav_reorder" class="flex max-h-[60vh] flex-col gap-1 overflow-y-auto">
+          <div class="flex max-h-[60vh] flex-col gap-1 overflow-y-auto">
             <% results = search_teams(@nav.teams, @nav.query) %>
-            <%= for {team, index} <- Enum.with_index(results) do %>
-              <% selected? = @nav.team_id == team.id %>
-              <div id={"team-row-#{team.id}"} data-sort-id={team.id} data-sort-handle={String.trim(@nav.query) == "" || nil} data-active={index == @nav.cursor}
-                   class={"group flex min-w-0 shrink-0 overflow-hidden rounded-lg border " <> if(selected?, do: "border-primary ", else: "border-base-300 ") <> if(index == @nav.cursor, do: "bg-primary/25 ring-1 ring-inset ring-primary/50", else: "bg-base-100 hover:bg-base-200")}>
-                <span :if={String.trim(@nav.query) == ""} class="flex shrink-0 cursor-grab items-center pl-1 text-base-content/40" title="Drag to reorder"><.icon name="lucide-grip-vertical" class="size-4" /></span>
-                <div class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 p-2"
-                     phx-click={JS.push("team_nav_select", value: %{id: team.id})}>
-                  <%= if @nav.renaming_id == team.id do %>
-                    <form phx-submit="team_nav_rename" phx-click={JS.dispatch("starlight:noop")} class="flex w-28 shrink-0">
-                      <input type="text" id={"rename-team-#{team.id}"} name="value" value={team.name} phx-blur="team_nav_rename"
-                             phx-keydown="team_nav_cancel_rename" phx-key="Escape" phx-hook="FocusSelect"
-                             class="input input-bordered input-xs w-full font-semibold" />
-                    </form>
-                  <% else %>
-                    <span class="flex w-28 shrink-0 items-center gap-1">
-                      <span id={"team-name-#{team.id}"} phx-hook="DblClickEvent" data-event="team_nav_start_rename" data-id={team.id}
-                            title="Double-click to rename"
-                            class={"min-w-0 flex-1 truncate font-mono text-xs select-none " <> if(selected?, do: "font-bold", else: "")}><%= team.name %></span>
-                      <button type="button" phx-click={JS.push("team_nav_start_rename", value: %{id: to_string(team.id)})} title="Rename"
-                              class={"btn btn-2xs btn-ghost shrink-0 px-1 opacity-0 focus-visible:opacity-100 group-hover:opacity-100" <> if(selected?, do: " opacity-100", else: "")}><.icon name="lucide-pencil" class="size-3" /></button>
-                    </span>
-                  <% end %>
-                  <span class="flex w-28 shrink-0 flex-nowrap items-center gap-1.5 overflow-hidden">
-                    <img :for={icon <- profile_icons(team.profile_ids, @nav.profiles_by_id, @nav.locator_thumbs)} src={icon.src} title={icon.name} class="h-4 w-auto shrink-0 rounded object-contain" />
-                    <span :if={team.missing != []} class="badge badge-warning badge-xs shrink-0" title={"Missing: " <> Enum.map_join(team.missing, ", ", &missing_label/1)}>!</span>
-                  </span>
-                  <%= if @nav.editing_notes_id == team.id do %>
-                    <form phx-submit="team_nav_edit_notes" phx-click={JS.dispatch("starlight:noop")} class="flex min-w-0 flex-1">
-                      <input type="text" id={"edit-team-notes-#{team.id}"} name="value" value={team.notes} phx-blur="team_nav_edit_notes"
-                             phx-keydown="team_nav_cancel_edit_notes" phx-key="Escape" phx-hook="FocusSelect" placeholder="Notes"
-                             class="input input-bordered input-xs w-full" />
-                    </form>
-                  <% else %>
-                    <span class="flex min-w-0 flex-1 items-center gap-1">
-                      <span id={"team-notes-#{team.id}"} phx-hook="DblClickEvent" data-event="team_nav_start_edit_notes" data-id={team.id}
-                            title={if String.trim(team.notes || "") == "", do: "Double-click to add notes", else: team.notes}
-                            class="min-h-4 min-w-0 flex-1 select-none truncate text-xs text-base-content/60"><%= team.notes %></span>
-                      <button type="button" phx-click={JS.push("team_nav_start_edit_notes", value: %{id: to_string(team.id)})} title="Edit notes"
-                              class={"btn btn-2xs btn-ghost shrink-0 px-1 opacity-0 focus-visible:opacity-100 group-hover:opacity-100" <> if(selected?, do: " opacity-100", else: "")}><.icon name="lucide-pencil" class="size-3" /></button>
-                    </span>
-                  <% end %>
-                </div>
-                <div class="join shrink-0 rounded-none border-l border-base-300">
-                  <button type="button" phx-click="team_nav_delete" phx-value-id={team.id}
-                          data-confirm={"Delete '#{team.name}'?"} title="Delete this team"
-                          class="btn btn-xs join-item h-full rounded-none border-0 text-error"><.icon name="lucide-x" class="size-3.5" /></button>
-                </div>
-              </div>
-            <% end %>
+            <% indexed = Enum.with_index(results) %>
+            <% {templates, own} = Enum.split_with(indexed, fn {team, _index} -> team.template end) %>
+            <div id="team-list" phx-hook="SortableList" data-sort-event="team_nav_reorder" class="flex shrink-0 flex-col gap-1">
+              <.team_row :for={{team, index} <- own} team={team} index={index} nav={@nav} />
+            </div>
             <div :if={@nav.teams == []} class="py-4 text-center text-sm text-base-content/40">No teams yet. Create one.</div>
             <div :if={@nav.teams != [] and results == []} class="py-4 text-center text-sm text-base-content/40">No matching team.</div>
-          </div>
-          <div id="new-team-menu" class="hidden flex-col gap-0.5 rounded-box border border-base-300 bg-base-100 p-1">
-            <div :for={template <- @nav.templates} class="flex items-center gap-1 rounded hover:bg-base-200">
-              <button type="button" phx-click={JS.push("team_nav_new", value: %{template: template.id}) |> JS.hide(to: "#new-team-menu") |> JS.hide(to: "#team-menu")}
-                      title={"Create a team from the template '#{template.name}'"}
-                      class="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left">
-                <span class="min-w-0 truncate font-mono text-xs"><%= template.name %></span>
-              </button>
-              <button :if={TeamTemplates.writable?()} type="button" phx-click="team_nav_delete_template" phx-value-id={template.id}
-                      data-confirm={"Delete the template '#{template.name}'?"} class="btn btn-xs btn-ghost text-error">Del</button>
+            <button :if={templates != []} type="button" phx-click="team_nav_toggle_templates" aria-expanded={to_string(templates_open?(@nav))}
+                    class="btn btn-sm w-full shrink-0 justify-start gap-2 border-base-300 bg-base-200 text-base-content">
+              <.icon name={if templates_open?(@nav), do: "lucide-chevron-down", else: "lucide-chevron-right"} class="size-4" />
+              <span class="font-semibold">Templates</span>
+              <span class="badge badge-sm badge-neutral"><%= length(templates) %></span>
+            </button>
+            <div :if={templates != [] and templates_open?(@nav)} id="template-list" class="flex shrink-0 flex-col gap-1">
+              <.team_row :for={{team, index} <- templates} team={team} index={index} nav={@nav} />
             </div>
           </div>
           <div class="join w-full">
-            <button type="button" phx-click={JS.push("team_nav_new") |> JS.hide(to: "#new-team-menu") |> JS.hide(to: "#team-menu")}
+            <button type="button" phx-click={JS.push("team_nav_new")}
                     class="btn btn-primary btn-sm join-item flex-1">+ Blank Team</button>
-            <button :if={@nav.templates != []} type="button" phx-click={JS.toggle(to: "#new-team-menu", display: "flex")}
-                    title="Create a team from a template" class="btn btn-primary btn-sm join-item"><.icon name="lucide-chevron-down" class="size-4" /></button>
-            <button :if={@current} type="button" phx-click={JS.push("team_nav_duplicate", value: %{id: @current.id}) |> JS.hide(to: "#team-menu")}
-                    title="Copy the selected team, keeping its plans" class="btn btn-sm join-item flex-1">Duplicate</button>
-            <button :if={@current && TeamTemplates.writable?()} type="button" phx-click="team_nav_new_template" phx-value-id={@current.id}
-                    title="Add a template holding a copy of the selected team's active plans" class="btn btn-sm join-item flex-1">Templatize</button>
+            <button :if={@current && not @current.template && authoring?()} type="button" phx-click="team_nav_templatize" phx-value-id={@current.id}
+                    data-confirm={"Move '#{@current.name}' into base.db as a template? It leaves your own teams, and users get it read-only."}
+                    title="Move the selected team into base.db as a template" class="btn btn-sm join-item flex-1">Templatize</button>
           </div>
         </div>
       </div>

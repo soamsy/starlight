@@ -32,7 +32,7 @@
           </div>
           <button :if={is_nil(@editing_id)} type="button" phx-click="new_plan" class="btn btn-primary btn-sm">+ New pack plan</button>
         </div>
-        <.read_only_banner :if={@editing_id} container="pack-plan-editor" allowed={read_only_events()} template_id={@template_id} templates={@templates} label="pack plan" />
+        <.read_only_banner :if={@editing_id} container="pack-plan-editor" allowed={read_only_events()} template_id={@template_id} templates={@templates} label="pack plan" locked_label={team_locked_label(@team_locked)} info_label={team_template_label(@team_template and not @team_locked)} />
         <%= if @editing_id do %>
 
           <div class="flex-1 min-h-0 flex flex-col gap-3 min-h-0">
