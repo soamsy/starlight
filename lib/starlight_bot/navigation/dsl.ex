@@ -202,7 +202,14 @@ defmodule StarlightBot.Navigation.DSL do
 
   def loading(opts \\ []) do
     opts = Keyword.merge([appear_timeout: 10_000, gone_timeout: 20_000], opts)
-    await_then_gone(:loading_stage_2, opts) ++ [sleep(400)]
+    loading_hooks = any_of([:loading_stage_1, :loading_stage_2])
+    gone = [await(not_hook(loading_hooks), timeout: opts[:gone_timeout])]
+
+    [
+      branch([{loading_hooks, gone}], wait: opts[:appear_timeout]),
+      branch([{loading_hooks, gone}], wait: 600),
+      sleep(400)
+    ]
   end
 
   def retry_until(hook, steps, opts \\ [])
