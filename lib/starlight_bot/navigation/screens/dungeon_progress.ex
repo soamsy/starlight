@@ -3,11 +3,7 @@ defmodule StarlightBot.Navigation.Screens.DungeonProgress do
 
   screen :dungeon_progress, identity: :dungeon_progress do
     transition to: :any? do
-      [key(:esc), sleep(300)]
-    end
-
-    transition to: :dungeon_graph do
-      [retry_until(:dungeon_graph, [click(:safe_corner)], every: 700, tries: 3)]
+      [retry_until(not_hook(:dungeon_progress), [click(:safe_corner)], every: 700, tries: 3)]
     end
 
     transition to: :dungeon_forfeited do
