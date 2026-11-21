@@ -931,7 +931,6 @@ defmodule StarlightBotWeb.Live.RunnerLive do
       </button>
       <span :if={not @reserve? and @cycle_size > 1} class="text-xs text-base-content/50 w-5 text-right"><%= @index + 1 %>.</span>
       <input :if={@locked} type="hidden" name={"#{@prefix}_ids[]"} value={@pick.id} />
-      <input :if={@locked} type="hidden" name={"#{@prefix}_hooks[]"} value={@pick.hook} />
       <.team_select id={"#{@prefix}-team-#{@index}"} name={"#{@prefix}_ids[]"} teams={@teams} selected={@pick.id} nav={@nav} disabled={@teams == [] or @locked} />
       <.hook_select id={"#{@prefix}-hook-#{@index}"} name={"#{@prefix}_hooks[]"} selected={@pick.hook} disabled={@teams == [] or @locked} />
       <span :if={@forecast} class="relative">
