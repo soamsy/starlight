@@ -47,7 +47,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @max_sell_scroll_passes 12
   @max_gift_search_passes 8
   @scroll_to_top_clicks 12
-  @uptie_commit_result_ms 1_500
+  @uptie_commit_result_ms 5_000
   @uptie_2_selected_ms 600
 
   @affinity_hooks %{
