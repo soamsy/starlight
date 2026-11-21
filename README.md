@@ -23,9 +23,8 @@ mix phx.server     # starts at localhost:4000
 `src-tauri/` wraps the Phoenix app in a Tauri window using [ElixirKit](https://elixirkit.hexdocs.pm/tauri.html). Needs `cargo-tauri` (`cargo install tauri-cli`) and webkit2gtk-4.1.
 
 ```sh
-cd src-tauri
-cargo tauri dev
-env NO_STRIP=true cargo tauri build      # prod release + AppImage in src-tauri/target/release/bundle/appimage/
+mix tauri.dev
+mix tauri.build   # prod release + AppImage in src-tauri/target/release/bundle/appimage/
 ```
 
 ## Other commands
