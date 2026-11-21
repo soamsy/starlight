@@ -258,19 +258,22 @@ defmodule StarlightBot.Navigation.DSL do
 
   def confirm_enter(hook, opts \\ []) when is_atom(hook) or is_tuple(hook) do
     steady_ms = Keyword.get(opts, :steady, @confirm_steady_ms)
-    [await(hook, opts), hold(hook, steady_ms, within: @confirm_steady_timeout_ms) | enter_until_gone(hook, @confirm_enter_rounds)]
+    rounds = Keyword.get(opts, :rounds, @confirm_enter_rounds)
+    gone_window_ms = Keyword.get(opts, :gone_window, @confirm_gone_window_ms)
+    gone_hold_ms = Keyword.get(opts, :gone_hold, @confirm_gone_hold_ms)
+    [await(hook, opts), hold(hook, steady_ms, within: @confirm_steady_timeout_ms) | enter_until_gone(hook, rounds, rounds, gone_hold_ms, gone_window_ms)]
   end
 
-  defp enter_until_gone(hook, 0) do
+  defp enter_until_gone(hook, 0, total, _gone_hold_ms, _gone_window_ms) do
     [
-      log(:error, "confirm_enter #{inspect(hook)}: still there after #{@confirm_enter_rounds} enter presses"),
+      log(:error, "confirm_enter #{inspect(hook)}: still there after #{total} enter presses"),
       fail({:retry_exhausted, hook})
     ]
   end
 
-  defp enter_until_gone(hook, rounds) do
-    still_there = [log(:info, "confirm_enter #{inspect(hook)}: still there, pressing enter again") | enter_until_gone(hook, rounds - 1)]
-    [key(:enter), hold(not_hook(hook), @confirm_gone_hold_ms, within: @confirm_gone_window_ms, else: still_there)]
+  defp enter_until_gone(hook, rounds, total, gone_hold_ms, gone_window_ms) do
+    still_there = [log(:info, "confirm_enter #{inspect(hook)}: still there, pressing enter again") | enter_until_gone(hook, rounds - 1, total, gone_hold_ms, gone_window_ms)]
+    [key(:enter), hold(not_hook(hook), gone_hold_ms, within: gone_window_ms, else: still_there)]
   end
 
   defmacro retry_until_arrived(steps, opts \\ []) do
