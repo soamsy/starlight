@@ -5,7 +5,55 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
   def gift_plan_guide(assigns) do
     ~H"""
       <section>
-        <p>Define a list of gifts the bot should go for in the shop. The general idea is to set up a bunch of gifts you're interested in, set up some refresh conditions, and the bot will [work on getting gifts] -> [refresh if possible] -> [work on getting gifts] until it's out of refreshes.</p>
+        <p>Define a list of gifts the bot should go for in the shop. The general idea is to set up a bunch of gifts you're interested in, set up some refresh conditions, and the bot will <span class="badge badge-sm align-middle whitespace-nowrap bg-base-300 border-base-content/20">work on getting gifts</span> <.icon name="lucide-arrow-right" class="size-3.5 inline-block align-middle" /> <span class="badge badge-sm align-middle whitespace-nowrap bg-base-300 border-base-content/20">refresh if possible</span> <.icon name="lucide-arrow-right" class="size-3.5 inline-block align-middle" /> <span class="badge badge-sm align-middle whitespace-nowrap bg-base-300 border-base-content/20">work on getting gifts</span> until it's out of refreshes. Each individual action in a run tries to do as much as possible, given the current shop's shelf and <span class="badge badge-sm align-middle whitespace-nowrap bg-base-300 border-base-content/20 gap-1">available cost<img src="/images/icons/md_cost.png" alt="" class="h-3.5 w-3.5 object-contain" /></span>.</p>
+        <div class="mt-2 flex flex-col gap-2 text-xs">
+          <svg viewBox="0 0 430 542" role="img" aria-label="Flowchart of one shop visit" class="w-full max-w-md self-center text-[11px]" style="fill: currentColor; stroke-width: 1.2">
+            <defs>
+              <marker id="gift-guide-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 z" style="fill: currentColor; stroke: none" />
+              </marker>
+            </defs>
+            <g style="fill: none; stroke: currentColor" marker-end="url(#gift-guide-arrow)">
+                <path d="M190 30 V44" />
+                <path d="M190 74 V88" />
+                <path d="M190 118 V132" />
+                <path d="M190 162 V176" />
+                <path d="M190 206 V220" />
+                <path d="M190 250 V264" />
+                <path d="M190 294 V308" />
+                <path d="M190 338 V352" />
+                <path d="M270 382 H300" />
+                <path d="M190 412 V426" />
+                <path d="M190 486 V512" />
+                <path d="M110 456 H40 V59 H95" />
+            </g>
+            <rect x="95" y="4" width="190" height="26" rx="13" style="fill: var(--color-base-300); stroke: color-mix(in oklab, var(--color-base-content) 40%, transparent)" /><text x="190.0" y="21.0" text-anchor="middle">Enter shop</text>
+            <rect x="95" y="44" width="190" height="30" rx="4" style="fill: var(--color-base-200); stroke: color-mix(in oklab, var(--color-base-content) 40%, transparent)" /><text x="190.0" y="63.0" text-anchor="middle">Sell</text>
+            <rect x="95" y="88" width="190" height="30" rx="4" style="fill: var(--color-base-200); stroke: color-mix(in oklab, var(--color-base-content) 40%, transparent)" /><text x="190.0" y="107.0" text-anchor="middle">Heal, revive, team replace</text>
+            <rect x="95" y="132" width="190" height="30" rx="4" style="fill: var(--color-base-200); stroke: color-mix(in oklab, var(--color-base-content) 40%, transparent)" /><text x="190.0" y="151.0" text-anchor="middle">Skill replace</text>
+            <rect x="95" y="176" width="190" height="30" rx="4" style="fill: var(--color-base-200); stroke: color-mix(in oklab, var(--color-base-content) 40%, transparent)" /><text x="190.0" y="195.0" text-anchor="middle">Uptie</text>
+            <rect x="95" y="220" width="190" height="30" rx="4" style="fill: var(--color-base-200); stroke: color-mix(in oklab, var(--color-base-content) 40%, transparent)" /><text x="190.0" y="239.0" text-anchor="middle">Buy</text>
+            <rect x="95" y="264" width="190" height="30" rx="4" style="fill: var(--color-base-200); stroke: color-mix(in oklab, var(--color-base-content) 40%, transparent)" /><text x="190.0" y="283.0" text-anchor="middle">Fuse</text>
+            <rect x="95" y="308" width="190" height="30" rx="4" style="fill: var(--color-base-200); stroke: color-mix(in oklab, var(--color-base-content) 40%, transparent)" /><text x="190.0" y="327.0" text-anchor="middle">Uptie again</text>
+            <polygon points="190,352 270,382 190,412 110,382" style="fill: color-mix(in oklab, var(--color-primary) 15%, var(--color-base-200)); stroke: var(--color-primary)" /><text x="190" y="386" text-anchor="middle">Stage done?</text>
+            <polygon points="190,426 270,456 190,486 110,456" style="fill: color-mix(in oklab, var(--color-primary) 15%, var(--color-base-200)); stroke: var(--color-primary)" /><text x="190" y="460" text-anchor="middle">Refresh case?</text>
+            <rect x="300" y="366" width="110" height="32" rx="16" style="fill: var(--color-base-300); stroke: color-mix(in oklab, var(--color-base-content) 40%, transparent)" /><text x="355.0" y="386.0" text-anchor="middle">Next stage</text>
+            <rect x="95" y="512" width="190" height="26" rx="13" style="fill: var(--color-base-300); stroke: color-mix(in oklab, var(--color-base-content) 40%, transparent)" /><text x="190.0" y="529.0" text-anchor="middle">Leave shop</text>
+            <g style="font-size: 10px; opacity: 0.7">
+              <text x="285" y="376" text-anchor="middle">yes</text>
+              <text x="198" y="422">no</text>
+              <text x="75" y="450" text-anchor="middle">refresh</text>
+              <text x="198" y="504">leave, or no case</text>
+              <text x="295" y="107">once per shop</text>
+              <text x="355" y="416" text-anchor="middle">or leave shop</text>
+              <text x="355" y="428" text-anchor="middle">after the last</text>
+            </g>
+          </svg>
+        </div>
+      </section>
+      <section>
+        <h1 class="mb-2">Shop actions</h1>
+        <p class="mb-2">Actions are defined by adding the target gift to the list, and setting up what you want out of it.</p>
         <div class="flex flex-col gap-2 text-xs">
           <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1 pointer-events-none w-fit">
             <img src="/images/ego_gifts/gift_55.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
@@ -31,17 +79,34 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
         </div>
       </section>
       <section>
-        <h4 class="font-semibold mb-2">Sell</h4>
-        <div class="flex flex-col gap-2 text-xs">
-          <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1 pointer-events-none w-fit">
+        <div class="grid grid-cols-[14rem_1fr] items-center gap-2 text-xs">
+          <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1 pointer-events-none">
             <img src="/images/ego_gifts/gift_419.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
-            <span class="font-medium w-36 truncate">Bongy Plush</span>
+            <span class="font-medium flex-1 truncate">Bongy Plush</span>
             <span class="btn btn-xs btn-error">Sell</span>
           </div>
-          <div class="grid grid-cols-[3rem_1fr] items-baseline gap-x-2">
-            <span class="btn btn-xs btn-error pointer-events-none">Sell</span>
-            <span>Sell this gift from your inventory before doing any buys/fusions/upties.</span>
+          <span>Sell this gift from your inventory before doing any buys/fusions/upties.</span>
+        </div>
+      </section>
+      <section>
+        <h1 class="font-semibold mb-2">Priority</h1>
+        <p>The shopping list works from top to bottom if two entries use the same action (buy, uptie, etc.). In general this doesn't matter too much for most actions, but it will decide which fusion the bot goes for first.</p>
+        <div class="grid grid-cols-[22rem_1fr] items-center gap-2 text-xs">
+          <div class="flex flex-col gap-1 pointer-events-none">
+            <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1">
+              <span class="flex w-24 shrink-0 items-center justify-between rounded border border-neutral bg-neutral px-1.5 py-0.5 text-[11px] text-neutral-content">Required<.icon name="lucide-chevron-down" class="size-3" /></span>
+              <img src="/images/ego_gifts/gift_97.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+              <span class="font-medium flex-1 truncate">Clear Mirror, Calm Water</span>
+              <span class="btn btn-xs btn-secondary">Fuse</span>
+            </div>
+            <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1">
+              <span class="flex w-24 shrink-0 items-center justify-between rounded border border-neutral bg-neutral px-1.5 py-0.5 text-[11px] text-neutral-content">Required<.icon name="lucide-chevron-down" class="size-3" /></span>
+              <img src="/images/ego_gifts/gift_126.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+              <span class="font-medium flex-1 truncate">Fragment of Decay</span>
+              <span class="btn btn-xs btn-secondary">Fuse</span>
+            </div>
           </div>
+          <span>Fuse for Clear Mirror, Calm Water first. Fragment of Decay will not be fused for until we've finished the fusions preceding it.</span>
         </div>
       </section>
       <section>
@@ -137,7 +202,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
       </section>
       <section>
         <h4 class="font-semibold mb-1">Schedules</h4>
-        <p>Entry settings can change by floor. Use [Add Schedule] to customize a gift's Buy, Sell, Fuse and goal settings per floor.</p>
+        <p>Entry settings can change by floor. Use <span class="badge badge-sm align-middle whitespace-nowrap bg-base-300 border-base-content/20">Add Schedule</span> to customize a gift's action and goal settings per floor.</p>
         <div class="mt-2 flex flex-col gap-3 text-xs">
           <div class="grid grid-cols-[22rem_1fr] items-center gap-2">
             <div class="flex flex-col pointer-events-none">
@@ -171,7 +236,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
               </div>
               </div>
             </div>
-            <span><span class="font-semibold">F3-4.</span> Buy is off, so the bot stops buying it here but keeps what it has.</span>
+            <span><span class="font-semibold">F3-4.</span> Buy is off, so the bot stops requiring it here but keeps what it has.</span>
           </div>
           <div class="grid grid-cols-[22rem_1fr] items-center gap-2">
             <div class="flex flex-col pointer-events-none">
@@ -181,11 +246,10 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
                 <span class="flex w-24 shrink-0 items-center justify-between rounded border border-base-300 bg-base-100 px-1.5 py-0.5 text-[11px] text-base-content">Abandon<.icon name="lucide-chevron-down" class="size-3" /></span>
                 <img src="/images/ego_gifts/gift_81.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
                 <span class="font-medium w-24 truncate">Grand Welcome</span>
-                <span class="text-[11px] font-semibold text-base-content/60">Buys refused from here</span>
               </div>
               </div>
             </div>
-            <span><span class="font-semibold">F5+.</span> Abandoned from floor 5, so the bot no longer pursues it and it does not count toward the stage. Can be sold or used for fusion fodder.</span>
+            <span><span class="font-semibold">F5+.</span> Abandoned from floor 5, so the bot no longer cares about it. Can be sold or used for fusion fodder.</span>
           </div>
         </div>
       </section>
@@ -235,7 +299,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
             <span class="btn btn-xs btn-outline">+ Keep shopping</span>
           </div>
         </div>
-        <p class="mt-1">Stages are useful if you completely want to change priorities once a set of gifts have been acquired, but if you need more granularity (for example, you only want to prioritize 1 more gift after certain conditions are met) it's recommended to use schedules instead.</p>
+        <p class="mt-1">Stages are useful if you completely want to change priorities once a set of gifts have been acquired, but if you need more granularity (for example, you only want to prioritize 1 more gift after certain conditions are met) it's recommended to use schedules instead. Schedules allow conditionals along with their floor settings, so it's possible to say "Once this gift is owned pursue this other gift". This is a useful to ensure order while letting the bot still care about things outside the schedule.</p>
       </section>
     """
   end
