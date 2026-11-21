@@ -157,7 +157,7 @@ defmodule StarlightBot.Input.Mouse do
     new_state = land(new_state, x, y, within, opts, @land_attempts)
 
     settle_ms = Keyword.get(opts, :settle_ms, @click_settle_ms)
-    pos = hover(max(settle_ms, MouseProfile.hesitation_ms()), new_state.current_pos)
+    pos = hover(max(settle_ms, MouseProfile.hesitation_ms()), new_state.current_pos, converge: true)
     do_click(button)
     trailing_ms = Keyword.get(opts, :trailing_ms, @click_trailing_ms)
     last_pos = hover(max(trailing_ms, MouseProfile.trailing_ms()), pos)
@@ -386,7 +386,7 @@ defmodule StarlightBot.Input.Mouse do
     %{state | current_pos: pos, last_velocity: terminal_velocity(Enum.reject(played, &is_nil/1)), premove: nil}
   end
 
-  defp hover(ms, {x, y}), do: Dwell.run(ms, {x, y}, @dwell_jitter_px, &step/2)
+  defp hover(ms, {x, y}, opts \\ []), do: Dwell.run(ms, {x, y}, @dwell_jitter_px, &step/2, opts)
 
   defp land(state, _x, _y, _within, _opts, 0), do: state
 
