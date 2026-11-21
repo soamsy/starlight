@@ -104,7 +104,7 @@ defmodule StarlightBot.Navigation.Screens.Battle do
   end
 
   defp await_playing do
-    retry_until(any_of([:battle_pause_button, :battle_playing_graph]), [key(:enter)],
+    retry_until(any_of([:battle_pause_button, :battle_playing_graph, :loading_stage_1, :loading_stage_2, :battle_over_black_confirm, :battle_defeat_retry, :event]), [key(:enter)],
       tries: @await_playing_tries,
       every: @await_playing_every_ms,
       retry_if: :battle_turn
