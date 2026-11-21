@@ -2314,7 +2314,19 @@ const TeamSearch = {
       e.preventDefault()
       this.pushEvent("team_nav_search_move", { dir: e.key === "ArrowUp" ? "up" : "down" })
     })
+    this.onPending = () => sessionStorage.setItem("starlight:team-menu-pending", "1")
+    window.addEventListener("starlight:team-menu-pending", this.onPending)
+    if (sessionStorage.getItem("starlight:team-menu-pending")) {
+      sessionStorage.removeItem("starlight:team-menu-pending")
+      this.pushEvent("team_nav_search_open", {})
+      this.js().show(this.el)
+      this.el.querySelector("#team-search-input")?.focus()
+    }
     this.scrollActive()
+  },
+
+  destroyed() {
+    window.removeEventListener("starlight:team-menu-pending", this.onPending)
   },
 
   updated() {

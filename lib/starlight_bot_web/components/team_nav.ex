@@ -327,7 +327,7 @@ defmodule StarlightBotWeb.Components.TeamNav do
     ~H"""
     <div class="relative" phx-click-away={JS.hide(to: "#team-menu")}>
       <div class={["flex h-6 items-stretch rounded-lg border-2 bg-base-100 shadow-sm transition hover:border-primary hover:shadow-md lg:h-8", if(@on_page, do: "border-primary/60", else: "border-primary/30 grayscale opacity-70")]}>
-        <button type="button" phx-click={if(@on_page, do: open_team_menu(JS.toggle(to: "#team-menu")), else: JS.push("team_nav_open"))} title={if(@on_page, do: "Switch team", else: "Open the team plans")}
+        <button type="button" phx-click={if(@on_page, do: open_team_menu(JS.toggle(to: "#team-menu")), else: JS.dispatch("starlight:team-menu-pending") |> JS.push("team_nav_open"))} title={if(@on_page, do: "Switch team", else: "Open the team plans")}
                 class="flex min-w-48 flex-1 items-center gap-2 rounded-md pl-3 pr-2 cursor-pointer hover:bg-primary/10 lg:min-w-60">
           <%= if @current do %>
             <span class="text-xs font-semibold lg:text-sm"><%= @current.name %></span>
