@@ -155,7 +155,7 @@ defmodule StarlightBot.GameWindow do
   end
 
   defp log_failure({:error, reason} = error) do
-    LogStore.append(:error, "launch: failed: #{inspect(reason)}")
+    LogStore.append(:error, "launch: failed: #{SteamLaunch.describe(reason)}")
     error
   end
 

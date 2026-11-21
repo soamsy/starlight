@@ -51,6 +51,16 @@ defmodule StarlightBot.SteamLaunch do
     end
   end
 
+  def describe({:no_compat_tool, app_id}),
+    do: "no Proton version is selected for app #{app_id}; set one in Steam (game Properties, Compatibility) and launch it once from Steam"
+
+  def describe({:steam_config_unreadable, path}), do: "could not read Steam's config at #{path}"
+  def describe({:compat_tool_not_found, name}), do: "Steam selects compatibility tool #{inspect(name)} but it is not installed"
+  def describe({:app_not_installed, app_id}), do: "app #{app_id} is not installed in any Steam library"
+  def describe(:libraryfolders_unreadable), do: "could not read Steam's libraryfolders.vdf"
+  def describe(:steam_not_found), do: "Steam installation not found"
+  def describe(reason), do: inspect(reason)
+
   def update_pending?(app_id) do
     app_id = to_string(app_id)
 
@@ -105,12 +115,17 @@ defmodule StarlightBot.SteamLaunch do
   end
 
   defp tool_name(root, app_id) do
-    with {:ok, config} <- Vdf.parse_file(Path.join(root, "config/config.vdf")),
-         %{} = mapping <- Vdf.get(config, ["InstallConfigStore", "Software", "Valve", "Steam", "CompatToolMapping"]),
-         name when is_binary(name) <- get_in(mapping, [app_id, "name"]) || get_in(mapping, ["0", "name"]) do
-      {:ok, name}
-    else
-      _ -> {:error, {:no_compat_tool, app_id}}
+    case Vdf.parse_file(Path.join(root, "config/config.vdf")) do
+      {:ok, config} ->
+        mapping = Vdf.get(config, ["InstallConfigStore", "Software", "Valve", "Steam", "CompatToolMapping"])
+
+        case is_map(mapping) && (get_in(mapping, [app_id, "name"]) || get_in(mapping, ["0", "name"])) do
+          name when is_binary(name) -> {:ok, name}
+          _ -> {:error, {:no_compat_tool, app_id}}
+        end
+
+      _ ->
+        {:error, {:steam_config_unreadable, Path.join(root, "config/config.vdf")}}
     end
   end
 

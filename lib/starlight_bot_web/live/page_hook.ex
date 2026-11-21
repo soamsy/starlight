@@ -383,7 +383,7 @@ defmodule StarlightBotWeb.Live.PageHook do
         end
       else
         {:error, :already_running} -> {:error, "Limbus is already running, close it before launching a new copy"}
-        {:error, reason} -> {:error, "Launching Limbus failed: #{inspect(reason)}"}
+        {:error, reason} -> {:error, "Launching Limbus failed: #{StarlightBot.SteamLaunch.describe(reason)}"}
       end
     end
   end
