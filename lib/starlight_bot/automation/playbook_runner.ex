@@ -469,10 +469,16 @@ defmodule StarlightBot.Automation.PlaybookRunner do
          {cx, cy} = Leeway.click(card_point) do
       if action["corrode"], do: overclock(cx, cy, ctx)
 
+      Ctx.log(ctx, :info, "ego pick: first click at #{cx},#{cy} (card #{inspect({x, w})})")
       Mouse.click(cx, cy)
-      Mouse.dwell(@ego_reclick_wait_ms)
 
-      unless await(DSL.not_hook(@ego_menu), 0), do: Mouse.click(cx, cy)
+      menu_gone? = await(DSL.not_hook(@ego_menu), @ego_reclick_wait_ms)
+      Ctx.log(ctx, :info, "ego pick: menu gone after #{@ego_reclick_wait_ms}ms dwell? #{inspect(menu_gone?)}")
+
+      unless menu_gone? do
+        Ctx.log(ctx, :info, "ego pick: menu still present, clicking again at #{cx},#{cy}")
+        Mouse.click(cx, cy)
+      end
 
       unless await(DSL.not_hook(@ego_menu), @ego_close_timeout_ms) do
         close_ego_menu(ctx, "EGO choice didn't take (not enough resources?)")
