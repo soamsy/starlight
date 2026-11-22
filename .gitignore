@@ -63,3 +63,5 @@ master.db*
 /priv/static/images/bg/kit_sources
 
 /priv/linux_checks/winprobe.exe
+
+/dist/
