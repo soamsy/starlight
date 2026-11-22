@@ -585,7 +585,6 @@ defmodule StarlightBot.Automation.PlaybookRunner do
       BattlePlans.fight_leaf?(leaf) -> fight_leaf(leaf, ctx)
       BattlePlans.shop_stages_leaf?(leaf) -> shop_stages_leaf(leaf, ctx)
       BattlePlans.shop_complete_leaf?(leaf) -> shop_complete_leaf(ctx)
-      BattlePlans.enemy_leaf?(leaf) -> enemy_count_leaf(leaf, frame, ctx)
       not BattlePlans.sinner_leaf?(leaf) -> hook_leaf(leaf, frame, ctx)
       is_nil(tray_info.sinners) -> :unknown
       true -> BattlePlans.sinner_count_matches?(leaf, tray_info.sinners)
@@ -638,12 +637,6 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   end
 
   defp position_leaf(_leaf, _tray_info, _ctx), do: :unknown
-
-  defp enemy_count_leaf(leaf, frame, ctx) do
-    count = frame |> EnemyTargets.find() |> length()
-    Ctx.log(ctx, :info, "playbook: #{count} enemy target(s) detected, #{BattlePlans.condition_label(leaf)}")
-    BattlePlans.enemy_count_matches?(leaf, count)
-  end
 
   defp fight_leaf(_leaf, ctx) do
     boss? = RunMemory.venue(ctx) == "md_boss"

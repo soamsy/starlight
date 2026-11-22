@@ -21,7 +21,6 @@ defmodule StarlightBot.BattlePlans do
   }
   @default_leaf %{"op" => "tray_count", "sinners" => [], "matches" => [], "cmp" => "gte", "value" => 1}
   @sinner_count_op "sinner_count"
-  @enemy_count_op "enemy_count"
   @tray_count_op "tray_count"
   @position_op "sinner_position"
   @fight_op "boss_fight"
@@ -771,9 +770,6 @@ defmodule StarlightBot.BattlePlans do
   def sinner_leaf?(%{"op" => @sinner_count_op}), do: true
   def sinner_leaf?(_node), do: false
 
-  def enemy_leaf?(%{"op" => @enemy_count_op}), do: true
-  def enemy_leaf?(_node), do: false
-
   def tray_leaf?(%{"op" => @tray_count_op}), do: true
   def tray_leaf?(_node), do: false
 
@@ -946,14 +942,6 @@ defmodule StarlightBot.BattlePlans do
     }
   end
 
-  defp build_leaf(%{"op" => @enemy_count_op} = params) do
-    %{
-      "op" => @enemy_count_op,
-      "cmp" => if(params["cmp"] in @count_cmps, do: params["cmp"], else: "gte"),
-      "value" => max(parse_count(params["value"]) || 1, 0)
-    }
-  end
-
   defp build_leaf(%{"op" => @fight_op}), do: %{"op" => @fight_op}
 
   defp build_leaf(%{"op" => @shop_complete_op}), do: %{"op" => @shop_complete_op}
@@ -992,8 +980,6 @@ defmodule StarlightBot.BattlePlans do
 
   def sinner_count_matches?(leaf, count), do: tray_count_matches?(leaf, count)
 
-  def enemy_count_matches?(leaf, count), do: tray_count_matches?(leaf, count)
-
   defp cmp_symbol("eq"), do: "="
   defp cmp_symbol("gte"), do: ">="
   defp cmp_symbol("lte"), do: "<="
@@ -1001,8 +987,6 @@ defmodule StarlightBot.BattlePlans do
   defp leaf_label(%{"not" => true, "op" => op} = leaf, names) when op not in ["hook", "boss_fight", "shop_complete"], do: "not " <> leaf_label(Map.delete(leaf, "not"), names)
 
   defp leaf_label(%{"op" => @sinner_count_op} = leaf, _names), do: "sinners #{cmp_symbol(leaf["cmp"])} #{leaf["value"]}"
-
-  defp leaf_label(%{"op" => @enemy_count_op} = leaf, _names), do: "targets #{cmp_symbol(leaf["cmp"])} #{leaf["value"]}"
 
   defp leaf_label(%{"op" => @shop_stages_op} = leaf, _names), do: "shop stages done #{cmp_symbol(leaf["cmp"])} #{leaf["value"]}"
 
