@@ -80,6 +80,7 @@ fn create_window(app_handle: &tauri::AppHandle, port: u16) {
         .title("Starlight")
         .inner_size(1400.0, 900.0)
         .enable_clipboard_access()
+        .disable_drag_drop_handler()
         .on_new_window(|url, _features| {
             open_in_default_browser(url.as_str());
             tauri::webview::NewWindowResponse::Deny
