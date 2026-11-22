@@ -1678,7 +1678,16 @@ defmodule StarlightBot.Automation.Shop.Ops do
     checks[popup.bottom] or not (checks[popup.top] or checks[popup.track])
   end
 
-  def detect_and_update_cost(ctx), do: detect_and_update_cost(@cost_read_tries, nil, ctx)
+  def detect_and_update_cost(ctx) do
+    case escape_to_shop(ctx, 0) do
+      {:ok, _} ->
+        detect_and_update_cost(@cost_read_tries, nil, ctx)
+
+      {:error, reason} ->
+        Ctx.log(ctx, :error, "cost: not on the shop screen, skipping read (#{inspect(reason)})")
+        :ok
+    end
+  end
 
   defp detect_and_update_cost(tries_left, previous, ctx) do
     with {:ok, frame} <- Capture.grab_frame(),
