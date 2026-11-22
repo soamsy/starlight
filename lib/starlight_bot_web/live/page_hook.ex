@@ -353,9 +353,8 @@ defmodule StarlightBotWeb.Live.PageHook do
   defp handle_window_event("game_window_close", _params, socket) do
     run_window_action(socket, "closing", fn ->
       case GameWindow.close() do
-        :ok -> {:info, "Sent Alt+F4 to Limbus"}
+        :ok -> {:info, "Asked Limbus to close"}
         {:error, :not_running} -> {:error, "Limbus is not running"}
-        {:error, :not_focused} -> {:error, "Limbus isn't focused, click its window first"}
       end
     end)
   end

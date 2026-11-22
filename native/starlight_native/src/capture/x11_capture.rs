@@ -9,6 +9,10 @@ pub fn get_window_rect(class_name: &str) -> Result<(i32, i32, u32, u32), NativeE
     x11::rect(&x11::locate(class_name)?)
 }
 
+pub fn close_window(class_name: &str) -> Result<(), NativeError> {
+    x11::close(&x11::locate(class_name)?)
+}
+
 pub fn resize_window(class_name: &str, width: u32, height: u32) -> Result<(), NativeError> {
     x11::resize(&x11::locate(class_name)?, width, height)
 }

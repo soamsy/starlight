@@ -84,6 +84,17 @@ fn window_details<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
+fn close_window<'a>(env: Env<'a>, class_name: String) -> Term<'a> {
+    match capture::close_window(&class_name) {
+        Ok(()) => ok().encode(env),
+        Err(e) => {
+            crate::elog_warn!("[starlight_native] close_window error: {e}");
+            (error(), e.to_atom(env)).encode(env)
+        }
+    }
+}
+
+#[rustler::nif(schedule = "DirtyIo")]
 fn resize_window<'a>(env: Env<'a>, class_name: String, width: u32, height: u32) -> Term<'a> {
     match capture::resize_window(&class_name, width, height) {
         Ok(()) => ok().encode(env),

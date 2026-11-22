@@ -16,9 +16,9 @@ use windows_sys::Win32::UI::HiDpi::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     FindWindowW, GetClassNameW, GetClientRect, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowLongW,
-    GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsZoomed, SetWindowPos, ShowWindow, SystemParametersInfoW,
+    GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsZoomed, PostMessageW, SetWindowPos, ShowWindow, SystemParametersInfoW,
     GWL_EXSTYLE, GWL_STYLE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETMOUSE,
-    SPI_GETMOUSESPEED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SW_RESTORE,
+    SPI_GETMOUSESPEED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SW_RESTORE, WM_CLOSE,
 };
 
 use crate::error::NativeError;
@@ -145,6 +145,14 @@ pub fn window_details(title: &str) -> Result<Vec<String>, NativeError> {
         format!("window dpi {}", unsafe { GetDpiForWindow(hwnd) }),
         format!("monitor {}", monitor_name(unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) })),
     ])
+}
+
+pub fn close_window(title: &str) -> Result<(), NativeError> {
+    let hwnd = locate(title)?;
+    if unsafe { PostMessageW(hwnd, WM_CLOSE, 0, 0) } == 0 {
+        return Err(NativeError::CaptureFailed("PostMessageW failed".into()));
+    }
+    Ok(())
 }
 
 pub fn resize_window(title: &str, width: u32, height: u32) -> Result<(), NativeError> {

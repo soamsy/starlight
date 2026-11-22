@@ -1,6 +1,5 @@
 defmodule StarlightBot.GameWindow do
   alias StarlightBot.{AppSettings, HostEnv, LauncherDeps, LogStore, Native, NestedGamescope, SteamLaunch, WindowTargets}
-  alias StarlightBot.Input.Keyboard
   alias StarlightBot.Vision.Capture
 
   @target_w 1920
@@ -132,10 +131,9 @@ defmodule StarlightBot.GameWindow do
   defp launcher_label("gamescope_window"), do: "a gamescope window"
 
   def close do
-    cond do
-      Capture.window_rect() == nil -> {:error, :not_running}
-      not Capture.focused?() -> {:error, :not_focused}
-      true -> Keyboard.hold([:lalt, :f4])
+    case Native.close_window(WindowTargets.title()) do
+      :ok -> :ok
+      {:error, _} -> {:error, :not_running}
     end
   end
 

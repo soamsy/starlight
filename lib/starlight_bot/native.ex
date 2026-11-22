@@ -33,6 +33,9 @@ defmodule StarlightBot.Native do
   @doc "Describe the located window as a list of text lines: display, geometry, inner client area, WM hints. Returns {:ok, lines} or {:error, atom}."
   def window_details(_class_name), do: nif_err()
 
+  @doc "Ask the window to close (WM_DELETE_WINDOW on X11, WM_CLOSE on Windows). Returns :ok or {:error, atom}."
+  def close_window(_class_name), do: nif_err()
+
   @doc "Take the window out of fullscreen and resize it through plain X11 requests. Returns :ok or {:error, atom}."
   def resize_window(_class_name, _width, _height), do: nif_err()
 

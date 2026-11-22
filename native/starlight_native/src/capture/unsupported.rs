@@ -16,6 +16,10 @@ pub fn get_window_rect(_class_name: &str) -> Result<(i32, i32, u32, u32), Native
     Err(NativeError::WindowNotFound)
 }
 
+pub fn close_window(_class_name: &str) -> Result<(), NativeError> {
+    Err(NativeError::WindowNotFound)
+}
+
 pub fn resize_window(_class_name: &str, _width: u32, _height: u32) -> Result<(), NativeError> {
     Err(NativeError::WindowNotFound)
 }

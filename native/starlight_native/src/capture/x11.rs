@@ -329,6 +329,25 @@ pub fn resize(located: &Located, width: u32, height: u32) -> Result<(), NativeEr
         .map_err(xerr)
 }
 
+pub fn close(located: &Located) -> Result<(), NativeError> {
+    let d = &located.display;
+    let protocols = intern(&d.conn, "WM_PROTOCOLS")?;
+    let delete = intern(&d.conn, "WM_DELETE_WINDOW")?;
+    let event = x::ClientMessageEvent::new(
+        located.window,
+        protocols,
+        x::ClientMessageData::Data32([delete.resource_id(), x::CURRENT_TIME, 0, 0, 0]),
+    );
+    d.conn
+        .send_and_check_request(&x::SendEvent {
+            propagate: false,
+            destination: x::SendEventDest::Window(located.window),
+            event_mask: x::EventMask::NO_EVENT,
+            event: &event,
+        })
+        .map_err(xerr)
+}
+
 struct Geometry {
     origin: (i32, i32),
     window: (u32, u32),
