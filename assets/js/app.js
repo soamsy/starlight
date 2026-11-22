@@ -1659,6 +1659,7 @@ const SortableList = {
       sortDrag = { item, items, source: this.el, packed: false, frozen: new Set() }
       freezeList(this.el)
       e.dataTransfer.effectAllowed = "move"
+      e.dataTransfer.setData("text/plain", item.dataset.sortId)
       if (items.length > 1) {
         const stack = document.createElement("div")
         stack.style.cssText = `position:fixed;top:-10000px;left:0;width:${item.offsetWidth}px;display:flex;flex-direction:column;gap:4px`
