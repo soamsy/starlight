@@ -23,6 +23,7 @@ defmodule StarlightBot.Automation.PlaybookRunner do
   @overclock_release_settle_ms 50
   @ego_close_timeout_ms 1_500
   @ego_reclick_wait_ms 1000
+  @ego_plain_reclick_wait_ms 200
   @target_tries 2
   @bad_target_radius_px 50
   @drop_ready_timeout_ms 1_000
@@ -467,13 +468,14 @@ defmodule StarlightBot.Automation.PlaybookRunner do
          {:ok, %{region: {_wx, wy, _ww, wh}}} <- HookRegistry.find(@ego_warning),
          {:ok, card_point} <- Runner.to_screen_point({x + w / 2, wy + wh / 2}),
          {cx, cy} = Leeway.click(card_point) do
+      reclick_wait_ms = if action["corrode"], do: @ego_reclick_wait_ms, else: @ego_plain_reclick_wait_ms
       if action["corrode"], do: overclock(cx, cy, ctx)
 
       Ctx.log(ctx, :info, "ego pick: first click at #{cx},#{cy} (card #{inspect({x, w})})")
       Mouse.click(cx, cy)
 
-      menu_gone? = await(DSL.not_hook(@ego_menu), @ego_reclick_wait_ms)
-      Ctx.log(ctx, :info, "ego pick: menu gone after #{@ego_reclick_wait_ms}ms dwell? #{inspect(menu_gone?)}")
+      menu_gone? = await(DSL.not_hook(@ego_menu), reclick_wait_ms)
+      Ctx.log(ctx, :info, "ego pick: menu gone after #{reclick_wait_ms}ms dwell? #{inspect(menu_gone?)}")
 
       unless menu_gone? do
         Ctx.log(ctx, :info, "ego pick: menu still present, clicking again at #{cx},#{cy}")
