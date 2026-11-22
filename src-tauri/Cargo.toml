@@ -1,7 +1,7 @@
 [package]
 name = "starlight"
 version = "0.1.0"
-description = "Limbus Company team comps and automation"
+description = "Limbus Company automation"
 edition = "2021"
 
 [lib]
