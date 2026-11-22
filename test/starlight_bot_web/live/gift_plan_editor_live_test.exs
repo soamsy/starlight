@@ -57,6 +57,23 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLiveTest do
     assert StarlightBot.GiftPlans.Routes.reorder(routes, nil, 4, ["c", "a"]) |> Enum.map(& &1["id"]) == ["c", "b", "a"]
   end
 
+  test "the gift list renders one page of rows and more_gifts reveals the next page" do
+    BaseRepo.insert_all(
+      "ego_gifts",
+      for(n <- 1..130, do: %{id: "bulk_#{n}", name: "Bulk #{n}", affinity: "burn", tier: 1, buying_cost: 10, ingredients: nil, obtain_method: "Shop"})
+    )
+
+    {:ok, socket} = Live.mount(%{}, %{}, %Phoenix.LiveView.Socket{assigns: %{__changed__: %{}, flash: %{}}})
+    socket = event(socket, "new_plan", %{})
+    rows = fn socket -> socket |> render() |> String.split("data-gift-row=") |> length() |> Kernel.-(1) end
+
+    assert rows.(socket) == 60
+    assert render(socket) =~ "Show more"
+
+    socket = event(socket, "more_gifts", %{})
+    assert rows.(socket) == 120
+  end
+
   defp section(socket), do: hd(saved(socket)["sections"])
   defp entry(socket, name), do: Enum.find(section(socket)["entries"], &(GiftPlans.subject_gift(&1) == name))
   defp shop(socket), do: event(socket, "set_tab", %{"tab" => "shop"})

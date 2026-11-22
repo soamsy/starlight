@@ -13,6 +13,8 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   @affinities ~w(bleed blunt burn charge pierce poise rupture sinking slash tremor)
   @affinity_order ~w(burn bleed tremor rupture sinking poise charge slash pierce blunt)
   @gift_sorts ~w(default name tier affinity)
+  @gift_page 60
+  @gift_list_events ~w(restore_view restore_browser set_tab filter_gifts set_gift_tier_filter set_gift_affinity_filter set_gift_mode_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort)
   @gift_modes ~w(normal hard extreme)
   @uptie_views ~w(base uptie2 uptie3)
   @stat_codes %{"cp" => "Clash Power", "fc" => "Final Power", "bc" => "Base Power", "cg" => "Coin Count"}
@@ -80,7 +82,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       }}
   ]
 
-  @read_only_events ~w(restore_view restore_browser set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter set_gift_mode_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_select_branch list_copy_entries list_select_tab list_refresh_select_tab start_rename_stage cancel_rename_stage rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_new pack_edit pack_close)
+  @read_only_events ~w(restore_view restore_browser set_tab toggle_help filter_gifts set_gift_tier_filter set_gift_affinity_filter set_gift_mode_filter toggle_gift_fixed_filter toggle_gift_no_pack_filter set_gift_pack_filter clear_gift_filters set_gift_sort more_gifts show_gift_popup set_gift_popup_view hide_gift_popup set_route_shop open_case_condition close_case_condition list_select_branch list_copy_entries list_select_tab list_refresh_select_tab start_rename_stage cancel_rename_stage rf_pick rf_reset rf_cheapest list_open_fusion list_close_fusion rt_copy copy_plan clipboard_status plan_clipboard_failed pack_new pack_edit pack_close)
 
   def read_only_events, do: @read_only_events
 
@@ -100,6 +102,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       |> assign(:team_template, !!(team && team.template))
       |> read_only_guard(@read_only_events, &plan_locked?/1)
       |> pack_entry_guard()
+      |> gift_limit_reset()
       |> PlanHistory.attach(:plan_data, persist: &persist_plan/1, reconcile: &reconcile_selection/1)
       |> assign_templates(:gift_plans)
       |> assign(:tab_counts, PlanCounts.for_team(team && team.id))
@@ -140,6 +143,13 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       socket
     end
   end
+
+  defp gift_limit_reset(socket) do
+    if connected?(socket), do: attach_hook(socket, :gift_limit_reset, :handle_event, &reset_gift_limit/3), else: socket
+  end
+
+  defp reset_gift_limit(event, _params, socket) when event in @gift_list_events, do: {:cont, assign(socket, :gift_limit, @gift_page)}
+  defp reset_gift_limit(_event, _params, socket), do: {:cont, socket}
 
   defp publish_view(%{assigns: %{pack_edit: %{}}} = socket), do: socket
 
@@ -267,6 +277,9 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
   def handle_event("set_tab", %{"tab" => tab}, socket) do
     {:noreply, socket |> assign(:active_tab, String.to_existing_atom(tab)) |> assign(:gift_popup, nil)}
   end
+
+  @impl true
+  def handle_event("more_gifts", _params, socket), do: {:noreply, update(socket, :gift_limit, &(&1 + @gift_page))}
 
   @impl true
   def handle_event("filter_gifts", %{"value" => value}, socket) do
@@ -1580,6 +1593,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
     |> assign(:gift_no_pack_filter, false)
     |> assign(:gift_pack_filter, "")
     |> assign(:gift_sort, "default")
+    |> assign(:gift_limit, @gift_page)
   end
 
   defp load_plan(socket, id, template_id \\ nil) do
@@ -2000,7 +2014,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <div data-gift-popup={gift.name} class="relative w-7 h-7 shrink-0 rounded overflow-hidden bg-base-200 ring-1 ring-base-300 cursor-pointer">
         <img src={gift.image_path} loading="lazy" class="w-full h-full object-cover" draggable="false" />
         <img :if={gift.affinity not in [nil, "none"]} src={gift_affinity_icon(gift.affinity)} title={gift.affinity} loading="lazy" draggable="false"
-             class="absolute bottom-0 right-0 w-3 h-3 object-contain drop-shadow" />
+             class="absolute bottom-0 right-0 w-3 h-3 object-contain" />
       </div>
       <span :if={gift.tier} class="text-[10px] text-base-content/50 w-4 shrink-0">T<%= gift.tier %></span>
       <span data-gift-popup={gift.name} data-gift-name class="text-[11px] truncate flex-1 min-w-0 select-none cursor-grab" title={gift.name}><%= gift.name %></span>
@@ -2549,7 +2563,7 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
           <img src={@gift.image_path} data-gift-popup={@gift.name} data-gift-uptie={@keep? && @segment["uptie"]} class="w-6 h-6 rounded object-cover cursor-pointer pointer-events-auto" />
           <span :if={@gift.tier} class="absolute top-0 left-0 px-0.5 text-[9px] leading-tight font-bold bg-base-100/80 rounded-br pointer-events-none"><%= gift_tier_roman(@gift.tier) %></span>
           <img :if={@gift.affinity not in [nil, "none"]} src={gift_affinity_icon(@gift.affinity)} title={@gift.affinity} draggable="false"
-               class="absolute bottom-0 right-0 w-3 h-3 object-contain drop-shadow pointer-events-none" />
+               class="absolute bottom-0 right-0 w-3 h-3 object-contain pointer-events-none" />
         </div>
         <span :if={@pattern? and not @action?} class="badge badge-secondary badge-xs">any</span>
         <span :if={@action?} class={"badge badge-xs " <> if(@entry["subject"]["action"] == "skill_replace", do: "badge-info text-black", else: "badge-success")}>

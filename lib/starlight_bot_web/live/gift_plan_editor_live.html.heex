@@ -120,8 +120,11 @@
 
                     <% picks = @plan_data["gift_search"] %>
                     <% added_names = if(@active_tab == :loadout, do: picks, else: add_target["entries"] |> List.wrap() |> Enum.map(&GiftPlans.subject_gift/1) |> Enum.reject(&is_nil/1)) %>
-                    <div id="gift-drag-source" phx-hook="GiftDragSource" data-added={Jason.encode!(added_names)} data-add-locked={to_string(@active_tab == :loadout and length(picks) >= GiftPlans.gift_search_max())} class="flex flex-col flex-1 min-h-0 max-lg:min-h-28 overflow-y-auto">
-                      <.gift_rows gifts={filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_mode_filter, @gift_fixed_filter, @gift_no_pack_filter, @gift_pack_filter, @theme_packs_by_gift_id, @gifts_by_id, @gift_sort)} loadout={@active_tab == :loadout} />
+                    <% listed_gifts = filtered_gifts(if(@active_tab == :loadout, do: searchable_gifts(@gifts), else: @gifts), @gift_filter, @gift_tier_filter, @gift_affinity_filter, @gift_mode_filter, @gift_fixed_filter, @gift_no_pack_filter, @gift_pack_filter, @theme_packs_by_gift_id, @gifts_by_id, @gift_sort) %>
+                    <% hidden_gifts = length(listed_gifts) - @gift_limit %>
+                    <div id="gift-drag-source" phx-hook="GiftDragSource" phx-viewport-bottom={hidden_gifts > 0 && "more_gifts"} data-added={Jason.encode!(added_names)} data-add-locked={to_string(@active_tab == :loadout and length(picks) >= GiftPlans.gift_search_max())} class="flex flex-col flex-1 min-h-0 max-lg:min-h-28 overflow-y-auto">
+                      <.gift_rows gifts={Enum.take(listed_gifts, @gift_limit)} loadout={@active_tab == :loadout} />
+                      <button :if={hidden_gifts > 0} type="button" phx-click="more_gifts" class="btn btn-xs btn-ghost shrink-0 mt-1">Show more (<%= hidden_gifts %> left)</button>
                     </div>
                   <% end %>
                 </div>
