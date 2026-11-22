@@ -2570,7 +2570,10 @@ defmodule StarlightBotWeb.Live.GiftPlanEditorLive do
       <%= cond do %>
       <% @abandoned? -> %>
         <span :if={@action?} class="text-[11px] font-semibold text-base-content/60"><%= if @from == 1, do: "Not started", else: "Abandoned" %></span>
-        <span :if={not @action?} class="text-[11px] font-semibold text-base-content/60 cursor-help"
+        <span :if={@pattern? and not @action?} class="text-[11px] font-semibold text-base-content/60">
+          <%= if @from == 1, do: "Not a goal", else: "No longer a goal" %>
+        </span>
+        <span :if={not @pattern? and not @action?} class="text-[11px] font-semibold text-base-content/60 cursor-help"
               title="Never bought here, even if a broader entry (such as a whole affinity) would buy it">
           <%= if @from == 1, do: "Buys refused", else: "Buys refused from here" %>
         </span>
