@@ -57,6 +57,14 @@ defmodule StarlightBot.AppSettings do
 
   def put_gamescope_flags(flags) when is_binary(flags), do: put("gamescope_flags", String.trim(flags))
 
+  @default_unity_flags "-force-d3d11"
+
+  def default_unity_flags, do: @default_unity_flags
+
+  def unity_flags, do: Repo.one(from_key("unity_flags")) || @default_unity_flags
+
+  def put_unity_flags(flags) when is_binary(flags), do: put("unity_flags", String.trim(flags))
+
   def window_titles do
     case :persistent_term.get({__MODULE__, :window_titles}, nil) do
       nil ->

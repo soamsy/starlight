@@ -28,7 +28,7 @@
 
 <%= if @settings_open do %>
   <div class="modal modal-open" phx-window-keydown="settings_close" phx-key="Escape">
-    <div class="modal-box max-w-2xl" phx-click-away="settings_close">
+    <div class="modal-box max-w-3xl" phx-click-away="settings_close">
       <div class="flex items-center justify-between gap-3 mb-3">
         <h2 class="text-lg font-bold">Scheduler</h2>
         <form phx-change="enkephalin_save" class="flex items-center gap-2">
@@ -48,7 +48,7 @@
         </form>
       </div>
 
-      <div class="h-[40rem] max-h-[calc(100vh-14rem)] overflow-y-auto overflow-x-hidden">
+      <div class="h-[44rem] max-h-[calc(100vh-12rem)] overflow-y-auto overflow-x-hidden">
       <div class="flex min-h-full flex-col">
         <div>
           {live_render(@socket, StarlightBotWeb.Live.SchedulerLive, id: "scheduler-banner", session: %{"part" => "banner"})}

@@ -42,6 +42,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
      |> assign(:game_launcher, AppSettings.launcher())
      |> assign(:gamescope_resolution, AppSettings.gamescope_resolution())
      |> assign(:gamescope_flags, AppSettings.gamescope_flags())
+     |> assign(:unity_flags, AppSettings.unity_flags())
      |> assign(:window_titles, AppSettings.window_titles())
      |> assign_command_preview()}
   end
@@ -65,6 +66,16 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def handle_event("gamescope_flags_reset", _params, socket) do
     AppSettings.put_gamescope_flags(AppSettings.default_gamescope_flags())
     {:noreply, socket |> assign(:gamescope_flags, AppSettings.gamescope_flags()) |> assign_command_preview()}
+  end
+
+  def handle_event("unity_flags_set", %{"unity_flags" => flags}, socket) do
+    AppSettings.put_unity_flags(flags)
+    {:noreply, socket |> assign(:unity_flags, AppSettings.unity_flags()) |> assign_command_preview()}
+  end
+
+  def handle_event("unity_flags_reset", _params, socket) do
+    AppSettings.put_unity_flags(AppSettings.default_unity_flags())
+    {:noreply, socket |> assign(:unity_flags, AppSettings.unity_flags()) |> assign_command_preview()}
   end
 
   def handle_event("window_titles_set", %{"window_titles" => titles}, socket) do

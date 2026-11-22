@@ -12,6 +12,7 @@ defmodule StarlightBotWeb.Components.LaunchFields do
   attr :launcher, :string, default: "gamescope_window"
   attr :gamescope_resolution, :string, default: "1920x1080"
   attr :gamescope_flags, :string, default: ""
+  attr :unity_flags, :string, default: ""
   attr :window_titles, :list, default: []
   attr :requirements, :list, default: []
   attr :command_preview, :string, default: nil
@@ -44,7 +45,7 @@ defmodule StarlightBotWeb.Components.LaunchFields do
         <label class="flex flex-col gap-1">
           <span class="text-xs text-base-content/40">Steam app id</span>
           <div class="flex items-center gap-1">
-            <input type="text" name="steam_app_id" phx-debounce="500" value={@steam_app_id} class="input input-sm input-bordered font-mono w-24" />
+            <input type="text" name="steam_app_id" phx-debounce="500" value={@steam_app_id} class="input input-sm input-bordered font-mono w-22" />
             <button type="button" phx-click={@reset_event} disabled={@steam_app_id == Scheduler.default_steam_app_id()} class="tooltip tooltip-left btn btn-ghost btn-square btn-sm text-base-content/60" data-tip="Reset to default">
               <.icon name="lucide-refresh-cw" class="size-4" />
             </button>
@@ -56,8 +57,17 @@ defmodule StarlightBotWeb.Components.LaunchFields do
 
       <%= if @launch_mode != "none" do %>
         <label class="flex flex-col gap-1">
-          <span class="text-xs text-base-content/40">Timeout (seconds)</span>
-          <input type="number" name="launch_timeout_s" phx-debounce="500" min="1" value={@launch_timeout_s} class="input input-sm input-bordered w-24" />
+          <span class="text-xs text-base-content/40">Timeout (s)</span>
+          <input type="number" name="launch_timeout_s" phx-debounce="500" min="1" value={@launch_timeout_s} class="input input-sm input-bordered w-16" />
+        </label>
+        <label :if={@launcher in ["gamescope", "gamescope_window"]} class="flex flex-col gap-1">
+          <span class="text-xs text-base-content/40">Unity flags</span>
+          <div class="flex items-center gap-1">
+            <input type="text" name="unity_flags" phx-change="unity_flags_set" phx-debounce="500" value={@unity_flags} placeholder="-force-d3d11" class="input input-sm input-bordered w-26 font-mono" />
+            <button type="button" phx-click="unity_flags_reset" disabled={@unity_flags == StarlightBot.AppSettings.default_unity_flags()} class="tooltip tooltip-left btn btn-ghost btn-square btn-sm text-base-content/60" data-tip="Reset to default">
+              <.icon name="lucide-refresh-cw" class="size-4" />
+            </button>
+          </div>
         </label>
       <% else %>
         <input type="hidden" name="launch_timeout_s" value={@launch_timeout_s} />

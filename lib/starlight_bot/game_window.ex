@@ -76,7 +76,7 @@ defmodule StarlightBot.GameWindow do
 
   def launch_program(_settings, _launcher, _exe, _args), do: {:error, :steam_launch_mode_required}
 
-  defp game_args(launcher) when launcher in ["gamescope", "gamescope_window"], do: ["-force-d3d11"]
+  defp game_args(launcher) when launcher in ["gamescope", "gamescope_window"], do: String.split(AppSettings.unity_flags())
   defp game_args(_launcher), do: []
 
   defp pin_resolution(launcher, env) when launcher in ["gamescope", "gamescope_window"] do
