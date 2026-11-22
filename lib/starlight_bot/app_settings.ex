@@ -57,6 +57,34 @@ defmodule StarlightBot.AppSettings do
 
   def put_gamescope_flags(flags) when is_binary(flags), do: put("gamescope_flags", String.trim(flags))
 
+  def window_titles do
+    case :persistent_term.get({__MODULE__, :window_titles}, nil) do
+      nil ->
+        titles = "window_titles" |> get() |> decode_titles()
+        :persistent_term.put({__MODULE__, :window_titles}, titles)
+        titles
+
+      titles ->
+        titles
+    end
+  end
+
+  def put_window_titles(titles) when is_list(titles) do
+    cleaned = titles |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == "")) |> Enum.uniq()
+    put("window_titles", Jason.encode!(cleaned))
+    :persistent_term.put({__MODULE__, :window_titles}, cleaned)
+    cleaned
+  end
+
+  defp decode_titles(nil), do: []
+
+  defp decode_titles(json) do
+    case Jason.decode(json) do
+      {:ok, titles} when is_list(titles) -> Enum.filter(titles, &is_binary/1)
+      _ -> []
+    end
+  end
+
   def battle_debug?, do: Repo.one(from_key("battle_debug")) == "true"
 
   def put_battle_debug(enabled?) when is_boolean(enabled?), do: put("battle_debug", to_string(enabled?))

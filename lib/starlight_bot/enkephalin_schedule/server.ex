@@ -78,7 +78,7 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
   defp charge(settings, end_at) do
     with {:ok, rect, launched?} <- ensure_window(settings, end_at),
          :ok <- claim_launch(launched?),
-         :ok <- ensure_aspect(rect, settings.steam_app_id),
+         :ok <- ensure_aspect(rect),
          :ok <- await_game_ready(end_at),
          :ok <- start_charge() do
       {:started, launched?}
@@ -110,11 +110,11 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
     end
   end
 
-  defp ensure_aspect(rect, steam_app_id) do
+  defp ensure_aspect(rect) do
     if GameWindow.aspect_ok?(rect) do
       :ok
     else
-      case GameWindow.fix_aspect(steam_app_id) do
+      case GameWindow.fix_aspect() do
         {:ok, _} -> :ok
         {:error, reason} -> {:error, "couldn't fix the aspect ratio: #{inspect(reason)}"}
       end

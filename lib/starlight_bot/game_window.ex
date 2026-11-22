@@ -1,5 +1,6 @@
 defmodule StarlightBot.GameWindow do
-  alias StarlightBot.{AppSettings, LauncherDeps, LogStore, Native, NestedGamescope, SteamLaunch}
+  alias StarlightBot.{AppSettings, LauncherDeps, LogStore, Native, NestedGamescope, SteamLaunch, WindowTargets}
+  alias StarlightBot.Input.Keyboard
   alias StarlightBot.Vision.Capture
 
   @target_w 1920
@@ -12,7 +13,7 @@ defmodule StarlightBot.GameWindow do
   @plugin_name "starlight-resize"
 
   def rect do
-    case Native.get_window_rect(window_class()) do
+    case Native.get_window_rect(WindowTargets.title()) do
       {:ok, x, y, w, h} -> {:ok, {x, y, w, h}}
       {:error, reason} -> {:error, reason}
     end
@@ -131,9 +132,10 @@ defmodule StarlightBot.GameWindow do
   defp launcher_label("gamescope_window"), do: "a gamescope window"
 
   def close do
-    case System.cmd("pkill", ["-TERM", "-f", window_class() <> ".exe"], stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      _ -> {:error, :not_running}
+    cond do
+      Capture.window_rect() == nil -> {:error, :not_running}
+      not Capture.focused?() -> {:error, :not_focused}
+      true -> Keyboard.hold([:lalt, :f4])
     end
   end
 
@@ -212,13 +214,13 @@ defmodule StarlightBot.GameWindow do
     end
   end
 
-  def fix_aspect(steam_app_id) do
+  def fix_aspect do
     lock = {:game_window_resize, self()}
 
     if :global.set_lock(lock, [node()], 0) do
       try do
         with {:ok, before} <- rect() do
-          fix_aspect(steam_app_id, before, @resize_attempts)
+          fix_aspect(before, @resize_attempts)
         end
       after
         :global.del_lock(lock, [node()])
@@ -228,8 +230,8 @@ defmodule StarlightBot.GameWindow do
     end
   end
 
-  defp fix_aspect(steam_app_id, before, attempts_left) do
-    with {:ok, buses} <- resize_window(steam_app_id) do
+  defp fix_aspect(before, attempts_left) do
+    with {:ok, buses} <- resize_window() do
       Process.sleep(@resize_settle_ms)
       Capture.refresh_window_rect()
 
@@ -237,7 +239,7 @@ defmodule StarlightBot.GameWindow do
         {:ok, {_, _, @target_w, @target_h} = after_rect} -> {:ok, %{before: before, after: after_rect, buses: buses}}
         {:ok, _after_rect} when attempts_left > 1 ->
           Native.forget_window()
-          fix_aspect(steam_app_id, before, attempts_left - 1)
+          fix_aspect(before, attempts_left - 1)
         {:ok, after_rect} ->
           Native.forget_window()
           {:error, {:resize_ignored, %{before: before, after: after_rect, buses: buses}}}
@@ -246,10 +248,10 @@ defmodule StarlightBot.GameWindow do
     end
   end
 
-  defp resize_window(steam_app_id) do
-    case resize_hyprland(steam_app_id) do
+  defp resize_window do
+    case resize_hyprland() do
       :ok -> {:ok, [:hyprland]}
-      :skip -> resize_via_kwin_or_x11(steam_app_id)
+      :skip -> resize_via_kwin_or_x11()
     end
   end
 
@@ -264,11 +266,11 @@ defmodule StarlightBot.GameWindow do
     |> Enum.join(" and ")
   end
 
-  defp resize_hyprland(steam_app_id) do
+  defp resize_hyprland do
     with signature when is_binary(signature) <- System.get_env("HYPRLAND_INSTANCE_SIGNATURE"),
          {out, 0} <- System.cmd("hyprctl", ["clients", "-j"], stderr_to_stdout: true),
          {:ok, clients} <- Jason.decode(out),
-         %{"address" => address, "floating" => floating, "fullscreen" => fullscreen} <- Enum.find(clients, &hyprland_match?(&1, steam_app_id)) do
+         %{"address" => address, "floating" => floating, "fullscreen" => fullscreen} <- Enum.find(clients, &hyprland_match?/1) do
       target = "address:#{address}"
 
       if fullscreen != 0 do
@@ -304,27 +306,27 @@ defmodule StarlightBot.GameWindow do
     end
   end
 
-  defp hyprland_match?(client, steam_app_id) do
-    class = String.downcase(client["class"] || "")
-    client["title"] == window_title() or class == String.downcase(window_class()) or class == "steam_app_#{steam_app_id}"
+  defp hyprland_match?(client) do
+    title = String.downcase(client["title"] || "")
+    Enum.any?(WindowTargets.titles(), &String.contains?(title, String.downcase(&1)))
   end
 
-  defp resize_via_kwin_or_x11(steam_app_id) do
-    case run_resize_script(steam_app_id) do
+  defp resize_via_kwin_or_x11 do
+    case run_resize_script() do
       {:ok, buses} ->
         {:ok, buses}
 
       {:error, {:kwin_unreachable, _}} ->
-        case Native.resize_window(window_class(), @target_w, @target_h) do
+        case Native.resize_window(WindowTargets.title(), @target_w, @target_h) do
           :ok -> {:ok, [:x11]}
           {:error, reason} -> {:error, reason}
         end
     end
   end
 
-  defp run_resize_script(steam_app_id) do
+  defp run_resize_script do
     path = Path.join(System.get_env("XDG_RUNTIME_DIR") || System.tmp_dir!(), "#{@plugin_name}.js")
-    File.write!(path, resize_script(steam_app_id))
+    File.write!(path, resize_script())
 
     results =
       Enum.map(buses(), fn {label, bus_args} ->
@@ -364,11 +366,11 @@ defmodule StarlightBot.GameWindow do
     end
   end
 
-  defp resize_script(steam_app_id) do
+  defp resize_script do
     """
     for (const w of workspace.stackingOrder) {
-      const cls = (w.resourceClass || "").toLowerCase();
-      if (w.caption !== #{Jason.encode!(window_title())} && cls !== #{Jason.encode!(String.downcase(window_class()))} && cls !== #{Jason.encode!("steam_app_#{steam_app_id}")}) continue;
+      const caption = (w.caption || "").toLowerCase();
+      if (!#{Jason.encode!(Enum.map(WindowTargets.titles(), &String.downcase/1))}.some(t => caption.includes(t))) continue;
       print("starlight-resize matched caption=" + w.caption + " class=" + w.resourceClass + " geometry=" + JSON.stringify(w.frameGeometry));
       if (w.fullScreen) w.fullScreen = false;
       w.setMaximize(false, false);
@@ -381,5 +383,4 @@ defmodule StarlightBot.GameWindow do
   end
 
   defp window_class, do: Application.get_env(:starlight_bot, :game_window_class, "LimbusCompany")
-  defp window_title, do: Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany")
 end

@@ -12,6 +12,7 @@ defmodule StarlightBotWeb.Components.LaunchFields do
   attr :launcher, :string, default: "gamescope_window"
   attr :gamescope_resolution, :string, default: "1920x1080"
   attr :gamescope_flags, :string, default: ""
+  attr :window_titles, :list, default: []
   attr :requirements, :list, default: []
   attr :command_preview, :string, default: nil
 
@@ -62,6 +63,10 @@ defmodule StarlightBotWeb.Components.LaunchFields do
         <input type="hidden" name="launch_timeout_s" value={@launch_timeout_s} />
       <% end %>
     </div>
+    <label class="flex max-w-md flex-col gap-1">
+      <span class="text-xs text-base-content/40">Window titles to look for (one per line, empty uses LimbusCompany)</span>
+      <textarea name="window_titles" phx-change="window_titles_set" phx-debounce="500" rows="2" class="textarea textarea-bordered textarea-sm font-mono">{Enum.join(@window_titles, "\n")}</textarea>
+    </label>
     <%= if @launch_mode == "exe" do %>
       <label class="flex flex-col gap-1">
         <span class="text-xs text-base-content/40">Command or script (runs as is, without Proton)</span>

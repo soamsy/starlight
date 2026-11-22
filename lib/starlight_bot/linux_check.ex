@@ -187,7 +187,7 @@ defmodule StarlightBot.LinuxCheck do
     sockets = Path.wildcard("/tmp/.X11-unix/X*")
     log.(:info, "X sockets: #{Enum.join(sockets, " ")}")
     log.(:info, "host DISPLAY: #{System.get_env("DISPLAY") || "(unset)"}")
-    title = Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany")
+    title = StarlightBot.WindowTargets.title()
 
     case Native.window_details(title) do
       {:ok, lines} ->
@@ -203,9 +203,9 @@ defmodule StarlightBot.LinuxCheck do
   defp check(:resize, log) do
     case GameWindow.rect() do
       {:ok, {_, _, w, h}} ->
-        log.(:info, "#{Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany")} client area is #{w}x#{h}")
+        log.(:info, "#{StarlightBot.WindowTargets.title()} client area is #{w}x#{h}")
 
-        case GameWindow.fix_aspect(Scheduler.get_settings().steam_app_id) do
+        case GameWindow.fix_aspect() do
           {:ok, %{after: {_, _, aw, ah}, buses: buses}} ->
             log.(:ok, "resized to #{aw}x#{ah} through #{GameWindow.resize_via_label(buses)}")
             :ok
@@ -339,7 +339,7 @@ defmodule StarlightBot.LinuxCheck do
 
   defp check(:close, log) do
     stop_target()
-    Native.get_window_rect(Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany"))
+    Native.get_window_rect(StarlightBot.WindowTargets.title())
     log.(:ok, "test window closed")
     :ok
   end

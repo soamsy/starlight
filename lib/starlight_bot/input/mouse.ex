@@ -92,7 +92,7 @@ defmodule StarlightBot.Input.Mouse do
   def init(_opts) do
     Logger.info("Input.Mouse starting — initializing input", module: __MODULE__)
 
-    case Native.init_input(Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany"), StarlightBot.Data.portal_token_path()) do
+    case Native.init_input(StarlightBot.WindowTargets.title(), StarlightBot.Data.portal_token_path()) do
       :ok ->
         :persistent_term.erase({__MODULE__, :init_error})
         Logger.info("Input device ready (#{Native.input_backend()})", module: __MODULE__)
@@ -277,7 +277,7 @@ defmodule StarlightBot.Input.Mouse do
   defp still_focused(pm, now), do: now - pm.focus_at < @wander_focus_check_ms or game_focused?()
 
   defp game_focused? do
-    match?({:ok, true}, Native.is_window_focused(Application.get_env(:starlight_bot, :game_window_class, "LimbusCompany")))
+    match?({:ok, true}, Native.is_window_focused(StarlightBot.WindowTargets.title()))
   end
 
   defp targets?(%{target: nil}, _within), do: false

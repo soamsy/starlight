@@ -514,7 +514,7 @@ defmodule StarlightBot.WindowsCheck do
     :error
   end
 
-  defp game_title, do: Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany")
+  defp game_title, do: StarlightBot.WindowTargets.title()
   defp probe_dir, do: Path.join(Data.paths().root, "winprobe")
   defp probe_exe, do: Path.join(probe_dir(), "winprobe.exe")
   defp target_log, do: Path.join(probe_dir(), "windows-check-target.log")

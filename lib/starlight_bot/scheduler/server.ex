@@ -183,7 +183,7 @@ defmodule StarlightBot.Scheduler.Server do
 
   defp fire_task(settings, action, remaining, end_at) do
     with {:ok, rect, launched?} <- ensure_window(settings, end_at),
-         :ok <- ensure_aspect(rect, settings.steam_app_id),
+         :ok <- ensure_aspect(rect),
          :ok <- if(launched?, do: await_game_ready(end_at), else: :ok),
          :ok <- start_run(action) do
       {:fired, remaining, "started the scheduled run (#{DailyProgress.remaining_label(remaining)})"}
@@ -213,13 +213,13 @@ defmodule StarlightBot.Scheduler.Server do
     end
   end
 
-  defp ensure_aspect(rect, steam_app_id) do
+  defp ensure_aspect(rect) do
     if GameWindow.aspect_ok?(rect) do
       :ok
     else
       notify(:info, "Limbus window is #{size_label(rect)}, not 16:9, resizing it to 1920x1080 in KWin")
 
-      case GameWindow.fix_aspect(steam_app_id) do
+      case GameWindow.fix_aspect() do
         {:ok, _} -> :ok
         {:error, reason} -> {:retry_later, "couldn't fix the aspect ratio: #{inspect(reason)}", @retry_after_failure_ms}
       end

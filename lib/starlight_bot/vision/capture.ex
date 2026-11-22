@@ -7,7 +7,7 @@ defmodule StarlightBot.Vision.Capture do
   @topic "capture:window_rect"
   @max_refresh_interval_ms 30_000
 
-  defstruct [:window_title, :window_class, :window_rect, :refresh_interval_ms]
+  defstruct [:window_title, :window_rect, :refresh_interval_ms]
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -45,13 +45,11 @@ defmodule StarlightBot.Vision.Capture do
 
   @impl true
   def init(_opts) do
-    window_title = Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany")
-    window_class = Application.get_env(:starlight_bot, :game_window_class, "LimbusCompany")
+    window_title = StarlightBot.WindowTargets.title()
     Logger.info("Vision.Capture starting (window: #{window_title})", module: __MODULE__)
 
     state = %__MODULE__{
       window_title: window_title,
-      window_class: window_class,
       window_rect: nil,
       refresh_interval_ms: @refresh_interval_ms,
     }
@@ -128,7 +126,7 @@ defmodule StarlightBot.Vision.Capture do
   @impl true
   def handle_call(:focused?, _from, state) do
     focused? =
-      case Native.is_window_focused(state.window_class) do
+      case Native.is_window_focused(state.window_title) do
         {:ok, focused?} -> focused?
         {:error, _} -> false
       end
@@ -207,10 +205,12 @@ defmodule StarlightBot.Vision.Capture do
   defp ensure_window_rect(state), do: state
 
   defp query_window_rect(state) do
-    case Native.get_window_rect(state.window_class) do
-      {:ok, wx, wy, w, h} -> {:ok, put_rect(state, {wx, wy, w, h})}
-      err -> err
-    end
+    Enum.find_value(StarlightBot.WindowTargets.titles(), {:error, :window_not_found}, fn title ->
+      case Native.get_window_rect(title) do
+        {:ok, wx, wy, w, h} -> {:ok, put_rect(%{state | window_title: title}, {wx, wy, w, h})}
+        _ -> nil
+      end
+    end)
   end
 
   defp put_rect(%{window_rect: rect} = state, rect), do: state

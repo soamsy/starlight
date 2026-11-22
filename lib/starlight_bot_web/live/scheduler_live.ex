@@ -42,6 +42,7 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
      |> assign(:game_launcher, AppSettings.launcher())
      |> assign(:gamescope_resolution, AppSettings.gamescope_resolution())
      |> assign(:gamescope_flags, AppSettings.gamescope_flags())
+     |> assign(:window_titles, AppSettings.window_titles())
      |> assign_command_preview()}
   end
 
@@ -64,6 +65,11 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
   def handle_event("gamescope_flags_reset", _params, socket) do
     AppSettings.put_gamescope_flags(AppSettings.default_gamescope_flags())
     {:noreply, socket |> assign(:gamescope_flags, AppSettings.gamescope_flags()) |> assign_command_preview()}
+  end
+
+  def handle_event("window_titles_set", %{"window_titles" => text}, socket) do
+    titles = AppSettings.put_window_titles(String.split(text, ["\r\n", "\n"]))
+    {:noreply, assign(socket, :window_titles, titles)}
   end
 
   def handle_event("update_form", params, socket),

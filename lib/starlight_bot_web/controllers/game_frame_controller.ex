@@ -9,7 +9,7 @@ defmodule StarlightBotWeb.GameFrameController do
   @quality 70
 
   def show(conn, _params) do
-    title = Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany")
+    title = StarlightBot.WindowTargets.title()
 
     with {:ok, bgr, w, h} <- Native.grab_frame(title),
          mat = Evision.Mat.from_binary(bgr, {:u, 8}, h, w, 3),
