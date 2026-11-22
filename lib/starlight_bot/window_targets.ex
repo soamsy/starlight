@@ -16,5 +16,5 @@ defmodule StarlightBot.WindowTargets do
 
   def title, do: find() || hd(titles())
 
-  defp default_title, do: Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany")
+  def default_title, do: Application.get_env(:starlight_bot, :game_window_title, "LimbusCompany")
 end

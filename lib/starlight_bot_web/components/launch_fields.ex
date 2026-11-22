@@ -63,10 +63,6 @@ defmodule StarlightBotWeb.Components.LaunchFields do
         <input type="hidden" name="launch_timeout_s" value={@launch_timeout_s} />
       <% end %>
     </div>
-    <label class="flex max-w-md flex-col gap-1">
-      <span class="text-xs text-base-content/40">Window titles to look for (one per line, empty uses LimbusCompany)</span>
-      <textarea name="window_titles" phx-change="window_titles_set" phx-debounce="500" rows="2" class="textarea textarea-bordered textarea-sm font-mono">{Enum.join(@window_titles, "\n")}</textarea>
-    </label>
     <%= if @launch_mode == "exe" do %>
       <label class="flex flex-col gap-1">
         <span class="text-xs text-base-content/40">Command or script (runs as is, without Proton)</span>
@@ -109,6 +105,24 @@ defmodule StarlightBotWeb.Components.LaunchFields do
         <code id="launch-command-box" class="hidden rounded bg-base-200 px-2 py-1 font-mono text-xs break-all">{@command_preview}</code>
       </div>
     <% end %>
+    <div class="flex max-w-md flex-col gap-1">
+      <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wide">Window titles to look for</span>
+      <div :if={@window_titles == []} class="flex items-center gap-2 text-xs text-base-content/60">
+        <span>None set, looking for {StarlightBot.WindowTargets.default_title()}.</span>
+        <button type="button" phx-click="window_titles_reset" class="btn btn-ghost btn-xs gap-1">
+          <.icon name="lucide-refresh-cw" class="size-3" /> Reset to default
+        </button>
+      </div>
+      <div :for={{title, index} <- Enum.with_index(@window_titles)} class="flex items-center gap-1">
+        <input type="text" name="window_titles[]" phx-change="window_titles_set" phx-debounce="500" value={title} placeholder="Window title" class="input input-sm input-bordered w-full font-mono" />
+        <button type="button" phx-click="window_title_remove" phx-value-index={index} class="tooltip tooltip-left btn btn-ghost btn-square btn-sm text-base-content/60" data-tip="Remove">
+          <.icon name="lucide-x" class="size-4" />
+        </button>
+      </div>
+      <button type="button" phx-click="window_title_add" class="btn btn-ghost btn-sm w-fit gap-1 text-base-content/60">
+        <.icon name="lucide-plus" class="size-4" /> Add title
+      </button>
+    </div>
     """
   end
 end

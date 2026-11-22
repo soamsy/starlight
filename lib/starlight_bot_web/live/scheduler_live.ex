@@ -67,8 +67,22 @@ defmodule StarlightBotWeb.Live.SchedulerLive do
     {:noreply, socket |> assign(:gamescope_flags, AppSettings.gamescope_flags()) |> assign_command_preview()}
   end
 
-  def handle_event("window_titles_set", %{"window_titles" => text}, socket) do
-    titles = AppSettings.put_window_titles(String.split(text, ["\r\n", "\n"]))
+  def handle_event("window_titles_set", %{"window_titles" => titles}, socket) do
+    AppSettings.put_window_titles(titles)
+    {:noreply, assign(socket, :window_titles, titles)}
+  end
+
+  def handle_event("window_titles_reset", _params, socket) do
+    titles = AppSettings.put_window_titles([StarlightBot.WindowTargets.default_title()])
+    {:noreply, assign(socket, :window_titles, titles)}
+  end
+
+  def handle_event("window_title_add", _params, socket),
+    do: {:noreply, assign(socket, :window_titles, socket.assigns.window_titles ++ [""])}
+
+  def handle_event("window_title_remove", %{"index" => index}, socket) do
+    titles = List.delete_at(socket.assigns.window_titles, String.to_integer(index))
+    AppSettings.put_window_titles(titles)
     {:noreply, assign(socket, :window_titles, titles)}
   end
 
