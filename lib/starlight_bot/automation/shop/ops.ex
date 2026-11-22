@@ -48,6 +48,7 @@ defmodule StarlightBot.Automation.Shop.Ops do
   @max_gift_search_passes 8
   @scroll_to_top_clicks 12
   @uptie_commit_result_ms 5_000
+  @uptie_first_enter_ms 2_000
   @uptie_2_selected_ms 600
 
   @affinity_hooks %{
@@ -1452,7 +1453,16 @@ defmodule StarlightBot.Automation.Shop.Ops do
 
   defp commit_default_uptie(ctx) do
     Engine.act([key(:enter)], ctx)
-    await_commit(1, ctx)
+
+    case await_commit(1, ctx, @uptie_first_enter_ms) do
+      {:committed, _} = committed ->
+        committed
+
+      :rejected ->
+        Ctx.log(ctx, :info, "shop uptie: commit still open, pressing enter again")
+        Engine.act([key(:enter)], ctx)
+        await_commit(1, ctx)
+    end
   end
 
   defp try_commit(2, ctx) do
@@ -1481,8 +1491,8 @@ defmodule StarlightBot.Automation.Shop.Ops do
     await_commit(level, ctx)
   end
 
-  defp await_commit(level, ctx) do
-    case Engine.act([await(not_hook(:shop_uptie_popup_commit_cancel), timeout: @uptie_commit_result_ms)], ctx) do
+  defp await_commit(level, ctx, timeout \\ @uptie_commit_result_ms) do
+    case Engine.act([await(not_hook(:shop_uptie_popup_commit_cancel), timeout: timeout)], ctx) do
       {:ok, _} -> {:committed, level}
       {:error, _} -> :rejected
     end
