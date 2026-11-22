@@ -18,6 +18,7 @@ fn pick_port() -> u16 {
 
 #[cfg(target_os = "linux")]
 fn configure_webkit() {
+    std::env::set_var("WEBKIT_SKIA_ENABLE_CPU_RENDERING", "1");
     if std::env::var_os("WAYLAND_DISPLAY").is_some() {
         let backend = std::env::var("STARLIGHT_GDK_BACKEND").unwrap_or_else(|_| "wayland".into());
         std::env::set_var("GDK_BACKEND", backend);
