@@ -1,5 +1,5 @@
 defmodule StarlightBot.GameWindow do
-  alias StarlightBot.{AppSettings, LauncherDeps, LogStore, Native, NestedGamescope, SteamLaunch, WindowTargets}
+  alias StarlightBot.{AppSettings, HostEnv, LauncherDeps, LogStore, Native, NestedGamescope, SteamLaunch, WindowTargets}
   alias StarlightBot.Input.Keyboard
   alias StarlightBot.Vision.Capture
 
@@ -102,7 +102,7 @@ defmodule StarlightBot.GameWindow do
   end
 
   defp start("direct", argv, env, cwd) do
-    case System.cmd("sh", ["-c", ~s(setsid -f "$@" </dev/null >/dev/null 2>&1), "sh" | argv], stderr_to_stdout: true, env: env, cd: cwd) do
+    case System.cmd("sh", ["-c", ~s(setsid -f "$@" </dev/null >/dev/null 2>&1), "sh" | argv], stderr_to_stdout: true, env: HostEnv.overrides() ++ env, cd: cwd) do
       {_, 0} -> :ok
       {out, code} -> {:error, {:launch_failed, code, String.trim(out)}}
     end
@@ -205,13 +205,18 @@ defmodule StarlightBot.GameWindow do
         {:ok, rect}
 
       {:error, _} ->
-        if System.monotonic_time(:millisecond) >= deadline do
-          {:error, :window_timeout}
-        else
-          Process.sleep(@window_poll_ms)
-          poll_window(deadline)
+        cond do
+          (detail = launch_exit()) != nil -> {:error, {:game_exited, detail}}
+          System.monotonic_time(:millisecond) >= deadline -> {:error, :window_timeout}
+          true ->
+            Process.sleep(@window_poll_ms)
+            poll_window(deadline)
         end
     end
+  end
+
+  defp launch_exit do
+    if AppSettings.launcher() in ["gamescope", "gamescope_window"], do: NestedGamescope.child_exit()
   end
 
   def fix_aspect do

@@ -1,5 +1,5 @@
 defmodule StarlightBot.NestedGamescope do
-  alias StarlightBot.{AppSettings, LogStore}
+  alias StarlightBot.{AppSettings, HostEnv, LogStore}
 
   @width 1920
   @height 1080
@@ -7,6 +7,8 @@ defmodule StarlightBot.NestedGamescope do
   @poll_ms 100
   @ei_socket ~r/^gamescope-\d+-ei$/
   @cursor_flags []
+  @child_exit_marker "Primary child shut down!"
+  @detail_lines 6
 
   def spawn(backend, argv, extra_env \\ [], cwd \\ File.cwd!()) when backend in ["headless", "wayland"] do
     case System.find_executable("gamescope") do
@@ -19,7 +21,7 @@ defmodule StarlightBot.NestedGamescope do
     dir = state_dir()
     File.mkdir_p!(dir)
     File.chmod!(dir, 0o700)
-    log_path = Path.join(dir, "gamescope.log")
+    log_path = log_path()
     before = ei_sockets()
     [inner_w, inner_h] = inner_size()
     args = args(backend, argv)
@@ -30,6 +32,21 @@ defmodule StarlightBot.NestedGamescope do
     case System.cmd("sh", ["-c", ~s(setsid -f "$@" </dev/null >"$0" 2>&1), log_path, gamescope | args], stderr_to_stdout: true, env: env(backend, extra_env), cd: cwd) do
       {_, 0} -> await_ei_socket(before, System.monotonic_time(:millisecond) + @ready_timeout_ms)
       {out, code} -> {:error, {:launch_failed, code, String.trim(out)}}
+    end
+  end
+
+  def child_exit do
+    case File.read(log_path()) do
+      {:ok, text} ->
+        lines = String.split(text, "\n", trim: true)
+
+        case Enum.find_index(lines, &String.contains?(&1, @child_exit_marker)) do
+          nil -> nil
+          index -> lines |> Enum.take(index) |> Enum.reject(&String.starts_with?(&1, "[gamescope]")) |> Enum.take(-@detail_lines) |> Enum.join(" | ")
+        end
+
+      {:error, _} ->
+        nil
     end
   end
 
@@ -54,7 +71,9 @@ defmodule StarlightBot.NestedGamescope do
     ["--backend", backend, "-w", inner_w, "-h", inner_h, "-W", "#{@width}", "-H", "#{@height}"] ++ @cursor_flags ++ extra_flags() ++ ["--"] ++ argv
   end
 
-  defp env(backend, extra_env), do: backend_env(backend) ++ [{"ENABLE_GAMESCOPE_WSI", "0"} | extra_env]
+  defp env(backend, extra_env), do: HostEnv.overrides() ++ backend_env(backend) ++ [{"ENABLE_GAMESCOPE_WSI", "0"} | extra_env]
+
+  defp log_path, do: Path.join(state_dir(), "gamescope.log")
 
   defp state_dir, do: Path.join(System.get_env("XDG_RUNTIME_DIR") || System.tmp_dir!(), "starlight-nested")
 
@@ -70,11 +89,12 @@ defmodule StarlightBot.NestedGamescope do
         :ok
 
       [] ->
-        if System.monotonic_time(:millisecond) >= deadline do
-          {:error, :gamescope_timeout}
-        else
-          Process.sleep(@poll_ms)
-          await_ei_socket(before, deadline)
+        cond do
+          (detail = child_exit()) != nil -> {:error, {:game_exited, detail}}
+          System.monotonic_time(:millisecond) >= deadline -> {:error, :gamescope_timeout}
+          true ->
+            Process.sleep(@poll_ms)
+            await_ei_socket(before, deadline)
         end
     end
   end

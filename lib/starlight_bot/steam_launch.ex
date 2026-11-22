@@ -58,6 +58,8 @@ defmodule StarlightBot.SteamLaunch do
   def describe({:app_not_installed, app_id}), do: "app #{app_id} is not installed in any Steam library"
   def describe(:libraryfolders_unreadable), do: "could not read Steam's libraryfolders.vdf"
   def describe(:steam_not_found), do: "Steam installation not found"
+  def describe({:game_exited, ""}), do: "the game process exited right after starting; see the gamescope log"
+  def describe({:game_exited, detail}), do: "the game process exited right after starting: #{detail}"
   def describe(reason), do: inspect(reason)
 
   def update_pending?(app_id) do
