@@ -579,7 +579,7 @@ defmodule StarlightBot.BattlePlansTest do
     test "condition_leaf fills defaults and labels the count" do
       leaf = BattlePlans.condition_leaf(%{"op" => "tray_count", "hook" => "battle_chain"})
       assert leaf == %{"op" => "tray_count", "sinners" => [], "matches" => [], "cmp" => "gte", "value" => 1}
-      assert leaf == BattlePlans.default_leaf()
+      assert BattlePlans.default_leaf() == %{"op" => "boss_fight"}
       assert BattlePlans.tray_leaf?(leaf)
       refute BattlePlans.sinner_leaf?(leaf)
       assert BattlePlans.condition_label(%{"op" => "and", "children" => [leaf]}) == "any slots >= 1"

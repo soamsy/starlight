@@ -19,7 +19,7 @@ defmodule StarlightBot.BattlePlans do
     "chain" => ~w(chain win_rate damage_rate ego dodge if commit retry),
     "focused" => ~w(win_rate damage_rate target if commit retry)
   }
-  @default_leaf %{"op" => "tray_count", "sinners" => [], "matches" => [], "cmp" => "gte", "value" => 1}
+  @default_leaf %{"op" => "boss_fight"}
   @sinner_count_op "sinner_count"
   @tray_count_op "tray_count"
   @position_op "sinner_position"
