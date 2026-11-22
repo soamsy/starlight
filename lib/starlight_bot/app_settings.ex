@@ -2,7 +2,7 @@ defmodule StarlightBot.AppSettings do
   import Ecto.Query
 
   alias StarlightBot.Automation.EnkephalinCharger
-  alias StarlightBot.Repo
+  alias StarlightBot.{Repo, RunsRepo}
 
   def enkephalin_convert_count do
     case Repo.one(from_key("enkephalin_convert_count")) do
@@ -112,6 +112,15 @@ defmodule StarlightBot.AppSettings do
 
   def put(key, value) do
     Repo.insert_all("app_settings", [%{key: key, value: value}], on_conflict: {:replace, [:value]}, conflict_target: :key)
+    :ok
+  end
+
+  def get_state(key) do
+    RunsRepo.one(from(s in "runtime_state", where: s.key == ^key, select: s.value))
+  end
+
+  def put_state(key, value) do
+    RunsRepo.insert_all("runtime_state", [%{key: key, value: value}], on_conflict: {:replace, [:value]}, conflict_target: :key)
     :ok
   end
 

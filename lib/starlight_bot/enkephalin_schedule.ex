@@ -30,7 +30,7 @@ defmodule StarlightBot.EnkephalinSchedule do
       window_end: AppSettings.get("enkephalin_schedule_window_end"),
       interval_minutes: String.to_integer(AppSettings.get("enkephalin_schedule_interval_minutes")),
       close_game_after_charge: AppSettings.get("enkephalin_schedule_close_game") == "true",
-      last_converted_at: parse_datetime(AppSettings.get("enkephalin_last_converted_at"))
+      last_converted_at: parse_datetime(AppSettings.get_state("enkephalin_last_converted_at"))
     })
   end
 
@@ -57,7 +57,7 @@ defmodule StarlightBot.EnkephalinSchedule do
   def set_enabled(enabled?), do: get_settings() |> Map.put(:enabled, enabled?) |> save_settings()
 
   def mark_converted(%NaiveDateTime{} = at \\ Scheduler.local_now()) do
-    AppSettings.put("enkephalin_last_converted_at", NaiveDateTime.to_iso8601(NaiveDateTime.truncate(at, :second)))
+    AppSettings.put_state("enkephalin_last_converted_at", NaiveDateTime.to_iso8601(NaiveDateTime.truncate(at, :second)))
     broadcast({:enkephalin_schedule, get_settings()})
     :ok
   end
