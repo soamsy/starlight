@@ -205,7 +205,8 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
 
   defp close_conditions_met? do
     settings = Scheduler.get_settings()
-    EnkephalinSchedule.close_after_charge?(EnkephalinSchedule.get_settings(), settings, DailyProgress.remaining(settings), Navigator.status().last_run)
+    due? = match?({:due, _date, _end_at}, Scheduler.due(Scheduler.local_now(), settings))
+    EnkephalinSchedule.close_after_charge?(EnkephalinSchedule.get_settings(), %{settings | enabled: settings.enabled and due?}, DailyProgress.remaining(settings), Navigator.status().last_run)
   end
 
   defp close_game do
