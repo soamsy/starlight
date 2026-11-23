@@ -962,6 +962,7 @@ const LogVirtual = {
     window.addEventListener("starlight:log-bottom", this.onLogBottom)
     this.scroller = this.el.firstElementChild
     this.count = document.getElementById(this.el.dataset.countId)
+    this.setupSearch()
     this.sizer = document.createElement("div")
     this.sizer.style.position = "relative"
     this.win = document.createElement("div")
@@ -976,6 +977,9 @@ const LogVirtual = {
     this.pinned = true
     this.metrics = null
     this.metricsVersion = 0
+    this.query = ""
+    this.matches = []
+    this.cur = -1
     this.filterKey = this.readFilterKey()
     this.lastWidth = 0
     this.frame = null
@@ -1008,9 +1012,127 @@ const LogVirtual = {
 
   destroyed() {
     window.removeEventListener("starlight:log-bottom", this.onLogBottom)
+    window.removeEventListener("keydown", this.onFindKey)
     this.resizer.disconnect()
     this.scroller.removeEventListener("scroll", this.onScroll)
     cancelAnimationFrame(this.frame)
+  },
+
+  setupSearch() {
+    const id = this.el.dataset.searchId
+    this.searchInput = document.getElementById(`${id}-input`)
+    this.searchCount = document.getElementById(`${id}-count`)
+    const bind = (suffix, fn) => document.getElementById(`${id}-${suffix}`).addEventListener("click", fn)
+    bind("prev", () => this.step(-1))
+    bind("next", () => this.step(1))
+    bind("clear", () => this.clearSearch())
+
+    this.searchInput.addEventListener("input", () => this.setQuery(this.searchInput.value))
+    this.searchInput.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault()
+        this.step(ev.shiftKey ? -1 : 1)
+      } else if (ev.key === "Escape") {
+        ev.preventDefault()
+        this.clearSearch()
+        this.searchInput.blur()
+      }
+    })
+
+    const pane = this.el.parentElement.parentElement
+    window.addEventListener("keydown", this.onFindKey = (ev) => {
+      const find = (ev.ctrlKey || ev.metaKey) && !ev.altKey && ev.key.toLowerCase() === "f"
+      if (!find) return
+      if (!pane.matches(":hover") && !pane.contains(document.activeElement)) return
+      ev.preventDefault()
+      this.searchInput.focus()
+      this.searchInput.select()
+    })
+  },
+
+  clearSearch() {
+    this.searchInput.value = ""
+    this.setQuery("")
+  },
+
+  setQuery(value) {
+    this.query = value.toLowerCase()
+    this.cur = -1
+    this.computeMatches()
+    if (this.matches.length > 0) this.goTo(this.firstMatchFromViewport())
+    else this.renderWindow(true)
+    this.updateSearchCount()
+  },
+
+  matchesQuery(e) {
+    return e.text.toLowerCase().includes(this.query)
+  },
+
+  computeMatches() {
+    this.matches = []
+    if (!this.query) return
+    for (let i = 0; i < this.view.length; i++) if (this.matchesQuery(this.view[i])) this.matches.push(i)
+  },
+
+  firstMatchFromViewport() {
+    const from = this.indexAt(this.scroller.scrollTop - LOG_PAD_PX)
+    const at = this.matches.findIndex((i) => i >= from)
+    return at === -1 ? 0 : at
+  },
+
+  step(dir) {
+    const n = this.matches.length
+    if (n === 0) return
+    this.goTo(this.cur === -1 ? this.firstMatchFromViewport() : (this.cur + dir + n) % n)
+  },
+
+  goTo(at) {
+    this.cur = at
+    const i = this.matches[at]
+    this.pinned = false
+    const y = LOG_PAD_PX + this.offsets[i] - this.scroller.clientHeight / 3
+    this.scroller.scrollTop = Math.max(0, y)
+    this.renderWindow(true)
+    this.updateSearchCount()
+  },
+
+  updateSearchCount() {
+    if (!this.query) this.searchCount.textContent = ""
+    else if (this.matches.length === 0) this.searchCount.textContent = "0/0"
+    else this.searchCount.textContent = `${this.cur + 1}/${this.matches.length}`
+  },
+
+  refreshMatchesKeepingCurrent() {
+    if (!this.query) return
+    const seq = this.cur === -1 ? null : this.view[this.matches[this.cur]]?.seq
+    this.computeMatches()
+    if (seq === null || seq === undefined) this.cur = -1
+    else {
+      const at = this.matches.findIndex((i) => this.view[i].seq === seq)
+      this.cur = at === -1 ? -1 : at
+    }
+    this.updateSearchCount()
+  },
+
+  appendHighlighted(parent, text, current) {
+    if (!this.query) {
+      parent.append(text)
+      return
+    }
+    const lower = text.toLowerCase()
+    const len = this.query.length
+    let from = 0
+    for (;;) {
+      const at = lower.indexOf(this.query, from)
+      if (at === -1) break
+      if (at > from) parent.append(text.slice(from, at))
+      const mark = document.createElement("mark")
+      mark.className = current ? "bg-warning text-warning-content rounded-sm" : "bg-warning/40 text-inherit rounded-sm"
+      mark.textContent = text.slice(at, at + len)
+      parent.append(mark)
+      from = at + len
+    }
+    if (from < text.length) parent.append(text.slice(from))
   },
 
   readFilterKey() {
@@ -1040,7 +1162,9 @@ const LogVirtual = {
         if (!this.passes(e)) continue
         this.view.push(e)
         this.offsets.push(this.offsets[this.offsets.length - 1] + this.heightOf(e))
+        if (this.query && this.matchesQuery(e)) this.matches.push(this.view.length - 1)
       }
+      this.updateSearchCount()
       this.layout()
       if (this.pinned) this.stickToBottom()
       else this.scheduleRender()
@@ -1055,6 +1179,7 @@ const LogVirtual = {
     offsets[0] = 0
     for (let i = 0; i < this.view.length; i++) offsets[i + 1] = offsets[i] + this.heightOf(this.view[i])
     this.offsets = offsets
+    this.refreshMatchesKeepingCurrent()
     this.layout()
     this.restoreAnchor(anchor)
     this.renderWindow(true)
@@ -1133,15 +1258,16 @@ const LogVirtual = {
     const start = this.indexAt(top - LOG_OVERSCAN_PX)
     const end = Math.min(n, this.indexAt(bottom + LOG_OVERSCAN_PX) + 1)
     const fragment = document.createDocumentFragment()
-    for (let i = start; i < end; i++) fragment.appendChild(this.buildRow(this.view[i]))
+    const currentIndex = this.cur === -1 ? -1 : this.matches[this.cur]
+    for (let i = start; i < end; i++) fragment.appendChild(this.buildRow(this.view[i], i === currentIndex))
     this.win.replaceChildren(fragment)
     this.win.style.top = `${LOG_PAD_PX + this.offsets[start]}px`
     this.range = [start, end]
   },
 
-  buildRow(e) {
+  buildRow(e, current) {
     const row = document.createElement("div")
-    row.className = `${LOG_ROW_CLASS} ${logKindClass(e.kind)}`
+    row.className = `${LOG_ROW_CLASS} ${logKindClass(e.kind)}${current ? " bg-warning/10" : ""}`
     const time = document.createElement("span")
     time.className = "text-base-content/40 shrink-0 tabular-nums"
     time.title = e.at
@@ -1150,7 +1276,7 @@ const LogVirtual = {
     text.className = "whitespace-pre-wrap break-all"
     const shot = FAILURE_SHOT_RE.exec(e.text)
     if (shot) {
-      text.append(e.text.slice(0, shot.index + shot[1].length))
+      this.appendHighlighted(text, e.text.slice(0, shot.index + shot[1].length), current)
       const link = document.createElement("a")
       link.href = `/failures/${encodeURIComponent(shot[2])}`
       link.target = "_blank"
@@ -1159,7 +1285,7 @@ const LogVirtual = {
       link.textContent = shot[2]
       text.append(link)
     } else {
-      text.textContent = e.text
+      this.appendHighlighted(text, e.text, current)
     }
     row.append(time, text)
     return row
