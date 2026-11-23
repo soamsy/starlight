@@ -20,7 +20,8 @@ docker run --rm \
     cd /build
     mix local.hex --force && mix local.rebar --force
     mix deps.get
-    cd src-tauri && cargo tauri build
+    gpu=/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitGPUProcess
+    cd src-tauri && cargo tauri build --config "{\"bundle\":{\"linux\":{\"appimage\":{\"files\":{\"$gpu\":\"$gpu\"}}}}}"
     cp target/release/bundle/appimage/*.AppImage /dist/
     chown "$HOST_UID:$HOST_GID" /dist/*.AppImage
   '
