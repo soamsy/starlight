@@ -35,7 +35,7 @@
                             type="button" phx-click="capture_locator" phx-value-id={profile.id} phx-value-kind={kind}
                             title={"Capture #{label} png from #{if @hd, do: "the team selector", else: "live battle"} (#{hook || "no hook set"})"}
                             class={"rounded bg-base-200 hover:ring-2 hover:ring-primary overflow-hidden " <> if(@hd, do: "w-14", else: "w-9")}>
-                      <img :if={@profile_thumbs[profile.id][kind]} src={"data:image/png;base64,#{@profile_thumbs[profile.id][kind]}"} class="h-full w-full object-contain" />
+                      <img :if={Map.has_key?(@locator_thumbs, hook)} src={thumb_src(hook, @locator_thumbs)} loading="lazy" class="h-full w-full object-contain" />
                     </button>
                   </div>
                   <div class="flex min-w-0 flex-1 flex-col gap-1">
@@ -51,22 +51,25 @@
                             class="btn btn-xs btn-ghost text-error px-1">Del</button>
                   </div>
                   <div class="flex items-center gap-1">
-                    <details id={"locator-dropdown-#{profile.id}"} phx-hook="FloatingDropdown" class="dropdown">
+                    <details id={"locator-dropdown-#{profile.id}"} phx-hook="FloatingDropdown" data-keep-open class="dropdown">
                       <summary title={"Locator hooks: " <> Enum.map_join(locator_slots(profile, @hd), ", ", fn {_, _, _, hook} -> hook || "none" end)}
+                               phx-click="open_picker" phx-value-id={profile.id} phx-value-kind="locator"
                                class={"btn btn-xs btn-square " <> if(locator_missing?(profile, @locator_names, @hd), do: "btn-error btn-outline", else: "btn-ghost")}>
                         <.icon name="lucide-settings" class="size-4" />
                       </summary>
-                      <div popover="manual" class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg flex flex-col gap-2">
-                        <div :for={{kind, label, field, hook} <- locator_slots(profile, @hd)}
-                             class="flex items-center gap-1">
-                          <span class="w-10 text-xs text-base-content/60"><%= label %></span>
-                          <button type="button" phx-click="reset_locator" phx-value-id={profile.id} phx-value-kind={kind}
-                                  data-confirm="Reset the hook image to the placeholder?"
-                                  title="Reset hook image to the placeholder circle" class="btn btn-xs btn-ghost px-1">Reset</button>
-                          <input type="text" name={field} value={hook} list="locator-hook-names" phx-debounce="blur"
-                                 disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
-                                 placeholder="hook name"
-                                 class={"input input-bordered input-xs w-64 font-mono " <> if(hook && hook not in @locator_names, do: "input-error", else: "")} />
+                      <div popover="manual" class="dropdown-content z-30 mt-1 w-max rounded-lg border border-base-300 bg-base-100 p-2 shadow-lg">
+                        <div :if={@open_picker == {profile.id, "locator"}} class="flex flex-col gap-2">
+                          <div :for={{kind, label, field, hook} <- locator_slots(profile, @hd)}
+                               class="flex items-center gap-1">
+                            <span class="w-10 text-xs text-base-content/60"><%= label %></span>
+                            <button type="button" phx-click="reset_locator" phx-value-id={profile.id} phx-value-kind={kind}
+                                    data-confirm="Reset the hook image to the placeholder?"
+                                    title="Reset hook image to the placeholder circle" class="btn btn-xs btn-ghost px-1">Reset</button>
+                            <input type="text" name={field} value={hook} list="locator-hook-names" phx-debounce="blur"
+                                   disabled={!StarlightBot.SinnerProfiles.writable?(profile)}
+                                   placeholder="hook name"
+                                   class={"input input-bordered input-xs w-64 font-mono " <> if(hook && hook not in @locator_names, do: "input-error", else: "")} />
+                          </div>
                         </div>
                       </div>
                     </details>

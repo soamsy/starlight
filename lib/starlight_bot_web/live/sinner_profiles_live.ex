@@ -30,7 +30,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
   def handle_event("toggle_hd", _, socket), do: {:noreply, assign(socket, :hd, !socket.assigns.hd)}
 
   @impl true
-  def handle_event("open_picker", %{"id" => id, "kind" => kind}, socket) when kind in ["affinity", "sinner"] do
+  def handle_event("open_picker", %{"id" => id, "kind" => kind}, socket) when kind in ["affinity", "sinner", "locator"] do
     {:noreply, assign(socket, :open_picker, {String.to_integer(id), kind})}
   end
 
@@ -169,28 +169,15 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
       |> Enum.flat_map(fn s -> if is_map(s.data), do: Enum.to_list(BattlePlans.profile_ids_used(s.data)), else: [] end)
       |> Enum.frequencies()
 
-    thumbs =
-      Map.new(profiles, fn p ->
-        {p.id,
-         %{
-           "uptie" => thumb(p.locator_hook),
-           "base" => thumb(p.base_locator_hook),
-           "hd_uptie" => thumb(p.hd_locator_hook),
-           "hd_base" => thumb(p.hd_base_locator_hook)
-         }}
-      end)
-
     socket
     |> assign(:profiles, profiles)
     |> assign(:profile_usage, usage)
-    |> assign(:profile_thumbs, thumbs)
+    |> assign(:locator_thumbs, Hooks.hook_thumbnails("locator"))
   end
 
-  defp thumb(nil), do: nil
-
-  defp thumb(hook_name) do
-    case Hooks.get_hook(hook_name) do
-      %{image: image} when is_binary(image) -> Base.encode64(image)
+  defp thumb_src(hook, thumbs) do
+    case thumbs do
+      %{^hook => version} -> ~p"/hooks/#{hook}/thumb.png?#{[v: version]}"
       _ -> nil
     end
   end
