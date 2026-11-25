@@ -21,7 +21,7 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
   @shop_screens [:shop, :shop_super | @shop_popup_screens]
   @team_select_screens [:team_select, :team_selector, :team_selector_tall, :team_selector_gone]
   @in_dungeon_screens [
-    :team_selector_md, :grace, :grace_confirm, :cabinet_ego_gifts, :gift_search, :ego_gift_get, :theme_pack, :dungeon_graph, :dungeon_graph_superposition_popup, :dungeon_graph_danger_zone_skip, :adversities,
+    :team_selector_md, :grace, :grace_confirm, :cabinet_ego_gifts, :gift_search, :ego_gift_get, :theme_pack, :dungeon_graph, :dungeon_graph_superposition_popup, :dungeon_graph_danger_zone_skip, :dungeon_graph_select_event_effect, :adversities,
     :event, :shop, :shop_super, :cabinet_reward, :mounting_trials, :encounter_reward, :battle_over_confirm
   ] ++ @team_select_screens ++ @shop_popup_screens
   @own_run_screens [:dungeon_graph, :event, :shop, :shop_super]
@@ -492,6 +492,9 @@ defmodule StarlightBot.Automation.Scripts.MirrorDungeonRunner do
     cond do
       screen == :dungeon_graph_danger_zone_skip ->
         [goto(screen, :dungeon_graph_danger_zone_skipped, then: resume_at(run, run_state))]
+
+      screen == :dungeon_graph_select_event_effect ->
+        [goto(screen, :dungeon_graph, then: resume_at(run, run_state))]
 
       screen == :dungeon_graph_superposition_popup and RunMemory.extreme?(team) ->
         [log(:info, "extreme mode is on, entering the next floors"), goto(screen, :dungeon_graph_superposition_entered, then: {__MODULE__, :superposition_entered, [run, run_state]})]

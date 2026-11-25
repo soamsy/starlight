@@ -30,6 +30,12 @@ defmodule StarlightBot.Navigation.Screens.DungeonGraph do
     end
   end
 
+  screen :dungeon_graph_select_event_effect, identity: :dungeon_graph_select_event_effect, refines: :dungeon_graph do
+    transition to: :dungeon_graph do
+      [retry_until_gone(:dungeon_graph_select_event_effect, [click(:dungeon_graph_select_event_effect), click(:dungeon_graph_select_event_effect_confirm)], every: 1_000, tries: 3)]
+    end
+  end
+
   screen :dungeon_graph_danger_zone_skipped, identity: nil, catch_all: true
   screen :dungeon_graph_superposition_entered, identity: nil, catch_all: true
   screen :dungeon_graph_node, identity: nil, catch_all: true
