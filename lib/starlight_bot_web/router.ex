@@ -47,6 +47,14 @@ defmodule StarlightBotWeb.Router do
     end
 
     scope "/dev", StarlightBotWeb do
+      pipe_through :browser
+
+      live_session :dev_perf do
+        live "/perf", Live.PerfLive
+      end
+    end
+
+    scope "/dev", StarlightBotWeb do
       pipe_through :dev_log
       post "/js-log", DevLogController, :log
       post "/perf", DevLogController, :perf

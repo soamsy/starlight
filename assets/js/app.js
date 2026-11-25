@@ -3012,50 +3012,139 @@ document.addEventListener("keydown", (e) => {
 
 // --- LiveSocket setup ---
 
+const createPerfProbe = () => {
+  const state = { on: true, queue: [], raf: null, lastFrame: 0, lastInput: 0, patchStart: 0, ticks: 0, dom: 0 }
+  const counters = () => ({ frames: 0, frameSum: 0, slow: 0, frameMax: 0, lag: 0, patches: 0, patchMax: 0, paintMax: 0, evMax: 0, msgs: 0 })
+  let c = counters()
+  let lastLag = performance.now()
+
+  const labelOf = (el) => {
+    const target = el?.closest?.("button,a,summary,label,[phx-click],[id]")
+    if (!target) return "?"
+    if (target.id) return `#${target.id}`
+    const text = (target.getAttribute("aria-label") || target.title || target.textContent || "").trim().replace(/\s+/g, " ").slice(0, 24)
+    return text ? `${target.tagName.toLowerCase()} ${text}` : target.tagName.toLowerCase()
+  }
+
+  const afterPaint = (callback) => requestAnimationFrame(() => setTimeout(callback, 0))
+  const mark = (kind, label, ms) => state.queue.push({ type: "marker", at: Date.now(), kind, label, ms: Math.round(ms || 0) })
+
+  const frame = (now) => {
+    if (state.lastFrame) {
+      const delta = now - state.lastFrame
+      c.frames++
+      c.frameSum += delta
+      if (delta > 24) c.slow++
+      if (delta > c.frameMax) c.frameMax = delta
+    }
+    state.lastFrame = now
+    if (now - state.lastInput < 2000) {
+      state.raf = requestAnimationFrame(frame)
+    } else {
+      state.raf = null
+      state.lastFrame = 0
+    }
+  }
+
+  const touch = () => {
+    state.lastInput = performance.now()
+    if (state.on && state.raf === null) state.raf = requestAnimationFrame(frame)
+  }
+
+  const sample = () => {
+    const out = {
+      type: "sample",
+      at: Date.now(),
+      fps: c.frameSum > 0 ? Math.round((c.frames * 10000) / c.frameSum) / 10 : null,
+      slow: c.slow,
+      frameMax: Math.round(c.frameMax),
+      lag: Math.round(c.lag),
+      patches: c.patches,
+      patchMax: Math.round(c.patchMax),
+      paintMax: Math.round(c.paintMax),
+      evMax: Math.round(c.evMax),
+      msgs: c.msgs,
+      dom: state.dom,
+    }
+    c = counters()
+    return out
+  }
+
+  const flush = async () => {
+    state.ticks++
+    if (state.ticks % 5 === 1) state.dom = document.getElementsByTagName("*").length
+    const events = state.queue.splice(0)
+    if (state.on) events.push(sample())
+    try {
+      const response = await fetch("/dev/perf", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ events }),
+        keepalive: true,
+      })
+      state.on = (await response.json()).probes !== false
+    } catch {}
+  }
+
+  return {
+    dom: {
+      onPatchStart: () => {
+        if (state.on) state.patchStart = performance.now()
+      },
+      onPatchEnd: () => {
+        if (!state.on || !state.patchStart) return
+        const end = performance.now()
+        const patch = end - state.patchStart
+        state.patchStart = 0
+        c.patches++
+        c.patchMax = Math.max(c.patchMax, patch)
+        touch()
+        afterPaint(() => {
+          const paint = performance.now() - end
+          c.paintMax = Math.max(c.paintMax, paint)
+          if (patch + paint > 50) mark("stall", "patch", patch + paint)
+        })
+      },
+    },
+    start: (liveSocket) => {
+      liveSocket.socket.onMessage(() => { c.msgs++ })
+      for (const type of ["pointerdown", "keydown", "wheel"]) document.addEventListener(type, touch, { capture: true, passive: true })
+      document.addEventListener("click", (event) => {
+        if (!state.on) return
+        const started = performance.now()
+        const label = labelOf(event.target)
+        mark("click", label, 0)
+        afterPaint(() => {
+          const took = performance.now() - started
+          if (took > 50) mark("stall", `click ${label}`, took)
+        })
+      }, true)
+      try {
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) c.evMax = Math.max(c.evMax, entry.duration)
+        }).observe({ type: "event", durationThreshold: 16, buffered: false })
+      } catch {}
+      setInterval(() => {
+        const now = performance.now()
+        c.lag = Math.max(c.lag, now - lastLag - 250)
+        lastLag = now
+      }, 250)
+      setInterval(flush, 1000)
+    },
+  }
+}
+
 const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribute("content")
+
+const perfProbe = document.querySelector("meta[name=dev-js-log]") && !location.pathname.startsWith("/dev/") ? createPerfProbe() : null
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
+  dom: perfProbe?.dom,
   hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, HookNameList, HookOptions, OpenNewSelect, ViewMemory, BrowserMemory, GiftPopup, BossPopup, CabinetBracket, FocusSelect, GiftSearchNav, TeamSearch, WindowDrag, GameStream, InfoArrow }
 })
 
 liveSocket.connect()
 window.liveSocket = liveSocket
 
-if (document.querySelector("meta[name=dev-js-log]")) {
-  const perf = { longTasks: [], lagMax: 0, messages: {}, last: performance.now() }
-  const sendPerf = (message) => fetch("/dev/perf", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ message }),
-    keepalive: true,
-  }).catch(() => {})
-
-  try {
-    new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) perf.longTasks.push(Math.round(entry.duration))
-    }).observe({ entryTypes: ["longtask"] })
-  } catch {}
-
-  liveSocket.socket.onMessage((msg) => {
-    const key = `${msg.event}:${String(msg.topic).split(":")[0]}`
-    perf.messages[key] = (perf.messages[key] || 0) + 1
-  })
-
-  setInterval(() => {
-    const now = performance.now()
-    perf.lagMax = Math.max(perf.lagMax, now - perf.last - 250)
-    perf.last = now
-  }, 250)
-
-  setInterval(() => {
-    const messages = Object.entries(perf.messages).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => `${k}=${v}`).join(" ")
-    const tasks = perf.longTasks.length ? `longtasks=${perf.longTasks.length} max=${Math.max(...perf.longTasks)}ms sum=${perf.longTasks.reduce((a, b) => a + b, 0)}ms` : "longtasks=0"
-    const heap = performance.memory ? ` heap=${Math.round(performance.memory.usedJSHeapSize / 1048576)}MB` : ""
-    const nodes = ` dom=${document.getElementsByTagName("*").length}`
-    sendPerf(`5s ${tasks} loopLagMax=${Math.round(perf.lagMax)}ms msgs[${messages}]${heap}${nodes}`)
-    perf.longTasks = []
-    perf.lagMax = 0
-    perf.messages = {}
-  }, 5000)
-}
+if (perfProbe) perfProbe.start(liveSocket)

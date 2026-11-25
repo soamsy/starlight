@@ -1,5 +1,6 @@
 defmodule StarlightBot.Perf do
   use GenServer
+  alias StarlightBot.Perf.Procs
 
   @path Path.join(System.tmp_dir!(), "starlight_perf.log")
   @sample_ms 40
@@ -25,7 +26,10 @@ defmodule StarlightBot.Perf do
     :ok
   end
 
-  def client(line), do: GenServer.cast(__MODULE__, {:client, line})
+  def client_events(events), do: GenServer.cast(__MODULE__, {:client_events, events})
+
+  def probes?, do: :persistent_term.get({__MODULE__, :probes}, true)
+  def set_probes(on?), do: :persistent_term.put({__MODULE__, :probes}, on?)
 
   def handle_telemetry([:phoenix, :live_view, :mount, :stop], _measure, %{socket: %{view: view}}, _config),
     do: GenServer.cast(__MODULE__, {:mount, self(), view})
@@ -68,7 +72,10 @@ defmodule StarlightBot.Perf do
        samples: %{},
        queue_max: %{},
        leaf: %{},
-       app: %{}
+       app: %{},
+       targets: [],
+       proc_prev: %{},
+       proc_at: System.monotonic_time(:millisecond)
      }}
   end
 
@@ -78,8 +85,9 @@ defmodule StarlightBot.Perf do
   def handle_cast({:event, key, us}, state), do: {:noreply, %{state | events: bump(state.events, key, us)}}
   def handle_cast({:request, path, us}, state), do: {:noreply, %{state | requests: bump(state.requests, path, us)}}
 
-  def handle_cast({:client, line}, state) do
-    write("client " <> line)
+  def handle_cast({:client_events, events}, state) do
+    Enum.each(events, &write(client_line(&1)))
+    Phoenix.PubSub.broadcast(StarlightBot.PubSub, "perf", {:perf_client, events})
     {:noreply, state}
   end
 
@@ -154,11 +162,19 @@ defmodule StarlightBot.Perf do
     {normal, max_normal, dirty_cpu} = utilization(state.wall, wall)
     {reds, state} = reductions(state)
     stamp = Time.utc_now() |> Time.truncate(:millisecond) |> Time.to_string()
+    {procs, state} = process_cpu(state)
+
+    Phoenix.PubSub.broadcast(
+      StarlightBot.PubSub,
+      "perf",
+      {:perf_server, %{t: System.system_time(:millisecond), sched: normal, sched_max: max_normal, runq: :erlang.statistics(:run_queue), procs: procs}}
+    )
 
     lines =
       [
         "#{stamp} sched normal=#{normal}% max=#{max_normal}% dirty_cpu=#{dirty_cpu}% runq=#{:erlang.statistics(:run_queue)} longs=#{state.longs}",
         "  procs " <> Enum.map_join(@tracked, " | ", &proc_summary(&1, state, reds)),
+        "  cpu " <> cpu_line(procs),
         "  renders " <> stats_line(state.renders) <> " changed " <> stats_line(state.renders_changed),
         "  events " <> stats_line(state.events),
         "  requests " <> stats_line(state.requests)
@@ -172,6 +188,26 @@ defmodule StarlightBot.Perf do
     reset = if rem(ticks, @profile_every) == 0, do: Map.merge(reset, %{leaf: %{}, app: %{}}), else: reset
     state |> Map.merge(reset) |> Map.merge(%{wall: wall, ticks: ticks})
   end
+
+  defp process_cpu(state) do
+    now_ms = System.monotonic_time(:millisecond)
+    targets = if rem(state.ticks, 5) == 0, do: Procs.discover(), else: state.targets
+    sampled = Procs.sample(targets)
+    rows = Procs.cpu(state.proc_prev, sampled, max(now_ms - state.proc_at, 1) / 1000)
+    {rows, %{state | targets: targets, proc_prev: sampled, proc_at: now_ms}}
+  end
+
+  defp cpu_line([]), do: "-"
+
+  defp cpu_line(procs) do
+    Enum.map_join(procs, " | ", fn p ->
+      threads = Enum.map_join(p.threads, " ", fn {name, pct} -> "#{name}=#{pct}" end)
+      "#{p.label}#{p.pid} #{p.cpu}% [#{threads}]"
+    end)
+  end
+
+  defp client_line(%{"type" => "marker"} = event), do: "client marker #{event["kind"]} #{event["label"]} #{event["ms"]}"
+  defp client_line(event), do: "client sample " <> Enum.map_join(Map.delete(event, "type"), " ", fn {k, v} -> "#{k}=#{v}" end)
 
   defp utilization(before, now) do
     normal_count = :erlang.system_info(:schedulers)
