@@ -1,9 +1,11 @@
 defmodule StarlightBot.Automation.Scripts.EnkephalinConversion do
   use StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.EnkephalinCharger
+  alias StarlightBot.Automation.{EnkephalinCharger, Recovery}
   alias StarlightBot.Ctx
 
-  def program(count), do: [log(:info, "Localizing…"), locate_screen(then: {__MODULE__, :located, [count]})]
+  def program(count), do: [log(:info, "Localizing…") | Recovery.steps({__MODULE__, :keeps_nothing?}, 0, {__MODULE__, :located, [count]})]
+
+  def keeps_nothing?(_screen), do: false
 
   def located(count, {:ok, screen}, _frame, ctx) do
     Ctx.log(ctx, :ok, "on screen: #{screen}")

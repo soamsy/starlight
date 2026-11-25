@@ -1,10 +1,12 @@
 defmodule StarlightBot.Automation.Scripts.ChargeEnkephalin do
   use StarlightBot.Navigation.DSL
-  alias StarlightBot.Automation.{Engine, EnkephalinCharger}
+  alias StarlightBot.Automation.{Engine, EnkephalinCharger, Recovery}
   alias StarlightBot.Ctx
   alias StarlightBot.Navigation.Catalog
 
-  def program, do: [log(:info, "Localizing…"), locate_screen(then: {__MODULE__, :located, []})]
+  def program, do: [log(:info, "Localizing…") | Recovery.steps({__MODULE__, :keeps_nothing?}, 0, {__MODULE__, :located, []})]
+
+  def keeps_nothing?(_screen), do: false
 
   def located({:ok, start}, _frame, ctx) do
     Ctx.log(ctx, :ok, "on screen: #{start}")

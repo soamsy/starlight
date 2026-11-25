@@ -9,16 +9,22 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
   @ready_poll_ms 5_000
   @charge_start_confirm_ms 5_000
   @charge_poll_ms 50
+  @forced_window_s 2 * 3600
 
   defstruct next_attempt_at: nil, task: nil, close_after: false
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+
+  def charge_now, do: GenServer.cast(__MODULE__, :charge_now)
 
   @impl true
   def init(_opts) do
     send(self(), :tick)
     {:ok, %__MODULE__{}}
   end
+
+  @impl true
+  def handle_cast(:charge_now, state), do: {:noreply, charge_now_run(state)}
 
   @impl true
   def handle_info(:tick, state) do
@@ -63,6 +69,29 @@ defmodule StarlightBot.EnkephalinSchedule.Server do
       %{state | task: task, next_attempt_at: System.monotonic_time(:millisecond) + @attempt_backoff_ms}
     else
       _ -> state
+    end
+  end
+
+  defp charge_now_run(%{task: %Task{}} = state), do: state
+
+  defp charge_now_run(state) do
+    settings = EnkephalinSchedule.get_settings()
+
+    cond do
+      not runners_idle?() ->
+        LogStore.append(:info, "enkephalin scheduler: charge now ignored, a run is already in progress")
+        state
+
+      not window_ready?(settings) ->
+        LogStore.append(:error, "enkephalin scheduler: charge now ignored, Limbus isn't open and launching is off")
+        state
+
+      true ->
+        LogStore.append(:info, "enkephalin scheduler: starting a charge now")
+        end_at = NaiveDateTime.add(Scheduler.local_now(), @forced_window_s)
+        EnkephalinSchedule.set_charging(true)
+        task = Task.Supervisor.async_nolink(StarlightBot.TaskSupervisor, fn -> charge(settings, end_at) end)
+        %{state | task: task}
     end
   end
 

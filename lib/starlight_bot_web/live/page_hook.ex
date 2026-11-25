@@ -179,6 +179,11 @@ defmodule StarlightBotWeb.Live.PageHook do
     end
   end
 
+  defp handle_settings_event("enkephalin_charge_now", _params, socket) do
+    EnkephalinSchedule.Server.charge_now()
+    {:halt, socket}
+  end
+
   defp handle_settings_event("scheduler_start_now", _params, socket) do
     Scheduler.Server.start_now()
     {:halt, socket}

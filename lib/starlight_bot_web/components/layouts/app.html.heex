@@ -158,6 +158,7 @@
               <span>Close Limbus after opening it for a charge</span>
             </label>
             <span :if={@enkephalin_schedule_error} class="text-xs text-error">Not saved: {@enkephalin_schedule_error}</span>
+            <button type="button" phx-click="enkephalin_charge_now" disabled={@run_live} class="btn btn-sm btn-success self-start">Charge now</button>
           </form>
           <% end %>
         </div>
