@@ -19,6 +19,7 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
      |> assign(:search, "")
      |> assign(:picking_sinner, false)
      |> assign(:focus_id, nil)
+     |> assign(:open_picker, nil)
      |> assign_profiles()}
   end
 
@@ -27,6 +28,11 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
 
   @impl true
   def handle_event("toggle_hd", _, socket), do: {:noreply, assign(socket, :hd, !socket.assigns.hd)}
+
+  @impl true
+  def handle_event("open_picker", %{"id" => id, "kind" => kind}, socket) when kind in ["affinity", "sinner"] do
+    {:noreply, assign(socket, :open_picker, {String.to_integer(id), kind})}
+  end
 
   @impl true
   def handle_event("cancel_new", _, socket), do: {:noreply, assign(socket, :picking_sinner, false)}
@@ -116,8 +122,8 @@ defmodule StarlightBotWeb.Live.SinnerProfilesLive do
     attrs = %{
       id: id,
       name: String.trim(params["name"] || ""),
-      sinner: blank_to_nil(params["sinner"]),
-      defense_affinity: blank_to_nil(params["defense_affinity"]),
+      sinner: hook_param.("sinner"),
+      defense_affinity: hook_param.("defense_affinity"),
       locator_hook: hook_param.("locator_hook"),
       base_locator_hook: hook_param.("base_locator_hook"),
       hd_locator_hook: hook_param.("hd_locator_hook"),
