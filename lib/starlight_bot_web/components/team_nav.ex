@@ -41,6 +41,9 @@ defmodule StarlightBotWeb.Components.TeamNav do
 
   def handle_info(:team_plans_changed, socket), do: {:cont, reload(socket)}
 
+  def handle_info({:plan_count, team_id, :battle_plans, count}, %{assigns: %{team_nav: %{team_id: team_id} = nav}} = socket),
+    do: {:cont, Phoenix.Component.assign(socket, :team_nav, %{nav | teams: Teams.list_all_teams(), counts: Map.put(nav.counts, :battle_plans, count)})}
+
   def handle_info({:plan_count, team_id, table, count}, %{assigns: %{team_nav: %{team_id: team_id} = nav}} = socket),
     do: {:cont, Phoenix.Component.assign(socket, :team_nav, %{nav | counts: Map.put(nav.counts, table, count)})}
 
