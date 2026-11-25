@@ -174,7 +174,7 @@
             <.pick_row :for={{pick, index} <- Enum.with_index(@reserve)} pick={pick} index={index} list="reserve" teams={@teams} nav={@team_nav} locked={cycle_locked?(@phase, @other_running?, @run_kind) or (live_cycle?(@phase, @other_running?, @run_kind) and running_team?(@running_team, pick))} live={live_cycle?(@phase, @other_running?, @run_kind)}
                        run_disabled={run_disabled?(@teams, @phase, @countdown, @other_running?, gate(@game_window_rect, @game_launch_label, @game_launcher_missing, @game_update_pending))} />
           </div>
-          <button :if={@teams != [] and not cycle_locked?(@phase, @other_running?, @run_kind)} type="button" phx-click="add_team" class="btn btn-ghost btn-xs self-start">+ team</button>
+          <button :if={@teams != [] and not cycle_locked?(@phase, @other_running?, @run_kind)} id="add-team" phx-hook="OpenNewSelect" type="button" phx-click="add_team" class="btn btn-ghost btn-xs self-start">+ team</button>
         </div>
 
         <div class="flex items-center gap-2">

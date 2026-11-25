@@ -38,7 +38,7 @@ defmodule StarlightBotWeb.Components.HookSelect do
       <div class="columns-3 gap-3">
         <div :for={{group, hooks} <- @groups} class="mb-2 break-inside-avoid">
           <div class="px-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/50"><%= group %></div>
-          <button :for={hook <- hooks} type="button" data-value={hook}
+          <button :for={hook <- hooks} type="button" data-value={hook} data-label={Teams.hook_label(hook)}
                   onclick="const i = this.closest('details').querySelector('input'); i.value = this.dataset.value; i.dispatchEvent(new Event('input', {bubbles: true}))"
                   class="btn btn-xs btn-ghost w-full justify-start gap-1.5 font-mono">
             <img :if={Teams.hook_icon(hook)} src={Teams.hook_icon(hook)} class="size-4 object-contain" /><%= Teams.hook_label(hook) %>

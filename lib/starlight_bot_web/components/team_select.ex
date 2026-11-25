@@ -43,7 +43,7 @@ defmodule StarlightBotWeb.Components.TeamSelect do
                 class="btn btn-sm btn-ghost w-full justify-start gap-2 font-normal">
           None selected
         </button>
-        <button :for={team <- @teams} type="button" data-value={team.id}
+        <button :for={team <- @teams} type="button" data-value={team.id} data-label={team.name}
                 onclick="const i = this.closest('details').querySelector('input'); i.value = this.dataset.value; i.dispatchEvent(new Event('input', {bubbles: true}))"
                 class="btn btn-sm btn-ghost w-full justify-start gap-2 font-normal">
           <.label current={team} nav={@nav} />

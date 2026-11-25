@@ -2653,20 +2653,159 @@ const HookNameList = {
   },
 }
 
+const fuzzyScore = (needle, text) => {
+  let score = text.includes(needle) ? 20 : 0
+  let last = -1
+  let run = 0
+  for (const ch of needle) {
+    const found = text.indexOf(ch, last + 1)
+    if (found < 0) return -1
+    run = found === last + 1 ? run + 1 : 0
+    score += 1 + run * 2 + (found === 0 || " -_".includes(text[found - 1]) ? 3 : 0)
+    last = found
+  }
+  return score - last * 0.01
+}
+
+const selectDropdowns = (from) => {
+  const scope = from.closest("form") || document
+  return Array.from(scope.querySelectorAll('[phx-hook="HookOptions"]')).map(options => options.closest("details"))
+}
+
+const advanceSelect = (id, step) => {
+  const started = performance.now()
+  const attempt = () => {
+    const current = document.getElementById(id)
+    if (!current) return
+    const form = current.closest("form")
+    const pending = form && (form.matches(".phx-change-loading") || form.querySelector(".phx-change-loading"))
+    if (pending && performance.now() - started < 1500) return requestAnimationFrame(attempt)
+    const all = selectDropdowns(current)
+    const target = all[all.indexOf(current) + step]
+    if (target) target.querySelector("summary").click()
+    else current.querySelector("summary").focus()
+  }
+  requestAnimationFrame(attempt)
+}
+
+const OpenNewSelect = {
+  mounted() {
+    this.el.addEventListener("click", () => {
+      const known = new Set(selectDropdowns(this.el).map(details => details.id))
+      const started = performance.now()
+      const attempt = () => {
+        const fresh = selectDropdowns(this.el).find(details => !known.has(details.id))
+        if (fresh) fresh.querySelector("summary").click()
+        else if (performance.now() - started < 1500) requestAnimationFrame(attempt)
+      }
+      requestAnimationFrame(attempt)
+    })
+  },
+}
+
 const HookOptions = {
   mounted() {
     const details = this.el.closest("details")
-    const input = details.querySelector("input[type=hidden]")
-    details.querySelector("summary").addEventListener("click", () => {
+    const hidden = details.querySelector("input[type=hidden]")
+    const summary = details.querySelector("summary")
+    let search = null
+    let buttons = []
+    let active = null
+
+    const label = (button) => (button.dataset.label || button.textContent).trim().toLowerCase()
+    const visible = () => buttons.filter(button => !button.classList.contains("hidden"))
+
+    const paint = (scroll = true) => {
+      buttons.forEach(button => {
+        const on = button === active
+        const current = button.dataset.value === hidden.value
+        button.classList.toggle("btn-primary", on)
+        button.classList.toggle("btn-ghost", !on)
+        button.classList.toggle("ring-1", current && !on)
+        button.classList.toggle("ring-inset", current && !on)
+        button.classList.toggle("ring-primary", current && !on)
+      })
+      if (scroll && active) active.scrollIntoView({ block: "nearest" })
+    }
+
+    const filter = () => {
+      const needle = search.value.replace(/\s+/g, "").toLowerCase()
+      const scored = buttons.map((button, order) => ({ button, order, score: needle ? fuzzyScore(needle, label(button)) : 0 }))
+      scored.forEach(({ button, score }) => button.classList.toggle("hidden", score < 0))
+      if (new Set(buttons.map(button => button.parentElement)).size === 1) {
+        const parent = buttons[0].parentElement
+        scored.sort((a, b) => b.score - a.score || a.order - b.order).forEach(({ button }) => parent.append(button))
+      }
+      this.el.querySelectorAll(".break-inside-avoid").forEach(group => {
+        group.classList.toggle("hidden", !group.querySelector("button[data-value]:not(.hidden)"))
+      })
+      active = visible()[0] || null
+      paint()
+    }
+
+    const move = (step) => {
+      const shown = visible()
+      if (shown.length === 0) return
+      const index = shown.indexOf(active)
+      active = shown[(index + step + shown.length) % shown.length]
+      paint()
+    }
+
+    const leave = (step, choose) => {
+      if (choose && active) {
+        hidden.value = active.dataset.value
+        hidden.dispatchEvent(new Event("input", { bubbles: true }))
+      }
+      details.open = false
+      advanceSelect(details.id, step)
+    }
+
+    summary.addEventListener("click", () => {
       const source = document.getElementById(this.el.dataset.source || "hook-select-options")
       if (!source) return
-      this.el.replaceChildren(...source.cloneNode(true).children)
-      if (!this.el.dataset.allowNone) this.el.querySelectorAll("[data-optional]").forEach(button => button.remove())
-      this.el.querySelectorAll("button[data-value]").forEach(button => {
-        const selected = button.dataset.value === input.value
-        button.classList.toggle("btn-primary", selected)
-        button.classList.toggle("btn-ghost", !selected)
+      search = document.createElement("input")
+      search.type = "text"
+      search.placeholder = "Search"
+      search.autocomplete = "off"
+      search.className = "input input-sm input-bordered sticky top-0 z-10 mb-1 w-full"
+      search.addEventListener("input", (event) => {
+        event.stopPropagation()
+        filter()
       })
+      search.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault()
+          move(event.key === "ArrowDown" ? 1 : -1)
+        } else if (event.key === "Enter") {
+          event.preventDefault()
+          event.stopPropagation()
+          leave(1, true)
+        } else if (event.key === "Tab") {
+          event.preventDefault()
+          leave(event.shiftKey ? -1 : 1, false)
+        } else if (event.key === "Escape") {
+          event.preventDefault()
+          details.open = false
+          summary.focus()
+        }
+      })
+      this.el.replaceChildren(search, ...source.cloneNode(true).children)
+      if (!this.el.dataset.allowNone) this.el.querySelectorAll("[data-optional]").forEach(button => button.remove())
+      buttons = Array.from(this.el.querySelectorAll("button[data-value]"))
+      buttons.forEach(button => {
+        button.addEventListener("mousemove", () => {
+          if (active !== button) {
+            active = button
+            paint(false)
+          }
+        })
+      })
+      active = buttons.find(button => button.dataset.value === hidden.value) || buttons[0] || null
+      paint()
+    })
+
+    details.addEventListener("toggle", () => {
+      if (details.open && search) requestAnimationFrame(() => search.focus())
     })
   },
 }
@@ -2877,7 +3016,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']")?.getAttribut
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, HookNameList, HookOptions, ViewMemory, BrowserMemory, GiftPopup, BossPopup, CabinetBracket, FocusSelect, GiftSearchNav, TeamSearch, WindowDrag, GameStream, InfoArrow }
+  hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, HookNameList, HookOptions, OpenNewSelect, ViewMemory, BrowserMemory, GiftPopup, BossPopup, CabinetBracket, FocusSelect, GiftSearchNav, TeamSearch, WindowDrag, GameStream, InfoArrow }
 })
 
 liveSocket.connect()
