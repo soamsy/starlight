@@ -3012,6 +3012,26 @@ document.addEventListener("keydown", (e) => {
 
 // --- LiveSocket setup ---
 
+const RunTimer = {
+  mounted() {
+    this.base = Number(this.el.dataset.elapsed)
+    this.running = this.el.dataset.running === "true"
+    this.startedAt = performance.now()
+    this.render()
+    if (this.running) this.timer = setInterval(() => this.render(), 1000)
+  },
+  destroyed() {
+    clearInterval(this.timer)
+  },
+  render() {
+    const total = Math.floor((this.base + (this.running ? performance.now() - this.startedAt : 0)) / 1000)
+    const hours = Math.floor(total / 3600)
+    const minutes = Math.floor((total % 3600) / 60)
+    const seconds = String(total % 60).padStart(2, "0")
+    this.el.textContent = hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`
+  },
+}
+
 const createPerfProbe = () => {
   const state = { on: true, queue: [], raf: null, lastFrame: 0, lastInput: 0, patchStart: 0, ticks: 0, dom: 0 }
   const counters = () => ({ frames: 0, frameSum: 0, slow: 0, frameMax: 0, lag: 0, patches: 0, patchMax: 0, paintMax: 0, evMax: 0, msgs: 0 })
@@ -3141,7 +3161,7 @@ const perfProbe = document.querySelector("meta[name=dev-js-log]") && !location.p
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
   dom: perfProbe?.dom,
-  hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, HookNameList, HookOptions, OpenNewSelect, ViewMemory, BrowserMemory, GiftPopup, BossPopup, CabinetBracket, FocusSelect, GiftSearchNav, TeamSearch, WindowDrag, GameStream, InfoArrow }
+  hooks: { Toasts, RunnerTabMemory, BattleTabMemory, ScreenshotCanvas, EnemyLabelCanvas, BattleInspectorCanvas, BattleHistoryCanvas, ChainPreviewCanvas, TargetPreviewCanvas, ActiveSkillsCanvas, DungeonInspectorCanvas, GiftInspectorCanvas, TemplateTransfer, EditableNotes, PreserveScroll, ScrollToBottom, LogVirtual, PlanClipboard, ItemClipboard, PriorityChips, LocalStorageForm, SortableList, GiftDragSource, GiftDropZone, RegionDragDrop, ChannelBand, DblClickEvent, RightClickEvent, PriorityRightClick, PathPicker, DragScroll, HookPicker, AnchoredPopup, FloatingDropdown, HookNameList, HookOptions, OpenNewSelect, ViewMemory, BrowserMemory, GiftPopup, BossPopup, CabinetBracket, FocusSelect, GiftSearchNav, TeamSearch, WindowDrag, GameStream, InfoArrow, RunTimer }
 })
 
 liveSocket.connect()

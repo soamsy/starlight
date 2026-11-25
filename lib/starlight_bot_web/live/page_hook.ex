@@ -54,6 +54,8 @@ defmodule StarlightBotWeb.Live.PageHook do
       |> assign(:run_paused, false)
       |> assign(:run_phase, :idle)
       |> assign(:run_kind, nil)
+      |> assign(:run_timer_key, nil)
+      |> assign(:run_timer_ms, 0)
       |> assign(:team_nav, TeamNav.init())
       |> assign(:game_launch_label, nil)
       |> assign(:game_launcher_label, nil)
@@ -213,23 +215,31 @@ defmodule StarlightBotWeb.Live.PageHook do
 
   defp assign_run_state(socket) do
     case GenServer.whereis(Navigator) && Navigator.status() do
-      %{phase: phase, run_kind: run_kind} -> socket |> assign(:run_phase, phase) |> assign(:run_kind, run_kind)
+      %{phase: phase, run_kind: run_kind} = status -> socket |> assign(:run_phase, phase) |> assign(:run_kind, run_kind) |> assign_run_timer(status)
       _ -> socket
     end
   end
+
+  defp assign_run_timer(socket, %{run_clock: %{elapsed_ms: ms, running?: running?}, run_started_at: %DateTime{} = started_at}) do
+    key = {DateTime.to_unix(started_at), running?}
+
+    if socket.assigns.run_timer_key == key do
+      socket
+    else
+      socket |> assign(:run_timer_key, key) |> assign(:run_timer_ms, ms)
+    end
+  end
+
+  defp assign_run_timer(socket, _state), do: socket |> assign(:run_timer_key, nil) |> assign(:run_timer_ms, 0)
 
   defp run_paused? do
     GenServer.whereis(Navigator) != nil and Navigator.status().phase == :paused
   end
 
-  defp latest_log do
-    case LogStore.recent(1) do
-      [entry | _] -> entry
-      [] -> nil
-    end
-  end
+  defp latest_log, do: Enum.find(LogStore.recent(50), &(&1.kind != :step))
 
   defp handle_log_entry({:log_entry, entry}, %{view: StarlightBotWeb.Live.LogLive} = socket), do: {:cont, assign(socket, :latest_log, entry)}
+  defp handle_log_entry({:log_entry, %{kind: :step}}, socket), do: {:halt, socket}
   defp handle_log_entry({:log_entry, entry}, socket) do
     socket = assign(socket, :pending_log, entry)
 
@@ -303,7 +313,7 @@ defmodule StarlightBotWeb.Live.PageHook do
     do: {:halt, assign(socket, :game_window_rect, rect)}
 
   defp handle_window_rect({:nav_state, state}, socket),
-    do: {:cont, socket |> assign(:run_live, EnkephalinSchedule.charging?() or state.phase != :idle or state.run_kind != nil) |> assign(:run_paused, state.phase == :paused) |> assign(:run_phase, state.phase) |> assign(:run_kind, state.run_kind)}
+    do: {:cont, socket |> assign(:run_live, EnkephalinSchedule.charging?() or state.phase != :idle or state.run_kind != nil) |> assign(:run_paused, state.phase == :paused) |> assign(:run_phase, state.phase) |> assign(:run_kind, state.run_kind) |> assign_run_timer(state)}
 
   defp handle_window_rect({:game_window_result, kind, msg}, socket),
     do: {:halt, socket |> assign(:game_window_busy, nil) |> put_flash(kind, msg)}

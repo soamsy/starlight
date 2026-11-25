@@ -9,7 +9,7 @@
         <img src={~p"/images/icons/mirror_dungeon.webp"} alt="" class="size-4 lg:size-5" />
         <span class="font-semibold">MD</span>
         <kbd class="kbd kbd-xs hidden lg:inline-flex">1</kbd>
-        <span :if={@run_kind == :mirror_dungeon} class="loading loading-spinner loading-xs"></span>
+        <.icon :if={@run_kind == :mirror_dungeon} name="lucide-filled-circle" class={["size-2", if(on_runner and @tab == :mirror_dungeon, do: "text-primary-content", else: "text-success")]} />
       </.link>
       <.link {run_link.(~p"/luxcavation")} data-hotkey="2"
              class={"btn btn-xs lg:btn-sm gap-1 " <> if(on_runner and @tab == :luxcavation, do: "btn-primary", else: "btn-ghost text-base-content/50")}
@@ -17,7 +17,7 @@
         <img src={~p"/images/icons/luxcavation.webp"} alt="" class="size-4 lg:size-5" />
         <span class="font-semibold">Lux</span>
         <kbd class="kbd kbd-xs hidden lg:inline-flex">2</kbd>
-        <span :if={@run_kind == :luxcavation} class="loading loading-spinner loading-xs"></span>
+        <.icon :if={@run_kind == :luxcavation} name="lucide-filled-circle" class={["size-2", if(on_runner and @tab == :luxcavation, do: "text-primary-content", else: "text-success")]} />
       </.link>
       <%= if nav = @team_nav do %>
         <TeamNav.team_selector nav={nav} on_page={on_teams} />
@@ -80,11 +80,25 @@
         </span>
         <span
           class={[
-            "flex size-6 lg:size-8 items-center justify-center border-l border-base-100/40",
-            if(runs_on, do: "bg-success text-success-content", else: "bg-base-200 text-base-content/40")
+            "flex h-6 min-w-6 lg:h-8 lg:min-w-8 items-center justify-center gap-1 border-l border-base-100/40",
+            @run_live && @run_timer_key && "px-1.5",
+            if(runs_on or @run_live, do: "bg-success text-success-content", else: "bg-base-200 text-base-content/40")
           ]}
-          title={if(runs_on, do: "Runs scheduled", else: "Runs not scheduled")}>
-          <span :if={@run_live} class="loading loading-spinner loading-xs lg:loading-sm"></span>
+          title={cond do
+            @run_live -> "Run in progress"
+            runs_on -> "Runs scheduled"
+            true -> "Runs not scheduled"
+          end}>
+          <.icon :if={@run_live} name="lucide-activity" class="size-4 lg:size-5" />
+          <span
+            :if={@run_live && @run_timer_key}
+            id={"run-timer-#{elem(@run_timer_key, 0)}-#{elem(@run_timer_key, 1)}"}
+            phx-hook="RunTimer"
+            phx-update="ignore"
+            data-elapsed={@run_timer_ms}
+            data-running={to_string(elem(@run_timer_key, 1))}
+            class="font-mono text-[11px] lg:text-xs tabular-nums"
+          ></span>
           <%= unless @run_live do %>
           <.icon name={if runs_on, do: "lucide-clock", else: "lucide-timer-off"} class="size-4 lg:size-5" />
           <% end %>

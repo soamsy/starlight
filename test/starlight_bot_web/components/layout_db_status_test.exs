@@ -27,6 +27,8 @@ defmodule StarlightBotWeb.LayoutDbStatusTest do
       page: :teams,
       tab: nil,
       run_kind: nil,
+      run_timer_key: nil,
+      run_timer_ms: 0,
       run_live: false,
       team_nav: nil,
       latest_log: nil,
@@ -66,5 +68,21 @@ defmodule StarlightBotWeb.LayoutDbStatusTest do
 
     assert html =~ "Restart the app to finish the repair"
     refute html =~ "Restore backup on next start"
+  end
+
+  test "a live run shows the activity icon and a run timer keyed to the run" do
+    live = Map.merge(assigns([]), %{run_live: true, run_timer_key: {1_700_000_000, true}, run_timer_ms: 65_000})
+    html = render_component(&Layouts.app/1, live)
+
+    assert html =~ ~s(id="run-timer-1700000000-true")
+    assert html =~ ~s(data-elapsed="65000")
+    assert html =~ ~s(data-running="true")
+    assert html =~ "lucide-activity"
+  end
+
+  test "an idle nav has no run timer" do
+    html = render_component(&Layouts.app/1, assigns([]))
+
+    refute html =~ "run-timer"
   end
 end
