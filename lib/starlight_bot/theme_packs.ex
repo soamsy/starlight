@@ -37,6 +37,7 @@ defmodule StarlightBot.ThemePacks do
         }
     )
     |> Enum.map(&Map.update!(&1, :possible_bosses, fn json -> decode_bosses(json) end))
+    |> Enum.map(&Map.merge(&1, %{poster_path: &1.image_path, image_path: StarlightBot.ImageThumbs.path(&1.image_path)}))
   rescue
     _ -> []
   end
@@ -62,6 +63,7 @@ defmodule StarlightBot.ThemePacks do
       select: {l.theme_pack_id, %{id: g.id, name: g.name, tier: g.tier, image_path: g.image_path}}
     )
     |> Repo.all()
+    |> Enum.map(fn {pack_id, gift} -> {pack_id, Map.update!(gift, :image_path, &StarlightBot.ImageThumbs.path/1)} end)
     |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
   rescue
     _ -> %{}

@@ -38,6 +38,7 @@ defmodule StarlightBot.EgoGifts do
           extreme_only: g.extreme_only == 1
         }
     )
+    |> Enum.map(&Map.update!(&1, :image_path, fn path -> StarlightBot.ImageThumbs.path(path) end))
   rescue
     _ -> []
   end

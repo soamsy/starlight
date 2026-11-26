@@ -33,7 +33,7 @@ defmodule StarlightBotWeb.Components.PackPlanGuide do
           <span class="shrink-0 pt-0.5 text-base-content/60">&rarr;</span>
           <div class="relative w-56 shrink-0">
             <span class="flex items-center gap-1 rounded-full border border-success/60 bg-success/10 pl-0.5 pr-1 py-0.5 text-[10px] shadow-sm ring-2 ring-primary/60">
-              <img src="/images/theme_packs/thm_3.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+              <img src="/images/theme_packs/thumb/thm_3.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
               <span class="truncate font-medium flex-1">Flat-broke Gamblers</span>
               <span class="shrink-0 rounded-full bg-base-content/10 px-1 text-[9px] text-base-content/60">+2</span>
               <.icon name="lucide-chevron-down" class="size-3 shrink-0 rotate-180 text-base-content/50" />
@@ -43,21 +43,21 @@ defmodule StarlightBotWeb.Components.PackPlanGuide do
               <span class="px-1 text-[9px] uppercase tracking-wide text-base-content/50">Hunt</span>
               <div class="flex items-center gap-1 rounded-full border border-success/60 bg-success/30 pl-1 pr-1 py-0.5 text-[10px]" style="opacity: 1">
                 <span class="text-base-content/50">⠿</span>
-                <img src="/images/theme_packs/thm_3.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                <img src="/images/theme_packs/thumb/thm_3.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
                 <span class="truncate flex-1">Flat-broke Gamblers</span>
                 <span class="shrink-0 text-[9px] text-base-content/60">1</span>
                 <span class="shrink-0 leading-none text-base-content/50"><.icon name="lucide-x" class="size-3.5" /></span>
               </div>
               <div class="flex items-center gap-1 rounded-full border border-success/60 bg-success/30 pl-1 pr-1 py-0.5 text-[10px]" style="opacity: 0.75">
                 <span class="text-base-content/50">⠿</span>
-                <img src="/images/theme_packs/thm_12.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                <img src="/images/theme_packs/thumb/thm_12.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
                 <span class="truncate flex-1">The Unchanging</span>
                 <span class="shrink-0 text-[9px] text-base-content/60">2</span>
                 <span class="shrink-0 leading-none text-base-content/50"><.icon name="lucide-x" class="size-3.5" /></span>
               </div>
               <div class="flex items-center gap-1 rounded-full border border-success/60 bg-success/30 pl-1 pr-1 py-0.5 text-[10px]" style="opacity: 0.55">
                 <span class="text-base-content/50">⠿</span>
-                <img src="/images/theme_packs/thm_10.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
+                <img src="/images/theme_packs/thumb/thm_10.webp" class="w-4 h-4 rounded-full object-cover shrink-0" draggable="false" />
                 <span class="truncate flex-1">Falling Flowers</span>
                 <span class="shrink-0 text-[9px] text-base-content/60">3</span>
                 <span class="shrink-0 leading-none text-base-content/50"><.icon name="lucide-x" class="size-3.5" /></span>

@@ -98,7 +98,9 @@ defmodule Mix.Tasks.EgoGifts.Import do
 
     if File.exists?(src) do
       unless File.exists?(dest), do: File.cp!(src, dest)
-      "/images/ego_gifts/#{basename}"
+      url = "/images/ego_gifts/#{basename}"
+      StarlightBot.ImageThumbs.generate(url)
+      url
     else
       Mix.shell().error("Missing source image, skipping copy: #{src}")
       nil

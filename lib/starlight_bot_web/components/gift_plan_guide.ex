@@ -56,7 +56,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
         <p class="mb-2">Actions are defined by adding the target gift to the list, and setting up what you want out of it.</p>
         <div class="flex flex-col gap-2 text-xs">
           <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1 pointer-events-none w-fit">
-            <img src="/images/ego_gifts/gift_55.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+            <img src="/images/ego_gifts/thumb/gift_55.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
             <span class="font-medium w-36 truncate">Thrill</span>
             <span class="join">
               <span class="btn btn-xs join-item btn-secondary">+</span>
@@ -81,7 +81,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
       <section>
         <div class="grid grid-cols-[14rem_1fr] items-center gap-2 text-xs">
           <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1 pointer-events-none">
-            <img src="/images/ego_gifts/gift_419.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+            <img src="/images/ego_gifts/thumb/gift_419.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
             <span class="font-medium flex-1 truncate">Bongy Plush</span>
             <span class="btn btn-xs btn-error">Sell</span>
           </div>
@@ -95,13 +95,13 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
           <div class="flex flex-col gap-1 pointer-events-none">
             <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1">
               <span class="flex w-24 shrink-0 items-center justify-between rounded border border-neutral bg-neutral px-1.5 py-0.5 text-[11px] text-neutral-content">Required<.icon name="lucide-chevron-down" class="size-3" /></span>
-              <img src="/images/ego_gifts/gift_97.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+              <img src="/images/ego_gifts/thumb/gift_97.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
               <span class="font-medium flex-1 truncate">Clear Mirror, Calm Water</span>
               <span class="btn btn-xs btn-secondary">Fuse</span>
             </div>
             <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1">
               <span class="flex w-24 shrink-0 items-center justify-between rounded border border-neutral bg-neutral px-1.5 py-0.5 text-[11px] text-neutral-content">Required<.icon name="lucide-chevron-down" class="size-3" /></span>
-              <img src="/images/ego_gifts/gift_126.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+              <img src="/images/ego_gifts/thumb/gift_126.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
               <span class="font-medium flex-1 truncate">Fragment of Decay</span>
               <span class="btn btn-xs btn-secondary">Fuse</span>
             </div>
@@ -127,7 +127,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
           <div class="grid grid-cols-[22rem_1fr] items-center gap-2">
             <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1 pointer-events-none">
               <span class="flex w-24 shrink-0 items-center justify-between rounded border border-neutral bg-neutral px-1.5 py-0.5 text-[11px] text-neutral-content">Required<.icon name="lucide-chevron-down" class="size-3" /></span>
-              <img src="/images/ego_gifts/gift_13.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+              <img src="/images/ego_gifts/thumb/gift_13.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
               <span class="truncate font-medium flex-1">Glimpse of Flames</span>
               <span class="join">
                 <span class="btn btn-xs join-item btn-secondary">Buy</span>
@@ -139,7 +139,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
           <div class="grid grid-cols-[22rem_1fr] items-center gap-2">
             <div class="flex items-center gap-2 rounded border border-base-content/10 bg-base-300 px-1 py-1 pointer-events-none" style="background-image: radial-gradient(color-mix(in oklab, var(--color-base-content) 16%, transparent) 0.9px, transparent 1.2px), radial-gradient(color-mix(in oklab, var(--color-base-content) 16%, transparent) 0.9px, transparent 1.2px); background-size: 8px 8px; background-position: -2px -2px, 2px 2px; background-clip: padding-box">
               <span class="flex w-24 shrink-0 items-center justify-between rounded border border-base-300 bg-base-100 px-1.5 py-0.5 text-[11px]">Optional<.icon name="lucide-chevron-down" class="size-3" /></span>
-              <img src="/images/ego_gifts/gift_104.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+              <img src="/images/ego_gifts/thumb/gift_104.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
               <span class="truncate font-medium flex-1">Ardent Flower</span>
               <span class="join">
                 <span class="btn btn-xs join-item btn-secondary">Buy</span>
@@ -152,7 +152,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
             <div class="flex flex-col gap-1">
               <div class="flex items-center gap-2 rounded border border-sky-500/50 bg-sky-500/15 px-1 py-1 pointer-events-none">
                 <span class="flex w-24 shrink-0 items-center justify-between rounded border border-sky-700 bg-sky-600 px-1.5 py-0.5 text-[11px] text-white">Goal A<.icon name="lucide-chevron-down" class="size-3" /></span>
-                <img src="/images/ego_gifts/gift_313.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+                <img src="/images/ego_gifts/thumb/gift_313.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
                 <span class="truncate font-medium flex-1">Embers</span>
                 <span class="join">
                   <span class="btn btn-xs join-item btn-secondary">Buy</span>
@@ -161,7 +161,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
               </div>
               <div class="flex items-center gap-2 rounded border border-sky-500/50 bg-sky-500/15 px-1 py-1 pointer-events-none">
                 <span class="flex w-24 shrink-0 items-center justify-between rounded border border-sky-700 bg-sky-600 px-1.5 py-0.5 text-[11px] text-white">Goal A<.icon name="lucide-chevron-down" class="size-3" /></span>
-                <img src="/images/ego_gifts/gift_92.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+                <img src="/images/ego_gifts/thumb/gift_92.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
                 <span class="truncate font-medium flex-1">Charred Disk</span>
                 <span class="join">
                   <span class="btn btn-xs join-item btn-secondary">Buy</span>
@@ -210,7 +210,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
               <div class="p-1 border-2 border-primary rounded-b-lg rounded-tr-lg">
               <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1">
                 <span class="flex w-24 shrink-0 items-center justify-between rounded border border-neutral bg-neutral px-1.5 py-0.5 text-[11px] text-neutral-content">Required<.icon name="lucide-chevron-down" class="size-3" /></span>
-                <img src="/images/ego_gifts/gift_81.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+                <img src="/images/ego_gifts/thumb/gift_81.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
                 <span class="font-medium w-24 truncate">Grand Welcome</span>
                 <span class="join">
                   <span class="btn btn-xs join-item btn-secondary">Buy</span>
@@ -227,7 +227,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
               <div class="p-1 border-2 border-primary rounded-b-lg rounded-tr-lg">
               <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1">
                 <span class="flex w-24 shrink-0 items-center justify-between rounded border border-base-300 bg-base-100 px-1.5 py-0.5 text-[11px] text-base-content">Optional<.icon name="lucide-chevron-down" class="size-3" /></span>
-                <img src="/images/ego_gifts/gift_81.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+                <img src="/images/ego_gifts/thumb/gift_81.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
                 <span class="font-medium w-24 truncate">Grand Welcome</span>
                 <span class="join">
                   <span class="btn btn-xs join-item btn-outline">Buy</span>
@@ -244,7 +244,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
               <div class="p-1 border-2 border-primary rounded-b-lg rounded-tr-lg">
               <div class="flex items-center gap-2 rounded border border-base-300 bg-base-100 px-1 py-1" style="background-image: repeating-linear-gradient(135deg, color-mix(in oklab, var(--color-base-content) 14%, transparent) 0 4px, transparent 4px 10px)">
                 <span class="flex w-24 shrink-0 items-center justify-between rounded border border-base-300 bg-base-100 px-1.5 py-0.5 text-[11px] text-base-content">Abandon<.icon name="lucide-chevron-down" class="size-3" /></span>
-                <img src="/images/ego_gifts/gift_81.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+                <img src="/images/ego_gifts/thumb/gift_81.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
                 <span class="font-medium w-24 truncate">Grand Welcome</span>
               </div>
               </div>
@@ -268,7 +268,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
               </div>
               <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1 ml-2">
                 <span class="flex w-24 shrink-0 items-center justify-between rounded border border-neutral bg-neutral px-1.5 py-0.5 text-[11px] text-neutral-content">Required<.icon name="lucide-chevron-down" class="size-3" /></span>
-                <img src="/images/ego_gifts/gift_13.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+                <img src="/images/ego_gifts/thumb/gift_13.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
                 <span class="truncate font-medium flex-1">Glimpse of Flames</span>
                 <span class="btn btn-xs btn-secondary">Buy</span>
               </div>
@@ -287,7 +287,7 @@ defmodule StarlightBotWeb.Components.GiftPlanGuide do
               </div>
               <div class="flex items-center gap-2 rounded border border-base-content/20 bg-base-content/10 px-1 py-1 ml-2">
                 <span class="flex w-24 shrink-0 items-center justify-between rounded border border-neutral bg-neutral px-1.5 py-0.5 text-[11px] text-neutral-content">Required<.icon name="lucide-chevron-down" class="size-3" /></span>
-                <img src="/images/ego_gifts/gift_55.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
+                <img src="/images/ego_gifts/thumb/gift_55.webp" class="w-6 h-6 rounded object-cover shrink-0" draggable="false" />
                 <span class="truncate font-medium flex-1">Thrill</span>
                 <span class="btn btn-xs btn-secondary">Buy</span>
               </div>

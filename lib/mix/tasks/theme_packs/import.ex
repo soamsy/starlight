@@ -126,7 +126,10 @@ defmodule Mix.Tasks.ThemePacks.Import do
     str |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
   end
 
-  defp ensure_theme_image(%{id: id}), do: ensure_download(Path.join(@theme_images_dir, "#{id}.webp"), "#{@theme_image_base}/#{id}.webp")
+  defp ensure_theme_image(%{id: id}) do
+    ensure_download(Path.join(@theme_images_dir, "#{id}.webp"), "#{@theme_image_base}/#{id}.webp")
+    StarlightBot.ImageThumbs.generate("/images/theme_packs/#{id}.webp")
+  end
 
   defp ensure_boss_image(%{"id" => id}) do
     dest = Path.join(@enemy_images_dir, "#{id}.webp")
